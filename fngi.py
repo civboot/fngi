@@ -1,4 +1,10 @@
 import sys
+import struct
+
+from typing import Any
+from typing import ByteString
+from typing import List
+from typing import Dict
 
 # Tokens
 INVALID = '!invalid!'
@@ -29,7 +35,83 @@ RETURN = 'return'
 LET = 'let'
 EOF = 'EOF'
 
-# 
+class Stack(object):
+    def __init__(self, initialSize):
+        self.data = bytearray(initialSize)
+        self.sp = len(self.data)
+
+    def push(self, value: ByteString):
+        self.sp -= len(value)
+        self.data[self.sp:self.sp + len(value)] = value
+
+    def push_value(self, format: str, value: Any):
+        self.push(struct.pack(format, value))
+
+    def pop_value(self, format: str):
+        vsize = struct.calcsize(format)
+        if self.sp + vsize > len(self.data):
+            raise IndexError(vsize)
+        out = struct.unpack(format, self.data[self.sp:self.sp + vsize])
+        self.sp += vsize
+        return out[0]
+
+    def __len__(self):
+        return len(self.data) - self.sp
+
+    def __repr__(self):
+        return "STACK<{}/{}>[{}]".format(len(self), len(self.data), self.data[self.sp:].hex())
+
+class Ty(object):
+    """The base type that all fngi types derive from."""
+    pass
+
+class CoreTy(Ty):
+    def __init__(self, format):
+        self.format = format
+
+i8 = CoreTy('b')
+u8 = CoreTy('B')
+i16 = CoreTy('h')
+u16 = CoreTy('H')
+i32 = CoreTy('l')
+u32 = CoreTy('L')
+i64 = CoreTy('q')
+u64 = CoreTy('Q')
+ptr = u32
+
+class Field(object):
+    def __init__(self, name: str, ty: Ty):
+        self.name = name
+        self.ty = ty
+
+class StructTy(Ty):
+    def __init__(self, name: str, fields: List[Field]):
+        self.name = name
+        self.fields = fields
+
+class FunctionTy(Ty):
+    def __init__(self, 
+            name:str,
+            inputs: List[Ty],
+            outputs: List[Ty],
+            execIndex: int):
+        self.name = name
+        self.inputs = inputs
+        self.outputs = outputs
+        self.execIndex = execIndex
+
+# Global Environment
+execArray = []
+tys: Dict[str, Ty] = {}
+functions: Dict[str, FunctionTy]  = {}
+
+stackSize = 10 * 2**20 # 10 MiB
+typeStack = Stack(stackSize)
+deferStack = Stack(stackSize)
+localsStack = Stack(stackSize)
+dataStack = Stack(stackSize)
+callStack = Stack(stackSize)
+
 
 def gi(arr, index, default=None):
     """Get the index in an array or the default if out of bounds."""

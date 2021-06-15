@@ -1,0 +1,8 @@
+let HELLO: StrSlice = "Hello world!";
+
+fn main{} (
+  fdWriteString $ {
+    fd = 1; // stdout
+    str = HELLO;
+  };
+);
