@@ -134,7 +134,7 @@ class Stack(object):
     def set(self, index: int, value: ByteString):
         self.data[index:index + len(value)] = value
 
-    def pushTy(self, ty: DataTy, value):
+    def pushTySlot(self, ty: DataTy, value):
         self.pushValue(ty.slotFormat(), value)
 
     def pushValue(self, format: str, value: Any):
@@ -154,7 +154,7 @@ class Stack(object):
     def getValue(self, format, index: int) -> Tuple[Any]:
         return struct.unpack(format, self.get(index, struct.calcsize(format)))
 
-    def popTy(self, ty: DataTy) -> Tuple[Any]:
+    def popTySlot(self, ty: DataTy) -> Tuple[Any]:
         return self.popValue(ty.slotFormat())
 
     def popValue(self, format: str) -> Tuple[Any]:
@@ -242,8 +242,8 @@ def Ret():
 
 @nativeFn([u32, u32], [u32])
 def AddU32():
-    sum = DATA_STACK.popTy(u32) + DATA_STACK.popTy(u32)
-    DATA_STACK.pushTy(u32, sum)
+    sum = DATA_STACK.popTySlot(u32) + DATA_STACK.popTySlot(u32)
+    DATA_STACK.pushTySlot(u32, sum)
 
 # Parser
 
