@@ -32,8 +32,8 @@ class DataTy(Ty):
 
     def slotFormat(self) -> str:
         """The data format for use on the stack (alighment 4)."""
-        needAlign = needAlign(self.size())
-        return self._format + ('' if needAlign == 0 else str(needAlign) + 'x')
+        align = needAlign(self.size())
+        return self._format + ('' if align == 0 else str(align) + 'x')
 
     def slotSize(self) -> int:
         """Size when pushed onto the stack (aligment 4)"""
@@ -135,7 +135,7 @@ class Stack(object):
         self.data[index:index + len(value)] = value
 
     def pushTy(self, ty: DataTy, value):
-        self.pushValue(ty.format(), value)
+        self.pushValue(ty.slotFormat(), value)
 
     def pushValue(self, format: str, value: Any):
         self.push(struct.pack(format, value))
@@ -155,7 +155,7 @@ class Stack(object):
         return struct.unpack(format, self.get(index, struct.calcsize(format)))
 
     def popTy(self, ty: DataTy) -> Tuple[Any]:
-        return self.popValue(self, ty.format())
+        return self.popValue(ty.slotFormat())
 
     def popValue(self, format: str) -> Tuple[Any]:
         out = self.getValue(format, self.sp)
