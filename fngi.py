@@ -15,9 +15,18 @@ def needAlign(size: int) -> int:
 
     return 4 - (size % 4)
 
-
 class Ty(abc.ABC):
-    """The base type that all fngi types derive from."""
+    """The base type that all fngi types derive from.
+
+    Notice that when instantiated, all types will automatically register with
+    the global TYS dictionary.
+    """
+    def __init__(self):
+        super().__init__()
+        TYS[self.name()] = self
+
+    def name(self):
+        return self.__class__.__name__
 
 
 class DataTy(Ty):
@@ -42,6 +51,7 @@ class DataTy(Ty):
 
 class CoreTy(DataTy):
     def __init__(self, format):
+        super().__init__()
         self._format = format
 
     def format(self) -> str:
@@ -65,9 +75,9 @@ class Field(object):
 
 
 class StructTy(DataTy):
-    def __init__(self, name: str, fields: List[Field]):
+    def __init__(self, fields: List[Field]):
         super().__init__()
-        self.name, self.fields = name, fields
+        self.fields = fields
 
     def format(self) -> str:
         return "".join(f.ty.format() for f in self.fields)
@@ -75,6 +85,7 @@ class StructTy(DataTy):
 
 class FnTy(Ty):
     def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
+        super().__init__()
         self.name, self.inputs, self.outputs = name, inputs, outputs
 
 
@@ -84,9 +95,13 @@ class Fn(abc.ABC):
     The runtime will appropriately execute the body within the function by
     incrementing the index, except for control structures which will have
     other behavior.
+
+    Notice that all created Fns will automatically register with the global FNS
+    registry.
     """
     def __init__(self, name: str, ty: FnTy):
         self.name, self.ty = name, ty
+        FNS[name] = self
 
     @abc.abstractmethod
     def exec(self):
@@ -108,6 +123,7 @@ class UserFn(Fn):
     def __init__(self, name: str, ty: FnTy, fnIndex: int):
         super().__init__(name, ty)
         self._fnIndex = fnIndex
+        FN_INDEX_LOOKUP[fnIndex] = self
 
     def fnIndex(self):
         return self._fnIndex
@@ -123,7 +139,8 @@ class Stack(object):
     """The core stack type for storing data of various kinds.
 
     This is the memory that interpreted fngi programs access. It is a simply bytearray,
-    with fngi structures being C-like.
+    with fngi structures being C-like. The stacks are also used for interfacing
+    between python and fngi programs.
     """
     def __init__(self, initialSize):
         self.data = bytearray(initialSize)
@@ -170,15 +187,17 @@ class Stack(object):
 
 
 ##############################################################################
-# The Global Environment and Execution Loop,
+# The Global Environment and Execution Loop
 #
 # These are presented first so that it is clear how simple things are. Experienced
 # programmers may notice the similarities to the execution model of Forth, which
-# is intentional, because fngi will eventually be implemented in Forth.
+# is intentional, because fngi will eventually be implemented in Forth. This (python)
+# implementation is for prototyping and to provide a reference/learning manual for the
+# stage0 fngi language. It will be kept up-to-date with the stage0 forth compiler.
 #
 # For the execution model, there are two types of Fn (function), NativeFn which
 # are implemented in python and UserFn which are simply a range of indexes
-# inside of the EXECS global variable.
+# inside of the EXECS global variable; which are run by execLoop.
 #
 # Although functions have types, the types are only checked at compile time.
 # At execution time, functions pop values off of the DATA_STACK for their
@@ -186,14 +205,15 @@ class Stack(object):
 # the RET_STACK and BSP for keeping track of local variables.
 
 # Global Environment
+RUNNING = False # must stay true for execLoop to keep running.
 TYS: Dict[str, Ty] = {}
 FNS: Dict[str, Fn] = {}
 FN_INDEX_LOOKUP: Dict[int, Fn] = {}
 EXECS: List[Fn]
 FN_INDEX = 0
 
-stackSize = 10 * 2**20 # 10 MiB
 
+STACK_SIZE = 10 * 2**20 # 10 MiB
 # Runtime
 DATA_STACK = Stack(32) # data stack is intentionally limited
 BSP = 0
@@ -205,7 +225,7 @@ DEFER_STACK = Stack(stackSize)
 
 def execLoop():
     """Yup, this is the entire exec loop."""
-    while True:
+    while RUNNING:
         fn = EXECS[FN_INDEX]
         if isinstance(fn, NativeFn):
             # If native, run the function
@@ -217,11 +237,17 @@ def execLoop():
             # and "run" the function by changing the FN_INDEX to be it
             FN_INDEX = fn.fnIndex()
 
+# Native Functions
+#
+# Now we can define native functions by instantiating a FnTy and
+# subclassing from NativeFn. Since a large majority of NativeFn's are
+# simply functions which we have to define inputs and outputs for,
+# we're going to make a python decorator.
 
 def nativeFn(
-        inputs: List[Ty],
-        outputs: List[Ty]
-        ):
+    inputs: List[Ty],
+    outputs: List[Ty]
+    ):
 
     def wrapper(pythonDef):
         name = pythonDef.__name__
@@ -244,6 +270,22 @@ def Ret():
 def AddU32():
     sum = DATA_STACK.popTySlot(u32) + DATA_STACK.popTySlot(u32)
     DATA_STACK.pushTySlot(u32, sum)
+
+
+def registerConstant(ty):
+    constantFnTy = FnTy(ty.name() + "ConstantTy", [], [ty])
+
+    def fnInit(self, value: Any):
+        NativeFn.__init__(self, self.name(), constantFnTy)
+        self.value = value
+
+    def fnExec(self):
+        DATA_STACK.pushTySlot(self.ty.outputs[0], self.value)
+
+    constantFn = type(
+        ty.name() + 'Constant',
+        tuple([NativeFn]),
+        {"__init__": fnInit, "exec": fnExec})
 
 # Parser
 
