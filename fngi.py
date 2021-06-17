@@ -31,7 +31,25 @@ class Ty(object):
 
 
 class DataTy(ctypes.Structure, Ty):
-    """A type for data represented in memory."""
+    """A type for data represented in memory.
+
+    Reading/Writing a DataType (dt) to a bytearray (ba):
+    - reading => dt = MyDataType.from_buffer(ba)
+    - writing => ba[start:start+dt.size()] = dt
+    """
+    def size(self):
+        return ctypes.sizeof(self)
+
+    @classmethod
+    def fieldOffset(cls, field: str):
+        return getattr(cls, field).offset
+
+    @classmethod
+    def fieldSize(cls, field: str):
+        return getattr(cls, field).size
+
+# Fungi uses 32 bits for its pointers.
+ctype_ptr = ctypes.c_uint32
 
 class I8(DataTy): _fields_ = [('v', ctypes.c_int8)]
 class U8(DataTy): _fields_ = [('v', ctypes.c_uint8)]
@@ -41,11 +59,14 @@ class I32(DataTy): _fields_ = [('v', ctypes.c_int32)]
 class U32(DataTy): _fields_ = [('v', ctypes.c_uint32)]
 class I64(DataTy): _fields_ = [('v', ctypes.c_int64)]
 class U64(DataTy): _fields_ = [('v', ctypes.c_uint64)]
+class Ptr(DataTy): _fields_ = [('v', ctype_ptr)] # an address in memory, no type
+class Ref(DataTy): _fields_ = [('v', ctype_ptr)] # an address in memory to a type
 
 class Variable(object):
     def __init__(self, name: str, ty: Ty):
         self.name = name
         self.ty = ty
+
 
 class StructTy(DataTy):
     def __init__(self, fields: List[Variable]):
@@ -64,6 +85,11 @@ class FnTy(Ty):
     def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
         super().__init__()
         self.name, self.inputs, self.outputs = name, inputs, outputs
+
+
+class RefTy(DataTy):
+    def __init__(self, ref: Ty):
+        self.ref = ref
 
 
 class Fn(abc.ABC):
@@ -129,19 +155,19 @@ class Stack(object):
 
     # Set / Push
     def set(self, index: int, value: ByteString):
-        size = ctypes.sizeof(value)
+        size = value.size()
         self.checkRange(self, index, size)
         self.data[index:index + size] = value
 
     def push(self, value: ByteString, align=True):
-        size = ctypes.sizeof(value)
+        size = value.size()
         if align: 
             size += needAlign(size)
         self.checkRange(self.sp - size, size)
         self.sp -= size
         # Note: DON'T use self.sp+size for the second slice value, as it may
         # shorten the bytearray.
-        self.data[self.sp:self.sp + ctypes.sizeof(value)] = value
+        self.data[self.sp:self.sp + value.size()] = value
 
     # Get / Pop
 
@@ -156,7 +182,7 @@ class Stack(object):
         return out
 
     def pop(self, ty: DataTy, align=False) -> DataTy:
-        size = ctypes.sizeof(ty)
+        size = ty.size()
         if align:
             size += needAlign(size)
         return ty.from_buffer(self.popSize(size))
@@ -184,10 +210,11 @@ class Stack(object):
 # are implemented in python and UserFn which are simply a range of indexes
 # inside of the EXECS global variable; which are run by execLoop.
 #
-# Although functions have types, the types are only checked at compile time.
-# At execution time, functions pop values off of the DATA_STACK for their
-# parameters and push values on the DATA_STACK for their results. They also use
-# the RET_STACK and BSP for keeping track of local variables.
+# Although functions have types (i.e. inputs/outputs), the types are only
+# checked at compile time. At execution time, functions pop values off of the
+# DATA_STACK for their parameters and push values on the DATA_STACK for their
+# results. They also use the RET_STACK and BSP for keeping track of local
+# variables.
 
 # Global Environment
 RUNNING = False # must stay true for execLoop to keep running.

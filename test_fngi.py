@@ -22,17 +22,7 @@ class TestStack(unittest.TestCase):
         assert len(s) == 4
         assert s.pop(I16, align=True).v == 0x7008
 
-
     def testPushPopI32(self):
         s = Stack(16)
         s.push(I32(0x4200FF))
         assert s.pop(I32).v == 0x4200FF
-
-
-    # def testPushPopSlot(self):
-    #     s = Stack(16)
-    #     s.pushTySlot(U8, 0x8)
-    #     assert len(s) == 4
-    #     s.pushTySlot(U32, 0x4200FF)
-    #     assert s.popTySlot(U32) == (0x4200FF,)
-    #     assert s.popTySlot(U8) == (0x8,)
