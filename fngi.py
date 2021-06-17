@@ -24,10 +24,11 @@ class Ty(object):
     """
     def __init__(self):
         super().__init__()
-        TYS[self.name()] = self
 
     def name(self):
         return self.__class__.__name__
+
+TYS: Dict[str, Ty] = {} # Global registry
 
 
 class DataTy(ctypes.Structure, Ty):
@@ -37,8 +38,9 @@ class DataTy(ctypes.Structure, Ty):
     - reading => dt = MyDataType.from_buffer(ba)
     - writing => ba[start:start+dt.size()] = dt
     """
-    def size(self):
-        return ctypes.sizeof(self)
+    @classmethod
+    def size(cls):
+        return ctypes.sizeof(cls)
 
     @classmethod
     def fieldOffset(cls, field: str):
@@ -51,34 +53,29 @@ class DataTy(ctypes.Structure, Ty):
 # Fungi uses 32 bits for its pointers.
 ctype_ptr = ctypes.c_uint32
 
-class I8(DataTy): _fields_ = [('v', ctypes.c_int8)]
-class U8(DataTy): _fields_ = [('v', ctypes.c_uint8)]
-class I16(DataTy): _fields_ = [('v', ctypes.c_int16)]
-class U16(DataTy): _fields_ = [('v', ctypes.c_uint16)]
-class I32(DataTy): _fields_ = [('v', ctypes.c_int32)]
-class U32(DataTy): _fields_ = [('v', ctypes.c_uint32)]
-class I64(DataTy): _fields_ = [('v', ctypes.c_int64)]
-class U64(DataTy): _fields_ = [('v', ctypes.c_uint64)]
-class Ptr(DataTy): _fields_ = [('v', ctype_ptr)] # an address in memory, no type
-class Ref(DataTy): _fields_ = [('v', ctype_ptr)] # an address in memory to a type
+def createCoreTy(name, cty):
+    """Creates a core data type and registers it.
 
-class Variable(object):
-    def __init__(self, name: str, ty: Ty):
-        self.name = name
-        self.ty = ty
+    This is soley to reduce boilerplace. It is the same as:
+
+        class {{name}}(DataTy): _fields_ =  [('v', {{cty}})]
+        TYS["{{name}}"] = {{name}}
+    """
+    nativeTy = type(name, tuple([DataTy]), {'_fields_': [('v', cty)]})
+    TYS[name] = nativeTy
+    return nativeTy
 
 
-class StructTy(DataTy):
-    def __init__(self, fields: List[Variable]):
-        super().__init__()
-        self.fields = fields
-
-        self._fieldLookup: Map[str, int] = {
-            f.name: i for (f, i) in enumerate(fields)
-        }
-
-    def format(self) -> str:
-        return "".join(f.ty.format() for f in self.fields)
+I8 = createCoreTy("I8",  ctypes.c_int8)
+U8 = createCoreTy("U8",  ctypes.c_uint8)
+I16 = createCoreTy("I16", ctypes.c_int16)
+U16 = createCoreTy("U16", ctypes.c_uint16)
+I32 = createCoreTy("I32", ctypes.c_int32)
+U32 = createCoreTy("U32", ctypes.c_uint32)
+I64 = createCoreTy("I64", ctypes.c_int64)
+U64 = createCoreTy("U64", ctypes.c_uint64)
+Ptr = createCoreTy("Ptr", ctype_ptr) # an address in memory, no type
+Ref = createCoreTy("Ref", ctype_ptr) # an address in memory to a type
 
 
 class FnTy(Ty):
@@ -113,6 +110,8 @@ class Fn(abc.ABC):
     @abc.abstractmethod
     def fnIndex(self):
         raise TypeError("Called fnIndex on a non-user fn")
+
+FNS: Dict[str, Fn] = {} # Global Registry
 
 
 class NativeFn(Fn):
@@ -219,7 +218,6 @@ class Stack(object):
 # Global Environment
 RUNNING = False # must stay true for execLoop to keep running.
 
-
 STACK_SIZE = 10 * 2**20 # 10 MiB
 # Runtime
 DATA_STACK = Stack(32) # data stack is intentionally limited
@@ -227,15 +225,13 @@ BSP = 0
 RET_STACK = Stack(STACK_SIZE)
 
 # Compiletime
-TYS: Dict[str, Ty] = {}
-FNS: Dict[str, Fn] = {}
 FN_INDEX_LOOKUP: Dict[int, Fn] = {}
 EXECS: List[Fn]
 FN_INDEX = 0
 
 TYPE_STACK = Stack(STACK_SIZE)
 DEFER_STACK = Stack(STACK_SIZE)
-LOCALS: StructTy = None
+LOCALS: DataTy = None
 
 def execLoop():
     """Yup, this is the entire exec loop."""
@@ -254,9 +250,9 @@ def execLoop():
 # Native Functions
 #
 # Now we can define native functions by instantiating a FnTy and
-# subclassing from NativeFn. Since a large majority of NativeFn's are
-# simply functions which we have to define inputs and outputs for,
-# we're going to make a python decorator.
+# subclassing from NativeFn. Since a large majority of NativeFn's can
+# be defined as a single python function with some inputs/outputs we're going
+# to make a python decorator to reduce boilerplate.
 
 def nativeFn(
     inputs: List[Ty],
@@ -266,7 +262,7 @@ def nativeFn(
     def wrapper(pythonDef):
         name = pythonDef.__name__
         fnTy = FnTy(name, inputs, outputs)
-        # Create the NativeFn class the hard way
+        # Create a subclass of NativeFn the hard way
         nativeFn = type(name, tuple([NativeFn]), {"call": pythonDef})
 
         # register the ty and fn
