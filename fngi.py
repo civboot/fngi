@@ -1,6 +1,7 @@
 import abc
 import sys
 import struct
+import ctypes
 
 from typing import Any
 from typing import ByteString
@@ -15,7 +16,7 @@ def needAlign(size: int) -> int:
 
     return 4 - (size % 4)
 
-class Ty(abc.ABC):
+class Ty(object):
     """The base type that all fngi types derive from.
 
     Notice that when instantiated, all types will automatically register with
@@ -29,55 +30,31 @@ class Ty(abc.ABC):
         return self.__class__.__name__
 
 
-class DataTy(Ty):
+class DataTy(ctypes.Structure, Ty):
     """A type for data represented in memory."""
-    @abc.abstractmethod
-    def format(self) -> str:
-        """The data format for use in a struct."""
 
-    def size(self) -> int:
-        """Absolute size when packed."""
-        return struct.calcsize(self.format())
+class I8(DataTy): _fields_ = [('v', ctypes.c_int8)]
+class U8(DataTy): _fields_ = [('v', ctypes.c_uint8)]
+class I16(DataTy): _fields_ = [('v', ctypes.c_int16)]
+class U16(DataTy): _fields_ = [('v', ctypes.c_uint16)]
+class I32(DataTy): _fields_ = [('v', ctypes.c_int32)]
+class U32(DataTy): _fields_ = [('v', ctypes.c_uint32)]
+class I64(DataTy): _fields_ = [('v', ctypes.c_int64)]
+class U64(DataTy): _fields_ = [('v', ctypes.c_uint64)]
 
-    def slotFormat(self) -> str:
-        """The data format for use on the stack (alighment 4)."""
-        align = needAlign(self.size())
-        return self._format + ('' if align == 0 else str(align) + 'x')
-
-    def slotSize(self) -> int:
-        """Size when pushed onto the stack (aligment 4)"""
-        return struct.calcsize(self.slotFormat())
-
-
-class CoreTy(DataTy):
-    def __init__(self, format):
-        super().__init__()
-        self._format = format
-
-    def format(self) -> str:
-        return self._format
-
-
-i8 = CoreTy('b')
-u8 = CoreTy('B')
-i16 = CoreTy('h')
-u16 = CoreTy('H')
-i32 = CoreTy('l')
-u32 = CoreTy('L')
-i64 = CoreTy('q')
-u64 = CoreTy('Q')
-ptr = u32
-
-class Field(object):
+class Variable(object):
     def __init__(self, name: str, ty: Ty):
         self.name = name
         self.ty = ty
 
-
 class StructTy(DataTy):
-    def __init__(self, fields: List[Field]):
+    def __init__(self, fields: List[Variable]):
         super().__init__()
         self.fields = fields
+
+        self._fieldLookup: Map[str, int] = {
+            f.name: i for (f, i) in enumerate(fields)
+        }
 
     def format(self) -> str:
         return "".join(f.ty.format() for f in self.fields)
@@ -138,52 +115,60 @@ def bytesReplace(b: bytearray, value: int, start: int, end: int):
 class Stack(object):
     """The core stack type for storing data of various kinds.
 
-    This is the memory that interpreted fngi programs access. It is a simply bytearray,
-    with fngi structures being C-like. The stacks are also used for interfacing
-    between python and fngi programs.
+    This is the memory that interpreted fngi programs access. It is a simply a
+    bytearray, with fngi structures being C-like. The stacks are also used for
+    interfacing between python and fngi programs.
     """
     def __init__(self, initialSize):
         self.data = bytearray(initialSize)
         self.sp = len(self.data)
 
-    # Push / Set
+    def checkRange(self, index, size):
+        if index < 0 or index + size > len(self.data):
+            raise IndexError("index={} size={} stack_size={}".format(index, size, len(self.data)))
 
+    # Set / Push
     def set(self, index: int, value: ByteString):
-        self.data[index:index + len(value)] = value
+        size = ctypes.sizeof(value)
+        self.checkRange(self, index, size)
+        self.data[index:index + size] = value
 
-    def pushTySlot(self, ty: DataTy, value):
-        self.pushValue(ty.slotFormat(), value)
+    def push(self, value: ByteString, align=True):
+        size = ctypes.sizeof(value)
+        if align: 
+            size += needAlign(size)
+        self.checkRange(self.sp - size, size)
+        self.sp -= size
+        # Note: DON'T use self.sp+size for the second slice value, as it may
+        # shorten the bytearray.
+        self.data[self.sp:self.sp + ctypes.sizeof(value)] = value
 
-    def pushValue(self, format: str, value: Any):
-        self.push(struct.pack(format, value))
-
-    def push(self, value: ByteString):
-        self.sp -= len(value)
-        self.set(self.sp, value)
-
-    # Pop / Get
+    # Get / Pop
 
     def get(self, index, size) -> bytes:
-        if index + size > len(self.data):
-            raise IndexError("{} / {}".format(index + size, len(self.data)))
+        self.checkRange(index, size)
         return self.data[index:index+size]
 
-    def getValue(self, format, index: int) -> Tuple[Any]:
-        return struct.unpack(format, self.get(index, struct.calcsize(format)))
-
-    def popTySlot(self, ty: DataTy) -> Tuple[Any]:
-        return self.popValue(ty.slotFormat())
-
-    def popValue(self, format: str) -> Tuple[Any]:
-        out = self.getValue(format, self.sp)
-        self.sp += struct.calcsize(format)
+    def popSize(self, size) -> bytes:
+        self.checkRange(self.sp, size)
+        out = self.get(self.sp, size)
+        self.sp += size
         return out
+
+    def pop(self, ty: DataTy, align=False) -> DataTy:
+        size = ctypes.sizeof(ty)
+        if align:
+            size += needAlign(size)
+        return ty.from_buffer(self.popSize(size))
 
     def __len__(self):
         return len(self.data) - self.sp
 
+    def __sizeof__(self):
+        return len(self)
+
     def __repr__(self):
-        return "STACK<{}/{}>[{}]".format(len(self), len(self.data), self.data[self.sp:].hex())
+        return "STACK<{}/{}>".format(len(self), len(self.data))
 
 
 ##############################################################################
@@ -206,22 +191,24 @@ class Stack(object):
 
 # Global Environment
 RUNNING = False # must stay true for execLoop to keep running.
-TYS: Dict[str, Ty] = {}
-FNS: Dict[str, Fn] = {}
-FN_INDEX_LOOKUP: Dict[int, Fn] = {}
-EXECS: List[Fn]
-FN_INDEX = 0
 
 
 STACK_SIZE = 10 * 2**20 # 10 MiB
 # Runtime
 DATA_STACK = Stack(32) # data stack is intentionally limited
 BSP = 0
-RET_STACK = Stack(stackSize)
+RET_STACK = Stack(STACK_SIZE)
 
 # Compiletime
-TYPE_STACK = Stack(stackSize)
-DEFER_STACK = Stack(stackSize)
+TYS: Dict[str, Ty] = {}
+FNS: Dict[str, Fn] = {}
+FN_INDEX_LOOKUP: Dict[int, Fn] = {}
+EXECS: List[Fn]
+FN_INDEX = 0
+
+TYPE_STACK = Stack(STACK_SIZE)
+DEFER_STACK = Stack(STACK_SIZE)
+LOCALS: StructTy = None
 
 def execLoop():
     """Yup, this is the entire exec loop."""
@@ -266,7 +253,7 @@ def Ret():
     FN_INDEX = RET_STACK[BSP - 4]
 
 
-@nativeFn([u32, u32], [u32])
+@nativeFn([U32, U32], [U32])
 def AddU32():
     sum = DATA_STACK.popTySlot(u32) + DATA_STACK.popTySlot(u32)
     DATA_STACK.pushTySlot(u32, sum)

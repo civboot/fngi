@@ -1,20 +1,38 @@
 
 import unittest
-import fngi
+from fngi import *
+
+def testNeedAlign():
+    assert 0 == needAlign(0)
+    assert 3 == needAlign(1)
+    assert 2 == needAlign(2)
+    assert 1 == needAlign(3)
+    assert 0 == needAlign(4)
 
 class TestStack(unittest.TestCase):
-    def testPushPop(self):
-        s = fngi.Stack(16)
-        s.pushValue('I', 0x4200FF)
-        s.pushValue('H', 0x8008)
-        assert len(s) == 6
-        assert s.popValue('H') == (0x8008,)
-        assert s.popValue('I') == (0x4200FF,)
+    def testPushPopI16(self):
+        s = Stack(16)
+        s.push(I16(0x7008), align=False)
+        assert len(s) == 2
+        assert s.pop(I16, align=False).v == 0x7008
 
-    def testPushPopTySlot(self):
-        s = fngi.Stack(16)
-        s.pushTySlot(fngi.u8, 0x8)
+    def testPushPopI16Align(self):
+        s = Stack(16)
+        s.push(I16(0x7008), align=True)
         assert len(s) == 4
-        s.pushTySlot(fngi.u32, 0x4200FF)
-        assert s.popTySlot(fngi.u32) == (0x4200FF,)
-        assert s.popTySlot(fngi.u8) == (0x8,)
+        assert s.pop(I16, align=True).v == 0x7008
+
+
+    def testPushPopI32(self):
+        s = Stack(16)
+        s.push(I32(0x4200FF))
+        assert s.pop(I32).v == 0x4200FF
+
+
+    # def testPushPopSlot(self):
+    #     s = Stack(16)
+    #     s.pushTySlot(U8, 0x8)
+    #     assert len(s) == 4
+    #     s.pushTySlot(U32, 0x4200FF)
+    #     assert s.popTySlot(U32) == (0x4200FF,)
+    #     assert s.popTySlot(U8) == (0x8,)
