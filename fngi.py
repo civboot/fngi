@@ -10,11 +10,77 @@ from typing import List
 from typing import Tuple
 from typing import Dict
 
-# Most data in fngi is passed on either the DATA_STACK, RET_STACK or HEAP. LOCALS
-# are kept inside of the RET_STACK.
+# Types in the compiler are represented by a class. We sometimes use
+# uninstantiated classes to represent types, mostly because for
+# structs that is the only way python permits using ctypes.Structure subclasses.
+# For other types we typically use instantiated classes.
+#
+# Types are registered with the global TYS dictionary for lookup during
+# compilation.  For the stage0 fngi compiler we are building here, there are no
+# namespaces or modules so we don't have to worry about that complexity.
+
+class Ty(object):
+    """The base type that all fngi types derive from.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def name(self):
+        return self.__class__.__name__
+
+TYS: Dict[str, Ty] = {} # Global registry
+
+
+class DataTy(ctypes.Structure, Ty):
+    """A type for data represented in memory.
+
+    Reading/Writing a DataType (dt) to a bytearray (ba):
+    - reading => dt = MyDataType.from_buffer(ba)
+    - writing => ba[start:start+dt.size()] = dt
+
+    Python's ctypes.Structure class allows us to get C-compliant structures
+    "out of the box" with minimal effort.
+    """
+    @classmethod
+    def size(cls):
+        return ctypes.sizeof(cls)
+
+    @classmethod
+    def fieldOffset(cls, field: str):
+        return getattr(cls, field).offset
+
+    @classmethod
+    def fieldSize(cls, field: str):
+        return getattr(cls, field).size
+
+
+class Fn(Ty):
+    """The base Fn type.
+
+    New function types are created by instantiating a subclass of Fn.
+    """
+
+    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
+        super().__init__()
+        self.name, self.inputs, self.outputs = name, inputs, outputs
+
+    @abc.abstractmethod
+    def call(self):
+        raise TypeError("Called call on a non-native fn")
+
+    @abc.abstractmethod
+    def fnIndex(self):
+        raise TypeError("Called fnIndex on a non-user fn")
+
+# We will define more types soon. But first let's define how our data is
+# stored.
+#
+# Most data in fngi is passed on either the DATA_STACK, RET_STACK or HEAP.
+# LOCALS are kept inside of the RET_STACK.
 #
 # The DATA_STACK is NOT within global memory, and therefore cannot have a
-# pointer into it. This is because on some platforms it is stored in registers.
+# pointer into it. This is because on some platforms it is stored in registers
+# instead of memory.
 #
 # The other data regions (RET_STACK, HEAP, TYPE_STACK, etc) are all slices of the
 # global MEMORY region.
@@ -93,78 +159,46 @@ class Stack(object):
     def __repr__(self):
         return "STACK<{}/{}>".format(len(self), self.total_size)
 
-# Types in the compiler are represented by a class. We sometimes use
-# uninstantiated classes to represent types, mostly because for
-# structs that is the only way python permits using ctypes.Structure subclasses.
-# For other types we typically use instantiated classes.
-#
-# Types are registered with the global TYS dictionary for lookup during
-# compilation.  For the stage0 fngi compiler we are building here, there are no
-# namespaces or modules so we don't have to worry about that complexity.
 
-class Ty(object):
-    """The base type that all fngi types derive from.
-    """
-    def __init__(self):
-        super().__init__()
-
-    def name(self):
-        return self.__class__.__name__
-
-class Fn(Ty):
-    """The base Fn type.
-
-    New function types are created by instantiating a subclass of Fn.
-    """
-
-    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
-        super().__init__()
-        self.name, self.inputs, self.outputs = name, inputs, outputs
-
-    @abc.abstractmethod
-    def call(self):
-        raise TypeError("Called call on a non-native fn")
-
-    @abc.abstractmethod
-    def fnIndex(self):
-        raise TypeError("Called fnIndex on a non-user fn")
-
-
-# TODO: explain
 class Environment(object):
     def __init__(
             self,
-            callSpace: List[Fn],
-            memory: bytearray,
+            heap: Heap,
             dataStack: Stack,
-            retStack: Stack):
-        self.callSpace, self.memory = callSpace, memory
+            retStack: Stack,
+            typeStack: Stack,
+            deferStack: Stack,
+            callSpace: List[Fn],
+            fnLocals: DataTy,
+            fnIndexLookup: Dict[int, Fn],
+            ):
+        self.heap = heap
         self.dataStack, self.retStack = dataStack, retStack
+        self.typeStack, self.deferStack = typeStack, deferStack
+        self.callSpace = callSpace
+        self.fnLocals = fnLocals
+        self.fnIndexLookup = fnIndexLookup
+
         self.running = False
         self.fnIndex = 0
+        self.bsp = 0
 
-
-MEMORY = bytearray(50 * MiB) # 50 MiB Global Memory
+MiB = 2**20 # 1 Mebibyte
+DATA_STACK_SIZE = 4 * 32 # Data Stack stores up to 32 usize elements
+STACK_SIZE = MiB // 2 # 1/2 MiB stacks
+MEMORY = bytearray(5 * MiB) # 5 MiB Global Memory
 HEAP = Heap(MEMORY)
-STACK_SIZE = 10 * MiB # 10 MiB
 
-# Runtime
-DATA_STACK_SIZE = 4 * 32 # enough for 32 4byte values.
-DATA_STACK = Stack(bytearray(DATA_STACK_SIZE), 0, DATA_STACK_SIZE)
-RET_STACK = Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE)
-BSP = 0
+ENV = Environment(
+    heap=HEAP,
+    dataStack=Stack(bytearray(DATA_STACK_SIZE), 0, DATA_STACK_SIZE),
+    retStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    typeStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    deferStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    callSpace=[],
+    fnLocals=None,
+    fnIndexLookup={})
 
-# Compiletime
-FN_INDEX_LOOKUP: Dict[int, Fn] = {}
-CALL_SPACE: List[Fn]
-FN_INDEX = 0
-
-# type/defer stack 
-TYPE_STACK = Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE)
-DEFER_STACK = Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE)
-LOCALS: DataTy = None
-
-GLOBAL_ENVIRONMENT = Environemnt(CALL_SPACE, MEMORY
 
 # Most of our code is going to have some basic tests inline.  Tests can be run
 # by installing pytest and running it.
@@ -183,30 +217,8 @@ def testNeedAlign():
     assert 0 == needAlign(4)
 
 
-TYS: Dict[str, Ty] = {} # Global registry
 
 
-class DataTy(ctypes.Structure, Ty):
-    """A type for data represented in memory.
-
-    Reading/Writing a DataType (dt) to a bytearray (ba):
-    - reading => dt = MyDataType.from_buffer(ba)
-    - writing => ba[start:start+dt.size()] = dt
-
-    Python's ctypes.Structure class allows us to get C-compliant structures
-    "out of the box" with minimal effort.
-    """
-    @classmethod
-    def size(cls):
-        return ctypes.sizeof(cls)
-
-    @classmethod
-    def fieldOffset(cls, field: str):
-        return getattr(cls, field).offset
-
-    @classmethod
-    def fieldSize(cls, field: str):
-        return getattr(cls, field).size
 
 # Fungi uses 32 bits for its pointers.
 ctype_ptr = ctypes.c_uint32
@@ -319,7 +331,6 @@ def callLoop(env: Environment):
 # Global Environment
 RUNNING = False # must stay true for callLoop to keep running.
 
-MiB = 2**20 # 1 Mebibyte
 
 
 def retCall():
