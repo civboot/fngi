@@ -10,12 +10,28 @@ from typing import List
 from typing import Tuple
 from typing import Dict
 
+# Most of our code is going to have some basic tests inline.  Tests can be run
+# by installing pytest and running it.
+
+def needAlign(size: int) -> int:
+    """Return padding bytes needed to align a value of size."""
+    if size % 4 == 0:
+        return 0
+    return 4 - (size % 4)
+
+def testNeedAlign():
+    assert 0 == needAlign(0)
+    assert 3 == needAlign(1)
+    assert 2 == needAlign(2)
+    assert 1 == needAlign(3)
+    assert 0 == needAlign(4)
+
 # Types in the compiler are represented by a class. We sometimes use
 # uninstantiated classes to represent types, mostly because for
 # structs that is the only way python permits using ctypes.Structure subclasses.
 # For other types we typically use instantiated classes.
 #
-# Types are registered with the global TYS dictionary for lookup during
+# Types are registered with the global ENV.tys dictionary for lookup during
 # compilation.  For the stage0 fngi compiler we are building here, there are no
 # namespaces or modules so we don't have to worry about that complexity.
 
@@ -27,8 +43,6 @@ class Ty(object):
 
     def name(self):
         return self.__class__.__name__
-
-TYS: Dict[str, Ty] = {} # Global registry
 
 
 class DataTy(ctypes.Structure, Ty):
@@ -64,26 +78,19 @@ class Fn(Ty):
         super().__init__()
         self.name, self.inputs, self.outputs = name, inputs, outputs
 
-    @abc.abstractmethod
-    def call(self):
-        raise TypeError("Called call on a non-native fn")
-
-    @abc.abstractmethod
-    def fnIndex(self):
-        raise TypeError("Called fnIndex on a non-user fn")
 
 # We will define more types soon. But first let's define how our data is
 # stored.
 #
-# Most data in fngi is passed on either the DATA_STACK, RET_STACK or HEAP.
-# LOCALS are kept inside of the RET_STACK.
+# Most data in fngi is passed on either the dataStack, retStack or heap within
+# the ENV instance.  Locals are kept inside of the retStack.
 #
-# The DATA_STACK is NOT within global memory, and therefore cannot have a
+# The dataStack is NOT within global memory, and therefore cannot have a
 # pointer into it. This is because on some platforms it is stored in registers
 # instead of memory.
 #
-# The other data regions (RET_STACK, HEAP, TYPE_STACK, etc) are all slices of the
-# global MEMORY region.
+# The other data regions (retStack, heap, typeStack, etc) are all slices of the
+# global memory region (ENV.heap.memory).
 
 class Heap(object):
     def __init__(self, memory):
@@ -159,8 +166,16 @@ class Stack(object):
     def __repr__(self):
         return "STACK<{}/{}>".format(len(self), self.total_size)
 
+# We now come to the "global" environment. This contains all the data which
+# functions (native or user, we'll get to that) and the compiler itself mutate
+# while compiling and executing fngi code. As we'll see, fngi will be
+# simultaniously executing while compiling, as we will write a large amount of
+# even the stage0 compiler in the fngi language itself.
 
 class Environment(object):
+    """Contains all the state for a fngi compiler interpreter and interpreter
+    to run.
+    """
     def __init__(
             self,
             heap: Heap,
@@ -171,6 +186,7 @@ class Environment(object):
             callSpace: List[Fn],
             fnLocals: DataTy,
             fnIndexLookup: Dict[int, Fn],
+            tys: Dict[str, Ty],
             ):
         self.heap = heap
         self.dataStack, self.retStack = dataStack, retStack
@@ -178,6 +194,8 @@ class Environment(object):
         self.callSpace = callSpace
         self.fnLocals = fnLocals
         self.fnIndexLookup = fnIndexLookup
+
+        self.tys = tys
 
         self.running = False
         self.fnIndex = 0
@@ -197,31 +215,10 @@ ENV = Environment(
     deferStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
     callSpace=[],
     fnLocals=None,
-    fnIndexLookup={})
+    fnIndexLookup={},
+    tys={},
+)
 
-
-# Most of our code is going to have some basic tests inline.  Tests can be run
-# by installing pytest and running it.
-
-def needAlign(size: int) -> int:
-    """Return padding bytes needed to align a value of size."""
-    if size % 4 == 0:
-        return 0
-    return 4 - (size % 4)
-
-def testNeedAlign():
-    assert 0 == needAlign(0)
-    assert 3 == needAlign(1)
-    assert 2 == needAlign(2)
-    assert 1 == needAlign(3)
-    assert 0 == needAlign(4)
-
-
-
-
-
-# Fungi uses 32 bits for its pointers.
-ctype_ptr = ctypes.c_uint32
 
 def createCoreTy(name, cty):
     """Creates a core data type and registers it.
@@ -229,13 +226,15 @@ def createCoreTy(name, cty):
     This is soley to reduce boilerplace. It is the same as:
 
         class {{name}}(DataTy): _fields_ =  [('v', {{cty}})]
-        TYS["{{name}}"] = {{name}}
+        ENV.tys["{{name}}"] = {{name}}
     """
     nativeTy = type(name, tuple([DataTy]), {'_fields_': [('v', cty)]})
-    TYS[name] = nativeTy
+    ENV.tys[name] = nativeTy
     return nativeTy
 
 
+# Fungi uses 32 bits for its pointers.
+ctype_ptr = ctypes.c_uint32
 I8 = createCoreTy("I8",  ctypes.c_int8)
 U8 = createCoreTy("U8",  ctypes.c_uint8)
 I16 = createCoreTy("I16", ctypes.c_int16)
@@ -252,14 +251,32 @@ class Ref(DataTy):
 
     def __init__(self, v: int, refTy: Ty):
         self.refTy = refTy
-        # Note: reftypes are not registered ty TYS
+        # Note: reftypes are not registered ty ENV.tys
 
 
+##############################################################################
+# The fngi execution loop
+#
+# This is presented early so that it is clear how simple things are. Experienced
+# programmers may notice the similarities to the execution model of Forth, which
+# is intentional, because fngi will eventually be implemented in Forth. This (python)
+# implementation is for prototyping and to provide a reference/learning manual for the
+# stage0 fngi language. It will be kept up-to-date with the stage0 forth compiler.
+#
+# For the execution model, there are two types of Fn (function), NativeFn which
+# are implemented in python and UserFn which are simply a range of indexes
+# inside of the ENV.callSpace global variable; which are run by callLoop.
+#
+# Although functions have types (i.e. inputs/outputs), the types are only
+# checked at compile time. At execution time, functions pop values off of the
+# env.dataStack for their parameters and push values on the env.dataStack for their
+# results. They also use the RET_STACK and BSP for keeping track of local
+# variables.
 
 class NativeFn(Fn):
     """A native function.
 
-    Aka a function implemented in python which modifies the DATA_STACK.
+    Aka a function implemented in python which modifies the env.dataStack.
     """
     def __init__(
             self,
@@ -280,38 +297,20 @@ class NativeFn(Fn):
 class UserFn(Fn):
     """A user-created function defined in fngi source code.
 
-    Functions are compiled to the CALL_SPACE and therefore have an index.
+    Functions are compiled to the ENV.callSpace and therefore have an index.
     """
     def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty], fnIndex: int):
         super().__init__(name, inputs, outputs)
         self._fnIndex = fnIndex
 
         # Handle registration
-        TYS[name] = self
+        ENV.tys[name] = self
         FN_INDEX_LOOKUP[fnIndex] = self
 
     def fnIndex(self):
         return self._fnIndex
 
 
-##############################################################################
-# The Global Environment and Execution Loop
-#
-# These are presented first so that it is clear how simple things are. Experienced
-# programmers may notice the similarities to the execution model of Forth, which
-# is intentional, because fngi will eventually be implemented in Forth. This (python)
-# implementation is for prototyping and to provide a reference/learning manual for the
-# stage0 fngi language. It will be kept up-to-date with the stage0 forth compiler.
-#
-# For the execution model, there are two types of Fn (function), NativeFn which
-# are implemented in python and UserFn which are simply a range of indexes
-# inside of the CALL_SPACE global variable; which are run by callLoop.
-#
-# Although functions have types (i.e. inputs/outputs), the types are only
-# checked at compile time. At execution time, functions pop values off of the
-# DATA_STACK for their parameters and push values on the DATA_STACK for their
-# results. They also use the RET_STACK and BSP for keeping track of local
-# variables.
 
 
 def callLoop(env: Environment):
@@ -333,23 +332,27 @@ RUNNING = False # must stay true for callLoop to keep running.
 
 
 
-def retCall():
-    FN_INDEX = RET_STACK[BSP - 4]
+def retCall(env):
+    FN_INDEX = env.retStack[env.bsp - 4]
 ret = NativeFn("ret", [], [], retCall)
 
-def addU32Call():
-    sum = DATA_STACK.popTySlot(u32) + DATA_STACK.popTySlot(u32)
-    DATA_STACK.pushTySlot(u32, sum)
+def addU32Call(env):
+    sum = env.dataStack.popTySlot(u32) + DATA_STACK.popTySlot(u32)
+    env.dataStack.pushTySlot(u32, sum)
 addU32 = NativeFn("addU32", [U32, U32], [U32], addU32Call)
 
 
-class Literal(Fn):
+class Literal(NativeFn):
     def __init__(self, value: DataTy):
         super().__init__(ty.name() + 'Literal', [], [value.__class__])
         self.value = value
 
-    def call(self):
-        DATA_STACK.push(value)
+    def call(self, env: Environment):
+        env.dataStack.push(value)
+
+
+def testBasicEnvironment():
+    pass
 
 
 def nativeFn(inputs: List[Ty], outputs: List[Ty]):
@@ -358,12 +361,10 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty]):
         nativeFn = NativeFn(pythonDef.__name__, inputs, outputs, pythonDef)
 
         # Handle registration
-        TYS[name] = nativeFn
+        ENV.tys[name] = nativeFn
     return wrapper
 
 
-def testBasicEnvironment():
-    pass
 
 # Parser
 
