@@ -2,6 +2,7 @@ import abc
 import sys
 import struct
 import ctypes
+import copy
 
 from typing import Any
 from typing import ByteString
@@ -41,8 +42,9 @@ class Ty(object):
     def __init__(self):
         super().__init__()
 
-    def name(self):
-        return self.__class__.__name__
+    @classmethod
+    def name(cls):
+        return cls.__name__
 
 
 class DataTy(ctypes.Structure, Ty):
@@ -76,7 +78,11 @@ class Fn(Ty):
 
     def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
         super().__init__()
-        self.name, self.inputs, self.outputs = name, inputs, outputs
+        self._name, self.inputs, self.outputs = name, inputs, outputs
+
+    def name(self):
+        return self._name
+
 
 
 # We will define more types soon. But first let's define how our data is
@@ -293,6 +299,9 @@ class NativeFn(Fn):
     def call(self, env: Environment):
         self._call(env)
 
+    def __repr__(self):
+        return "{}{}->{}".format(self.name(), self.inputs, self.outputs)
+
 
 class UserFn(Fn):
     """A user-created function defined in fngi source code.
@@ -317,6 +326,7 @@ def callLoop(env: Environment):
     """Yup, this is the entire call loop."""
     while env.running:
         fn = env.callSpace[env.fnIndex]
+        print(fn)
         if isinstance(fn, NativeFn):
             # If native, run the function
             env.fnIndex += 1
@@ -331,28 +341,33 @@ def callLoop(env: Environment):
 RUNNING = False # must stay true for callLoop to keep running.
 
 
+def quitCall(env):
+    """Stop running the interpreter."""
+    env.running = False
+quit = NativeFn("quit", [], [], quitCall)
 
-def retCall(env):
-    FN_INDEX = env.retStack[env.bsp - 4]
-ret = NativeFn("ret", [], [], retCall)
 
 def addU32Call(env):
-    sum = env.dataStack.popTySlot(u32) + DATA_STACK.popTySlot(u32)
-    env.dataStack.pushTySlot(u32, sum)
+    result = U32(env.dataStack.pop(U32).v + env.dataStack.pop(U32).v)
+    env.dataStack.push(result)
 addU32 = NativeFn("addU32", [U32, U32], [U32], addU32Call)
 
 
-class Literal(NativeFn):
-    def __init__(self, value: DataTy):
-        super().__init__(ty.name() + 'Literal', [], [value.__class__])
-        self.value = value
-
-    def call(self, env: Environment):
+def literal(value: DataTy):
+    ty = type(value)
+    def literalCall(env: Environment):
         env.dataStack.push(value)
+    return NativeFn(ty.name() + 'Literal', [], [ty], literalCall)
 
 
-def testBasicEnvironment():
-    pass
+def testCall_addLiterals():
+    """Write an ultra-basic "function" that just adds two literals and quits."""
+    env = copy.deepcopy(ENV)
+    env.callSpace = [literal(U32(22)), literal(U32(20)), addU32, quit]
+    env.fnIndex = 0
+    env.running = True
+    callLoop(env)
+    assert 42 == env.dataStack.pop(U32).v
 
 
 def nativeFn(inputs: List[Ty], outputs: List[Ty]):
@@ -364,6 +379,10 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty]):
         ENV.tys[name] = nativeFn
     return wrapper
 
+
+def retCall(env):
+    FN_INDEX = env.retStack[env.bsp - 4]
+ret = NativeFn("ret", [], [], retCall)
 
 
 # Parser
