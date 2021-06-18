@@ -109,7 +109,6 @@ class Fn(Ty):
     New function types are created by instantiating a subclass of Fn.
     """
 
-    They are composed o
     def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
         super().__init__()
         self.name, self.inputs, self.outputs = name, inputs, outputs
@@ -128,7 +127,7 @@ class NativeFn(Fn):
 
     Aka a function implemented in python which modifies the DATA_STACK.
     """
-    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty], call: Callable[[], []]):
+    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty], call: Callable[[], None]):
         super().__init__(name, inputs, outputs)
         self._call = call
 
@@ -164,6 +163,22 @@ class UserFn(Fn):
 # The other data regions (RET_STACK, HEAP, TYPE_STACK, etc) are all slices of the
 # global MEMORY region.
 
+
+class Heap(object):
+    def __init__(self, memory):
+        self.memory = memory
+        self.heap = 0
+
+    def grow(self, size):
+        """Grow the heap, return the beginning of the grown region."""
+        out = self.heap
+        self.heap += size
+        return self.heap
+
+    def shrink(self, size):
+        self.heap -= size
+
+
 class Stack(object):
     """The core stack type for storing data of various kinds.
 
@@ -171,19 +186,23 @@ class Stack(object):
     bytearray, with fngi structures being C-like. The stacks are also used for
     interfacing between python and fngi programs.
     """
-    def __init__(self, initialSize):
-        self.data = bytearray(initialSize)
-        self.sp = len(self.data)
+    def __init__(self, memory, start, size):
+        self.memory = memory
+        self.start = start
+        self.end = self.start + size
+        self.total_size = size
+        self.sp = self.end
 
     def checkRange(self, index, size):
-        if index < 0 or index + size > len(self.data):
-            raise IndexError("index={} size={} stack_size={}".format(index, size, len(self.data)))
+        if index < 0 or index + size > self.total_size:
+            raise IndexError("index={} size={} stack_size={}".format(
+                index, size, self.total_size))
 
     # Set / Push
     def set(self, index: int, value: ByteString):
         size = value.size()
         self.checkRange(self, index, size)
-        self.data[index:index + size] = value
+        self.memory[start + index:start + index + size] = value
 
     def push(self, value: ByteString, align=True):
         size = value.size()
@@ -193,13 +212,13 @@ class Stack(object):
         self.sp -= size
         # Note: DON'T use self.sp+size for the second slice value, as it may
         # shorten the bytearray.
-        self.data[self.sp:self.sp + value.size()] = value
+        self.memory[self.sp:self.sp + value.size()] = value
 
     # Get / Pop
 
     def get(self, index, size) -> bytes:
         self.checkRange(index, size)
-        return self.data[index:index+size]
+        return self.memory[self.start + index:self.start + index + size]
 
     def popSize(self, size) -> bytes:
         self.checkRange(self.sp, size)
@@ -214,13 +233,10 @@ class Stack(object):
         return ty.from_buffer(self.popSize(size))
 
     def __len__(self):
-        return len(self.data) - self.sp
-
-    def __sizeof__(self):
-        return len(self)
+        return self.end - self.sp
 
     def __repr__(self):
-        return "STACK<{}/{}>".format(len(self), len(self.data))
+        return "STACK<{}/{}>".format(len(self), self.total_size)
 
 
 ##############################################################################
@@ -248,20 +264,23 @@ RUNNING = False # must stay true for callLoop to keep running.
 MiB = 2**20 # 1 Mebibyte
 
 MEMORY = bytearray(50 * MiB) # 50 MiB Global Memory
+HEAP = Heap(MEMORY)
 STACK_SIZE = 10 * MiB # 10 MiB
 
 # Runtime
-DATA_STACK = Stack(32)
+DATA_STACK_SIZE = 4 * 32 # enough for 32 4byte values.
+DATA_STACK = Stack(bytearray(DATA_STACK_SIZE), 0, DATA_STACK_SIZE)
+RET_STACK = Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE)
 BSP = 0
-RET_STACK = Stack(STACK_SIZE)
 
 # Compiletime
 FN_INDEX_LOOKUP: Dict[int, Fn] = {}
 CALL_SPACE: List[Fn]
 FN_INDEX = 0
 
-TYPE_STACK = Stack(STACK_SIZE)
-DEFER_STACK = Stack(STACK_SIZE)
+# type/defer stack 
+TYPE_STACK = Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE)
+DEFER_STACK = Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE)
 LOCALS: DataTy = None
 
 def callLoop():
@@ -278,16 +297,14 @@ def callLoop():
             # and "run" the function by changing the FN_INDEX to be it
             FN_INDEX = fn.fnIndex()
 
-# Let's 
-
 def retCall():
     FN_INDEX = RET_STACK[BSP - 4]
-ret = NativeFn("ret", [], [], ret_call)
+ret = NativeFn("ret", [], [], retCall)
 
 def addU32Call():
     sum = DATA_STACK.popTySlot(u32) + DATA_STACK.popTySlot(u32)
     DATA_STACK.pushTySlot(u32, sum)
-addU32 = NativeFn("addU32", [U32, U32], [U32])
+addU32 = NativeFn("addU32", [U32, U32], [U32], addU32Call)
 
 
 class Constant(Fn):
