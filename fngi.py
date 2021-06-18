@@ -10,17 +10,33 @@ from typing import List
 from typing import Tuple
 from typing import Dict
 
+# Most of our code is going to have some basic tests inline.  Tests can be run
+# by installing pytest and running it.
+
 def needAlign(size: int) -> int:
+    """Return padding bytes needed to align a value of size."""
     if size % 4 == 0:
         return 0
-
     return 4 - (size % 4)
+
+def testNeedAlign():
+    assert 0 == needAlign(0)
+    assert 3 == needAlign(1)
+    assert 2 == needAlign(2)
+    assert 1 == needAlign(3)
+    assert 0 == needAlign(4)
+
+# Types in the compiler are represented by a class. We sometimes use
+# uninstantiated classes to represent types, mostly because for
+# structs that is the only way python permits using ctypes.Structure subclasses.
+# For other types we typically use instantiated classes.
+#
+# Types are registered with the global TYS dictionary for lookup during
+# compilation.  For the stage0 fngi compiler we are building here, there are no
+# namespaces or modules so we don't have to worry about that complexity.
 
 class Ty(object):
     """The base type that all fngi types derive from.
-
-    Notice that when instantiated, all types will automatically register with
-    the global TYS dictionary.
     """
     def __init__(self):
         super().__init__()
@@ -37,6 +53,9 @@ class DataTy(ctypes.Structure, Ty):
     Reading/Writing a DataType (dt) to a bytearray (ba):
     - reading => dt = MyDataType.from_buffer(ba)
     - writing => ba[start:start+dt.size()] = dt
+
+    Python's ctypes.Structure class allows us to get C-compliant structures
+    "out of the box" with minimal effort.
     """
     @classmethod
     def size(cls):
@@ -75,67 +94,75 @@ U32 = createCoreTy("U32", ctypes.c_uint32)
 I64 = createCoreTy("I64", ctypes.c_int64)
 U64 = createCoreTy("U64", ctypes.c_uint64)
 Ptr = createCoreTy("Ptr", ctype_ptr) # an address in memory, no type
-Ref = createCoreTy("Ref", ctype_ptr) # an address in memory to a type
 
+class Ref(DataTy):
+    """The Ref type has a "generic" refTy it is associated with."""
+    _fields_ = [('v', ctype_ptr)]
 
-class FnTy(Ty):
+    def __init__(self, v: int, refTy: Ty):
+        self.refTy = refTy
+        # Note: reftypes are not registered ty TYS
+
+class Fn(Ty):
+    """The base Fn type.
+
+    New function types are created by instantiating a subclass of Fn.
+    """
+
+    They are composed o
     def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
         super().__init__()
         self.name, self.inputs, self.outputs = name, inputs, outputs
 
-
-class RefTy(DataTy):
-    def __init__(self, ref: Ty):
-        self.ref = ref
-
-
-class Fn(abc.ABC):
-    """A function has a type and starts execution at an index.
-
-    The runtime will appropriately execute the body within the function by
-    incrementing the index, except for control structures which will have
-    other behavior.
-
-    Notice that all created Fns will automatically register with the global FNS
-    registry.
-    """
-    def __init__(self, name: str, ty: FnTy):
-        self.name, self.ty = name, ty
-        FNS[name] = self
-
     @abc.abstractmethod
-    def exec(self):
-        raise TypeError("Called exec on a non-native fn")
+    def call(self):
+        raise TypeError("Called call on a non-native fn")
 
     @abc.abstractmethod
     def fnIndex(self):
         raise TypeError("Called fnIndex on a non-user fn")
-
-FNS: Dict[str, Fn] = {} # Global Registry
 
 
 class NativeFn(Fn):
-    """A native function. Must implement the call method."""
+    """A native function.
+
+    Aka a function implemented in python which modifies the DATA_STACK.
+    """
+    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty], call: Callable[[], []]):
+        super().__init__(name, inputs, outputs)
+        self._call = call
 
     def fnIndex(self):
         raise TypeError("Called fnIndex on a non-user fn")
 
+    def call(self):
+        self._call()
+
 
 class UserFn(Fn):
-    def __init__(self, name: str, ty: FnTy, fnIndex: int):
-        super().__init__(name, ty)
+    """A user-created function defined in fngi source code.
+
+    Functions are compiled to the CALL_SPACE and therefore have an index.
+    """
+    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty], fnIndex: int):
+        super().__init__(name, inputs, outputs)
         self._fnIndex = fnIndex
+
+        # Handle registration
+        TYS[name] = self
         FN_INDEX_LOOKUP[fnIndex] = self
 
     def fnIndex(self):
         return self._fnIndex
 
-
-def bytesReplace(b: bytearray, value: int, start: int, end: int):
-    """Replace bytes in range with value"""
-    for i in range(start, end):
-        b[i] = value
-
+# Most data in fngi is passed on either the DATA_STACK, RET_STACK or HEAP. LOCALS
+# are kept inside of the RET_STACK.
+#
+# The DATA_STACK is NOT within global memory, and therefore cannot have a
+# pointer into it. This is because on some platforms it is stored in registers.
+#
+# The other data regions (RET_STACK, HEAP, TYPE_STACK, etc) are all slices of the
+# global MEMORY region.
 
 class Stack(object):
     """The core stack type for storing data of various kinds.
@@ -207,7 +234,7 @@ class Stack(object):
 #
 # For the execution model, there are two types of Fn (function), NativeFn which
 # are implemented in python and UserFn which are simply a range of indexes
-# inside of the EXECS global variable; which are run by execLoop.
+# inside of the CALL_SPACE global variable; which are run by callLoop.
 #
 # Although functions have types (i.e. inputs/outputs), the types are only
 # checked at compile time. At execution time, functions pop values off of the
@@ -216,27 +243,31 @@ class Stack(object):
 # variables.
 
 # Global Environment
-RUNNING = False # must stay true for execLoop to keep running.
+RUNNING = False # must stay true for callLoop to keep running.
 
-STACK_SIZE = 10 * 2**20 # 10 MiB
+MiB = 2**20 # 1 Mebibyte
+
+MEMORY = bytearray(50 * MiB) # 50 MiB Global Memory
+STACK_SIZE = 10 * MiB # 10 MiB
+
 # Runtime
-DATA_STACK = Stack(32) # data stack is intentionally limited
+DATA_STACK = Stack(32)
 BSP = 0
 RET_STACK = Stack(STACK_SIZE)
 
 # Compiletime
 FN_INDEX_LOOKUP: Dict[int, Fn] = {}
-EXECS: List[Fn]
+CALL_SPACE: List[Fn]
 FN_INDEX = 0
 
 TYPE_STACK = Stack(STACK_SIZE)
 DEFER_STACK = Stack(STACK_SIZE)
 LOCALS: DataTy = None
 
-def execLoop():
-    """Yup, this is the entire exec loop."""
+def callLoop():
+    """Yup, this is the entire call loop."""
     while RUNNING:
-        fn = EXECS[FN_INDEX]
+        fn = CALL_SPACE[FN_INDEX]
         if isinstance(fn, NativeFn):
             # If native, run the function
             FN_INDEX += 1
@@ -247,55 +278,35 @@ def execLoop():
             # and "run" the function by changing the FN_INDEX to be it
             FN_INDEX = fn.fnIndex()
 
-# Native Functions
-#
-# Now we can define native functions by instantiating a FnTy and
-# subclassing from NativeFn. Since a large majority of NativeFn's can
-# be defined as a single python function with some inputs/outputs we're going
-# to make a python decorator to reduce boilerplate.
+# Let's 
 
-def nativeFn(
-    inputs: List[Ty],
-    outputs: List[Ty]
-    ):
-
-    def wrapper(pythonDef):
-        name = pythonDef.__name__
-        fnTy = FnTy(name, inputs, outputs)
-        # Create a subclass of NativeFn the hard way
-        nativeFn = type(name, tuple([NativeFn]), {"call": pythonDef})
-
-        # register the ty and fn
-        TYS[name] = fnTy
-        FNS[name] = nativeFn
-
-    return wrapper
-
-@nativeFn([], [])
-def Ret():
+def retCall():
     FN_INDEX = RET_STACK[BSP - 4]
+ret = NativeFn("ret", [], [], ret_call)
 
-
-@nativeFn([U32, U32], [U32])
-def AddU32():
+def addU32Call():
     sum = DATA_STACK.popTySlot(u32) + DATA_STACK.popTySlot(u32)
     DATA_STACK.pushTySlot(u32, sum)
+addU32 = NativeFn("addU32", [U32, U32], [U32])
 
 
-def registerConstant(ty):
-    constantFnTy = FnTy(ty.name() + "ConstantTy", [], [ty])
-
-    def fnInit(self, value: Any):
-        NativeFn.__init__(self, self.name(), constantFnTy)
+class Constant(Fn):
+    def __init__(self, value: DataTy):
+        super().__init__(ty.name() + 'Constant', [], [value.__class__])
         self.value = value
 
-    def fnExec(self):
-        DATA_STACK.pushTySlot(self.ty.outputs[0], self.value)
+    def call(self):
+        DATA_STACK.push(value)
 
-    constantFn = type(
-        ty.name() + 'Constant',
-        tuple([NativeFn]),
-        {"__init__": fnInit, "exec": fnExec})
+
+def nativeFn(inputs: List[Ty], outputs: List[Ty]):
+    """Decorator to define a native function to reduce boilerplate."""
+    def wrapper(pythonDef):
+        nativeFn = NativeFn(pythonDef.__name__, inputs, outputs, pythonDef)
+
+        # Handle registration
+        TYS[name] = nativeFn
+    return wrapper
 
 # Parser
 
