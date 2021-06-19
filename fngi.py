@@ -148,6 +148,15 @@ class Fn(Ty):
 # The other data regions (returnStack, heap, typeStack, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
+def determineDataTy(ty: Ty) -> DataTy:
+    if issubclass(ty, DataTy):
+        return ty
+    elif issubclass(ty, Ref):
+        return Ptr
+    else:
+        raise TypeError("Not representable in memory: {}".format(ty))
+
+
 class Heap(object):
     """The heap can only grow and shrink. Alloc/free is implemented in fngi."""
     def __init__(self, memory):
@@ -166,6 +175,7 @@ class Heap(object):
         self.heap -= size
 
     def get(self, index: int, ty: DataTy):
+        ty = determineDataTy(ty)
         self.checkRange(index + ty.size())
         return ty.from_buffer(self.memory, index)
 
@@ -216,6 +226,7 @@ class Stack(object):
 
     def get(self, index, ty: DataTy) -> bytes:
         """Get a value at an offset from the sp."""
+        ty = determineDataTy(ty)
         self.checkRange(self.sp + index, ty.size())
         return self.heap.get(self.sp + index, ty)
 
@@ -450,22 +461,45 @@ def callLoop(env: Env):
 # decorators and other python tricks extensively to avoid boilerplate, so it's
 # worth learning them if you don't already know them.
 
+def popData(env: Env, ty: Ty) -> int:
+    if issubclass(ty, Ref):
+        return env.dataStack.pop(Ptr)
+    else:
+        return env.dataStack.pop(ty)
+
 def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
     """Takes some types and a python defined function and converts to an
     instantiated NativeFn.
     """
+    outputsPushOrder = outputs[::-1] # reverse
+
     def wrapper(pyDef):
         nonlocal name
         if name is None:
             name = pyDef.__name__
 
-        nativeFn = NativeFn(name, inputs, outputs, pyDef)
+
+        def callDef(env):
+            # pop stack items from left to right
+            args = [env.dataStack.pop(ty).v for ty in inputs]
+            # call the function with them in that order
+            outStack = pyDef(env, *args)[::-1]
+            # reverse the output stack because that is the correct order for
+            # pushing to the stack
+            outStack.reverse()
+            assert len(outStack) == len(outputs)
+            # push outputs to the data stack
+            for out, ty in zip(outStack, outputsPushOrder):
+                env.dataStack.push(ty(out))
+
+        nativeFnInstance = NativeFn(name, inputs, outputs, callDef)
 
         # Handle registration
-        ENV.tys[name] = nativeFn
+        ENV.tys[name] = nativeFnInstance
         if createRef:
-            createNativeRef(nativeFn)
-        return nativeFn
+            createNativeRef(nativeFnInstance)
+
+        return nativeFnInstance
     return wrapper
 
 
@@ -473,12 +507,12 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
 def quit(env):
     """Stop running the interpreter."""
     env.running = False
+    return []
 
 
 @nativeFn([U32, U32], [U32])
-def addU32(env):
-    result = U32(env.dataStack.pop(U32).v + env.dataStack.pop(U32).v)
-    env.dataStack.push(result)
+def addU32(env, a: int, b:int):
+    return [a + b]
 
 
 def literal(value: DataTy):
