@@ -56,6 +56,12 @@ class Ty(object):
     def name(cls):
         return cls.__name__
 
+class Ref(Ty):
+    """A typed pointer."""
+
+    def __init__(self, ty: Ty):
+        self.ty = ty
+
 
 class DataTy(ctypes.Structure, Ty):
     """A type for data represented in memory.
@@ -120,14 +126,14 @@ class Fn(Ty):
 # We will define more types soon. But first let's define how our data is
 # stored.
 #
-# Most data in fngi is passed on either the dataStack, retStack or heap within
-# the ENV instance. Locals are kept inside of the retStack.
+# Most data in fngi is passed on either the dataStack, returnStack or heap within
+# the ENV instance. Locals are kept inside of the returnStack.
 #
 # The dataStack is NOT within global memory, and therefore cannot have a
 # pointer into it. This is because on some platforms it is stored in registers
 # instead of memory.
 #
-# The other data regions (retStack, heap, typeStack, etc) are all slices of the
+# The other data regions (returnStack, heap, typeStack, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
 class Heap(object):
@@ -138,12 +144,29 @@ class Heap(object):
 
     def grow(self, size):
         """Grow the heap, return the beginning of the grown region."""
+        self.checkRange(self.heap + size)
         out = self.heap
         self.heap += size
         return self.heap
 
     def shrink(self, size):
+        self.checkRange(self.heap - size)
         self.heap -= size
+
+    def get(self, index: int, ty: DataTy):
+        self.checkRange(index + ty.size())
+        return ty.from_buffer(self.memory, index)
+
+    def set(self, index, value: DataTy):
+        size = value.size()
+        self.checkRange(index, size)
+        self.memory[index:index + size] = value
+
+    def checkRange(self, index: int, size: int = 0):
+        if index < 0 or (index + size) > len(self.memory):
+            raise IndexError("index={} memorySize={}".format(
+                index, len(self.memory)))
+
 
 
 class Stack(object):
@@ -153,8 +176,8 @@ class Stack(object):
     bytearray, with fngi structures being C-like. The stacks are also used for
     interfacing between python and fngi programs.
     """
-    def __init__(self, memory, start, size):
-        self.memory = memory
+    def __init__(self, heap: Heap, start: int, size: int):
+        self.heap = heap
         self.start = start
         self.end = self.start + size
         self.total_size = size
@@ -167,43 +190,65 @@ class Stack(object):
 
     # Set / Push
     def set(self, index: int, value: ByteString):
-        size = value.size()
-        self.checkRange(self, index, size)
-        self.memory[start + index:start + index + size] = value
+        """Set a value at an offset from the sp."""
+        self.checkRange(self.sp + index, value.size())
+        self.heap.set(self.sp + index, value)
 
-    def push(self, value: ByteString, align=True):
-        size = value.size()
-        if align: 
-            size += needAlign(size)
+    def push(self, value: DataTy, align=True):
+        size = value.size() + (needAlign(value.size()) if align else 0)
         self.checkRange(self.sp - size, size)
         self.sp -= size
-        # Note: DON'T use self.sp+size for the second slice value, as it may
-        # shorten the bytearray.
-        self.memory[self.sp:self.sp + value.size()] = value
+        self.heap.set(self.sp, value)
 
     # Get / Pop
 
-    def get(self, index, size) -> bytes:
-        self.checkRange(index, size)
-        return self.memory[self.start + index:self.start + index + size]
+    def get(self, index, ty: DataTy) -> bytes:
+        """Get a value at an offset from the sp."""
+        self.checkRange(self.sp + index, ty.size())
+        return self.heap.get(self.sp + index, ty)
 
-    def popSize(self, size) -> bytes:
-        self.checkRange(self.sp, size)
-        out = self.get(self.sp, size)
-        self.sp += size
+    def pop(self, ty: DataTy, align=True) -> DataTy:
+        self.checkRange(self.sp, ty.size())
+        out = self.heap.get(self.sp, ty)
+        self.sp += ty.size() + (needAlign(ty.size()) if align else 0)
         return out
-
-    def pop(self, ty: DataTy, align=False) -> DataTy:
-        size = ty.size()
-        if align:
-            size += needAlign(size)
-        return ty.from_buffer(self.popSize(size))
 
     def __len__(self):
         return self.end - self.sp
 
     def __repr__(self):
         return "STACK<{}/{}>".format(len(self), self.total_size)
+
+
+class TestStack(object):
+    def newStack(self):
+        return Stack(Heap(bytearray(16)), 0, 16)
+
+    def testPushPopI16(self):
+        s = self.newStack()
+        s.push(I16(0x7008), align=False)
+        assert len(s) == 2
+        assert s.pop(I16, align=False).v == 0x7008
+
+    def testPushPopI16Align(self):
+        s = self.newStack()
+        s.push(I16(0x7008), align=True)
+        assert len(s) == 4
+        assert s.pop(I16, align=True).v == 0x7008
+
+    def testPushPopI32(self):
+        s = self.newStack()
+        s.push(I32(0x4200FF))
+        assert s.pop(I32).v == 0x4200FF
+
+    def testGetSetI16(self):
+        s = self.newStack()
+        s.push(I16(0x7008), align=True)
+        s.push(I16(0x3322), align=True)
+        assert s.get(4, I16).v == 0x7008
+        s.set(4, I16(0x1133))
+        assert s.get(4, I16).v == 0x1133
+        assert s.get(0, I16).v == 0x3322
 
 # We now come to the "global" environment. This contains all the data which
 # functions (native or user, we'll get to that) and the compiler itself mutate
@@ -223,51 +268,53 @@ class Env(object):
             self,
             heap: Heap,
             dataStack: Stack,
-            retStack: Stack,
+            returnStack: Stack,
             typeStack: Stack,
             deferStack: Stack,
             callSpace: List[Fn],
             fnLocals: DataTy,
             fnIndexLookup: Dict[int, Fn],
             tys: Dict[str, Ty],
+            refs: Dict[Ty, Ref],
             ):
         self.heap = heap
-        self.dataStack, self.retStack = dataStack, retStack
+        self.dataStack, self.returnStack = dataStack, returnStack
         self.typeStack, self.deferStack = typeStack, deferStack
         self.callSpace = callSpace
         self.fnLocals = fnLocals
         self.fnIndexLookup = fnIndexLookup
 
         self.tys = tys
+        self.refs = refs
 
         self.running = False
-        self.fnIndex = 0
-        self.bsp = 0
+        self.ep = 0 # execution pointer
 
     def copyForTest(self):
-        """Copy the env for the test. Sets fnIndex=0 and running=True."""
+        """Copy the env for the test. Sets ep=0 and running=True."""
         out = copy.deepcopy(self)
-        out.fnIndex = 0
+        out.ep = 0
         out.running = True
         return out
 
 
 MiB = 2**20 # 1 Mebibyte
-DATA_STACK_SIZE = 4 * 32 # Data Stack stores up to 32 usize elements
+DATA_STACK_SIZE = 4 * 4 # Data Stack stores up to 4 usize elements
 STACK_SIZE = MiB // 2 # 1/2 MiB stacks
 MEMORY = bytearray(5 * MiB) # 5 MiB Global Memory
 HEAP = Heap(MEMORY)
 
 ENV = Env(
     heap=HEAP,
-    dataStack=Stack(bytearray(DATA_STACK_SIZE), 0, DATA_STACK_SIZE),
-    retStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    typeStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    deferStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    dataStack=Stack(Heap(bytearray(DATA_STACK_SIZE)), 0, DATA_STACK_SIZE),
+    returnStack=Stack(HEAP, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    typeStack=Stack(HEAP, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    deferStack=Stack(HEAP, HEAP.grow(STACK_SIZE), STACK_SIZE),
     callSpace=[],
     fnLocals=None,
     fnIndexLookup={},
     tys={},
+    refs={},
 )
 
 
@@ -295,13 +342,20 @@ I64 = createNativeTy("I64", ctypes.c_int64)
 U64 = createNativeTy("U64", ctypes.c_uint64)
 Ptr = createNativeTy("Ptr", ctype_ptr) # an address in memory, no type
 
-class Ref(DataTy):
-    """The Ref type has a "generic" refTy it is associated with."""
-    _fields_ = [('v', ctype_ptr)]
+def createNativeRef(ty: Ty) -> Ref:
+    refTy = Ref(ty)
+    ENV.refs[ty] = refTy
+    return refTy
 
-    def __init__(self, v: int, refTy: Ty):
-        self.refTy = refTy
-        # Note: reftypes are not registered ty ENV.tys
+
+RefI8 = createNativeRef(I8)
+RefU8 = createNativeRef(U8)
+RefI16 = createNativeRef(I16)
+RefU16 = createNativeRef(U16)
+RefI32 = createNativeRef(I32)
+RefU32 = createNativeRef(U32)
+RefI64 = createNativeRef(I64)
+RefU64 = createNativeRef(U64)
 
 
 ##############################################################################
@@ -367,17 +421,17 @@ class UserFn(Fn):
 def callLoop(env: Env):
     """Yup, this is the entire call loop."""
     while env.running:
-        fn = env.callSpace[env.fnIndex]
+        fn = env.callSpace[env.ep]
         print(fn)
         if isinstance(fn, NativeFn):
             # If native, run the function
-            env.fnIndex += 1
+            env.ep += 1
             fn.call(env)
         else:
             # If not native, store the next index on the call stack
-            callStack.pushValue(u32, env.fnIndex + 1)
+            callStack.pushValue(u32, env.ep + 1)
             # and "run" the function by changing the FN_INDEX to be it
-            env.fnIndex = fn.fnIndex()
+            env.ep = fn.fnIndex()
 
 
 def quitCall(env):
@@ -385,6 +439,7 @@ def quitCall(env):
     env.running = False
 quit = NativeFn("quit", [], [], quitCall)
 ENV.tys["quit"] = quit
+createNativeRef(quit)
 
 
 def addU32Call(env):
@@ -392,6 +447,7 @@ def addU32Call(env):
     env.dataStack.push(result)
 addU32 = NativeFn("addU32", [U32, U32], [U32], addU32Call)
 ENV.tys["addU32"] = addU32
+createNativeRef(addU32)
 
 
 def literal(value: DataTy):
@@ -412,23 +468,14 @@ def testAddLiterals():
     env = ENV.copyForTest()
     env.callSpace = [literal(U32(22)), literal(U32(20)), addU32, quit]
     callLoop(env)
-    assert 42 == env.dataStack.pop(U32).v
+    result = env.dataStack.pop(U32).v
+    assert 42 == result
 
-# Now that we have a basic execution engine, let's flush out some of the language.
-#
-# We will use decorators and other python tricks extensively to avoid boilerplate,
-# so it's worth learning them if you don't already know them.
-#
-# The first thing we have to define is how we will be calling functions. fngi
-# has local variables which are stored on the return stack, so we will use
-# c-style calling conventions, mutating the sp (stack pointer) and bsp (base
-# stack pointer) as we call and return from functions. We will also be
-# passing values to functions on the returnStack.
-# TODO: fix
-#
+# We want a way to define native fn's in as few lines as possible. We will use
+# decorators and other python tricks extensively to avoid boilerplate, so it's
+# worth learning them if you don't already know them.
 
-
-def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None):
+def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
     """Takes some types and a python defined function and converts to an
     instantiated NativeFn.
     """
@@ -441,15 +488,54 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None):
 
         # Handle registration
         ENV.tys[name] = nativeFn
+        if createRef:
+            createNativeRef(nativeFn)
         return nativeFn
     return wrapper
 
-@nativeFn([], [], "return")
+# Now that we have a basic execution engine, let's flush out some of the language.
+#
+# Fngi has two ways to do input/output when calling a function:
+# - passing values on the env.dataStack
+# - passing values within the function's "local variable" space on the env.returnStack
+#
+# Here is how a function is called (in both assembly and emulated here):
+# - When a function returns a structure, it will actually take a pointer to the
+#   return struct in it's input and then mutate the caller's local variable.
+#   Therefore, space for the function's (non-datastack) return values are
+#   already allocated in the caller's locals (by the function that had called
+#   it).
+# - The caller decrements the stack (the stack grows down) by the total size
+#   of:
+#   - a pointer to the return struct (if it returns non-datastack values)
+#   - (non-datastack) inputs
+#   - function locals
+#   - finally, the address to continue executing (ep) when the function returns
+#     which will be at the "top" of the stack (lowest in memory)
+#
+# What does all of this look like? Let's look at the memory layout of a function
+# after it has been called TODO add source
+#
+#           104 ...             # ^^^ the callee's stack
+#           100 &retValue       # pointer to the return struct
+#           96  arg0: u32       # first argument
+#           92  arg1: u32       # second argument
+#           88  local0: u32     # local variable
+#     sp -> 84  returnAddr      # calee's continued execution pointer
+#
+# Now, let's look at the psuedo-assembly for calling such a function:
+#
+#           sub 16, sp      # allocate function's stack (stack grows down)
+#           call myFunction # call the function, pushing next address on stack
+#           add 16, sp      # drop function's stack (stack shrinks up)
+#
+# All of this is to say that our definition for "return" is simply to
+# pop the last value into the ep. The compiler will insert the other
+# operations around the return call.
+
+@nativeFn([], [], "return", createRef=False)
 def ret(env):
-    pass
-    # TODO: need to deal with bsp and sp handling, need to handle locals
-    # correctly
-    # env.fnIndex = env.retStack[env.bsp - 4]
+    env.ep = env.returnStack.pop(Ptr)
 
 
 # We will be writing core pieces of the language. Fns we already have:
@@ -457,9 +543,13 @@ def ret(env):
 # - put literal values on the stack.
 #
 # Fns we will be defining here:
-# - get/set all core types at a pointer
+# - fetch/update all core types at a pointer
 # - branch to a different part of a fn
 # - add, subtract and multiply all the core types
+
+@nativeFn([RefU32], [U32])
+def fetchU32(env):
+    env.dataStack.pop(Ptr)
 
 # Parser
 
