@@ -17,3 +17,15 @@ f = Foo(1, 0x42, 0xF00F, 0x12345678)
 
 # get bytearray: bytearray(f)
 # update bytearray: b = bytearray(32); b[10:10+sizeof(f)] = f
+
+class StackData(Structure):
+    def __new__(cls, tys):
+        print("tys:", tys)
+        cls._fields_ = [("f" + str(i), t) for (i, t) in enumerate(tys)]
+        return cls
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        print("kwargs:", kwargs)
+
+s = StackData([c_byte, c_byte, c_short, c_long])

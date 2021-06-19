@@ -33,8 +33,18 @@ def testNeedAlign():
 # For other types we typically use instantiated classes.
 #
 # Types are registered with the global ENV.tys dictionary for lookup during
-# compilation.  For the stage0 fngi compiler we are building here, there are no
-# namespaces or modules so we don't have to worry about that complexity.
+# compilation. For the stage0 fngi compiler we are building here, there are no
+# namespaces or modules for us to worry about.
+#
+# There are two ways to pass data in/out of functions: as data stack values
+# or as a structure. We will get into this more later, but the difference
+# between these is that data stack values are passed direcly on the
+# Env.dataStack (what most Native functions use) whereas struct values
+# are done entirely on env.returnStack (i.e. where local variables are stored).
+#
+# The goal with this is to more closely resemble real assembly or a lower-level
+# language, whether that be RISC/CISC registers in assembly or stack-based
+# assembly like wasm or an underlying Forth language/cpu.
 
 class Ty(object):
     """The base type that all fngi types derive from.
@@ -50,8 +60,8 @@ class Ty(object):
 class DataTy(ctypes.Structure, Ty):
     """A type for data represented in memory.
 
-    Reading/Writing a DataType (dt) to a bytearray (ba):
-    - reading => dt = MyDataType.from_buffer(ba)
+    Reading/Writing a DataTy (dt) to a bytearray (ba):
+    - reading => dt = MyDataTy.from_buffer(ba)
     - writing => ba[start:start+dt.size()] = dt
 
     Python's ctypes.Structure class allows us to get C-compliant structures
@@ -70,13 +80,36 @@ class DataTy(ctypes.Structure, Ty):
         return getattr(cls, field).size
 
 
+class NativeTy(DataTy):
+    """A native type (i.e. u8, i32, ptr, etc).
+
+    These are Structures with a single c_type field named `v`
+
+    These are the only types allowed on the data stack.
+    """
+
+
+class StackData(DataTy):
+    """A list of values that are input/output on the stack.
+    """
+    def __init__(self, vals: List[NativeTy]):
+        self.vals = vals
+
+
+class UserStruct(DataTy):
+    """A user-defined data struct.
+
+    This can be a named struct or "anonymous" function input/output.
+    """
+
+
 class Fn(Ty):
     """The base Fn type.
 
     New function types are created by instantiating a subclass of Fn.
     """
 
-    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty]):
+    def __init__(self, name: str, inputs: DataTy, outputs: DataTy):
         super().__init__()
         self._name, self.inputs, self.outputs = name, inputs, outputs
 
@@ -84,12 +117,11 @@ class Fn(Ty):
         return self._name
 
 
-
 # We will define more types soon. But first let's define how our data is
 # stored.
 #
 # Most data in fngi is passed on either the dataStack, retStack or heap within
-# the ENV instance.  Locals are kept inside of the retStack.
+# the ENV instance. Locals are kept inside of the retStack.
 #
 # The dataStack is NOT within global memory, and therefore cannot have a
 # pointer into it. This is because on some platforms it is stored in registers
@@ -99,6 +131,7 @@ class Fn(Ty):
 # global memory region (ENV.heap.memory).
 
 class Heap(object):
+    """The heap can only grow and shrink. Alloc/free is implemented in fngi."""
     def __init__(self, memory):
         self.memory = memory
         self.heap = 0
@@ -178,9 +211,13 @@ class Stack(object):
 # simultaniously executing while compiling, as we will write a large amount of
 # even the stage0 compiler in the fngi language itself.
 
-class Environment(object):
-    """Contains all the state for a fngi compiler interpreter and interpreter
-    to run.
+class Env(object):
+    """Contains all the mutable state for a fngi compiler and interpreter to run.
+
+    All NativeFn's call methods take an Env instance, which they mutate. While
+    there is a global ENV variable to ease in the registration of new types and
+    native functions, tests will copy the ENV before mutating it so they do not
+    affect the global Env.
     """
     def __init__(
             self,
@@ -207,13 +244,21 @@ class Environment(object):
         self.fnIndex = 0
         self.bsp = 0
 
+    def copyForTest(self):
+        """Copy the env for the test. Sets fnIndex=0 and running=True."""
+        out = copy.deepcopy(self)
+        out.fnIndex = 0
+        out.running = True
+        return out
+
+
 MiB = 2**20 # 1 Mebibyte
 DATA_STACK_SIZE = 4 * 32 # Data Stack stores up to 32 usize elements
 STACK_SIZE = MiB // 2 # 1/2 MiB stacks
 MEMORY = bytearray(5 * MiB) # 5 MiB Global Memory
 HEAP = Heap(MEMORY)
 
-ENV = Environment(
+ENV = Env(
     heap=HEAP,
     dataStack=Stack(bytearray(DATA_STACK_SIZE), 0, DATA_STACK_SIZE),
     retStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
@@ -226,7 +271,7 @@ ENV = Environment(
 )
 
 
-def createCoreTy(name, cty):
+def createNativeTy(name, cty):
     """Creates a core data type and registers it.
 
     This is soley to reduce boilerplace. It is the same as:
@@ -234,22 +279,21 @@ def createCoreTy(name, cty):
         class {{name}}(DataTy): _fields_ =  [('v', {{cty}})]
         ENV.tys["{{name}}"] = {{name}}
     """
-    nativeTy = type(name, tuple([DataTy]), {'_fields_': [('v', cty)]})
+    nativeTy = type(name, tuple([NativeTy]), {'_fields_': [('v', cty)]})
     ENV.tys[name] = nativeTy
     return nativeTy
 
 
-# Fungi uses 32 bits for its pointers.
-ctype_ptr = ctypes.c_uint32
-I8 = createCoreTy("I8",  ctypes.c_int8)
-U8 = createCoreTy("U8",  ctypes.c_uint8)
-I16 = createCoreTy("I16", ctypes.c_int16)
-U16 = createCoreTy("U16", ctypes.c_uint16)
-I32 = createCoreTy("I32", ctypes.c_int32)
-U32 = createCoreTy("U32", ctypes.c_uint32)
-I64 = createCoreTy("I64", ctypes.c_int64)
-U64 = createCoreTy("U64", ctypes.c_uint64)
-Ptr = createCoreTy("Ptr", ctype_ptr) # an address in memory, no type
+ctype_ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
+I8 = createNativeTy("I8",  ctypes.c_int8)
+U8 = createNativeTy("U8",  ctypes.c_uint8)
+I16 = createNativeTy("I16", ctypes.c_int16)
+U16 = createNativeTy("U16", ctypes.c_uint16)
+I32 = createNativeTy("I32", ctypes.c_int32)
+U32 = createNativeTy("U32", ctypes.c_uint32)
+I64 = createNativeTy("I64", ctypes.c_int64)
+U64 = createNativeTy("U64", ctypes.c_uint64)
+Ptr = createNativeTy("Ptr", ctype_ptr) # an address in memory, no type
 
 class Ref(DataTy):
     """The Ref type has a "generic" refTy it is associated with."""
@@ -261,7 +305,7 @@ class Ref(DataTy):
 
 
 ##############################################################################
-# The fngi execution loop
+# Core function types and the fngi callLoop
 #
 # This is presented early so that it is clear how simple things are. Experienced
 # programmers may notice the similarities to the execution model of Forth, which
@@ -287,16 +331,16 @@ class NativeFn(Fn):
     def __init__(
             self,
             name: str,
-            inputs: List[Ty],
-            outputs: List[Ty],
-            call: Callable[[Environment], None]):
+            inputs: DataTy,
+            outputs: DataTy,
+            call: Callable[[Env], None]):
         super().__init__(name, inputs, outputs)
         self._call = call
 
     def fnIndex(self):
         raise TypeError("Called fnIndex on a non-user fn")
 
-    def call(self, env: Environment):
+    def call(self, env: Env):
         self._call(env)
 
     def __repr__(self):
@@ -308,7 +352,7 @@ class UserFn(Fn):
 
     Functions are compiled to the ENV.callSpace and therefore have an index.
     """
-    def __init__(self, name: str, inputs: List[Ty], outputs: List[Ty], fnIndex: int):
+    def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnIndex: int):
         super().__init__(name, inputs, outputs)
         self._fnIndex = fnIndex
 
@@ -320,9 +364,7 @@ class UserFn(Fn):
         return self._fnIndex
 
 
-
-
-def callLoop(env: Environment):
+def callLoop(env: Env):
     """Yup, this is the entire call loop."""
     while env.running:
         fn = env.callSpace[env.fnIndex]
@@ -337,53 +379,87 @@ def callLoop(env: Environment):
             # and "run" the function by changing the FN_INDEX to be it
             env.fnIndex = fn.fnIndex()
 
-# Global Environment
-RUNNING = False # must stay true for callLoop to keep running.
-
 
 def quitCall(env):
     """Stop running the interpreter."""
     env.running = False
 quit = NativeFn("quit", [], [], quitCall)
+ENV.tys["quit"] = quit
 
 
 def addU32Call(env):
     result = U32(env.dataStack.pop(U32).v + env.dataStack.pop(U32).v)
     env.dataStack.push(result)
 addU32 = NativeFn("addU32", [U32, U32], [U32], addU32Call)
+ENV.tys["addU32"] = addU32
 
 
 def literal(value: DataTy):
+    """Creates a literal.
+
+    Note this is NOT registered with ENV.tys
+    """
     ty = type(value)
-    def literalCall(env: Environment):
+    def literalCall(env: Env):
         env.dataStack.push(value)
     return NativeFn(ty.name() + 'Literal', [], [ty], literalCall)
 
 
-def testCall_addLiterals():
-    """Write an ultra-basic "function" that just adds two literals and quits."""
-    env = copy.deepcopy(ENV)
+def testAddLiterals():
+    """Write and test an ultra-basic fngi "function" that just adds two
+    literals and quits.
+    """
+    env = ENV.copyForTest()
     env.callSpace = [literal(U32(22)), literal(U32(20)), addU32, quit]
-    env.fnIndex = 0
-    env.running = True
     callLoop(env)
     assert 42 == env.dataStack.pop(U32).v
 
+# Now that we have a basic execution engine, let's flush out some of the language.
+#
+# We will use decorators and other python tricks extensively to avoid boilerplate,
+# so it's worth learning them if you don't already know them.
+#
+# The first thing we have to define is how we will be calling functions. fngi
+# has local variables which are stored on the return stack, so we will use
+# c-style calling conventions, mutating the sp (stack pointer) and bsp (base
+# stack pointer) as we call and return from functions. We will also be
+# passing values to functions on the returnStack.
+# TODO: fix
+#
 
-def nativeFn(inputs: List[Ty], outputs: List[Ty]):
-    """Decorator to define a native function to reduce boilerplate."""
-    def wrapper(pythonDef):
-        nativeFn = NativeFn(pythonDef.__name__, inputs, outputs, pythonDef)
+
+def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None):
+    """Takes some types and a python defined function and converts to an
+    instantiated NativeFn.
+    """
+    def wrapper(pyDef):
+        nonlocal name
+        if name is None:
+            name = pyDef.__name__
+
+        nativeFn = NativeFn(name, inputs, outputs, pyDef)
 
         # Handle registration
         ENV.tys[name] = nativeFn
+        return nativeFn
     return wrapper
 
+@nativeFn([], [], "return")
+def ret(env):
+    pass
+    # TODO: need to deal with bsp and sp handling, need to handle locals
+    # correctly
+    # env.fnIndex = env.retStack[env.bsp - 4]
 
-def retCall(env):
-    FN_INDEX = env.retStack[env.bsp - 4]
-ret = NativeFn("ret", [], [], retCall)
 
+# We will be writing core pieces of the language. Fns we already have:
+# - call a native or user defined function and return from it.
+# - put literal values on the stack.
+#
+# Fns we will be defining here:
+# - get/set all core types at a pointer
+# - branch to a different part of a fn
+# - add, subtract and multiply all the core types
 
 # Parser
 
