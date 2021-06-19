@@ -483,7 +483,8 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             # pop stack items from left to right
             args = [env.dataStack.pop(ty).v for ty in inputs]
             # call the function with them in that order
-            outStack = pyDef(env, *args)[::-1]
+            outStack = pyDef(env, *args)
+            outStack = [] if outStack is None else outStack
             # reverse the output stack because that is the correct order for
             # pushing to the stack
             outStack.reverse()
@@ -507,7 +508,6 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
 def quit(env):
     """Stop running the interpreter."""
     env.running = False
-    return []
 
 
 @nativeFn([U32, U32], [U32])
@@ -580,6 +580,18 @@ def testAddLiterals():
 def ret(env):
     env.ep = env.returnStack.pop(Ptr)
 
+def compare(a, b):
+    """
+    returns < 0 iff a < b
+    returs  = 0 iff a == b
+    returns > 0 iff a > b
+    """
+    if a < b:
+        return -1
+    elif a > b:
+        return 1
+    else:
+        return 0
 
 # We will be writing core pieces of the language. Fns we already have:
 # - call a native or user defined function and return from it.
@@ -597,144 +609,108 @@ def ret(env):
 # the reader's reference.
 
 @nativeFn([I32], [])
-def addRsp(env):
-    env.returnStack.sp += env.dataStack.pop(I32)
+def addRsp(env, offset):
+    env.returnStack.sp += offset
 
 @nativeFn([I32], [U8])
-def fetchRspOffsetU8(env):
-    env.dataStack.push(
-        env.returnStack.get(env.dataStack.pop(I32).v, U8))
-
-@nativeFn([I32], [I32])
-def fetchRspOffsetI32(env):
-    env.dataStack.push(
-        env.returnStack.get(env.dataStack.pop(I32).v, I32))
-
-@nativeFn([I32], [U32])
-def fetchRspOffsetU32(env):
-    env.dataStack.push(
-        env.returnStack.get(env.dataStack.pop(I32).v, U32))
+def fetchRspOffsetU8(env, offset):
+    return [env.returnStack.get(offset, U8)]
 
 @nativeFn([I32, U8], [])
 def updateRspOffsetU8(env):
     env.returnStack.set(env.dataStack.pop(I32).v, env.dataStack.pop(U8))
 
-@nativeFn([I32, I32], [])
-def updateRspOffsetI32(env):
-    env.returnStack.set(env.dataStack.pop(I32).v, env.dataStack.pop(I32))
-
-@nativeFn([I32, U32], [])
-def updateRspOffsetU32(env):
-    env.returnStack.set(env.dataStack.pop(I32).v, env.dataStack.pop(U32))
-
-# Fetch
+# U8 Native Functions
 
 @nativeFn([RefU8], [U8])
-def fetchU8(env):
-    out = env.heap.get(env.dataStack.pop(Ptr).v, U8)
-    env.dataStack.push(out)
-
-@nativeFn([RefU32], [U32])
-def fetchU32(env):
-    out = env.heap.get(env.dataStack.pop(Ptr).v, U32)
-    env.dataStack.push(out)
-
-# Update
+def fetchU8(env, ptr):
+    return [envb.heap.get(ptr, U8)]
 
 @nativeFn([RefU8, U8], [])
-def updateU8(env):
-    env.heap.set(env.dataStack.pop(Ptr).v, env.dataStack.pop(U8))
+def updateU8(env, ptr, value):
+    env.heap.set(ptr, U8(value))
 
-@nativeFn([RefU32, U32], [])
-def updateU32(env):
-    env.heap.set(env.dataStack.pop(Ptr).v, env.dataStack.pop(U32))
+@nativeFn([U8, U8], [U8])
+def addU8(env, a, b):
+    return [a + b]
 
-# Add / Sub / Mul / DivMod
+@nativeFn([U8, U8], [U8])
+def subU8(env, a, b):
+    return [a - b]
 
-@nativeFn([I32, I32], [I32])
-def addI32(env):
-    result = I32(env.dataStack.pop(I32).v + env.dataStack.pop(I32).v)
-    env.dataStack.push(result)
-
-@nativeFn([I32, I32], [I32])
-def subI32(env):
-    result = I32(env.dataStack.pop(I32).v - env.dataStack.pop(I32).v)
-    env.dataStack.push(result)
-
-@nativeFn([U32, U32], [U32])
-def subU32(env):
-    result = U32(env.dataStack.pop(U32).v - env.dataStack.pop(U32).v)
-    env.dataStack.push(result)
-
-@nativeFn([I32, I32], [I64])
-def mulI32(env):
-    result = I64(env.dataStack.pop(I32).v * env.dataStack.pop(I32).v)
-    env.dataStack.push(result)
-
-@nativeFn([U32, U32], [U64])
-def mulU32(env):
-    result = U64(env.dataStack.pop(U32).v * env.dataStack.pop(U32).v)
-    env.dataStack.push(result)
-
-@nativeFn([I32, I32], [I32, I32])
-def divmodI32(env):
-    """a b -> quotent remainder"""
-    a = env.dataStack.pop(I32).v
-    b = env.dataStack.pop(I32).v
-    env.dataStack.push(I32(a % b))
-    env.dataStack.push(I32(a // b))
-
-@nativeFn([U32, U32], [U32, U32])
-def divmodU32(env):
-    """a b -> quotent remainder"""
-    a = env.dataStack.pop(U32).v
-    b = env.dataStack.pop(U32).v
-    env.dataStack.push(U32(a % b))
-    env.dataStack.push(U32(a // b))
-
-# Compare
-def compare(a, b):
-    """
-    returns < 0 iff a < b
-    returs  = 0 iff a == b
-    returns > 0 iff a > b
-    """
-    if a < b:
-        return -1
-    elif a > b:
-        return 1
-    else:
-        return 0
+@nativeFn([U8, U8], [U32])
+def mulU8(env, a, b):
+    return [a * b]
 
 @nativeFn([U8, U8], [I32])
-def compareU8(env):
-    """a b -> compare
+def compareU8(env, a, b):
+    """a b -> compare."""
+    return [compare(a, b)]
 
-    """
-    env.dataStack.push(
-        I32(compare(env.dataStack.pop(U8).v, env.dataStack.pop(U8).v)))
+# U32 Native Functions
 
-@nativeFn([I32, I32], [I32])
-def compareI32(env):
-    """a b -> compare
+@nativeFn([RefU32], [U32])
+def fetchU32(env, ptr):
+    return [envb.heap.get(ptr, U32)]
 
-    cmp < 0 iff a is less than b
-    cmp = 0 iff a == b
-    cmp > 0 iff a > b
-    """
-    env.dataStack.push(
-        I32(compare(env.dataStack.pop(I32).v, env.dataStack.pop(I32).v)))
+@nativeFn([RefU32, U32], [])
+def updateU32(env, ptr, value):
+    env.heap.set(ptr, U32(value))
+
+@nativeFn([U32, U32], [U32])
+def addU32(env, a, b):
+    return [a + b]
+
+@nativeFn([U32, U32], [U32])
+def subU32(env, a, b):
+    return [a - b]
+
+@nativeFn([U32, U32], [U64])
+def mulU32(env, a, b):
+    return [a * b]
+
+@nativeFn([U32, U32], [U32, U32])
+def divmodU32(env, a, b):
+    """a b -> quotent remainder"""
+    return [a / b, a % b]
 
 @nativeFn([U32, U32], [I32])
-def compareU32(env):
-    """a b -> compare
+def compareU32(env, a, b):
+    """a b -> compare."""
+    return [compare(a, b)]
 
-    cmp < 0 iff a is less than b
-    cmp = 0 iff a == b
-    cmp > 0 iff a > b
-    """
-    env.dataStack.push(
-        I32(compare(env.dataStack.pop(U32).v, env.dataStack.pop(U32).v)))
+# I32 Native Functions
+
+@nativeFn([RefI32], [I32])
+def fetchI32(env, ptr):
+    return [envb.heap.get(ptr, I32)]
+
+@nativeFn([RefI32, I32], [])
+def updateI32(env, ptr, value):
+    env.heap.set(ptr, I32(value))
+
+@nativeFn([I32, I32], [I32])
+def addI32(env, a, b):
+    return [a + b]
+
+@nativeFn([I32, I32], [I32])
+def subI32(env, a, b):
+    return [a - b]
+
+@nativeFn([I32, I32], [I64])
+def mulI32(env, a, b):
+    return [a * b]
+
+@nativeFn([I32, I32], [I32, I32])
+def divmodI32(env, a, b):
+    """a b -> quotent remainder"""
+    return [a / b, a % b]
+
+@nativeFn([I32, I32], [I32])
+def compareI32(env, a, b):
+    """a b -> compare."""
+    return [compare(a, b)]
+
 
 # Parser
 
