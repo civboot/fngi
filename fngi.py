@@ -97,6 +97,18 @@ class NativeTy(DataTy):
 
 class StackData(DataTy):
     """A list of values that are input/output on the stack.
+
+    Values are listed in the same order they would be represented in memory,
+    which is to say that the first value is the lowest point in memory
+    and the last is the highest.
+
+    This means that the first value is at the "top" of the data stack (it is
+    the first to be pushed out), since stacks grow downwards.
+
+    Those who program in forth may notice that this is the reverse of how forth
+    documents the state of the stack. This is because forth's type
+    representation is extremely confusing when trying create a mental model of
+    the stack's memory representation.
     """
     def __init__(self, vals: List[NativeTy]):
         self.vals = vals
@@ -250,6 +262,7 @@ class TestStack(object):
         assert s.get(4, I16).v == 0x1133
         assert s.get(0, I16).v == 0x3322
 
+
 # We now come to the "global" environment. This contains all the data which
 # functions (native or user, we'll get to that) and the compiler itself mutate
 # while compiling and executing fngi code. As we'll see, fngi will be
@@ -341,6 +354,7 @@ U32 = createNativeTy("U32", ctypes.c_uint32)
 I64 = createNativeTy("I64", ctypes.c_int64)
 U64 = createNativeTy("U64", ctypes.c_uint64)
 Ptr = createNativeTy("Ptr", ctype_ptr) # an address in memory, no type
+Bool = createNativeTy("Bool",  ctypes.c_uint8)
 
 def createNativeRef(ty: Ty) -> Ref:
     refTy = Ref(ty)
@@ -422,54 +436,15 @@ def callLoop(env: Env):
     """Yup, this is the entire call loop."""
     while env.running:
         fn = env.callSpace[env.ep]
-        print(fn)
         if isinstance(fn, NativeFn):
             # If native, run the function
             env.ep += 1
             fn.call(env)
         else:
             # If not native, store the next index on the call stack
-            callStack.pushValue(u32, env.ep + 1)
+            env.returnStack.pushValue(u32, env.ep + 1)
             # and "run" the function by changing the FN_INDEX to be it
             env.ep = fn.fnIndex()
-
-
-def quitCall(env):
-    """Stop running the interpreter."""
-    env.running = False
-quit = NativeFn("quit", [], [], quitCall)
-ENV.tys["quit"] = quit
-createNativeRef(quit)
-
-
-def addU32Call(env):
-    result = U32(env.dataStack.pop(U32).v + env.dataStack.pop(U32).v)
-    env.dataStack.push(result)
-addU32 = NativeFn("addU32", [U32, U32], [U32], addU32Call)
-ENV.tys["addU32"] = addU32
-createNativeRef(addU32)
-
-
-def literal(value: DataTy):
-    """Creates a literal.
-
-    Note this is NOT registered with ENV.tys
-    """
-    ty = type(value)
-    def literalCall(env: Env):
-        env.dataStack.push(value)
-    return NativeFn(ty.name() + 'Literal', [], [ty], literalCall)
-
-
-def testAddLiterals():
-    """Write and test an ultra-basic fngi "function" that just adds two
-    literals and quits.
-    """
-    env = ENV.copyForTest()
-    env.callSpace = [literal(U32(22)), literal(U32(20)), addU32, quit]
-    callLoop(env)
-    result = env.dataStack.pop(U32).v
-    assert 42 == result
 
 # We want a way to define native fn's in as few lines as possible. We will use
 # decorators and other python tricks extensively to avoid boilerplate, so it's
@@ -492,6 +467,40 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             createNativeRef(nativeFn)
         return nativeFn
     return wrapper
+
+
+@nativeFn([], [])
+def quit(env):
+    """Stop running the interpreter."""
+    env.running = False
+
+
+@nativeFn([U32, U32], [U32])
+def addU32(env):
+    result = U32(env.dataStack.pop(U32).v + env.dataStack.pop(U32).v)
+    env.dataStack.push(result)
+
+
+def literal(value: DataTy):
+    """Creates a literal.
+
+    Note this is NOT registered with ENV.tys
+    """
+    ty = type(value)
+    def literalCall(env: Env):
+        env.dataStack.push(value)
+    return NativeFn(ty.name() + 'Literal', [], [ty], literalCall)
+
+
+def testAddLiterals():
+    """Write and test an ultra-basic fngi "function" that just adds two
+    literals and quits.
+    """
+    env = ENV.copyForTest()
+    env.callSpace = [literal(U32(22)), literal(U32(20)), addU32, quit]
+    callLoop(env)
+    result = env.dataStack.pop(U32).v
+    assert 42 == result
 
 # Now that we have a basic execution engine, let's flush out some of the language.
 #
@@ -533,7 +542,7 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
 # pop the last value into the ep. The compiler will insert the other
 # operations around the return call.
 
-@nativeFn([], [], "return", createRef=False)
+@nativeFn([], [], name="return", createRef=False)
 def ret(env):
     env.ep = env.returnStack.pop(Ptr)
 
@@ -543,13 +552,126 @@ def ret(env):
 # - put literal values on the stack.
 #
 # Fns we will be defining here:
-# - fetch/update all core types at a pointer
+# - add/subtract from the return sp
+# - add/subtract/multiply/divmod U32s and I32s
+# - fetch/update U8, U32, I32
+# - compare U8/U32
 # - branch to a different part of a fn
-# - add, subtract and multiply all the core types
+#
+# We can write (and test) many programs using only these types, so those will
+# be what we focus on. We will define the other types in a separate file for
+# the reader's reference.
+
+@nativeFn([I32], [])
+def addRSP(env):
+    env.returnStack.sp += env.dataStack.pop(I32)
+
+# Fetch
+
+@nativeFn([RefU8], [U8])
+def fetchU8(env):
+    out = env.heap.get(U8, env.dataStack.pop(Ptr))
+    env.dataStack.push(out)
+
+@nativeFn([RefI32], [I32])
+def fetchI32(env):
+    out = env.heap.get(I32, env.dataStack.pop(Ptr))
+    env.dataStack.push(out)
 
 @nativeFn([RefU32], [U32])
 def fetchU32(env):
-    env.dataStack.pop(Ptr)
+    out = env.heap.get(U32, env.dataStack.pop(Ptr))
+    env.dataStack.push(out)
+
+# Update
+
+@nativeFn([RefU8, U8], [])
+def updateU8(env):
+    env.heap.set(env.dataStack.pop(Ptr), env.dataStack.pop(U8))
+
+@nativeFn([RefI32, I32], [])
+def updateI32(env):
+    env.heap.set(env.dataStack.pop(Ptr), env.dataStack.pop(I32))
+
+@nativeFn([RefU32, U32], [])
+def updateU32(env):
+    env.heap.set(env.dataStack.pop(Ptr), env.dataStack.pop(U32))
+
+# Add / Sub / Mul / DivMod
+
+@nativeFn([I32, I32], [I32])
+def addI32(env):
+    result = I32(env.dataStack.pop(I32).v + env.dataStack.pop(I32).v)
+    env.dataStack.push(result)
+
+@nativeFn([I32, I32], [I32])
+def subI32(env):
+    result = I32(env.dataStack.pop(I32).v - env.dataStack.pop(I32).v)
+    env.dataStack.push(result)
+
+@nativeFn([U32, U32], [U32])
+def subU32(env):
+    result = U32(env.dataStack.pop(U32).v - env.dataStack.pop(U32).v)
+    env.dataStack.push(result)
+
+@nativeFn([I32, I32], [I64])
+def mulI32(env):
+    result = I64(env.dataStack.pop(I32).v * env.dataStack.pop(I32).v)
+    env.dataStack.push(result)
+
+@nativeFn([U32, U32], [U64])
+def mulU32(env):
+    result = U64(env.dataStack.pop(U32).v * env.dataStack.pop(U32).v)
+    env.dataStack.push(result)
+
+@nativeFn([I32, I32], [I32, I32])
+def divmodI32(env):
+    """a b -> quotent remainder"""
+    a = env.dataStack.pop(I32)
+    b = env.dataStack.pop(I32)
+    env.dataStack.push(I32(a % b))
+    env.dataStack.push(I32(a // b))
+
+@nativeFn([U32, U32], [U32, U32])
+def divmodU32(env):
+    """a b -> quotent remainder"""
+    a = env.dataStack.pop(U32)
+    b = env.dataStack.pop(U32)
+    env.dataStack.push(U32(a % b))
+    env.dataStack.push(U32(a // b))
+
+# Compare
+def compare(a, b):
+    """
+    returns < 0 iff a < b
+    returs  = 0 iff a == b
+    returns > 0 iff a > b
+    """
+    if a < b:
+        return -1
+    elif a > b:
+        return 1
+    else:
+        return 0
+
+@nativeFn([U8, U8], [I32])
+def compareU8(env):
+    """a b -> compare
+
+    """
+    env.dataStack.push(
+        I32(compare(env.dataStack.pop(U8), env.dataStack.pop(U8))))
+
+@nativeFn([U32, U32], [I32])
+def compareU32(env):
+    """a b -> compare
+
+    cmp < 0 iff a is less than b
+    cmp = 0 iff a == b
+    cmp > 0 iff a > b
+    """
+    env.dataStack.push(
+        I32(compare(env.dataStack.pop(U32), env.dataStack.pop(U32))))
 
 # Parser
 
