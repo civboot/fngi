@@ -231,9 +231,10 @@ class Stack(object):
         return self.heap.get(self.sp + index, ty)
 
     def pop(self, ty: DataTy, align=True) -> DataTy:
-        self.checkRange(self.sp, ty.size())
+        size = ty.size() + (needAlign(ty.size()) if align else 0)
+        self.checkRange(self.sp, size)
         out = self.heap.get(self.sp, ty)
-        self.sp += ty.size() + (needAlign(ty.size()) if align else 0)
+        self.sp += size
         return out
 
     def __len__(self):
