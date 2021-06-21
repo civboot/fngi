@@ -11,6 +11,8 @@ from typing import List
 from typing import Tuple
 from typing import Dict
 
+LITTLE_ENDIAN = sys.byteorder == 'little'
+
 # Most of our code is going to have some basic tests inline.  Tests can be run
 # by installing pytest and running it.
 
@@ -174,15 +176,30 @@ class Heap(object):
         self.checkRange(self.heap - size)
         self.heap -= size
 
-    def get(self, index: int, ty: DataTy):
+    def get(self, index: int, ty: DataTy, alignment=0):
         ty = determineDataTy(ty)
-        self.checkRange(index + ty.size())
-        return ty.from_buffer(self.memory, index)
+        self.checkRange(index + ty.size() + alignment)
+        if not alignment or LITTLE_ENDIAN:
+            return ty.from_buffer(self.memory, index)
+        else:
+            return ty.from_buffer(self.memory, index+alignment)
 
-    def set(self, index, value: DataTy):
+    def set(self, index, value: DataTy, alignment=0):
         size = value.size()
-        self.checkRange(index, size)
-        self.memory[index:index + size] = value
+        self.checkRange(index, size+alignment)
+        valueStart = index
+        paddingStart = None
+
+        if alignment:
+            if LITTLE_ENDIAN: # value goes before padding
+                paddingStart = index + alignment
+            else: # BIG ENDIAN: padding goes before value
+                paddingStart = index
+                valueStart = index + alignment
+
+        self.memory[valueStart:valueStart + size] = value
+        if paddingStart is not None:
+            self.memory[paddingStart: paddingStart + alignment] = (0,) * alignment
 
     def checkRange(self, index: int, size: int = 0):
         if index < 0 or (index + size) > len(self.memory):
@@ -211,29 +228,34 @@ class Stack(object):
                 index, size, self.total_size))
 
     # Set / Push
-    def set(self, index: int, value: ByteString):
+    def set(self, index: int, value: ByteString, align=True):
         """Set a value at an offset from the sp."""
-        self.checkRange(self.sp + index, value.size())
-        self.heap.set(self.sp + index, value)
+        alignment = needAlign(value.size()) if align else 0
+        self.checkRange(self.sp + index, value.size() + alignment)
+        self.heap.set(self.sp + index, value, alignment)
 
     def push(self, value: DataTy, align=True):
-        size = value.size() + (needAlign(value.size()) if align else 0)
+        alignment = needAlign(value.size()) if align else 0
+        size = value.size() + alignment
         self.checkRange(self.sp - size, size)
         self.sp -= size
-        self.heap.set(self.sp, value)
+        self.heap.set(self.sp, value, alignment)
 
     # Get / Pop
 
-    def get(self, index, ty: DataTy) -> bytes:
+    def get(self, index, ty: DataTy, align=True) -> bytes:
         """Get a value at an offset from the sp."""
         ty = determineDataTy(ty)
-        self.checkRange(self.sp + index, ty.size())
-        return self.heap.get(self.sp + index, ty)
+        alignment = needAlign(ty.size()) if align else 0
+        self.checkRange(self.sp + index, ty.size() + alignment)
+        return self.heap.get(self.sp + index, ty, alignment)
 
     def pop(self, ty: DataTy, align=True) -> DataTy:
-        self.checkRange(self.sp, ty.size())
-        out = self.heap.get(self.sp, ty)
-        self.sp += ty.size() + (needAlign(ty.size()) if align else 0)
+        ty = determineDataTy(ty)
+        alignment = needAlign(ty.size()) if align else 0
+        self.checkRange(self.sp, ty.size() + alignment)
+        out = self.heap.get(self.sp, ty, alignment)
+        self.sp += ty.size() + alignment
         return out
 
     def __len__(self):
@@ -272,6 +294,25 @@ class TestStack(object):
         s.set(4, I16(0x1133))
         assert s.get(4, I16).v == 0x1133
         assert s.get(0, I16).v == 0x3322
+
+    def testPadding(self):
+        """Test padding by push/popping a value and poking its bits.
+        """
+        s = self.newStack()
+        # Write some data in all the bits
+        s.push(U32(0x11112222))
+        if LITTLE_ENDIAN: assert s.pop(U16).v == 0x2222
+        else: assert s.pop(U32).v == 0x1111
+        s.push(U16(0xF00F))
+
+        if LITTLE_ENDIAN:
+            assert s.get(0, U16, align=False).v == 0xF00F
+            assert s.get(2, U16, align=False).v == 0
+        else:
+            assert s.get(0, U16, align=False).v == 0
+            assert s.get(2, U16, align=False).v == 0xF00F
+
+        assert s.pop(U32).v == 0xF00F
 
 
 # We now come to the "global" environment. This contains all the data which
