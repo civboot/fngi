@@ -11,6 +11,8 @@ from typing import List
 from typing import Tuple
 from typing import Dict
 
+BIG_ENDIAN = sys.byteorder != 'little'
+
 # Most of our code is going to have some basic tests inline.  Tests can be run
 # by installing pytest and running it.
 
@@ -250,29 +252,14 @@ class TestStack(object):
 
     def testPushPopI16(self):
         s = self.newStack()
-        s.push(I16(0x7008), align=False)
-        assert len(s) == 2
-        assert s.pop(I16, align=False).v == 0x7008
-
-    def testPushPopI16Align(self):
-        s = self.newStack()
-        s.push(I16(0x7008), align=True)
+        s.push(I16(0x7008))
         assert len(s) == 4
-        assert s.pop(I16, align=True).v == 0x7008
+        assert s.pop(I16).v == 0x7008
 
     def testPushPopI32(self):
         s = self.newStack()
         s.push(I32(0x4200FF))
         assert s.pop(I32).v == 0x4200FF
-
-    def testGetSetI16(self):
-        s = self.newStack()
-        s.push(I16(0x7008), align=True)
-        s.push(I16(0x3322), align=True)
-        assert s.get(4, I16).v == 0x7008
-        s.set(4, I16(0x1133))
-        assert s.get(4, I16).v == 0x1133
-        assert s.get(0, I16).v == 0x3322
 
 
 # We now come to the "global" environment. This contains all the data which
