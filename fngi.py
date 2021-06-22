@@ -4,6 +4,8 @@ import struct
 import ctypes
 import copy
 
+from ctypes import sizeof
+
 from typing import Any
 from typing import ByteString
 from typing import Callable
@@ -70,15 +72,11 @@ class DataTy(ctypes.Structure, Ty):
 
     Reading/Writing a DataTy (dt) to a bytearray (ba):
     - reading => dt = MyDataTy.from_buffer(ba)
-    - writing => ba[start:start+dt.size()] = dt
+    - writing => ba[start:start+sizeof(dt)] = dt
 
     Python's ctypes.Structure class allows us to get C-compliant structures
     "out of the box" with minimal effort.
     """
-    @classmethod
-    def size(cls):
-        return ctypes.sizeof(cls)
-
     @classmethod
     def fieldOffset(cls, field: str):
         return getattr(cls, field).offset
@@ -95,6 +93,25 @@ class NativeTy(DataTy):
 
     These are the only types allowed on the data stack.
     """
+
+
+def createNativeTy(name, cty):
+    """Creates a core data type."""
+    nativeTy = type(name, tuple([NativeTy]), {'_fields_': [('v', cty)]})
+    return nativeTy
+
+
+ctype_ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
+U8 = createNativeTy("U8",  ctypes.c_uint8)
+U32 = createNativeTy("U32", ctypes.c_uint32)
+U16 = createNativeTy("U16", ctypes.c_uint16)
+U64 = createNativeTy("U64", ctypes.c_uint64)
+I8 = createNativeTy("I8",  ctypes.c_int8)
+I16 = createNativeTy("I16", ctypes.c_int16)
+I32 = createNativeTy("I32", ctypes.c_int32)
+I64 = createNativeTy("I64", ctypes.c_int64)
+Ptr = createNativeTy("Ptr", ctype_ptr) # an address in memory, no type
+Bool = createNativeTy("Bool",  ctypes.c_uint8)
 
 
 class StackData(DataTy):
@@ -129,12 +146,20 @@ class Fn(Ty):
     New function types are created by instantiating a subclass of Fn.
     """
 
-    def __init__(self, name: str, inputs: DataTy, outputs: DataTy):
+    def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnPtr: int):
         super().__init__()
         self._name, self.inputs, self.outputs = name, inputs, outputs
+        self._fnPtr = fnPtr
 
     def name(self):
         return self._name
+
+    def fnPtr(self):
+        return self._fnPtr
+
+    def u32(self) -> U32:
+        return U32(self.fnPtr())
+
 
 
 # We will define more types soon. But first let's define how our data is
@@ -163,27 +188,41 @@ class Memory(object):
     def __init__(self, byteArray):
         self.byteArray = byteArray
 
-    def get(self, index: int, ty: DataTy):
+    def get(self, ptr: int, ty: DataTy):
         ty = determineDataTy(ty)
-        self.checkRange(index + ty.size())
-        return ty.from_buffer(self.byteArray, index)
+        self.checkRange(ptr + sizeof(ty))
+        return ty.from_buffer(self.byteArray, ptr)
 
-    def set(self, index, value: DataTy):
-        size = value.size()
-        self.checkRange(index, size)
-        self.byteArray[index:index + size] = value
+    def set(self, ptr, value: DataTy):
+        size = sizeof(value)
+        self.checkRange(ptr, size)
+        self.byteArray[ptr:ptr + size] = value
 
-    def checkRange(self, index: int, size: int = 0):
-        if index < 0 or (index + size) > len(self.byteArray):
-            raise IndexError("index={} memorySize={}".format(
-                index, len(self.byteArray)))
+    def getArray(self, ptr: int, ty: DataTy, length: int):
+        arrayTy = ty * length
+        return self.get(ptr, arrayTy)
+
+    def setArray(self, ptr: int, values: List[DataTy]):
+        if len(values) == 0:
+            return
+
+        ty = values[0].__class__
+        arrayTy = ty * len(values)
+        arrayValue = arrayTy(*values)
+        self.set(ptr, arrayValue)
+
+    def checkRange(self, ptr: int, size: int = 0):
+        if ptr < 0 or (ptr + size) > len(self.byteArray):
+            raise IndexError("ptr={} memorySize={}".format(
+                ptr, len(self.byteArray)))
 
 
 class Heap(object):
     """The heap can only grow and shrink. Alloc/free is implemented in fngi."""
-    def __init__(self, memory):
+    def __init__(self, memory, start):
         self.memory = memory
-        self.heap = 0
+        self.start = start
+        self.heap = start
 
     def grow(self, size):
         """Grow the heap, return the beginning of the grown region."""
@@ -217,13 +256,13 @@ class Stack(object):
                 index, size, self.total_size))
 
     # Set / Push
-    def set(self, index: int, value: ByteString):
+    def set(self, index: int, value: DataTy):
         """Set a value at an offset from the sp."""
-        self.checkRange(self.sp + index, value.size())
+        self.checkRange(self.sp + index, sizeof(value))
         self.memory.set(self.sp + index, value)
 
     def push(self, value: DataTy, align=True):
-        size = value.size() + (needAlign(value.size()) if align else 0)
+        size = sizeof(value) + (needAlign(sizeof(value)) if align else 0)
         self.checkRange(self.sp - size, size)
         self.sp -= size
         self.memory.set(self.sp, value)
@@ -233,11 +272,11 @@ class Stack(object):
     def get(self, index, ty: DataTy) -> bytes:
         """Get a value at an offset from the sp."""
         ty = determineDataTy(ty)
-        self.checkRange(self.sp + index, ty.size())
+        self.checkRange(self.sp + index, sizeof(ty))
         return self.memory.get(self.sp + index, ty)
 
     def pop(self, ty: DataTy, align=True) -> DataTy:
-        size = ty.size() + (needAlign(ty.size()) if align else 0)
+        size = sizeof(ty) + (needAlign(sizeof(ty)) if align else 0)
         self.checkRange(self.sp, size)
         out = self.memory.get(self.sp, ty)
         self.sp += size
@@ -290,7 +329,7 @@ class Env(object):
             deferStack: Stack,
             callSpace: List[Fn],
             fnLocals: DataTy,
-            fnIndexLookup: Dict[int, Fn],
+            fnPtrLookup: Dict[int, Fn],
             tys: Dict[str, Ty],
             refs: Dict[Ty, Ref],
             ):
@@ -300,7 +339,7 @@ class Env(object):
         self.typeStack, self.deferStack = typeStack, deferStack
         self.callSpace = callSpace
         self.fnLocals = fnLocals
-        self.fnIndexLookup = fnIndexLookup
+        self.fnPtrLookup = fnPtrLookup
 
         self.tys = tys
         self.refs = refs
@@ -320,7 +359,7 @@ MiB = 2**20 # 1 Mebibyte
 DATA_STACK_SIZE = 4 * 4 # Data Stack stores up to 4 usize elements
 STACK_SIZE = MiB // 2 # 1/2 MiB stacks
 MEMORY = Memory(bytearray(5 * MiB)) # 5 MiB Global Memory
-HEAP = Heap(MEMORY)
+HEAP = Heap(MEMORY, 0)
 
 ENV = Env(
     memory=MEMORY,
@@ -331,36 +370,24 @@ ENV = Env(
     deferStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
     callSpace=[],
     fnLocals=None,
-    fnIndexLookup={},
+    fnPtrLookup={},
     tys={},
     refs={},
 )
 
 
-def createNativeTy(name, cty):
-    """Creates a core data type and registers it.
-
-    This is soley to reduce boilerplace. It is the same as:
-
-        class {{name}}(DataTy): _fields_ =  [('v', {{cty}})]
-        ENV.tys["{{name}}"] = {{name}}
-    """
-    nativeTy = type(name, tuple([NativeTy]), {'_fields_': [('v', cty)]})
-    ENV.tys[name] = nativeTy
-    return nativeTy
+def registerFn(fn: Fn):
+    ENV.tys[fn.name()] = fn
+    ENV.fnPtrLookup[fn.fnPtr()] = fn
+    return fn
 
 
-ctype_ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
-I8 = createNativeTy("I8",  ctypes.c_int8)
-U8 = createNativeTy("U8",  ctypes.c_uint8)
-I16 = createNativeTy("I16", ctypes.c_int16)
-U16 = createNativeTy("U16", ctypes.c_uint16)
-I32 = createNativeTy("I32", ctypes.c_int32)
-U32 = createNativeTy("U32", ctypes.c_uint32)
-I64 = createNativeTy("I64", ctypes.c_int64)
-U64 = createNativeTy("U64", ctypes.c_uint64)
-Ptr = createNativeTy("Ptr", ctype_ptr) # an address in memory, no type
-Bool = createNativeTy("Bool",  ctypes.c_uint8)
+def registerTypes(tys: List[Ty]):
+    for ty in tys:
+        ENV.tys[ty.name()] = ty
+
+registerTypes([U8, U16, U32, U64, I8, I16, I32, I64, Ptr, Bool])
+
 
 def createNativeRef(ty: Ty) -> Ref:
     refTy = Ref(ty)
@@ -407,12 +434,11 @@ class NativeFn(Fn):
             name: str,
             inputs: DataTy,
             outputs: DataTy,
-            call: Callable[[Env], None]):
-        super().__init__(name, inputs, outputs)
-        self._call = call
+            call: Callable[[Env], None],
+            fnPtr: int):
 
-    def fnIndex(self):
-        raise TypeError("Called fnIndex on a non-user fn")
+        super().__init__(name, inputs, outputs, fnPtr)
+        self._call = call
 
     def call(self, env: Env):
         self._call(env)
@@ -426,31 +452,24 @@ class UserFn(Fn):
 
     Functions are compiled to the ENV.callSpace and therefore have an index.
     """
-    def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnIndex: int):
-        super().__init__(name, inputs, outputs)
-        self._fnIndex = fnIndex
-
-        # Handle registration
-        ENV.tys[name] = self
-        FN_INDEX_LOOKUP[fnIndex] = self
-
-    def fnIndex(self):
-        return self._fnIndex
+    def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnPtr: int):
+        super().__init__(name, inputs, outputs, fnPtr)
 
 
 def callLoop(env: Env):
     """Yup, this is the entire call loop."""
     while env.running:
-        fn = env.callSpace[env.ep]
+        fnPtr = env.memory.get(env.ep, Ptr).v
+        fn = env.fnPtrLookup[fnPtr]
         if isinstance(fn, NativeFn):
             # If native, run the function
-            env.ep += 1
+            env.ep += 4
             fn.call(env)
         else:
             # If not native, store the next index on the call stack
             env.returnStack.pushValue(u32, env.ep + 1)
             # and "run" the function by changing the FN_INDEX to be it
-            env.ep = fn.fnIndex()
+            env.ep = fnPtr
 
 # We want a way to define native fn's in as few lines as possible. We will use
 # decorators and other python tricks extensively to avoid boilerplate, so it's
@@ -473,7 +492,6 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
         if name is None:
             name = pyDef.__name__
 
-
         def callDef(env):
             # pop stack items from left to right
             args = [env.dataStack.pop(ty).v for ty in inputs]
@@ -488,10 +506,11 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             for out, ty in zip(outStack, outputsPushOrder):
                 env.dataStack.push(ty(out))
 
-        nativeFnInstance = NativeFn(name, inputs, outputs, callDef)
+        fnPtr = HEAP.grow(4)
+        nativeFnInstance = NativeFn(name, inputs, outputs, callDef, fnPtr)
 
         # Handle registration
-        ENV.tys[name] = nativeFnInstance
+        registerFn(nativeFnInstance)
         if createRef:
             createNativeRef(nativeFnInstance)
 
@@ -510,23 +529,26 @@ def addU32(env, a: int, b:int):
     return [a + b]
 
 
-def literal(value: DataTy):
-    """Creates a literal.
-
-    Note this is NOT registered with ENV.tys
-    """
-    ty = type(value)
-    def literalCall(env: Env):
-        env.dataStack.push(value)
-    return NativeFn(ty.name() + 'Literal', [], [ty], literalCall)
+@nativeFn([], [U32])
+def literalU32(env):
+    """Creates a literal using the next 4 bytes."""
+    out = env.memory.get(env.ep, U32).v
+    env.ep += 4
+    return [out]
 
 
-def testAddLiterals():
+def testCallLoop_addLiterals():
     """Write and test an ultra-basic fngi "function" that just adds two
     literals and quits.
     """
     env = ENV.copyForTest()
-    env.callSpace = [literal(U32(22)), literal(U32(20)), addU32, quit]
+    env.memory.setArray(
+        0,
+        [
+            literalU32.u32(), U32(22), 
+            literalU32.u32(), U32(20),
+            addU32.u32(), quit.u32(),
+        ])
     callLoop(env)
     result = env.dataStack.pop(U32).v
     assert 42 == result

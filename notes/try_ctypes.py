@@ -29,3 +29,6 @@ class StackData(Structure):
         print("kwargs:", kwargs)
 
 s = StackData([c_byte, c_byte, c_short, c_long])
+
+Foo_Array_10 = Foo * 10
+
