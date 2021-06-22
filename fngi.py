@@ -3,6 +3,10 @@ import sys
 import struct
 import ctypes
 import copy
+import dataclasses
+import enum
+import io
+import os
 
 from ctypes import sizeof
 
@@ -14,6 +18,7 @@ from typing import Tuple
 from typing import Dict
 
 BIG_ENDIAN = sys.byteorder != 'little'
+SEEK_RELATIVE = 1 # f.seek(offset, SEEK_RELATIVE) does a releative seek
 
 # Most of our code is going to have some basic tests inline.  Tests can be run
 # by installing pytest and running it.
@@ -717,133 +722,206 @@ def compareI32(env, a, b):
 # and emit tokens.
 
 ## Tokens
-INVALID = '!invalid!'
-LINE_COMMENT = '//'
-STR = '"'
+class TokenVariant(enum.Enum):
+    # TODO: use solid integer values
+    EOF = enum.auto()
 
-CALL = '$'
-SINGLE_MACRO = '!'
-DOUBLE_MACRO = '!!'
+    # Multi char symbols
+    SINGLE_MACRO = enum.auto() # !
+    DOUBLE_MACRO = enum.auto() # !!
+    ARROW = enum.auto() # ->
 
-COLON = ':'
-SEMICOLON = ';'
-EQUAL = '='
+    # Single char symbols
+    SEMICOLON = enum.auto() # ;
+    EQUAL = enum.auto() # =
+    REF = enum.auto() # &
+    DEREF = enum.auto() # @
+    BLOCK_OPEN = enum.auto() # (
+    BLOCK_CLOSE = enum.auto() # )
+    DATA_OPEN = enum.auto() # {
+    DATA_CLOSE = enum.auto() # }
+    TYPE_OPEN = enum.auto() # [
+    TYPE_CLOSE = enum.auto() # ]
 
-BLOCK_OPEN = '('
-BLOCK_CLOSE = ')'
-UNPARSED_OPEN = '#('
-UNPARSED_CLOSED = '#)'
+    # Keywords
+    FN = enum.auto() # fn
+    LET = enum.auto() # let
+    RETURN = enum.auto() # return
 
-BRACKET_OPEN = '['
-BRACKET_CLOSE = ']'
-DATA_OPEN = '{'
-DATA_CLOSE = '}'
+    # Contains Direct Data
+    INVALID = enum.auto()
+    NAME = enum.auto()
+    LINE_COMMENT = enum.auto() # //
+    ESCAPED_STR = enum.auto() # \"
 
-NAME = 'name'
-FUNC = 'func'
-RETURN = 'return'
-LET = 'let'
-EOF = 'EOF'
 
-def gi(arr, index, default=None):
-    """Get the index in an array or the default if out of bounds."""
-    if index >= len(arr):
-        return default
-    return arr[index]
+@dataclasses.dataclass
+class Token(object):
+    variant: TokenVariant
+    string: str = None
+    lines: int = 0
 
-def isWhitespace(text, index):
-    return ord(text[index]) <= ord(' ')
+EOF = Token(TokenVariant.EOF)
 
-def isSymbol(text, index):
-    return (ord('!') <= ord(text[index]) <= ord('/') or
-            ord(':') <= ord(text[index]) <= ord('@') or
-            ord('[') <= ord(text[index]) <= ord('`') or
-            ord('{') <= ord(text[index]) <= ord('~'))
+SINGLE_MACRO = Token(TokenVariant.SINGLE_MACRO)
+DOUBLE_MACRO = Token(TokenVariant.DOUBLE_MACRO)
+ARROW = Token(TokenVariant.ARROW)
 
-def isNameChar(text, index):
-    return not isWhitespace(text, index) and not isSymbol(text, index)
+SEMICOLON = Token(TokenVariant.SEMICOLON)
+EQUAL = Token(TokenVariant.EQUAL)
+REF = Token(TokenVariant.REF)
+DEREF = Token(TokenVariant.DEREF)
+BLOCK_OPEN = Token(TokenVariant.BLOCK_OPEN)
+BLOCK_CLOSE = Token(TokenVariant.BLOCK_CLOSE)
+DATA_OPEN = Token(TokenVariant.DATA_OPEN)
+DATA_CLOSE = Token(TokenVariant.DATA_CLOSE)
+TYPE_OPEN = Token(TokenVariant.TYPE_OPEN)
+TYPE_CLOSE = Token(TokenVariant.TYPE_CLOSE)
 
-def getToken(text, index):
-    """Parse a single token from the text
+FN = Token(TokenVariant.FN)
+LET = Token(TokenVariant.LET)
+RETURN = Token(TokenVariant.RETURN)
 
-    Returns: (startIndex, endIndex, token)
-    """
-    while isWhitespace(text, index): # skip whitespace
-        index += 1
-        if index >= len(text):
-            break
 
-    startIndex = index
+def isWhitespace(c: str):
+    if c == '': return False
+    return ord(c) <= ord(' ')
 
-    if len(text) <= index:
-        return startIndex, index, EOF
+def isSymbol(c: str):
+    return (ord('!') <= ord(c) <= ord('/') or
+            ord(':') <= ord(c) <= ord('@') or
+            ord('[') <= ord(c) <= ord('`') or
+            ord('{') <= ord(c) <= ord('~'))
 
-    if text[index] == '/':
-        if gi(text, index + 1) == '/':
-            index += 2
-            while gi(text, index, '\n') != '\n':
-                index += 1
-            return startIndex, index, LINE_COMMENT
-        return startIndex, index + 1, INVALID
-    elif text[index] == '$': return startIndex, index+1, CALL
-    elif text[index] == '!':
-        if gi(text, index+1) == '!':
-            return startIndex, index+2, DOUBLE_MACRO
-        return startIndex, index+1, SINGLE_MACRO
+def isNameChar(c: str):
+    return not isWhitespace(c) and not isSymbol(c)
 
-    elif text[index] == '"':
-        index += 1
+
+class TokenStream(object):
+    def __init__(self, fo: io.TextIOWrapper):
+        self.fo = fo
+        self.fileSize = os.stat(fo.fileno()).st_size
+        self.tokenIndex = 0
+        self.lineno = 0
+
+    def nextToken(self):
+        self.fo.seek(self.tokenIndex)
+        nextToken(self.fo, self.fileSize)
+        self.tokenIndex = self.fo.tell()
+
+    def checkForLine(self, c: str):
+        if c == '\n':
+            self.lineno += 1
+        return c
+
+    def get(self, start: int, size: int):
+        self.fo.seek(start)
+        return self.fo.read(size)
+
+    def read1(self):
+        return self.fo.read(1)
+
+    def seekBack1(self, c: str):
+        if c != b'': 
+            self.fo.seek(self.fo.tell() - 1)
+
+    def nextToken(self) -> Token:
+        """Parse a single token from the file."""
+        f = self.fo
+        c = self.checkForLine(self.read1())
+        while isWhitespace(c): # skip whitespace
+            c = self.checkForLine(self.read1())
+            if c == b'': break
+
+        if c == b'':
+            return EOF
+
+        elif c == b'/':
+            c = self.read1()
+            if c != b'/':
+                self.seekBack1(c)
+                return Token(TokenVariant.INVALID, b'/')
+
+            if c == b'/':
+                out = []
+                while c != b'' and c != b'\n':
+                    c = self.read1()
+                    out.append(c)
+                self.checkForLine(c)
+                return Token(TokenVariant.LINE_COMMENT, b''.join(out), 1)
+
+        elif c == b'!':
+            c = self.read1()
+            if c == b'!':
+                return DOUBLE_MACRO
+            self.seekBack1(c)
+            return SINGLE_MACRO
+
+        elif c == b'-':
+            c = self.read1()
+            if c == b'>':
+                return ARROW
+            self.seekBack1(c)
+            return Token(TokenVariant.INVALID, b'-')
+
+        elif c == b'\\': # Escaped Str
+            out = [b'\\']
+            c = self.read1()
+            out.append(c)
+            if c != b'"':
+                lines = c == b'\n'
+                self.lineno += lines
+                return Token(TokenVariant.INVALID, b''.join(out), lines)
+
+            out = []
+            startingLineno = self.lineno
+            while True:
+                c = self.checkForLine(self.read1())
+                out.append(c)
+                if c == b'\\':
+                    c = self.checkForLine(self.read1())
+                    out.append(c)
+                    if c == b'"':
+                        break
+
+            return Token(
+                TokenVariant.ESCAPED_STR,
+                b''.join(out),
+                lines=self.lineno - startingLineno)
+
+        elif c == b';': return SEMICOLON
+        elif c == b'=': return EQUAL
+        elif c == b'&': return REF
+        elif c == b'@': return DEREF
+        elif c == b'(': return BLOCK_OPEN
+        elif c == b')': return BLOCK_CLOSE
+        elif c == b'{': return DATA_OPEN
+        elif c == b'}': return DATA_CLOSE
+        elif c == b'[': return TYPE_OPEN
+        elif c == b']': return TYPE_CLOSE
+        elif isSymbol(c): return Token(TokenVariant.INVALID, c)
+
+        name = [c]
         while True:
-            if gi(text, index, '"') == '"': break
-            if gi(text, index) == '\\' and gi(text, index + 1) == '"':
-                index += 1  # will skip both
-            index += 1
-        index += 1
-        return startIndex, index, STR
+            c = self.read1()
+            if not isNameChar(c):
+                self.seekBack1(c)
+                break
+            name.append(c)
 
-    elif text[index] == ':': return startIndex, index + 1, COLON
-    elif text[index] == ';': return startIndex, index + 1, SEMICOLON
-    elif text[index] == '=': return startIndex, index + 1, EQUAL
+        name = b''.join(name)
+        if name == b'fn': return FN
+        if name == b'let': return LET
+        if name == b'return': return RETURN
 
-    elif text[index] == '(': return startIndex, index + 1, BLOCK_OPEN
-    elif text[index] == ')': return startIndex, index + 1, BLOCK_CLOSE
-
-    elif text[index] == '[': return startIndex, index + 1, BRACKET_OPEN
-    elif text[index] == ']': return startIndex, index + 1, BRACKET_CLOSE
-
-    elif text[index] == '{': return startIndex, index + 1, DATA_OPEN
-    elif text[index] == '}': return startIndex, index + 1, DATA_CLOSE
-
-    elif isSymbol(text, index): return startIndex, index + 1, INVALID
-
-    while isNameChar(text, index):
-        index += 1
-
-    # name or keyword
-    name = text[startIndex:index]
-    token = NAME
-    if name == FUNC: token = FUNC
-    elif name == LET: token = LET
-    elif name == RETURN: token = RETURN
-
-    return startIndex, index, token
-
-def parseFile(text, index):
-    pass
-
-def parseFn(text, index):
-    pass
-
-def parseWord(text, index):
-    pass
-
-def printTokens(text, index=0):
-    while index <= len(text):
-        startIndex, endIndex, token = getToken(text, index)
-        print("{}: {}".format(token, text[startIndex:endIndex]))
-        index = endIndex
-        if token == 'EOF':
-            return
+        return Token(TokenVariant.NAME, name)
 
 if __name__ == '__main__':
-    printTokens(open(sys.argv[1]).read())
+    def printTokens(fo):
+        ts = TokenStream(fo)
+        token = None
+        while token is not EOF:
+            token = ts.nextToken()
+            print(token)
+
+    printTokens(open(sys.argv[1], 'rb', buffering=0))

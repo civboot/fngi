@@ -1,8 +1,8 @@
-let HELLO: StrSlice = "Hello world!";
+let [&CStr] HELLO = \"Hello world!\";
 
-fn main{} (
-  fdWriteString $ {
+fn main{} -> {} (
+  fdWriteString {
     fd = 1; // stdout
     str = HELLO;
   };
-);
+)
