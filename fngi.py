@@ -589,7 +589,7 @@ def compare(a, b):
         return 0
 
 # We will be writing core pieces of the language. Fns we already have:
-# - call a native or user defined function and return from it.
+# - call a native or user defined function (see callLoop) and return from it.
 # - put literal values on the stack.
 #
 # Fns we will be defining here:
@@ -707,7 +707,14 @@ def compareI32(env, a, b):
     return [compare(a, b)]
 
 
+#########################################
 # Parser
+#
+# With the above we should have enough to compile the stage0 language, except
+# for macros which we will get to later.
+#
+# First we are going to build the parser, which fairly self-explanatory. We parse
+# and emit tokens.
 
 ## Tokens
 INVALID = '!invalid!'
