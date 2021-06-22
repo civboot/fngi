@@ -159,6 +159,26 @@ def determineDataTy(ty: Ty) -> DataTy:
         raise TypeError("Not representable in memory: {}".format(ty))
 
 
+class Memory(object):
+    def __init__(self, byteArray):
+        self.byteArray = byteArray
+
+    def get(self, index: int, ty: DataTy):
+        ty = determineDataTy(ty)
+        self.checkRange(index + ty.size())
+        return ty.from_buffer(self.byteArray, index)
+
+    def set(self, index, value: DataTy):
+        size = value.size()
+        self.checkRange(index, size)
+        self.byteArray[index:index + size] = value
+
+    def checkRange(self, index: int, size: int = 0):
+        if index < 0 or (index + size) > len(self.byteArray):
+            raise IndexError("index={} memorySize={}".format(
+                index, len(self.byteArray)))
+
+
 class Heap(object):
     """The heap can only grow and shrink. Alloc/free is implemented in fngi."""
     def __init__(self, memory):
@@ -167,30 +187,14 @@ class Heap(object):
 
     def grow(self, size):
         """Grow the heap, return the beginning of the grown region."""
-        self.checkRange(self.heap + size)
+        self.memory.checkRange(self.heap + size)
         out = self.heap
         self.heap += size
         return self.heap
 
     def shrink(self, size):
-        self.checkRange(self.heap - size)
+        self.memory.checkRange(self.heap - size)
         self.heap -= size
-
-    def get(self, index: int, ty: DataTy):
-        ty = determineDataTy(ty)
-        self.checkRange(index + ty.size())
-        return ty.from_buffer(self.memory, index)
-
-    def set(self, index, value: DataTy):
-        size = value.size()
-        self.checkRange(index, size)
-        self.memory[index:index + size] = value
-
-    def checkRange(self, index: int, size: int = 0):
-        if index < 0 or (index + size) > len(self.memory):
-            raise IndexError("index={} memorySize={}".format(
-                index, len(self.memory)))
-
 
 
 class Stack(object):
@@ -200,8 +204,8 @@ class Stack(object):
     bytearray, with fngi structures being C-like. The stacks are also used for
     interfacing between python and fngi programs.
     """
-    def __init__(self, heap: Heap, start: int, size: int):
-        self.heap = heap
+    def __init__(self, memory: Memory, start: int, size: int):
+        self.memory = memory
         self.start = start
         self.end = self.start + size
         self.total_size = size
@@ -216,13 +220,13 @@ class Stack(object):
     def set(self, index: int, value: ByteString):
         """Set a value at an offset from the sp."""
         self.checkRange(self.sp + index, value.size())
-        self.heap.set(self.sp + index, value)
+        self.memory.set(self.sp + index, value)
 
     def push(self, value: DataTy, align=True):
         size = value.size() + (needAlign(value.size()) if align else 0)
         self.checkRange(self.sp - size, size)
         self.sp -= size
-        self.heap.set(self.sp, value)
+        self.memory.set(self.sp, value)
 
     # Get / Pop
 
@@ -230,12 +234,12 @@ class Stack(object):
         """Get a value at an offset from the sp."""
         ty = determineDataTy(ty)
         self.checkRange(self.sp + index, ty.size())
-        return self.heap.get(self.sp + index, ty)
+        return self.memory.get(self.sp + index, ty)
 
     def pop(self, ty: DataTy, align=True) -> DataTy:
         size = ty.size() + (needAlign(ty.size()) if align else 0)
         self.checkRange(self.sp, size)
-        out = self.heap.get(self.sp, ty)
+        out = self.memory.get(self.sp, ty)
         self.sp += size
         return out
 
@@ -248,7 +252,7 @@ class Stack(object):
 
 class TestStack(object):
     def newStack(self):
-        return Stack(Heap(bytearray(16)), 0, 16)
+        return Stack(Memory(bytearray(16)), 0, 16)
 
     def testPushPopI16(self):
         s = self.newStack()
@@ -278,6 +282,7 @@ class Env(object):
     """
     def __init__(
             self,
+            memory: Memory,
             heap: Heap,
             dataStack: Stack,
             returnStack: Stack,
@@ -289,6 +294,7 @@ class Env(object):
             tys: Dict[str, Ty],
             refs: Dict[Ty, Ref],
             ):
+        self.memory = memory
         self.heap = heap
         self.dataStack, self.returnStack = dataStack, returnStack
         self.typeStack, self.deferStack = typeStack, deferStack
@@ -313,15 +319,16 @@ class Env(object):
 MiB = 2**20 # 1 Mebibyte
 DATA_STACK_SIZE = 4 * 4 # Data Stack stores up to 4 usize elements
 STACK_SIZE = MiB // 2 # 1/2 MiB stacks
-MEMORY = bytearray(5 * MiB) # 5 MiB Global Memory
+MEMORY = Memory(bytearray(5 * MiB)) # 5 MiB Global Memory
 HEAP = Heap(MEMORY)
 
 ENV = Env(
+    memory=MEMORY,
     heap=HEAP,
-    dataStack=Stack(Heap(bytearray(DATA_STACK_SIZE)), 0, DATA_STACK_SIZE),
-    returnStack=Stack(HEAP, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    typeStack=Stack(HEAP, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    deferStack=Stack(HEAP, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    dataStack=Stack(Memory(bytearray(DATA_STACK_SIZE)), 0, DATA_STACK_SIZE),
+    returnStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    typeStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    deferStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
     callSpace=[],
     fnLocals=None,
     fnIndexLookup={},
