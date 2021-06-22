@@ -545,7 +545,7 @@ def testCallLoop_addLiterals():
     env.memory.setArray(
         0,
         [
-            literalU32.u32(), U32(22), 
+            literalU32.u32(), U32(22),
             literalU32.u32(), U32(20),
             addU32.u32(), quit.u32(),
         ])
@@ -555,47 +555,25 @@ def testCallLoop_addLiterals():
 
 # Now that we have a basic execution engine, let's flush out some of the language.
 #
-# Fngi has two ways to do input/output when calling a function:
-# - passing values on the env.dataStack
-# - passing values within the function's "local variable" space on the env.returnStack
+# Stage0 Fngi has only 4 core constructs:
+# - native data types like U32, Ptr, and Ref
+# - user-defined data types (structs and enums) which are composed of native
+#   data types.
+# - native and user-defined functions. In stage0 these can only push/pop native values
+#   from the stack and define local variables.
+# - native and user-defined macros which for stage0 call only popToken and
+#   pushToken
 #
-# Here is how a function is called (in both assembly and emulated here):
-# - When a function returns a structure, it will actually take a pointer to the
-#   return struct in it's input and then mutate the caller's local variable.
-#   Therefore, space for the function's (non-datastack) return values are
-#   already allocated in the caller's locals (by the function that had called
-#   it).
-# - The caller decrements the stack (the stack grows down) by the total size
-#   of:
-#   - a pointer to the return struct (if it returns non-datastack values)
-#   - (non-datastack) inputs
-#   - function locals
-#   - finally, the address to continue executing (ep) when the function returns
-#     which will be at the "top" of the stack (lowest in memory)
+# When calling a function, the compiler must insert the following. fnStackSize is known
+# at compile time.
 #
-# What does all of this look like? Let's look at the memory layout of a function
-# after it has been called TODO add source
-#
-#           104 ...             # ^^^ the callee's stack
-#           100 &retValue       # pointer to the return struct
-#           96  arg0: u32       # first argument
-#           92  arg1: u32       # second argument
-#           88  local0: u32     # local variable
-#     sp -> 84  returnAddr      # calee's continued execution pointer
-#
-# Now, let's look at the psuedo-assembly for calling such a function:
-#
-#           sub 16, sp      # allocate function's stack (stack grows down)
-#           call myFunction # call the function, pushing next address on stack
-#           add 16, sp      # drop function's stack (stack shrinks up)
-#
-# All of this is to say that our definition for "return" is simply to
-# pop the last value into the ep. The compiler will insert the other
-# operations around the return call.
+#   subStack(fnStackSize)
+#   call fnPtr
+#   addStack(fnStackSize)These are known 
 
 @nativeFn([], [], name="return", createRef=False)
 def ret(env):
-    env.ep = env.returnStack.pop(Ptr)
+    env.ep = env.returnStack.pop(Ptr).v
 
 def compare(a, b):
     """
