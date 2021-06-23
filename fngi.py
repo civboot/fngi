@@ -16,6 +16,7 @@ from typing import Callable
 from typing import List
 from typing import Tuple
 from typing import Dict
+from typing import Union
 
 BIG_ENDIAN = sys.byteorder != 'little'
 SEEK_RELATIVE = 1 # f.seek(offset, SEEK_RELATIVE) does a releative seek
@@ -55,56 +56,18 @@ def testNeedAlign():
 # language, whether that be RISC/CISC registers in assembly or stack-based
 # assembly like wasm or an underlying Forth language/cpu.
 
-class Ty(object):
-    """The base type that all fngi types derive from.
-    """
-    def __init__(self):
-        super().__init__()
-
-    @classmethod
-    def name(cls):
-        return cls.__name__
-
-class Ref(Ty):
-    """A typed pointer."""
-
-    def __init__(self, ty: Ty):
-        self.ty = ty
-
-
-class DataTy(ctypes.Structure, Ty):
-    """A type for data represented in memory.
-
-    Reading/Writing a DataTy (dt) to a bytearray (ba):
-    - reading => dt = MyDataTy.from_buffer(ba)
-    - writing => ba[start:start+sizeof(dt)] = dt
-
-    Python's ctypes.Structure class allows us to get C-compliant structures
-    "out of the box" with minimal effort.
-    """
-    @classmethod
-    def fieldOffset(cls, field: str):
-        return getattr(cls, field).offset
-
-
-
-class NativeTy(DataTy):
-    """A native type (i.e. u8, i32, ptr, etc).
-
-    These are Structures with a single c_type field named `v`
-
-    These are the only types allowed on the data stack.
-    """
-
-
-def createNativeTy(name, cty):
-    """Creates a core data type."""
-    nativeTy = type(name, tuple([NativeTy]), {'_fields_': [('v', cty)]})
-    return nativeTy
-
-# DataTy is the base class of all types that can be represented in memory
 # This is the only way to get ctypes._CData which is technically private.
 DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
+
+def fieldOffset(ty: DataTy, field: str):
+    return getattr(getDataTy(ty), field).offset
+
+def fieldSize(ty: DataTy, field: str):
+    return getattr(getDataTy(cls), field).size
+
+
+
+# DataTy is the base class of all types that can be represented in memory
 
 Ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
 Bool = ctypes.c_bool
@@ -119,56 +82,11 @@ I32 = ctypes.c_int32
 I64 = ctypes.c_int64
 
 
-def getDataTy(v: Any) -> DataTy:
-    if issubclass(v, DataTy):
-        return v
-    elif isinstance(v, DataTy):
-        return v.__class__
-    elif issubclass(v, Ref):
-        return Ptr
-    else:
-        raise TypeError("Not representable in memory: {}".format(v))
-
-
-def fieldOffset(ty: DataTy, field: str):
-    return getattr(getDataTy(ty), field).offset
-
-def fieldSize(ty: DataTy, field: str):
-    return getattr(getDataTy(cls), field).size
-
-
-class StackData(DataTy):
-    """A list of values that are input/output on the stack.
-
-    Values are listed in the same order they would be represented in memory,
-    which is to say that the first value is the lowest point in memory
-    and the last is the highest.
-
-    This means that the first value is at the "top" of the data stack (it is
-    the first to be pushed out), since stacks grow downwards.
-
-    Those who program in forth may notice that this is the reverse of how forth
-    documents the state of the stack. This is because forth's type
-    representation is extremely confusing when trying create a mental model of
-    the stack's memory representation.
-    """
-    def __init__(self, vals: List[NativeTy]):
-        self.vals = vals
-
-
-class UserStruct(DataTy):
-    """A user-defined data struct.
-
-    This can be a named struct or "anonymous" function input/output.
-    """
-
-
-class Fn(Ty):
+class Fn(object):
     """The base Fn type.
 
     New function types are created by instantiating a subclass of Fn.
     """
-
     def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnPtr: int):
         super().__init__()
         self._name, self.inputs, self.outputs = name, inputs, outputs
@@ -180,9 +98,31 @@ class Fn(Ty):
     def fnPtr(self):
         return self._fnPtr
 
-    def u32(self) -> U32:
-        return U32(self.fnPtr())
+    def u32(self) -> Ptr:
+        return Ptr(self.fnPtr())
 
+class _Ref(object):
+    """For defining Ty before defining Ref."""
+
+
+# All (stage0) fngi types must be either a DataTy, Fn or Ref
+Ty = Union[DataTy, Fn, _Ref]
+
+
+class Ref(_Ref):
+    def __init__(self, ty: Ty):
+        self.ty = ty
+
+
+def getDataTy(v: Any) -> DataTy:
+    if issubclass(v, DataTy):
+        return v
+    elif isinstance(v, DataTy):
+        return v.__class__
+    elif issubclass(v, Ref):
+        return Ptr
+    else:
+        raise TypeError("Not representable in memory: {}".format(v))
 
 
 # We will define more types soon. But first let's define how our data is
