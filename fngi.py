@@ -86,9 +86,6 @@ class DataTy(ctypes.Structure, Ty):
     def fieldOffset(cls, field: str):
         return getattr(cls, field).offset
 
-    @classmethod
-    def fieldSize(cls, field: str):
-        return getattr(cls, field).size
 
 
 class NativeTy(DataTy):
@@ -105,18 +102,39 @@ def createNativeTy(name, cty):
     nativeTy = type(name, tuple([NativeTy]), {'_fields_': [('v', cty)]})
     return nativeTy
 
+# DataTy is the base class of all types that can be represented in memory
+# This is the only way to get ctypes._CData which is technically private.
+DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
 
-ctype_ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
-U8 = createNativeTy("U8",  ctypes.c_uint8)
-U32 = createNativeTy("U32", ctypes.c_uint32)
-U16 = createNativeTy("U16", ctypes.c_uint16)
-U64 = createNativeTy("U64", ctypes.c_uint64)
-I8 = createNativeTy("I8",  ctypes.c_int8)
-I16 = createNativeTy("I16", ctypes.c_int16)
-I32 = createNativeTy("I32", ctypes.c_int32)
-I64 = createNativeTy("I64", ctypes.c_int64)
-Ptr = createNativeTy("Ptr", ctype_ptr) # an address in memory, no type
-Bool = createNativeTy("Bool",  ctypes.c_uint8)
+Ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
+Bool = ctypes.c_bool
+U8 = ctypes.c_uint8
+U16 = ctypes.c_uint16
+U32 = ctypes.c_uint32
+U64 = ctypes.c_uint64
+
+I8 = ctypes.c_int8
+I16 = ctypes.c_int16
+I32 = ctypes.c_int32
+I64 = ctypes.c_int64
+
+
+def getDataTy(v: Any) -> DataTy:
+    if issubclass(v, DataTy):
+        return v
+    elif isinstance(v, DataTy):
+        return v.__class__
+    elif issubclass(v, Ref):
+        return Ptr
+    else:
+        raise TypeError("Not representable in memory: {}".format(v))
+
+
+def fieldOffset(ty: DataTy, field: str):
+    return getattr(getDataTy(ty), field).offset
+
+def fieldSize(ty: DataTy, field: str):
+    return getattr(getDataTy(cls), field).size
 
 
 class StackData(DataTy):
@@ -180,21 +198,13 @@ class Fn(Ty):
 # The other data regions (returnStack, heap, typeStack, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
-def determineDataTy(ty: Ty) -> DataTy:
-    if issubclass(ty, DataTy):
-        return ty
-    elif issubclass(ty, Ref):
-        return Ptr
-    else:
-        raise TypeError("Not representable in memory: {}".format(ty))
-
 
 class Memory(object):
     def __init__(self, byteArray):
         self.byteArray = byteArray
 
     def get(self, ptr: int, ty: DataTy):
-        ty = determineDataTy(ty)
+        ty = getDataTy(ty)
         self.checkRange(ptr + sizeof(ty))
         return ty.from_buffer(self.byteArray, ptr)
 
@@ -276,7 +286,7 @@ class Stack(object):
 
     def get(self, index, ty: DataTy) -> bytes:
         """Get a value at an offset from the sp."""
-        ty = determineDataTy(ty)
+        ty = getDataTy(ty)
         self.checkRange(self.sp + index, sizeof(ty))
         return self.memory.get(self.sp + index, ty)
 
@@ -302,12 +312,12 @@ class TestStack(object):
         s = self.newStack()
         s.push(I16(0x7008))
         assert len(s) == 4
-        assert s.pop(I16).v == 0x7008
+        assert s.pop(I16).value == 0x7008
 
     def testPushPopI32(self):
         s = self.newStack()
         s.push(I32(0x4200FF))
-        assert s.pop(I32).v == 0x4200FF
+        assert s.pop(I32).value == 0x4200FF
 
 
 #########################################
@@ -457,7 +467,7 @@ class Arena(object):
     We allow allocating 2^4 to 2^12 size blocks (8 sizes). 7 of these have a
     linked list, while size 2^12 uses a single index into the block allocator.
     """
-    def __init__(self, parent: Arena, blockAllocator: BlockAllocator):
+    def __init__(self, parent, blockAllocator: BlockAllocator):
         self.parent = parent
         self.blockAllocator = blockAllocator
         self.blockRoot = BlockAllocator.BLOCK_USED
@@ -501,7 +511,7 @@ class Arena(object):
             freeMem = self.po2roots[po2]
             if freeMem != 0:
                 memory = self.blockAllocator.memory
-                newRoot = memory.get(freeMem, Ptr).v
+                newRoot = memory.get(freeMem, Ptr)
                 self.po2roots[po2] = newRoot
         return freeMem
 
@@ -627,11 +637,10 @@ def registerFn(fn: Fn):
     return fn
 
 
-def registerTypes(tys: List[Ty]):
-    for ty in tys:
-        ENV.tys[ty.name()] = ty
-
-registerTypes([U8, U16, U32, U64, I8, I16, I32, I64, Ptr, Bool])
+ENV.tys.update({
+    "U8": U8, "U16": U16, "U32": U32, "U64": U64,
+    "I8": I8, "I16": I16, "I32": I32, "I64": I64,
+    "Ptr": Ptr})
 
 
 def createNativeRef(ty: Ty) -> Ref:
@@ -704,7 +713,7 @@ class UserFn(Fn):
 def callLoop(env: Env):
     """Yup, this is the entire call loop."""
     while env.running:
-        fnPtr = env.memory.get(env.ep, Ptr).v
+        fnPtr = env.memory.get(env.ep, Ptr).value
         fn = env.fnPtrLookup[fnPtr]
         if isinstance(fn, NativeFn):
             # If native, run the function
@@ -738,8 +747,9 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             name = pyDef.__name__
 
         def callDef(env):
+            nonlocal name # available when debugging
             # pop stack items from left to right
-            args = [env.dataStack.pop(ty).v for ty in inputs]
+            args = [env.dataStack.pop(ty).value for ty in inputs]
             # call the function with them in that order
             outStack = pyDef(env, *args)
             outStack = [] if outStack is None else outStack
@@ -777,7 +787,7 @@ def addU32(env, a: int, b:int):
 @nativeFn([], [U32])
 def literalU32(env):
     """Creates a literal using the next 4 bytes."""
-    out = env.memory.get(env.ep, U32).v
+    out = env.memory.get(env.ep, U32).value
     env.ep += 4
     return [out]
 
@@ -795,7 +805,7 @@ def testCallLoop_addLiterals():
             addU32.u32(), quit.u32(),
         ])
     callLoop(env)
-    result = env.dataStack.pop(U32).v
+    result = env.dataStack.pop(U32).value
     assert 42 == result
 
 # Now that we have a basic execution engine, let's flush out some of the language.
@@ -818,7 +828,7 @@ def testCallLoop_addLiterals():
 
 @nativeFn([], [], name="return", createRef=False)
 def ret(env):
-    env.ep = env.returnStack.pop(Ptr).v
+    env.ep = env.returnStack.pop(Ptr)
 
 def compare(a, b):
     """
@@ -858,7 +868,7 @@ def fetchRspOffsetU8(env, offset):
 
 @nativeFn([I32, U8], [])
 def updateRspOffsetU8(env):
-    env.returnStack.set(env.dataStack.pop(I32).v, env.dataStack.pop(U8))
+    env.returnStack.set(env.dataStack.pop(I32), env.dataStack.pop(U8))
 
 # U8 Native Functions
 
