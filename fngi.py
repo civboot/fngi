@@ -125,17 +125,17 @@ def getDataTy(v: Any) -> DataTy:
         raise TypeError("Not representable in memory: {}".format(v))
 
 
-# We will define more types soon. But first let's define how our data is
+# We will define more types later. But first let's define how our data is
 # stored.
 #
-# Most data in fngi is passed on either the dataStack, returnStack or heap within
-# the ENV instance. Locals are kept inside of the returnStack.
+# Most data in fngi is passed on either the dataStack or is a pointer into
+# global memory.
 #
 # The dataStack is NOT within global memory, and therefore cannot have a
 # pointer into it. This is because on some platforms it is stored in registers
-# instead of memory.
+# (or a register stack) instead of memory.
 #
-# The other data regions (returnStack, heap, typeStack, etc) are all slices of the
+# The other data regions (returnStack, heap, allocators, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
 
@@ -522,10 +522,6 @@ class Env(object):
             heap: Heap,
             dataStack: Stack,
             returnStack: Stack,
-            typeStack: Stack,
-            deferStack: Stack,
-            callSpace: List[Fn],
-            fnLocals: DataTy,
             fnPtrLookup: Dict[int, Fn],
             tys: Dict[str, Ty],
             refs: Dict[Ty, Ref],
@@ -533,9 +529,6 @@ class Env(object):
         self.memory = memory
         self.heap = heap
         self.dataStack, self.returnStack = dataStack, returnStack
-        self.typeStack, self.deferStack = typeStack, deferStack
-        self.callSpace = callSpace
-        self.fnLocals = fnLocals
         self.fnPtrLookup = fnPtrLookup
 
         self.tys = tys
@@ -566,10 +559,6 @@ ENV = Env(
     heap=HEAP,
     dataStack=Stack(Memory(bytearray(DATA_STACK_SIZE)), 0, DATA_STACK_SIZE),
     returnStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    typeStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    deferStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
-    callSpace=[],
-    fnLocals=None,
     fnPtrLookup={},
     tys={},
     refs={},
@@ -614,14 +603,15 @@ RefU64 = createNativeRef(U64)
 # stage0 fngi language. It will be kept up-to-date with the stage0 forth compiler.
 #
 # For the execution model, there are two types of Fn (function), NativeFn which
-# are implemented in python and UserFn which are simply a range of indexes
-# inside of the ENV.callSpace global variable; which are run by callLoop.
+# are implemented in python (and have a reference function pointer) and UserFn
+# which are simply an array of function pointers inside of the ENV.memory.
+# callLoop takes care of how to execute each kind of Fn.
 #
 # Although functions have types (i.e. inputs/outputs), the types are only
 # checked at compile time. At execution time, functions pop values off of the
 # env.dataStack for their parameters and push values on the env.dataStack for their
-# results. They also use the RET_STACK and BSP for keeping track of local
-# variables.
+# results. They also may use the return stack for storing local variables and
+# input/output of values.
 
 class NativeFn(Fn):
     """A native function.
