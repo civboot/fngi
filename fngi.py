@@ -310,6 +310,240 @@ class TestStack(object):
         assert s.pop(I32).v == 0x4200FF
 
 
+#########################################
+# Memory Manager
+#
+# Our parser will be building an Abstract Syntax Tree, which is basically a
+# tree consisting of unknown sized (aka allocated) nodes of various types. The
+# AST can either be parsed from the source code OR generated dynamically by
+# macros, so there will be a lot of need for non-static memory allocation.
+#
+# Trying to do this without a memory manager would be extremely annoying to say
+# the least. Furthermore, once we have built the stage0 compiler we
+# will want to compile the stage1 compiler, and for that we definitely need a
+# memory manager as well.
+#
+# There are an extremely wide range of memory managers. One of the core
+# problems with "simpler" memory managers with minimal hardware support has to
+# do with memory fragmentation: when memory of various sizes if allocated and
+# freed repeatedly you are left with "holes" of memory that cannot fit larger
+# types.
+#
+# Modern systems with enough hardware and software support have MMUs (Memory
+# Management Units) which allow virtually moving memory pages to make
+# non-consecuitive pages appear consecutive to the program.  However, fngi is
+# designed to be able to not only _run_ on very minimal devices (i.e.
+# microcontrollers) but also be able to compile itself from source with almost
+# no binary blob (just the binary assembly needed to bootstrap basic IO and the
+# forth interpreter). Note: Obviously the last statement is not true for this
+# (prototype) python implementation.
+#
+# We will avoid the issue of complicated memory management with a few
+# restrictions on the programs supported by our stage0 compiler:
+# - Memory can only be allocated in up to 4k (2**12) blocks
+# - Memory size must be a power of 2, with a minimal size of 16 (2**4)
+# - It is the program's job to track the size of it's pointers. The allocator
+#   does not know the size of a pointer (i.e. free(ptrSize, ptr) instead of
+#   free(ptr)
+# - Memory must be allocated from arenas. An arena is an object with alloc/free methods,
+#   but unlike a "global allocator" the entire arena can be dropped. Since the max block
+#   size if 4k, this makes sure that all "holes" are at least 4k in size.
+# - There is no global allocator except for heap.grow() and heap.shrink()
+
+class BlockAllocator(object):
+    """An allocator that allows allocating only 4k blocks.
+
+    We are designing this in a way we can easily emulate in forth. The
+    allocator has a pointer to it's memory region (memory, start)
+    as well as an array of singly-linked lists which point to indexes
+    within the freeBlocks array.
+
+    When a block is used, it's value is set to BLOCK_USED
+    """
+    BLOCK_SIZE = 2**12 # 4 KiB
+    BLOCK_USED = 0xFA7E
+    BLOCK_FREE = 0xF4EE
+    OOM = 0xFFFF
+
+    def __init__(self, memory: Memory, start: int, size: int):
+        assert needAlign(start) == 0
+        assert size % self.BLOCK_SIZE == 0 # size fits a certain number of blocks
+
+        self.memory = memory
+        self.start = start
+        self.size = size
+        self.numBlocks = size // BLOCK_SIZE
+        # first (root) free block is at index 0, it points to index 1, etc
+        self.freeRoot = 0
+        self.blocks = list(range(1, self.numBlocks + 1))
+        self.blocks[-1] = self.BLOCK_FREE
+
+    def end(self) -> int:
+        return self.start + self.size
+
+    def alloc(self) -> int:
+        """Return the indeex to a free block, or 0."""
+        out = self.freeRoot
+        if out == self.BLOCK_FREE:
+            return self.OOM
+
+        self.freeRoot = self.blocks[self.freeRoot]
+        self.blocks[out] = self.BLOCK_USED
+        return out
+
+    def free(self, index: int):
+        newRoot = index
+        self.checkPtr(self.getPtr(newRoot))
+        self.blocks[newRoot] = self.freeRoot
+        self.freeRoot = newRoot
+
+    def checkPtr(self, ptr):
+        ptrAlign = ptr % self.BLOCK_SIZE 
+        if ptr < self.start or ptr > self.start + self.size or ptrAlign != 0:
+            raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
+                ptr, ptrAlign, self.start, self.end()))
+
+    def getPtr(self, index: int):
+        ptr = self.start + (index * self.BLOCK_SIZE)
+        self.checkPtr(ptr)
+        return ptr
+
+    def getIndex(self, ptr: int):
+        self.checkPtr(ptr)
+        return (ptr - self.start) % self.BLOCK_SIZE
+
+
+def joinMem(ptr1: int, ptr2: int, size: int):
+    """If mem can be joined, return the lowest pointer. Else return 0"""
+    if ptr1 == 0 or ptr2 == 0:
+        return 0
+
+    if ptr2 < ptr1:
+        ptr1, ptr2 = ptr2, ptr1
+
+    if ptr1 + size == ptr2:
+        return ptr1
+
+    return 0
+
+class Arena(object):
+    """For the arena allocator we use a few tricks for storing free regions of
+    memory. Please note that this allocator is designed to be a prototype for
+    one written in forth, so it uses extremely low level concepts.
+
+    The arena allocator can allocate memory in powers of 2, from 16 bytes up to
+    4kiB.  Therefore it keeps track of free blocks of memory of certain sizes
+    by using a linked list. Unlike the BlockAllocator, the pointers to the
+    "next free node" is kept _within the allocateable memory itself_. This
+    allows each arena allocator to have only ~64 bytes of memory overhead.
+
+    The arena keeps track of all the 4KiB blocks it is using by using the
+    BlockAllocator.blocks, in the same method that the block allocator tracks
+    it's free blocks. This allows the entire arena to be dropped and therefore
+    eliminate fragmentation.
+
+    Our arena allocator will be a "buddy" allocator because of the algorithm it
+    uses for splitting and joining blocks of memory when allocating/freeing.
+    This keeps track of free blocks by using a set of linked lists containing
+    power-of-2 free blocks. Blocks are allocated by po2, if a free block is not
+    available it is requested from the next-highest po2, which will ask from
+    the next highest, etc. When a block is found, it will be split in half to
+    satisfy the request. When a block is freed, merging will be attempted on
+    the next available free block.
+
+    We allow allocating 2^4 to 2^12 size blocks (8 sizes). 7 of these have a
+    linked list, while size 2^12 uses a single index into the block allocator.
+    """
+    def __init__(self, parent: Arena, blockAllocator: BlockAllocator):
+        self.parent = parent
+        self.blockAllocator = blockAllocator
+        self.blockRoot = BlockAllocator.BLOCK_USED
+        self.po2Roots = { po2: 0 for po2 in range(4, 12) }
+
+    def allocBlock(self) -> int:
+        """Allocate a block, return the pointer to it."""
+        index = self.blockAllocator.alloc()
+        if index == self.blockAllocator.OOM:
+            return 0
+
+        self.blockAllocator.blocks[index] = self.blockRoot
+        self.blockRoot = index
+        return self.blockAllocator.getPtr(index)
+
+    def pushFreePo2(self, po2, ptr):
+        if po2 == 12:
+            blocks = self.blockAllocator.blocks
+            index = self.blockAllocator.getIndex(ptr)
+
+            # find the index in the LL and pop it
+            if index == self.blockRoot:
+                self.blockRoot = blocks[index]
+            else:
+                prev = self.blockRoot
+                while blocks[prev] != index:
+                    prev = blocks[prev]
+                blocks[prev] = blocks[index]
+
+            self.blockAllocator.free(index)
+        else:
+            memory = self.blockAllocator.memory
+            oldRoot = self.po2Roots[po2]
+            memory.set(oldRoot, Ptr(ptr))
+            self.po2Roots[po2] = ptr
+
+    def popFreePo2(self, po2):
+        if po2 == 12:
+            freeMem = self.allocBlock()
+        else:
+            freeMem = self.po2roots[po2]
+            if freeMem != 0:
+                memory = self.blockAllocator.memory
+                newRoot = memory.get(freeMem, Ptr).v
+                self.po2roots[po2] = newRoot
+        return freeMem
+
+    def alloc(self, wantPo2: int):
+        if wantPo2 > 12:
+            raise ValueError("wantPo2=" + str(wantPo2))
+        po2 = wantPo2
+        freeMem = 0
+
+        # Find a block of size greather than or equal to wantPo2
+        while True:
+            freeMem = self.popFreePo2(po2)
+            if po2 == 12 or freeMem != 0:
+                break
+            po2 += 1
+
+        if freeMem == 0:
+            return 0
+
+        while True:
+            if po2 == wantPo2:
+                return freeMem
+
+            # split freeMem in half, storing the leftover region
+            po2 -= 1
+            extraMem = freeMem + (2**po2)
+            self.pushFreePo2(po2, extraMem)
+
+    def free(self, po2: int, ptr: int):
+        while True:
+            if po2 == 12:
+                self.pushFreePo2(po2, ptr)
+                break
+            joinedMem = joinMem(ptr, self.po2Roots[po2], 2**po2)
+            if joinedMem == 0:
+                self.pushFreePo2(po2, ptr)
+                break
+            else:
+                self.popFreePo2(po2) # remove it, we are joining it
+                ptr = joinedMem
+                # then try to join the next largest po2
+                po2 += 1
+
+
+
 # We now come to the "global" environment. This contains all the data which
 # functions (native or user, we'll get to that) and the compiler itself mutate
 # while compiling and executing fngi code. As we'll see, fngi will be
@@ -351,6 +585,9 @@ class Env(object):
 
         self.running = False
         self.ep = 0 # execution pointer
+
+        # Registered later
+        self.memoryManager = None
 
     def copyForTest(self):
         """Copy the env for the test. Sets ep=0 and running=True."""
@@ -915,6 +1152,44 @@ class TokenStream(object):
         if name == b'return': return RETURN
 
         return Token(TokenVariant.NAME, name)
+
+    def getAllTokens(self) -> List[Token]:
+        """Used in testing."""
+        out = []
+        while True:
+            token = self.nextToken()
+            out.append(token)
+            if token is EOF:
+                return out
+
+    def getAllVariants(self) -> List[TokenVariant]:
+        return [t.variant for t in self.getAllTokens()]
+
+def testTokenStream():
+    ts = TokenStream(open("test_data/hello_world.fn", 'rb', buffering=0))
+    result = ts.getAllVariants()
+    tv = TokenVariant
+    expected = [
+        # let [&CStr] HELLO 
+        tv.LET, tv.TYPE_OPEN, tv.REF, tv.NAME, tv.TYPE_CLOSE, tv.NAME,
+        # = \"Hello world!\"; 
+        tv.EQUAL, tv.ESCAPED_STR, tv.SEMICOLON,
+        # fn main{}
+        tv.FN, tv.NAME, tv.DATA_OPEN, tv.DATA_CLOSE,
+        # -> {} (
+        tv.ARROW, tv.DATA_OPEN, tv.DATA_CLOSE, tv.BLOCK_OPEN,
+        # fdWriteString {
+        tv.NAME, tv.DATA_OPEN,
+        # fd = 1; // stdout
+        tv.NAME, tv.EQUAL, tv.NAME, tv.SEMICOLON, tv.LINE_COMMENT,
+        # str = HELLO;
+        tv.NAME, tv.EQUAL, tv.NAME, tv.SEMICOLON,
+        # }; )
+        tv.DATA_CLOSE, tv.SEMICOLON, tv.BLOCK_CLOSE,
+        tv.EOF,
+    ]
+    assert expected == result
+
 
 if __name__ == '__main__':
     def printTokens(fo):
