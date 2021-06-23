@@ -138,6 +138,17 @@ def getDataTy(v: Any) -> DataTy:
 # The other data regions (returnStack, heap, allocators, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
+MiB = 2**20
+TOTAL_MEMORY = 5 * MiB
+DATA_STACK_SIZE = 8 * 4 # Data Stack stores up to 8 usize elements
+STACK_SIZE = MiB // 2 # 1/2 MiB stacks
+# 4KiB is the size of a "block" of memory, the maximum amount that
+# can be allocatd without growing the heap.
+BLOCK_SIZE = 2**12 
+BLOCKS_TOTAL_SIZE = TOTAL_MEMORY // 2 # data for block allocator
+BLOCKS_TOTAL = BLOCKS_TOTAL_SIZE // BLOCK_SIZE
+BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
+
 
 class Memory(object):
     def __init__(self, byteArray):
@@ -179,14 +190,16 @@ class Heap(object):
         self.start = start
         self.heap = start
 
-    def grow(self, size):
+    def grow(self, size, align=True):
         """Grow the heap, return the beginning of the grown region."""
+        size = size + (needAlign(size) if align else 0)
         self.memory.checkRange(self.heap + size)
         out = self.heap
         self.heap += size
-        return self.heap
+        return out
 
-    def shrink(self, size):
+    def shrink(self, size, align=True):
+        size = size + (needAlign(size) if align else 0)
         self.memory.checkRange(self.heap - size)
         self.heap -= size
 
@@ -303,10 +316,15 @@ class TestStack(object):
 #   size is 4k, this makes sure that all "holes" are at least 4k in size and so there
 #   will rarely be fragmentation below 4k in size.
 # - There is no global allocator except for heap.grow(), heap.shrink() and a
-#   pointer (which can be NULL) to a single global arena instance.
+#   a single global arena instance (which can be used to create child arenas).
 
-class BlockAllocator(object):
-    """An allocator that allows allocating only 4k blocks.
+BLOCK_USED = 0xFA7E # sentinel for last used block in a linked-list
+BLOCK_FREE = 0xF4EE # sentinal for last free block in a linked-list
+BLOCK_OOB = 0xFFFF # block allocator is Out Of Blocks
+
+
+class BlockAllocator(ctypes.Structure):
+    """A global allocator that allows allocating only 4k blocks.
 
     We are designing this in a way we can easily emulate in forth. The
     allocator has a pointer to it's memory region (memory, start)
@@ -315,23 +333,11 @@ class BlockAllocator(object):
 
     When a block is used, it's value is set to BLOCK_USED
     """
-    BLOCK_SIZE = 2**12 # 4 KiB
-    BLOCK_USED = 0xFA7E
-    BLOCK_FREE = 0xF4EE
-    OOM = 0xFFFF
+    _fields_ = [
+        ('freeRoot': U16),
+        ('blocks': BlocksArray),
+    ]
 
-    def __init__(self, memory: Memory, start: int, size: int):
-        assert needAlign(start) == 0
-        assert size % self.BLOCK_SIZE == 0 # size fits a certain number of blocks
-
-        self.memory = memory
-        self.start = start
-        self.size = size
-        self.numBlocks = size // BLOCK_SIZE
-        # first (root) free block is at index 0, it points to index 1, etc
-        self.freeRoot = 0
-        self.blocks = list(range(1, self.numBlocks + 1))
-        self.blocks[-1] = self.BLOCK_FREE
 
     def end(self) -> int:
         return self.start + self.size
@@ -339,11 +345,11 @@ class BlockAllocator(object):
     def alloc(self) -> int:
         """Return the indeex to a free block, or 0."""
         out = self.freeRoot
-        if out == self.BLOCK_FREE:
-            return self.OOM
+        if out == BLOCK_FREE:
+            return BLOCK_OOB
 
         self.freeRoot = self.blocks[self.freeRoot]
-        self.blocks[out] = self.BLOCK_USED
+        self.blocks[out] = BLOCK_USED
         return out
 
     def free(self, index: int):
@@ -353,19 +359,37 @@ class BlockAllocator(object):
         self.freeRoot = newRoot
 
     def checkPtr(self, ptr):
-        ptrAlign = ptr % self.BLOCK_SIZE 
+        ptrAlign = ptr % BLOCK_SIZE 
         if ptr < self.start or ptr > self.start + self.size or ptrAlign != 0:
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
                 ptr, ptrAlign, self.start, self.end()))
 
     def getPtr(self, index: int):
-        ptr = self.start + (index * self.BLOCK_SIZE)
+        ptr = self.start + (index * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
     def getIndex(self, ptr: int):
         self.checkPtr(ptr)
-        return (ptr - self.start) % self.BLOCK_SIZE
+        return (ptr - self.start) % BLOCK_SIZE
+
+
+def createBlockAllocator(memory: Memory, ptr: int) -> BlockAllocator:
+    """Create a new block allocator instance in memory at the pointer.
+
+    The caller must have reserved sufficient space for the block allocator.
+    """
+    ba = BlockAllocator.from_bytes(memory.byteArray, ptr)
+
+    # Create a LL with each index pointing to the next index, and the last
+    # index pointing to BLOCK_FREE
+    for i in range(0, BLOCKS_TOTAL):
+        ba.blocks[i] = i + 1
+    ba.blocks[BLOCKS_TOTAL - 1] = BLOCK_FREE
+
+    # The "root" node is then the 0th index
+    ba.freeRoot = 0
+    return ba
 
 
 def joinMem(ptr1: int, ptr2: int, size: int):
@@ -415,13 +439,13 @@ class Arena(object):
     def __init__(self, parent, blockAllocator: BlockAllocator):
         self.parent = parent
         self.blockAllocator = blockAllocator
-        self.blockRoot = BlockAllocator.BLOCK_USED
+        self.blockRoot = BLOCK_USED
         self.po2Roots = { po2: 0 for po2 in range(4, 12) }
 
     def allocBlock(self) -> int:
         """Allocate a block, return the pointer to it."""
         index = self.blockAllocator.alloc()
-        if index == self.blockAllocator.OOM:
+        if index == BLOCK_OOB:
             return 0
 
         self.blockAllocator.blocks[index] = self.blockRoot
@@ -548,10 +572,7 @@ class Env(object):
         return out
 
 
-MiB = 2**20 # 1 Mebibyte
-DATA_STACK_SIZE = 4 * 4 # Data Stack stores up to 4 usize elements
-STACK_SIZE = MiB // 2 # 1/2 MiB stacks
-MEMORY = Memory(bytearray(5 * MiB)) # 5 MiB Global Memory
+MEMORY = Memory(bytearray(TOTAL_MEMORY))
 HEAP = Heap(MEMORY, 0)
 
 ENV = Env(
