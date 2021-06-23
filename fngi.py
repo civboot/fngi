@@ -426,30 +426,33 @@ def joinMem(ptr1: int, ptr2: int, size: int):
 
     return 0
 
+
 class Arena(object):
     """For the arena allocator we use a few tricks for storing free regions of
     memory. Please note that this allocator is designed to be a prototype for
-    one written in forth, so it uses extremely low level concepts.
+    one written in forth wich can run on microcontrollers, so it uses extremely
+    low level concepts (i.e. raw pointers stored inside of freed blocks)
 
-    The arena allocator can allocate memory in powers of 2, from 16 bytes up to
-    4kiB.  Therefore it keeps track of free blocks of memory of certain sizes
-    by using a linked list. Unlike the BlockAllocator, the pointers to the
-    "next free node" is kept _within the allocateable memory itself_. This
-    allows each arena allocator to have only ~64 bytes of memory overhead.
+    The arena allocator can allocate memory in powers of 2, from 16 (2**4)
+    bytes up to 4kiB (2**12). It keeps track of free blocks of memory by using
+    an array of linked lists, where each index in the array is 4+po2. Unlike
+    the BlockAllocator, the pointers to the "next free node" is kept _within
+    the allocateable memory itself_. This allows each arena allocator to have
+    only ~64 bytes of memory overhead.
 
     The arena keeps track of all the 4KiB blocks it is using by using the
-    BlockAllocator.blocks, in the same method that the block allocator tracks
-    it's free blocks. This allows the entire arena to be dropped and therefore
-    eliminate fragmentation.
+    BlockAllocator's blocks array. This is the exact same method that the block
+    allocator itself uses to track it's free blocks (difference being the arena
+    is tracking the allocated blocks). This allows all of the blocks the arena is using to
+    be freed when the arena is dropped.
 
-    Our arena allocator will be a "buddy" allocator because of the algorithm it
-    uses for splitting and joining blocks of memory when allocating/freeing.
-    This keeps track of free blocks by using a set of linked lists containing
-    power-of-2 free blocks. Blocks are allocated by po2, if a free block is not
+    The algorighm our arena allocator uses for small allocations is called a
+    "buddy allocator".  Blocks are allocated by po2, if a free block is not
     available it is requested from the next-highest po2, which will ask from
-    the next highest, etc. When a block is found, it will be split in half to
-    satisfy the request. When a block is freed, merging will be attempted on
-    the next available free block.
+    the next highest, etc. When a block is found, it will be split in half
+    repeateldy (storing the unused half) until it is the correct size. When a
+    block is freed, merging will be attempted on the next available free block.
+    Both alloc and free run in O(1) time (approximately 10 to 100 "executions").
 
     We allow allocating 2^4 to 2^12 size blocks (8 sizes). 7 of these have a
     linked list, while size 2^12 uses a single index into the block allocator.
