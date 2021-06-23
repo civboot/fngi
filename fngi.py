@@ -151,18 +151,24 @@ BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
 
 
 class Memory(object):
-    def __init__(self, byteArray):
-        self.byteArray = byteArray
+    def __init__(self, size):
+        self.data = ctypes.create_string_buffer(size)
+
+    def getPtr(self, value: DataTy) -> int:
+        """Get the index of the value within self.data.
+
+        The definition of Ptr is this index."""
+        return ctypes.addressof(value) - ctypes.addressof(self.data)
 
     def get(self, ptr: int, ty: DataTy):
         ty = getDataTy(ty)
         self.checkRange(ptr + sizeof(ty))
-        return ty.from_buffer(self.byteArray, ptr)
+        return ty.from_buffer(self.data, ptr)
 
     def set(self, ptr, value: DataTy):
         size = sizeof(value)
         self.checkRange(ptr, size)
-        self.byteArray[ptr:ptr + size] = value
+        self.data[ptr:ptr + size] = value
 
     def getArray(self, ptr: int, ty: DataTy, length: int):
         arrayTy = ty * length
@@ -178,9 +184,9 @@ class Memory(object):
         self.set(ptr, arrayValue)
 
     def checkRange(self, ptr: int, size: int = 0):
-        if ptr < 0 or (ptr + size) > len(self.byteArray):
+        if ptr < 0 or (ptr + size) > len(self.data):
             raise IndexError("ptr={} memorySize={}".format(
-                ptr, len(self.byteArray)))
+                ptr, len(self.data)))
 
 
 class Heap(object):
@@ -259,7 +265,7 @@ class Stack(object):
 
 class TestStack(object):
     def newStack(self):
-        return Stack(Memory(bytearray(16)), 0, 16)
+        return Stack(Memory(16), 0, 16)
 
     def testPushPopI16(self):
         s = self.newStack()
@@ -323,8 +329,43 @@ BLOCK_FREE = 0xF4EE # sentinal for last free block in a linked-list
 BLOCK_OOB = 0xFFFF # block allocator is Out Of Blocks
 
 
+class U16IndexSll(ctypes.Structure):
+    """Our allocators will make estensive use of an "indexed" singly linked
+    list.
+
+    Unlike normal SLL's, the "nextNode" item is an index into the array memory
+    instead of a pointer into global memory.
+    """
+    _fields_ = [
+        ('root', U16),
+        ('arrayPtr', Ptr),
+    ]
+
+    def push(self, memory, i: int):
+        # FROM: root -> a -> b -> ...
+        #   TO: root -> i -> a -> b -> ...
+
+        # Set: i -> a
+        memory.set(memory.arrayPtr + i * sizeof(U16), U16(self.root)
+        # Set: root -> i
+        self.root = i
+
+    def pop(self, memory) -> int:
+        # FROM: root -> a -> b -> ...
+        #   TO: root -> b -> ...
+        # RETURN: ptr to a (value that was in root)
+        out = self.root
+        if out != BLOCK_FREE:
+            return BLOCK_OOB
+
+        self.root = memory.get(memory.arrayPtr, U16)
+        return out
+
+
 class BlockAllocator(ctypes.Structure):
     """A global allocator that allows allocating only 4k blocks.
+
+    Use createBlockAllocator function to create an instance.
 
     We are designing this in a way we can easily emulate in forth. The
     allocator has a pointer to it's memory region (memory, start)
@@ -333,14 +374,24 @@ class BlockAllocator(ctypes.Structure):
 
     When a block is used, it's value is set to BLOCK_USED
     """
+    memory = None
+
     _fields_ = [
         ('freeRoot': U16),
         ('blocks': BlocksArray),
     ]
 
+    def selfPtr(self):
+        return self.memory.selfPtr(self)
 
-    def end(self) -> int:
-        return self.start + self.size
+    def freeRootPtr(self):
+        return self.selfPtr() + BlockAllocator.freeRoot.offset
+
+    def blocksStart(self) -> int:
+        return self.selfPtr() + BlockAllocator.blocks.offset
+
+    def blocksEnd(self): -> int:
+        return self.blockStart + sizeof(BlockAllocator.blocks)
 
     def alloc(self) -> int:
         """Return the indeex to a free block, or 0."""
@@ -352,8 +403,8 @@ class BlockAllocator(ctypes.Structure):
         self.blocks[out] = BLOCK_USED
         return out
 
-    def free(self, index: int):
-        newRoot = index
+    def free(self, block: int):
+        newRoot = block
         self.checkPtr(self.getPtr(newRoot))
         self.blocks[newRoot] = self.freeRoot
         self.freeRoot = newRoot
@@ -362,10 +413,10 @@ class BlockAllocator(ctypes.Structure):
         ptrAlign = ptr % BLOCK_SIZE 
         if ptr < self.start or ptr > self.start + self.size or ptrAlign != 0:
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
-                ptr, ptrAlign, self.start, self.end()))
+                ptr, ptrAlign, self.blocksStart(), self.blocksEnd()))
 
-    def getPtr(self, index: int):
-        ptr = self.start + (index * BLOCK_SIZE)
+    def getPtr(self, block: int):
+        ptr = self.start + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
@@ -379,7 +430,7 @@ def createBlockAllocator(memory: Memory, ptr: int) -> BlockAllocator:
 
     The caller must have reserved sufficient space for the block allocator.
     """
-    ba = BlockAllocator.from_bytes(memory.byteArray, ptr)
+    ba = BlockAllocator.from_bytes(memory.data, ptr)
 
     # Create a LL with each index pointing to the next index, and the last
     # index pointing to BLOCK_FREE
@@ -572,13 +623,13 @@ class Env(object):
         return out
 
 
-MEMORY = Memory(bytearray(TOTAL_MEMORY))
+MEMORY = Memory(TOTAL_MEMORY)
 HEAP = Heap(MEMORY, 0)
 
 ENV = Env(
     memory=MEMORY,
     heap=HEAP,
-    dataStack=Stack(Memory(bytearray(DATA_STACK_SIZE)), 0, DATA_STACK_SIZE),
+    dataStack=Stack(Memory(DATA_STACK_SIZE), 0, DATA_STACK_SIZE),
     returnStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
     fnPtrLookup={},
     tys={},
