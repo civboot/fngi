@@ -335,30 +335,35 @@ class TestStack(object):
 #
 # There are an extremely wide range of memory managers. One of the core
 # problems with "simpler" memory managers with minimal hardware support has to
-# do with memory fragmentation: when memory of various sizes if allocated and
+# do with memory fragmentation: when memory of various sizes is allocated and
 # freed repeatedly you are left with "holes" of memory that cannot fit larger
 # types.
 #
 # Modern systems with enough hardware and software support have MMUs (Memory
 # Management Units) which allow virtually moving memory pages to make
-# non-consecuitive pages appear consecutive to the program.  However, fngi is
+# non-consecuitive pages appear consecutive to the program. However, fngi is
 # designed to be able to not only _run_ on very minimal devices (i.e.
-# microcontrollers) but also be able to compile itself from source with almost
-# no binary blob (just the binary assembly needed to bootstrap basic IO and the
-# forth interpreter). Note: Obviously the last statement is not true for this
-# (prototype) python implementation.
+# microcontrollers) but also be able to _compile itself from source_ with
+# almost no binary blob (just the binary assembly needed to bootstrap basic IO
+# and the forth interpreter).
+#
+# > Note: Obviously the last statement is not true for this (prototype) python
+# > implementation.
 #
 # We will avoid the issue of complicated memory management with a few
 # restrictions on the programs supported by our stage0 compiler:
 # - Memory can only be allocated in up to 4k (2**12) blocks
-# - Memory size must be a power of 2, with a minimal size of 16 (2**4)
-# - It is the program's job to track the size of it's pointers. The allocator
-#   does not know the size of a pointer (i.e. free(ptrSize, ptr) instead of
-#   free(ptr)
+# - Memory size must be a power of 2, with a minimum size of 16 (2**4)
+# - It is the program's/compiler's job (aka not the memory manager's job) to
+#   track the size of it's pointers. The allocator does not know the size of a
+#   pointer. This means that unlike the "standard C" function signature
+#   of `free(ptr)` in stage0 fngi it is `free(ptrSize, ptr)`
 # - Memory must be allocated from arenas. An arena is an object with alloc/free methods,
 #   but unlike a "global allocator" the entire arena can be dropped. Since the max block
-#   size if 4k, this makes sure that all "holes" are at least 4k in size.
-# - There is no global allocator except for heap.grow() and heap.shrink()
+#   size is 4k, this makes sure that all "holes" are at least 4k in size and so there
+#   will rarely be fragmentation below 4k in size.
+# - There is no global allocator except for heap.grow(), heap.shrink() and a
+#   pointer (which can be NULL) to a single global arena instance.
 
 class BlockAllocator(object):
     """An allocator that allows allocating only 4k blocks.
