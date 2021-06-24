@@ -149,13 +149,16 @@ def getDataTy(v: Any) -> DataTy:
 # global memory region (ENV.heap.memory).
 
 MiB = 2**20
-TOTAL_MEMORY = 5 * MiB
+KiB = 2**10
 DATA_STACK_SIZE = 8 * 4 # Data Stack stores up to 8 usize elements
-STACK_SIZE = MiB // 2 # 1/2 MiB stacks
+CODE_HEAP_SIZE = 32 * KiB
+BLOCKS_SIZE = (5 * MiB) // 2
+EXTRA_HEAP_SIZE = 1 * MiB
+RETURN_STACK_SIZE = MiB // 2 # 1/2 MiB return stack
+
 # 4KiB is the size of a "block" of memory, the maximum amount that
-# can be allocatd without growing the heap.
+# can be allocatd without growing a heap.
 BLOCK_SIZE = 2**12 
-BLOCKS_TOTAL_SIZE = TOTAL_MEMORY // 2 # data for block allocator
 BLOCKS_TOTAL = BLOCKS_TOTAL_SIZE // BLOCK_SIZE
 BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
 
@@ -164,7 +167,7 @@ class Memory(object):
     def __init__(self, size):
         self.data = ctypes.create_string_buffer(size)
 
-    def getPtr(self, value: DataTy) -> int:
+    def getPtrTo(self, value: DataTy) -> int:
         """Get the index of the value within self.data.
 
         The definition of Ptr is this index."""
@@ -199,40 +202,94 @@ class Memory(object):
                 ptr, len(self.data)))
 
 
+class MHeap(ctypes.Structure):
+    """A heap as represented in memory."""
+    _fields_ = [
+        ('start', Ptr), # the start of heap's memory
+        ('end', Ptr),   # the end of heap's memory
+        ('heap', Ptr),  # the heap pointer
+    ]
+
 class Heap(object):
-    """The heap can only grow and shrink. Alloc/free is implemented in fngi."""
-    def __init__(self, memory, start):
+    """The heap grows up."""
+    def __init__(self, memory, mheap):
         self.memory = memory
-        self.start = start
-        self.heap = start
+        self.mheap = mheap
+
+    @property # property without name.setter is immutable access
+    def start(self) -> int:
+        return self.mheap.start
+
+    @property
+    def end(self) -> int:
+        return self.mheap.end
+
+    @property
+    def heap(self) -> int:
+        return self.mheap.heap
+
+    @heap.setter
+    def heap(self, val: int):
+        self.mheap.heap = val
+
+    def checkRange(self, ptr, size):
+        if ptr < self.start or ptr + size >= self.end:
+            raise IndexError(
+                    "start={} end={} ptr={} size={}".format(self.start, self.end, ptr, size))
 
     def grow(self, size, align=True):
         """Grow the heap, return the beginning of the grown region."""
         size = size + (needAlign(size) if align else 0)
-        self.memory.checkRange(self.heap + size)
+        self.checkRange(self.heap, size)
         out = self.heap
         self.heap += size
         return out
 
     def shrink(self, size, align=True):
         size = size + (needAlign(size) if align else 0)
-        self.memory.checkRange(self.heap - size)
+        self.checkRange(self.heap - size, size)
         self.heap -= size
 
+    def push(self, value: DataTy, align=True) -> DataTy:
+        """Push a DataTy then return it's mutable reference inside memory"""
+        ptr = self.grow(sizeof(value), align)
+        self.memory.set(ptr, value)
+        return self.memory.get(ptr, getDataTy(value))
 
-class Stack(object):
-    """The core stack type for storing data of various kinds.
 
-    This is the memory that interpreted fngi programs access. It is a simply a
-    bytearray, with fngi structures being C-like. The stacks are also used for
-    interfacing between python and fngi programs.
+class MStack(ctypes.Structure):
+    """A stack as represented in memory."""
+    _fields_ = [
+        ('start', Ptr), # the start of stack's memory
+        ('end', Ptr),   # the end of stack's memory
+        ('sp', Ptr),  # the stack pointer
+    ]
+
+class Stack(object)
+    """Stack implementation, used for the data stack and the return stack.
+
+    Stacks grow down, and typically are kept on alignment.
     """
-    def __init__(self, memory: Memory, start: int, size: int):
+    def __init__(self, memory: Memory, mstack: MStack):
         self.memory = memory
-        self.start = start
-        self.end = self.start + size
-        self.total_size = size
-        self.sp = self.end
+        self.mstack = mstack
+        self.total_size = mstack.end - mstack.start
+
+    @property # property without name.setter is immutable access
+    def start(self) -> int:
+        return self.mstack.start
+
+    @property
+    def end(self) -> int:
+        return self.mstack.end
+
+    @property
+    def sp(self) -> int:
+        return self.mstack.sp
+
+    @heap.setter
+    def sp(self, val: int):
+        self.mstack.sp = val
 
     def checkRange(self, index, size):
         if index < 0 or index + size > self.total_size:
@@ -356,7 +413,7 @@ class U16IndexSll(ctypes.Structure):
         #   TO: root -> i -> a -> b -> ...
 
         # Set: i -> a
-        memory.set(memory.arrayPtr + i * sizeof(U16), U16(self.root)
+        memory.set(memory.arrayPtr + i * sizeof(U16), U16(self.root))
         # Set: root -> i
         self.root = i
 
@@ -372,6 +429,12 @@ class U16IndexSll(ctypes.Structure):
         return out
 
 
+class MBlockAllocator(ctypes.Structure):
+    _fields_ = [
+        ('freeRootIndex', U16),
+        ('blocksPtr', Ptr),
+    ]
+
 class BlockAllocator(ctypes.Structure):
     """A global allocator that allows allocating only 4k blocks.
 
@@ -384,24 +447,29 @@ class BlockAllocator(ctypes.Structure):
 
     When a block is used, it's value is set to BLOCK_USED
     """
-    memory = None
+    def __init__(self, memory: Memory, mba: MBlockAllocator):
+        self.memory = memory
+        self.mba = mba
 
-    _fields_ = [
-        ('freeRoot': U16),
-        ('blocks': BlocksArray),
-    ]
+    @property
+    def freeRootIndex(self) -> int:
+        return self.mba.freeRoot
+
+    @property
+    def blocksPtr(self) -> BlocksArray:
+        return self.mba.blocksPtr
 
     def selfPtr(self):
-        return self.memory.selfPtr(self)
+        return self.memory.getPtrTo(self.mba)
 
     def freeRootPtr(self):
         return self.selfPtr() + BlockAllocator.freeRoot.offset
 
     def blocksStart(self) -> int:
-        return self.selfPtr() + BlockAllocator.blocks.offset
+        return self.blocksPtr
 
-    def blocksEnd(self): -> int:
-        return self.blockStart + sizeof(BlockAllocator.blocks)
+    def blocksEnd(self) -> int:
+        return self.blockStart() + BLOCKS_SIZE
 
     def alloc(self) -> int:
         """Return the indeex to a free block, or 0."""
@@ -415,7 +483,7 @@ class BlockAllocator(ctypes.Structure):
 
     def free(self, block: int):
         newRoot = block
-        self.checkPtr(self.getPtr(newRoot))
+        self.checkPtr(self.getPtrTo(newRoot))
         self.blocks[newRoot] = self.freeRoot
         self.freeRoot = newRoot
 
@@ -425,7 +493,7 @@ class BlockAllocator(ctypes.Structure):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
                 ptr, ptrAlign, self.blocksStart(), self.blocksEnd()))
 
-    def getPtr(self, block: int):
+    def getPtrTo(self, block: int):
         ptr = self.start + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
@@ -434,23 +502,6 @@ class BlockAllocator(ctypes.Structure):
         self.checkPtr(ptr)
         return (ptr - self.start) % BLOCK_SIZE
 
-
-def createBlockAllocator(memory: Memory, ptr: int) -> BlockAllocator:
-    """Create a new block allocator instance in memory at the pointer.
-
-    The caller must have reserved sufficient space for the block allocator.
-    """
-    ba = BlockAllocator.from_bytes(memory.data, ptr)
-
-    # Create a LL with each index pointing to the next index, and the last
-    # index pointing to BLOCK_FREE
-    for i in range(0, BLOCKS_TOTAL):
-        ba.blocks[i] = i + 1
-    ba.blocks[BLOCKS_TOTAL - 1] = BLOCK_FREE
-
-    # The "root" node is then the 0th index
-    ba.freeRoot = 0
-    return ba
 
 
 def joinMem(ptr1: int, ptr2: int, size: int):
@@ -511,7 +562,7 @@ class Arena(object):
 
         self.blockAllocator.blocks[index] = self.blockRoot
         self.blockRoot = index
-        return self.blockAllocator.getPtr(index)
+        return self.blockAllocator.getPtrTo(index)
 
     def pushFreePo2(self, po2, ptr):
         if po2 == 12:
@@ -604,16 +655,19 @@ class Env(object):
     def __init__(
             self,
             memory: Memory,
-            heap: Heap,
             dataStack: Stack,
+            heap: Heap,
+            ba: BlockAllocator,
             returnStack: Stack,
             fnPtrLookup: Dict[int, Fn],
             tys: Dict[str, Ty],
             refs: Dict[Ty, Ref],
             ):
         self.memory = memory
+        self.dataStack = dataStack
         self.heap = heap
-        self.dataStack, self.returnStack = dataStack, returnStack
+        self.ba = ba
+        self.returnStack = returnStack
         self.fnPtrLookup = fnPtrLookup
 
         self.tys = tys
@@ -622,25 +676,102 @@ class Env(object):
         self.running = False
         self.ep = 0 # execution pointer
 
-        # Registered later
-        self.memoryManager = None
-
     def copyForTest(self):
         """Copy the env for the test. Sets ep=0 and running=True."""
-        out = copy.deepcopy(self)
-        out.ep = 0
+        m = copy.deepcopy(self.memory)
+        dataStack = copy.deepcopy(self.dataStack)
+
+        heap = Heap(m, self.heap.mheap)
+        ba = BlockAllocator(m, self.ba.mba)
+        returnStack = Stack(m, self.returnStack.mstack)
+
+        out = Env(
+            memory=m,
+            dataStack=dataStack,
+            heap=heap,
+            ba=ba,
+            returnStack=returnStack,
+            tys=copy.deepcopy(self.tys),
+            refs=copy.deepcopy(self.refs))
+
         out.running = True
+        out.ep = 0
         return out
 
 
-MEMORY = Memory(TOTAL_MEMORY)
-HEAP = Heap(MEMORY, 0)
+
+# Memory layout:
+# CODE_HEAP: location where "code" and native fn indexes go.
+#   note: memory address 0 has something special written.
+# BLOCK_ALLOCATOR: location for block allocator to use
+# EXTRA_HEAP: some extra heap space to put global variables and data
+#   such as the global allocators, user-defined globals, compiler state, etc.
+# RETURN_STACK: the return stack
+MEMORY_SIZE = (
+    CODE_HEAP_SIZE
+    + BLOCKS_SIZE
+    + EXTRA_HEAP_SIZE
+    + RETURN_STACK_SIZE)
+
+
+MEMORY = Memory(MEMORY_SIZE)
+
+# Note: return stack is "above" the heap
+HEAP = Heap(MEMORY, MHeap(0, MEMORY_SIZE - RETURN_STACK_SIZE))
+HEAP_MEM = 0
+CODE_HEAP_MEM = HEAP.grow(CODE_HEAP_SIZE)
+BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_SIZE)
+RETURN_STACK_MEM = BLOCK_ALLOCATOR_MEM + EXTRA_HEAP_SIZE
+# data_stack: not in main memory.
+
+# Now that we have the _space_ for all of our memory regions, we need to
+# actually keep the mutations to them synced within the main memory block.
+#
+# Why go to this trouble? This means that if we re-implement this language
+# according to this binary spec, the binary output should match _exactly_
+# at all points of execution. This will make testing and debugging much easier.
+# For example, we can write tests that compile a fngi program using both python
+# and forth compilers and assert they are identical.  Also, this means we can
+# write assembly dumping and debugging tools in python and use them on our
+# Forth implementation.
+
+
+
+# Data stack kept in separate memory region
+DATA_STACK = Stack(
+    Memory(DATA_STACK_SIZE),
+    MStack(0, DATA_STACK_SIZE, DATA_STACK_SIZE))
+
+# Note: Heap.push sets the memory and returns a mutable reference
+HEAP.mheap = HEAP.push(HEAP.mheap)
+CODE_HEAP = Heap(
+    MEMORY,
+    HEAP.push(MHeap(
+        CODE_HEAP_MEM,
+        CODE_HEAP_MEM + CODE_HEAP_SIZE,
+        CODE_HEAP_MEM + CODE_HEAP_SIZE)))
+
+BLOCK_ALLOCATOR = BlockAllocator(
+    MEMORY,
+    HEAP.push(MBlockAllocator(0, BLOCK_ALLOCATOR_MEM)))
+
+RETURN_STACK_MEM_END = RETURN_STACK_MEM + RETURN_STACK_SIZE
+RETURN_STACK = Stack(
+    MEMORY,
+    HEAP.push(MStack(RETURN_STACK_MEMORY, RETURN_STACK_END, RETURN_STACK_END)))
+
+# Data stack kept in separate memory region
+DATA_STACK = Stack(
+    Memory(DATA_STACK_SIZE),
+    MStack(0, DATA_STACK_SIZE, DATA_STACK_SIZE))
+
 
 ENV = Env(
     memory=MEMORY,
+    dataStack=DATA_STACK,
     heap=HEAP,
-    dataStack=Stack(Memory(DATA_STACK_SIZE), 0, DATA_STACK_SIZE),
-    returnStack=Stack(MEMORY, HEAP.grow(STACK_SIZE), STACK_SIZE),
+    ba=BLOCK_ALLOCATOR,
+    returnStack=RETURN_STACK,
     fnPtrLookup={},
     tys={},
     refs={},
