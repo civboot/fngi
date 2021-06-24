@@ -212,6 +212,11 @@ class MHeap(ctypes.Structure):
         ('heap', Ptr),  # the heap pointer
     ]
 
+    @classmethod
+    def new(cls, start, end):
+        return cls(start, end, start)
+
+
 class Heap(object):
     """The heap grows up."""
     def __init__(self, memory, mheap):
@@ -267,6 +272,10 @@ class MStack(ctypes.Structure):
         ('sp', Ptr),  # the stack pointer
     ]
 
+    @classmethod
+    def new(cls, start, end):
+        return cls(start, end, end)
+
 class Stack(object):
     """Stack implementation, used for the data stack and the return stack.
 
@@ -279,7 +288,7 @@ class Stack(object):
 
     @classmethod
     def forTest(cls, size: int):
-        return cls(Memory(size), MStack(0, size, size))
+        return cls(Memory(size), MStack.new(0, size))
 
     @property # property without name.setter is immutable access
     def start(self) -> int:
@@ -663,6 +672,7 @@ class Env(object):
             memory: Memory,
             dataStack: Stack,
             heap: Heap,
+            codeHeap: Heap,
             ba: BlockAllocator,
             returnStack: Stack,
             fnPtrLookup: Dict[int, Fn],
@@ -672,6 +682,7 @@ class Env(object):
         self.memory = memory
         self.dataStack = dataStack
         self.heap = heap
+        self.codeHeap = codeHeap
         self.ba = ba
         self.returnStack = returnStack
         self.fnPtrLookup = fnPtrLookup
@@ -683,11 +694,12 @@ class Env(object):
         self.ep = 0 # execution pointer
 
     def copyForTest(self):
-        """Copy the env for the test. Sets ep=4 and running=True."""
+        """Copy the env for the test. Sets ep=heap.heap and running=True."""
         m = copy.deepcopy(self.memory)
         dataStack = copy.deepcopy(self.dataStack)
 
         heap = Heap(m, self.heap.mheap)
+        codeHeap = Heap(m, self.codeHeap.mheap)
         ba = BlockAllocator(m, self.ba.mba)
         returnStack = Stack(m, self.returnStack.mstack)
 
@@ -695,6 +707,7 @@ class Env(object):
             memory=m,
             dataStack=dataStack,
             heap=heap,
+            codeHeap=codeHeap,
             ba=ba,
             returnStack=returnStack,
             fnPtrLookup=copy.deepcopy(self.fnPtrLookup),
@@ -702,7 +715,7 @@ class Env(object):
             refs=copy.deepcopy(self.refs))
 
         out.running = True
-        out.ep = 4
+        out.ep = self.heap.heap
         return out
 
 
@@ -726,7 +739,7 @@ MEMORY.data[0:4] = b'\xA0\xDE\xFE\xC7' # address 0 is "A DEFECT"
 
 
 # Note: return stack is "above" the heap
-HEAP = Heap(MEMORY, MHeap(0, MEMORY_SIZE - RETURN_STACK_SIZE))
+HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
 CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
 BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
 REAL_HEAP_START = HEAP.heap
@@ -750,16 +763,14 @@ RETURN_STACK_MEM = BLOCK_ALLOCATOR_MEM + EXTRA_HEAP_SIZE
 # Data stack kept in separate memory region
 DATA_STACK = Stack(
     Memory(DATA_STACK_SIZE),
-    MStack(0, DATA_STACK_SIZE, DATA_STACK_SIZE))
+    MStack.new(0, DATA_STACK_SIZE))
 
 # Note: Heap.push sets the memory and returns a mutable reference
 HEAP.mheap = HEAP.push(HEAP.mheap)
 CODE_HEAP = Heap(
     MEMORY,
-    HEAP.push(MHeap(
-        CODE_HEAP_MEM,
-        CODE_HEAP_MEM + CODE_HEAP_SIZE,
-        CODE_HEAP_MEM + CODE_HEAP_SIZE)))
+    HEAP.push(MHeap.new(
+        CODE_HEAP_MEM, CODE_HEAP_MEM + CODE_HEAP_SIZE)))
 
 BLOCK_ALLOCATOR = BlockAllocator(
     MEMORY,
@@ -768,18 +779,19 @@ BLOCK_ALLOCATOR = BlockAllocator(
 RETURN_STACK_MEM_END = RETURN_STACK_MEM + RETURN_STACK_SIZE
 RETURN_STACK = Stack(
     MEMORY,
-    HEAP.push(MStack(RETURN_STACK_MEM, RETURN_STACK_MEM_END, RETURN_STACK_MEM_END)))
+    HEAP.push(MStack.new(RETURN_STACK_MEM, RETURN_STACK_MEM_END)))
 
 # Data stack kept in separate memory region
 DATA_STACK = Stack(
     Memory(DATA_STACK_SIZE),
-    MStack(0, DATA_STACK_SIZE, DATA_STACK_SIZE))
+    MStack.new(0, DATA_STACK_SIZE))
 
 
 ENV = Env(
     memory=MEMORY,
     dataStack=DATA_STACK,
     heap=HEAP,
+    codeHeap=CODE_HEAP,
     ba=BLOCK_ALLOCATOR,
     returnStack=RETURN_STACK,
     fnPtrLookup={},
@@ -919,7 +931,7 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             for out, ty in zip(outStack, outputsPushOrder):
                 env.dataStack.push(ty(out))
 
-        fnPtr = HEAP.grow(4)
+        fnPtr = ENV.codeHeap.grow(4)
         nativeFnInstance = NativeFn(name, inputs, outputs, callDef, fnPtr)
 
         # Handle registration
@@ -950,22 +962,21 @@ def literalU32(env):
     return [out]
 
 
-# FIXME:
-# def testCallLoop_addLiterals():
-#     """Write and test an ultra-basic fngi "function" that just adds two
-#     literals and quits.
-#     """
-#     env = ENV.copyForTest()
-#     env.memory.setArray(
-#         4,
-#         [
-#             literalU32.u32(), U32(22),
-#             literalU32.u32(), U32(20),
-#             addU32.u32(), quit.u32(),
-#         ])
-#     callLoop(env)
-#     result = env.dataStack.pop(U32).value
-#     assert 42 == result
+def testCallLoop_addLiterals():
+    """Write and test an ultra-basic fngi "function" that just adds two
+    literals and quits.
+    """
+    env = ENV.copyForTest()
+    env.memory.setArray(
+        env.heap.heap,
+        [
+            literalU32.u32(), U32(22),
+            literalU32.u32(), U32(20),
+            addU32.u32(), quit.u32(),
+        ])
+    callLoop(env)
+    result = env.dataStack.pop(U32).value
+    assert 42 == result
 
 # Now that we have a basic execution engine, let's flush out some of the language.
 #
