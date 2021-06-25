@@ -889,11 +889,12 @@ RefU64 = createNativeRef(U64)
 ##############################################################################
 # Core function types and the fngi callLoop
 #
-# This is presented early so that it is clear how simple things are. Experienced
-# programmers may notice the similarities to the execution model of Forth, which
-# is intentional, because fngi will eventually be implemented in Forth. This (python)
-# implementation is for prototyping and to provide a reference/learning manual for the
-# stage0 fngi language. It will be kept up-to-date with the stage0 forth compiler.
+# The call loop is what runs a fngi program (for stage0, later stages may
+# compile to wasm or native bytecode). Experienced programmers may notice the
+# similarities to the execution model of Forth, which is intentional, because
+# fngi will eventually be implemented in Forth. This (python) implementation is
+# for prototyping and to provide a reference/learning manual for the stage0
+# fngi language. It will be kept up-to-date with the stage0 forth compiler.
 #
 # For the execution model, there are two types of Fn (function), NativeFn which
 # are implemented in python (and have a reference function pointer) and UserFn
@@ -956,12 +957,6 @@ def callLoop(env: Env):
 # We want a way to define native fn's in as few lines as possible. We will use
 # decorators and other python tricks extensively to avoid boilerplate, so it's
 # worth learning them if you don't already know them.
-
-def popData(env: Env, ty: Ty) -> int:
-    if issubclass(ty, Ref):
-        return env.dataStack.pop(Ptr)
-    else:
-        return env.dataStack.pop(ty)
 
 def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
     """Takes some types and a python defined function and converts to an
@@ -1196,8 +1191,8 @@ def compareI32(env, a, b):
 # With the above we should have enough to compile the stage0 language, except
 # for macros which we will get to later.
 #
-# First we are going to build the parser, which fairly self-explanatory. We parse
-# and emit tokens.
+# First we are going to build the parser, which fairly self-explanatory. We
+# parse and emit tokens.
 
 ## Tokens
 class TokenVariant(enum.Enum):
@@ -1237,7 +1232,6 @@ class TokenVariant(enum.Enum):
 class Token(object):
     variant: TokenVariant
     string: str = None
-    lines: int = 0
 
 EOF = Token(TokenVariant.EOF)
 
@@ -1261,133 +1255,172 @@ LET = Token(TokenVariant.LET)
 RETURN = Token(TokenVariant.RETURN)
 
 
-def isWhitespace(c: str):
-    if c == '': return False
-    return ord(c) <= ord(' ')
+def isWhitespace(c: int) -> bool:
+    if c == 0: return False
+    return c <= ord(' ')
 
-def isSymbol(c: str):
-    return (ord('!') <= ord(c) <= ord('/') or
-            ord(':') <= ord(c) <= ord('@') or
-            ord('[') <= ord(c) <= ord('`') or
-            ord('{') <= ord(c) <= ord('~'))
+def isSymbol(c: int) -> bool:
+    return (ord('!') <= c <= ord('/') or
+            ord(':') <= c <= ord('@') or
+            ord('[') <= c <= ord('`') or
+            ord('{') <= c <= ord('~'))
 
-def isNameChar(c: str):
+def isNameChar(c: int) -> bool:
     return not isWhitespace(c) and not isSymbol(c)
+
+
+class Scanner(object):
+    """The scanner reads into a 32 byte buffer and provides nextByte() and
+    backByte() methods.
+
+    The scanner only allows going back by 1 byte before progressing again.
+    Any more may throw an error.
+
+    The scanner also tracks the filePos, line, and column.
+
+    Obviously there are python classes that can do this for us, but we
+    want something that we can emulate in the forth implementation.
+    """
+    BUF_SIZE = 32
+    LAST_COL_SENTINEL = 0xFFFFFFFF
+
+    def __init__(self, fo: io.TextIOWrapper):
+        self.fo = fo
+        self.buffer = bytearray(self.BUF_SIZE)
+        self.bufMax = 0
+        self.bufIndex = 0
+        self.filePos = 0
+        self.lastColumn = self.LAST_COL_SENTINEL
+        self.column = 0
+        self.line = 0
+
+    def nextByte(self) -> int:
+        if self.bufIndex == self.bufMax:
+            if self.bufMax != 0:
+                # Move the last character to the start to allow backByte()
+                self.buffer[0] = self.buffer[self.bufMax -1]
+                self.bufIndex = 1
+            else:
+                self.bufIndex = 0 # no byte to go back to
+
+            # try to fill the buffer
+            readBytes = self.fo.read(self.BUF_SIZE - 1)
+            self.bufMax = self.bufIndex + len(readBytes)
+            self.buffer[self.bufIndex:self.bufMax] = readBytes
+
+        if self.bufIndex == self.bufMax:
+            return 0 # EOF
+
+        self.lastColumn = self.column
+
+        b = self.buffer[self.bufIndex]
+        self.bufIndex += 1
+        self.filePos += 1
+        if b == ord('\n'):
+            self.line += 1
+            self.column = 0
+        else:
+            self.column += 1
+
+        return b
+
+    def backByte(self):
+        if self.bufIndex == 0:
+            raise IndexError("Cannot go back at start.")
+        if self.lastColumn == self.LAST_COL_SENTINEL:
+            raise IndexError("Cannot go back > 1 byte")
+        self.bufIndex -= 1
+        self.filePos -= 1
+        self.column = self.lastColumn
+        self.lastColumn = self.LAST_COL_SENTINEL
+        if self.buffer[self.bufIndex] == ord(b'\n'):
+            self.line -= 1
 
 
 class TokenStream(object):
     def __init__(self, fo: io.TextIOWrapper):
+        fo.seek(0)
+        self.scanner = Scanner(fo)
+
         self.fo = fo
         self.fileSize = os.stat(fo.fileno()).st_size
         self.tokenIndex = 0
         self.lineno = 0
 
-    def nextToken(self):
-        self.fo.seek(self.tokenIndex)
-        nextToken(self.fo, self.fileSize)
-        self.tokenIndex = self.fo.tell()
-
-    def checkForLine(self, c: str):
-        if c == '\n':
-            self.lineno += 1
-        return c
-
-    def get(self, start: int, size: int):
-        self.fo.seek(start)
-        return self.fo.read(size)
-
-    def read1(self):
-        return self.fo.read(1)
-
-    def seekBack1(self, c: str):
-        if c != b'': 
-            self.fo.seek(self.fo.tell() - 1)
-
     def nextToken(self) -> Token:
-        """Parse a single token from the file."""
-        f = self.fo
-        c = self.checkForLine(self.read1())
-        while isWhitespace(c): # skip whitespace
-            c = self.checkForLine(self.read1())
+        sc = self.scanner
+        c = sc.nextByte()
+        while isWhitespace(c):
             if c == b'': break
+            c = sc.nextByte()
 
-        if c == b'':
+        if c == 0:
             return EOF
 
-        elif c == b'/':
-            c = self.read1()
-            if c != b'/':
-                self.seekBack1(c)
-                return Token(TokenVariant.INVALID, b'/')
-
-            if c == b'/':
-                out = []
-                while c != b'' and c != b'\n':
-                    c = self.read1()
+        elif c == ord(b'/'):
+            c = sc.nextByte()
+            if c == ord(b'/'): # LINE_COMMENT
+                out = bytearray(b'//')
+                while c != 0 and c != ord(b'\n'):
+                    c = sc.nextByte()
                     out.append(c)
-                self.checkForLine(c)
-                return Token(TokenVariant.LINE_COMMENT, b''.join(out), 1)
+                return Token(TokenVariant.LINE_COMMENT, out)
+            else:
+                self.backByte()
+                return Token(TokenVariant.INVALID, c)
 
-        elif c == b'!':
-            c = self.read1()
-            if c == b'!':
+        elif c == ord(b'!'):
+            c = sc.nextByte()
+            if c == ord(b'!'):
                 return DOUBLE_MACRO
-            self.seekBack1(c)
+            sc.backByte()
             return SINGLE_MACRO
 
-        elif c == b'-':
-            c = self.read1()
-            if c == b'>':
+        elif c == ord(b'-'):
+            c = sc.nextByte()
+            if c == ord(b'>'):
                 return ARROW
-            self.seekBack1(c)
+            sc.backByte()
             return Token(TokenVariant.INVALID, b'-')
 
-        elif c == b'\\': # Escaped Str
-            out = [b'\\']
-            c = self.read1()
+        elif c == ord(b'\\'): # Escape, must be \"
+            out = bytearray([c])
+            c = sc.nextByte()
             out.append(c)
-            if c != b'"':
-                lines = c == b'\n'
-                self.lineno += lines
-                return Token(TokenVariant.INVALID, b''.join(out), lines)
+            if c != ord(b'"'):
+                return Token(TokenVariant.INVALID, out)
 
-            out = []
-            startingLineno = self.lineno
             while True:
-                c = self.checkForLine(self.read1())
+                c = sc.nextByte()
                 out.append(c)
-                if c == b'\\':
-                    c = self.checkForLine(self.read1())
+                if c == ord(b'\\'):
+                    c = sc.nextByte()
                     out.append(c)
-                    if c == b'"':
+                    if c == ord(b'"'):
                         break
 
-            return Token(
-                TokenVariant.ESCAPED_STR,
-                b''.join(out),
-                lines=self.lineno - startingLineno)
+            return Token(TokenVariant.ESCAPED_STR, out)
 
-        elif c == b';': return SEMICOLON
-        elif c == b'=': return EQUAL
-        elif c == b'&': return REF
-        elif c == b'@': return DEREF
-        elif c == b'(': return BLOCK_OPEN
-        elif c == b')': return BLOCK_CLOSE
-        elif c == b'{': return DATA_OPEN
-        elif c == b'}': return DATA_CLOSE
-        elif c == b'[': return TYPE_OPEN
-        elif c == b']': return TYPE_CLOSE
-        elif isSymbol(c): return Token(TokenVariant.INVALID, c)
+        elif c == ord(b';'): return SEMICOLON
+        elif c == ord(b'='): return EQUAL
+        elif c == ord(b'&'): return REF
+        elif c == ord(b'@'): return DEREF
+        elif c == ord(b'('): return BLOCK_OPEN
+        elif c == ord(b')'): return BLOCK_CLOSE
+        elif c == ord(b'{'): return DATA_OPEN
+        elif c == ord(b'}'): return DATA_CLOSE
+        elif c == ord(b'['): return TYPE_OPEN
+        elif c == ord(b']'): return TYPE_CLOSE
+        elif isSymbol(c): return Token(TokenVariant.INVALID, bytearray([c]))
 
-        name = [c]
+        name = bytearray([c])
         while True:
-            c = self.read1()
+            c = sc.nextByte()
             if not isNameChar(c):
-                self.seekBack1(c)
+                sc.backByte()
                 break
             name.append(c)
 
-        name = b''.join(name)
         if name == b'fn': return FN
         if name == b'let': return LET
         if name == b'return': return RETURN
