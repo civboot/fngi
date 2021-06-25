@@ -175,10 +175,16 @@ class Memory(object):
         The definition of Ptr is this index."""
         return ctypes.addressof(value) - ctypes.addressof(self.data)
 
-    def get(self, ptr: int, ty: DataTy):
+    def get(self, ptr: int, ty: DataTy, copy=False):
         ty = getDataTy(ty)
         self.checkRange(ptr + sizeof(ty))
         return ty.from_buffer(self.data, ptr)
+
+    def getCopy(self, ptr: int, ty: DataTy):
+        ty = getDataTy(ty)
+        self.checkRange(ptr + sizeof(ty))
+        return ty.from_buffer_copy(self.data, ptr)
+
 
     def set(self, ptr, value: DataTy):
         size = sizeof(value)
@@ -317,10 +323,11 @@ class Stack(object):
         self.checkRange(self.sp + index, sizeof(value))
         self.memory.set(self.sp + index, value)
 
-    def push(self, value: DataTy, align=True):
-        size = sizeof(value) + (needAlign(sizeof(value)) if align else 0)
+    def push(self, value: DataTy):
+        size = sizeof(value) + needAlign(sizeof(value))
         self.checkRange(self.sp - size, size)
         self.sp -= size
+        self.memory.set(self.sp, U32(0)) # zero the memory first
         self.memory.set(self.sp, value)
 
     # Get / Pop
@@ -331,10 +338,10 @@ class Stack(object):
         self.checkRange(self.sp + index, sizeof(ty))
         return self.memory.get(self.sp + index, ty)
 
-    def pop(self, ty: DataTy, align=True) -> DataTy:
-        size = sizeof(ty) + (needAlign(sizeof(ty)) if align else 0)
+    def pop(self, ty: DataTy) -> DataTy:
+        size = sizeof(ty) + needAlign(sizeof(ty))
         self.checkRange(self.sp, size)
-        out = self.memory.get(self.sp, ty)
+        out = self.memory.getCopy(self.sp, ty)
         self.sp += size
         return out
 
@@ -747,6 +754,7 @@ REAL_HEAP_START = HEAP.heap
 RETURN_STACK_MEM = BLOCK_ALLOCATOR_MEM + EXTRA_HEAP_SIZE
 # data_stack: not in main memory.
 
+
 # Now that we have the _space_ for all of our memory regions, we need to
 # actually keep the mutations to them synced within the main memory block.
 #
@@ -754,16 +762,14 @@ RETURN_STACK_MEM = BLOCK_ALLOCATOR_MEM + EXTRA_HEAP_SIZE
 # according to this binary spec, the binary output should match _exactly_
 # at all points of execution. This will make testing and debugging much easier.
 # For example, we can write tests that compile a fngi program using both python
-# and forth compilers and assert they are identical.  Also, this means we can
+# and forth compilers and assert they are identical. Also, this means we can
 # write assembly dumping and debugging tools in python and use them on our
 # Forth implementation.
 
-
-
 # Data stack kept in separate memory region
 DATA_STACK = Stack(
-    Memory(DATA_STACK_SIZE),
-    MStack.new(0, DATA_STACK_SIZE))
+    Memory(DATA_STACK_SIZE + 4),
+    MStack.new(4, DATA_STACK_SIZE))
 
 # Note: Heap.push sets the memory and returns a mutable reference
 HEAP.mheap = HEAP.push(HEAP.mheap)
@@ -785,7 +791,6 @@ RETURN_STACK = Stack(
 DATA_STACK = Stack(
     Memory(DATA_STACK_SIZE),
     MStack.new(0, DATA_STACK_SIZE))
-
 
 ENV = Env(
     memory=MEMORY,
