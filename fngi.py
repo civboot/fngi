@@ -474,7 +474,7 @@ class BlockAllocator(ctypes.Structure):
 
     @property
     def freeRootIndex(self) -> int:
-        return self.mba.freeRoot
+        return self.mba.freeRootIndex
 
     @property
     def blocksPtr(self) -> BlocksArray:
@@ -769,10 +769,10 @@ class Env(object):
         m = copy.deepcopy(self.memory)
         dataStack = copy.deepcopy(self.dataStack)
 
-        heap = Heap(m, self.heap.mheap)
-        codeHeap = Heap(m, self.codeHeap.mheap)
-        ba = BlockAllocator(m, self.ba.mba)
-        returnStack = Stack(m, self.returnStack.mstack)
+        heap = Heap(m, m.get(self.memory.getPtrTo(self.heap.mheap), MHeap))
+        codeHeap = Heap(m, m.get(self.memory.getPtrTo(self.codeHeap.mheap), MHeap))
+        ba = BlockAllocator(m, m.get(self.memory.getPtrTo(self.ba.mba), MBlockAllocator))
+        returnStack = Stack(m, m.get(self.memory.getPtrTo(self.returnStack.mstack), MStack))
 
         out = Env(
             memory=m,
@@ -790,7 +790,6 @@ class Env(object):
         return out
 
 
-
 ENV = Env(
     memory=MEMORY,
     dataStack=DATA_STACK,
@@ -802,6 +801,38 @@ ENV = Env(
     tys={},
     refs={},
 )
+
+def testMemoryLayout():
+    _testMemoryLayout(ENV)
+
+def _testMemoryLayout(env: Env):
+    reservedSpace = CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE
+    assert reservedSpace == env.memory.getPtrTo(env.heap.mheap)
+
+    # Assert current heap location
+    assert 0 == env.heap.start
+    expected = reservedSpace
+    expected += 2 * sizeof(MHeap) + sizeof(MBlockAllocator) + sizeof(MStack)
+    assert expected == env.heap.heap
+
+    # Block allocator
+    assert CODE_HEAP_SIZE == env.ba.blocksPtr
+    assert 0 == env.ba.freeRootIndex
+    expected = reservedSpace + 2 * sizeof(MHeap)
+    assert expected == env.memory.getPtrTo(env.ba.mba)
+
+
+def testEnvCopy():
+    env = ENV.copyForTest()
+    assert env.memory is not ENV.memory
+    assert env.memory.data is not ENV.memory.data
+    assert bytes(env.memory.data) == bytes(ENV.memory.data)
+    assert env.dataStack.mstack is not ENV.dataStack.mstack
+    assert env.heap.mheap is not ENV.heap.mheap
+    assert env.ba.mba is not ENV.ba.mba
+    assert env.returnStack.mstack is not ENV.returnStack.mstack
+
+    _testMemoryLayout(env)
 
 
 def registerFn(fn: Fn):
