@@ -209,6 +209,21 @@ class Memory(object):
                 ptr, len(self.data)))
 
 
+class MManBase(object):
+    """Base class for memory manager objects."""
+
+    @abc.abstractmethod
+    def getMValue(self):
+        pass
+
+    def copyForTest(self, memory: Memory):
+        mvalue = self.getMValue()
+        mptr = self.memory.getPtrTo(mvalue)
+        return self.__class__(
+            memory,
+            memory.get(mptr, getDataTy(mvalue)))
+
+
 class MHeap(ctypes.Structure):
     """A heap as represented in memory."""
     _fields_ = [
@@ -222,11 +237,14 @@ class MHeap(ctypes.Structure):
         return cls(start, end, start)
 
 
-class Heap(object):
+class Heap(MManBase):
     """The heap grows up."""
     def __init__(self, memory, mheap):
         self.memory = memory
         self.mheap = mheap
+
+    def getMValue(self):
+        return self.mheap
 
     @property # property without name.setter is immutable access
     def start(self) -> int:
@@ -281,7 +299,7 @@ class MStack(ctypes.Structure):
     def new(cls, start, end):
         return cls(start, end, end)
 
-class Stack(object):
+class Stack(MManBase):
     """Stack implementation, used for the data stack and the return stack.
 
     Stacks grow down, and typically are kept on alignment.
@@ -290,6 +308,9 @@ class Stack(object):
         self.memory = memory
         self.mstack = mstack
         self.total_size = mstack.end - mstack.start
+
+    def getMValue(self):
+        return self.mstack
 
     @classmethod
     def forTest(cls, size: int):
@@ -449,14 +470,13 @@ class U16IndexSll(ctypes.Structure):
         self.root = memory.get(memory.arrayPtr, U16)
         return out
 
-
 class MBlockAllocator(ctypes.Structure):
     _fields_ = [
         ('freeRootIndex', U16),
         ('blocksPtr', Ptr),
     ]
 
-class BlockAllocator(ctypes.Structure):
+class BlockAllocator(MManBase):
     """A global allocator that allows allocating only 4k blocks.
 
     Use createBlockAllocator function to create an instance.
@@ -471,6 +491,9 @@ class BlockAllocator(ctypes.Structure):
     def __init__(self, memory: Memory, mba: MBlockAllocator):
         self.memory = memory
         self.mba = mba
+
+    def getMValue(self):
+        return self.mba
 
     @property
     def freeRootIndex(self) -> int:
@@ -769,10 +792,10 @@ class Env(object):
         m = copy.deepcopy(self.memory)
         dataStack = copy.deepcopy(self.dataStack)
 
-        heap = Heap(m, m.get(self.memory.getPtrTo(self.heap.mheap), MHeap))
-        codeHeap = Heap(m, m.get(self.memory.getPtrTo(self.codeHeap.mheap), MHeap))
-        ba = BlockAllocator(m, m.get(self.memory.getPtrTo(self.ba.mba), MBlockAllocator))
-        returnStack = Stack(m, m.get(self.memory.getPtrTo(self.returnStack.mstack), MStack))
+        heap = self.heap.copyForTest(m)
+        codeHeap = self.codeHeap.copyForTest(m)
+        ba = self.ba.copyForTest(m)
+        returnStack = self.returnStack.copyForTest(m)
 
         out = Env(
             memory=m,
