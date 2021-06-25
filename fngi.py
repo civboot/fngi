@@ -185,7 +185,6 @@ class Memory(object):
         self.checkRange(ptr + sizeof(ty))
         return ty.from_buffer_copy(self.data, ptr)
 
-
     def set(self, ptr, value: DataTy):
         size = sizeof(value)
         self.checkRange(ptr, size)
@@ -659,74 +658,12 @@ class Arena(object):
                 po2 += 1
 
 
-
 # We now come to the "global" environment. This contains all the data which
 # functions (native or user, we'll get to that) and the compiler itself mutate
 # while compiling and executing fngi code. As we'll see, fngi will be
 # simultaniously executing while compiling, as we will write a large amount of
 # even the stage0 compiler in the fngi language itself.
-
-class Env(object):
-    """Contains all the mutable state for a fngi compiler and interpreter to run.
-
-    All NativeFn's call methods take an Env instance, which they mutate. While
-    there is a global ENV variable to ease in the registration of new types and
-    native functions, tests will copy the ENV before mutating it so they do not
-    affect the global Env.
-    """
-    def __init__(
-            self,
-            memory: Memory,
-            dataStack: Stack,
-            heap: Heap,
-            codeHeap: Heap,
-            ba: BlockAllocator,
-            returnStack: Stack,
-            fnPtrLookup: Dict[int, Fn],
-            tys: Dict[str, Ty],
-            refs: Dict[Ty, Ref],
-            ):
-        self.memory = memory
-        self.dataStack = dataStack
-        self.heap = heap
-        self.codeHeap = codeHeap
-        self.ba = ba
-        self.returnStack = returnStack
-        self.fnPtrLookup = fnPtrLookup
-
-        self.tys = tys
-        self.refs = refs
-
-        self.running = False
-        self.ep = 0 # execution pointer
-
-    def copyForTest(self):
-        """Copy the env for the test. Sets ep=heap.heap and running=True."""
-        m = copy.deepcopy(self.memory)
-        dataStack = copy.deepcopy(self.dataStack)
-
-        heap = Heap(m, self.heap.mheap)
-        codeHeap = Heap(m, self.codeHeap.mheap)
-        ba = BlockAllocator(m, self.ba.mba)
-        returnStack = Stack(m, self.returnStack.mstack)
-
-        out = Env(
-            memory=m,
-            dataStack=dataStack,
-            heap=heap,
-            codeHeap=codeHeap,
-            ba=ba,
-            returnStack=returnStack,
-            fnPtrLookup=copy.deepcopy(self.fnPtrLookup),
-            tys=copy.deepcopy(self.tys),
-            refs=copy.deepcopy(self.refs))
-
-        out.running = True
-        out.ep = self.heap.heap
-        return out
-
-
-
+#
 # Memory layout:
 # CODE_HEAP: location where "code" and native fn indexes go.
 #   note: memory address 0 has something special written.
@@ -791,6 +728,68 @@ RETURN_STACK = Stack(
 DATA_STACK = Stack(
     Memory(DATA_STACK_SIZE),
     MStack.new(0, DATA_STACK_SIZE))
+
+
+class Env(object):
+    """Contains all the mutable state for a fngi compiler and interpreter to run.
+
+    All NativeFn's call methods take an Env instance, which they mutate. While
+    there is a global ENV variable to ease in the registration of new types and
+    native functions, tests will copy the ENV before mutating it so they do not
+    affect the global Env.
+    """
+    def __init__(
+            self,
+            memory: Memory,
+            dataStack: Stack,
+            heap: Heap,
+            codeHeap: Heap,
+            ba: BlockAllocator,
+            returnStack: Stack,
+            fnPtrLookup: Dict[int, Fn],
+            tys: Dict[str, Ty],
+            refs: Dict[Ty, Ref],
+            ):
+        self.memory = memory
+        self.dataStack = dataStack
+        self.heap = heap
+        self.codeHeap = codeHeap
+        self.ba = ba
+        self.returnStack = returnStack
+        self.fnPtrLookup = fnPtrLookup
+
+        self.tys = tys
+        self.refs = refs
+
+        self.running = False
+        self.ep = 0 # execution pointer
+
+    def copyForTest(self):
+        """Copy the env for the test. Sets ep=heap.heap and running=True."""
+        m = copy.deepcopy(self.memory)
+        dataStack = copy.deepcopy(self.dataStack)
+
+        heap = Heap(m, self.heap.mheap)
+        codeHeap = Heap(m, self.codeHeap.mheap)
+        ba = BlockAllocator(m, self.ba.mba)
+        returnStack = Stack(m, self.returnStack.mstack)
+
+        out = Env(
+            memory=m,
+            dataStack=dataStack,
+            heap=heap,
+            codeHeap=codeHeap,
+            ba=ba,
+            returnStack=returnStack,
+            fnPtrLookup=copy.deepcopy(self.fnPtrLookup),
+            tys=copy.deepcopy(self.tys),
+            refs=copy.deepcopy(self.refs))
+
+        out.running = True
+        out.ep = self.heap.heap
+        return out
+
+
 
 ENV = Env(
     memory=MEMORY,
