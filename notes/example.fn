@@ -1,17 +1,17 @@
 
 // Simple function. Note that expression returns the value.
-fn plus3 is [v is U32] -> U32 (
+fn plus3: [v: U32] -> U32 (
   v + 3
 )
 
 // Simple function with conditional
-fn eqauls5 is [v is U32] -> Bool (
+fn eqauls5: [v: U32] -> Bool (
   if (v == 5) then true else false
 )
 
 // Simple function with some control logic
-fn mulUsingAdd [a is U32, b is U32] -> U64 (
-  local out is U64;
+fn mulUsingAdd: [a: U32, b: U32] -> U64 (
+  local out: U64;
   if b == 0 then return 0;
 
   out = 0;
@@ -26,17 +26,17 @@ fn mulUsingAdd [a is U32, b is U32] -> U64 (
 
 // Slices are generic. They can have a max length of maxValue![U16].
 gen![T]
-struct Slice is [
-  _al is U16;  // alignment
-  len is U16;
-  ptr is Ptr;
+struct Slice: [
+  _al: U16;  // alignment
+  len: U16;
+  ptr: Ptr;
 ]
 
 gen![T]
-impl Slice is [
-  fn slotSize is [] -> [U32] ( sizeOf! T );
+impl Slice: [
+  fn slotSize: [] -> [U32] ( sizeOf! T );
 
-  fn get is [&Slice[T], U32] -> T (
+  fn get: [&Slice[T], U32] -> T (
     fetch[T]{self.ptr, index}
   )
 ]
@@ -45,30 +45,30 @@ impl Slice is [
 // Vectors are also generic. They can have a max length and capacity of
 // maxValue![U16]
 //
-// An &Vec is identical to a &Slice, except a Slice will never read the `cap`.
+// An &Vec: identical to a &Slice, except a Slice will never read the `cap`.
 // Therefore a Vec can be converted directly into a Slice with zero overhead
 // The sice will update when the vector updates.
 
 gen![T]
-struct Vec is [
-  cap is U16;
-  len is U16;
-  ptr is Ptr;
+struct Vec: [
+  cap: U16;
+  len: U16;
+  ptr: Ptr;
 ]
 
 // Type aliasing
-type VecU32 is Vec![U32];
-type u32Adder is &fn [U32, U32] -> [U32];
-type u32Consumer is &fn [] -> [U32];
+type VecU32: Vec![U32];
+type u32Adder: &fn [U32, U32] -> [U32];
+type u32Consumer: &fn [] -> [U32];
 
 // enum and using enum
-enum MaybeIntOrStr is [
+enum MaybeIntOrStr: [
   none;
-  int is Int;
-  str is Str;
+  int: Int;
+  str: Str;
 ]
 
-fn isInt is MaybeIntOrStr -> Bool (
+fn isInt: MaybeIntOrStr -> Bool (
   switch pop() (
     case none then false;
     case int then true;
@@ -77,6 +77,6 @@ fn isInt is MaybeIntOrStr -> Bool (
 )
 
 // Stack functions with unnamed parameters
-fn eqauls5 is U32 -> Bool (
+stack fn eqauls5: U32 -> Bool (
   if (popU32{} == 5) then true else false
 )
