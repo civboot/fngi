@@ -1,3 +1,17 @@
+## Endianness
+
+Little/Big endian do NOT refer to which "end" is the "big" (aka most
+significant) byte. In fact, they have the reverse meaning as that.
+
+They are reference to the Liliputans from Gulliver's travels.
+
+The "Bigendians" broke the big side of the egg (number) over their head
+(array-start). Hence a bigendian system has the large part of the number at the
+head of the array.
+
+Conversely, "Little Endian" liliputans broke the little side of the egg
+(number) over their heads (array-start) and hence have the little part of the
+number at the head.
 
 ## Hexwords
 
