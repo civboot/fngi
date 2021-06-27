@@ -1,7 +1,18 @@
 
+// Simplest function, simply returns 3.
+// Note: [] is the "void" type, this function takes no parameters.
+fn return3: [] -> U32 (
+  3
+)
+
 // Simple function. Note that expression returns the value.
 fn plus3: [v: U32] -> U32 (
   v + 3
+)
+// Simple function with assignments
+fn plus3Times5: [v:U32] -> U32 (
+  let a: U32 = v + 3;
+  a * 5
 )
 
 // Simple function with conditional
@@ -21,23 +32,50 @@ fn mulUsingAdd: [a: U32, b: U32] -> U64 (
   out
 )
 
-// Arrays must be expressed in type syntax
-// U32 Array of size 5: [5 U32]
+// A reference and dereferencing
+fn deref [ref: &U32] -> U32 (
+  @ref // @ is for dereferencing "get value at"
+)
 
-// Slices are generic. They can have a max length of maxValue![U16].
+
+// Type aliasing
+type UserId: U32;
+type u32Adder: &fn [U32, U32] -> [U32];
+type u32Consumer: &fn [] -> [U32];
+
+
+// Builtin array type: a continuous region of memory with known size
+type array_len16_U32: arr[16; U32]
+
+// Builtin stack type: for interfacing with core data stack instructions
+// (fngi's intermediate representation is a stack machine)
+//
+// The "top" (first item to be popped) of the stack is on the left. Since
+// stacks grow down, this is the lowest location in memory.
+type stack_example: stk[U32, U16, U8, U64];
+
+// A slice is a pointer to an array of data of known length up to max!U16
+// gen! means "generic"
 gen![T]
 struct Slice: [
-  _al: U16;  // alignment
+  cap: U16; // not used by slice
   len: U16;
   ptr: Ptr;
 ]
 
+// Here are how a slice might be implemented
 gen![T]
 impl Slice: [
-  fn slotSize: [] -> [U32] ( sizeOf! T );
+  fn slotSize: [] -> [U32] ( sizeOf!T );
 
-  fn get: [&Slice[T], U32] -> T (
-    fetch[T]{self.ptr, index}
+  // Of course, some of this can be inlined -- and is through constant folding.
+  fn get: stk[sliceRef: &Slice[T], index: U32] -> stk[T] (
+    refToPtr[]; // {slicePtr, index}
+    swap[]; // {index, slicePtr}
+    sizePo2Of! T; // {sizePo2T, index, slicePtr}
+    shiftLeft[]; // (same as index^po2) {byteOffset, slicePtr}
+    addU32[]; // valuePtr
+    getU32[];
   )
 ]
 
@@ -45,9 +83,9 @@ impl Slice: [
 // Vectors are also generic. They can have a max length and capacity of
 // maxValue![U16]
 //
-// An &Vec: identical to a &Slice, except a Slice will never read the `cap`.
+// An &Vec is identical to a &Slice, except a Slice will never read the `cap`.
 // Therefore a Vec can be converted directly into a Slice with zero overhead
-// The sice will update when the vector updates.
+// The sice will also update if the vector is mutated.
 
 gen![T]
 struct Vec: [
@@ -56,27 +94,18 @@ struct Vec: [
   ptr: Ptr;
 ]
 
-// Type aliasing
-type VecU32: Vec![U32];
-type u32Adder: &fn [U32, U32] -> [U32];
-type u32Consumer: &fn [] -> [U32];
-
-// enum and using enum
+// Enums can contain values.
 enum MaybeIntOrStr: [
-  none;
+  none: []; // no value
   int: Int;
   str: Str;
 ]
 
-fn isInt: MaybeIntOrStr -> Bool (
-  switch pop() (
+// Example simple use.
+fn is3: [v: MaybeIntOrStr] -> Bool (
+  switch v (
     case none then false;
-    case int then true;
+    case int then int == 3;
     case str then false;
   )
-)
-
-// Stack functions with unnamed parameters
-stack fn eqauls5: U32 -> Bool (
-  if (popU32{} == 5) then true else false
 )
