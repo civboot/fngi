@@ -1206,6 +1206,7 @@ class LexemeVariant(enum.Enum):
 
     # Single char symbols
     SEMICOLON = enum.auto() # ;
+    COLON = enum.auto() # :
     EQUAL = enum.auto() # =
     REF = enum.auto() # &
     DEREF = enum.auto() # @
@@ -1223,7 +1224,8 @@ class LexemeVariant(enum.Enum):
 
     # Contains Direct Data
     INVALID = enum.auto()
-    NAME = enum.auto()
+    NUMBER = enum.auto()
+    IDEN = enum.auto()
     LINE_COMMENT = enum.auto() # //
     ESCAPED_STR = enum.auto() # \"
 
@@ -1264,6 +1266,9 @@ def isSymbol(c: int) -> bool:
             ord(':') <= c <= ord('@') or
             ord('[') <= c <= ord('`') or
             ord('{') <= c <= ord('~'))
+
+def isNumber(c: int) -> bool:
+    return ord('0') <= c <= ord('9')
 
 def isNameChar(c: int) -> bool:
     return not isWhitespace(c) and not isSymbol(c)
@@ -1401,7 +1406,22 @@ class Lexer(object):
 
             return Lexeme(LexemeVariant.ESCAPED_STR, out)
 
+        elif ord('0') <= c <= ord('9'):
+            out = bytearray([c])
+
+            c = sc.nextByte()
+            if isNumber(c):
+                out.append(c)
+            elif isNameChar(c):
+                sc.backByte()
+                out.extend(b' followed by nameChar')
+                return Lexeme(LexemeVariant.INVALID, out)
+            else:
+                sc.backByte()
+                return Lexeme(LexemeVariant.NUMBER, out)
+
         elif c == ord(b';'): return SEMICOLON
+        elif c == ord(b':'): return COLON
         elif c == ord(b'='): return EQUAL
         elif c == ord(b'&'): return REF
         elif c == ord(b'@'): return DEREF
@@ -1425,7 +1445,7 @@ class Lexer(object):
         if name == b'let': return LET
         if name == b'return': return RETURN
 
-        return Lexeme(LexemeVariant.NAME, name)
+        return Lexeme(LexemeVariant.IDEN, name)
 
     def getAllLexemes(self) -> List[Lexeme]:
         """Used in testing."""
@@ -1445,19 +1465,19 @@ def testLexer():
     tv = LexemeVariant
     expected = [
         # let [&CStr] HELLO 
-        tv.LET, tv.TYPE_OPEN, tv.REF, tv.NAME, tv.TYPE_CLOSE, tv.NAME,
+        tv.LET, tv.TYPE_OPEN, tv.REF, tv.IDEN, tv.TYPE_CLOSE, tv.IDEN,
         # = \"Hello world!\"; 
         tv.EQUAL, tv.ESCAPED_STR, tv.SEMICOLON,
         # fn main{}
-        tv.FN, tv.NAME, tv.DATA_OPEN, tv.DATA_CLOSE,
+        tv.FN, tv.IDEN, tv.DATA_OPEN, tv.DATA_CLOSE,
         # -> {} (
         tv.ARROW, tv.DATA_OPEN, tv.DATA_CLOSE, tv.BLOCK_OPEN,
         # fdWriteString {
-        tv.NAME, tv.DATA_OPEN,
+        tv.IDEN, tv.DATA_OPEN,
         # fd = 1; // stdout
-        tv.NAME, tv.EQUAL, tv.NAME, tv.SEMICOLON, tv.LINE_COMMENT,
+        tv.IDEN, tv.EQUAL, tv.NUMBER, tv.SEMICOLON, tv.LINE_COMMENT,
         # str = HELLO;
-        tv.NAME, tv.EQUAL, tv.NAME, tv.SEMICOLON,
+        tv.IDEN, tv.EQUAL, tv.IDEN, tv.SEMICOLON,
         # }; )
         tv.DATA_CLOSE, tv.SEMICOLON, tv.BLOCK_CLOSE,
         tv.EOF,
