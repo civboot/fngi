@@ -1,6 +1,6 @@
-let [&CStr] HELLO = \"Hello world!\";
+let HELLO: &Str = \"Hello world!\";
 
-fn main{} -> {} (
+fn main: [] -> [] (
   fdWriteString {
     fd = 1; // stdout
     str = HELLO;

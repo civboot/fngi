@@ -1242,6 +1242,7 @@ DOUBLE_MACRO = Lexeme(LexemeVariant.DOUBLE_MACRO)
 ARROW = Lexeme(LexemeVariant.ARROW)
 
 SEMICOLON = Lexeme(LexemeVariant.SEMICOLON)
+COLON = Lexeme(LexemeVariant.COLON)
 EQUAL = Lexeme(LexemeVariant.EQUAL)
 REF = Lexeme(LexemeVariant.REF)
 DEREF = Lexeme(LexemeVariant.DEREF)
@@ -1464,16 +1465,16 @@ def testLexer():
     result = ts.getAllVariants()
     tv = LexemeVariant
     expected = [
-        # let [&CStr] HELLO 
-        tv.LET, tv.TYPE_OPEN, tv.REF, tv.IDEN, tv.TYPE_CLOSE, tv.IDEN,
+        # let HELLO: &Str = \"Hello world!\";
+        tv.LET, tv.IDEN, tv.COLON, tv.REF, tv.IDEN,
         # = \"Hello world!\"; 
         tv.EQUAL, tv.ESCAPED_STR, tv.SEMICOLON,
-        # fn main{}
-        tv.FN, tv.IDEN, tv.DATA_OPEN, tv.DATA_CLOSE,
-        # -> {} (
-        tv.ARROW, tv.DATA_OPEN, tv.DATA_CLOSE, tv.BLOCK_OPEN,
-        # fdWriteString {
-        tv.IDEN, tv.DATA_OPEN,
+        # fn main:
+        tv.FN, tv.IDEN, tv.COLON, 
+        #  [] -> []
+        tv.TYPE_OPEN, tv.TYPE_CLOSE, tv.ARROW, tv.TYPE_OPEN, tv.TYPE_CLOSE,
+        # ( fdWriteString {
+        tv.BLOCK_OPEN, tv.IDEN, tv.DATA_OPEN,
         # fd = 1; // stdout
         tv.IDEN, tv.EQUAL, tv.NUMBER, tv.SEMICOLON, tv.LINE_COMMENT,
         # str = HELLO;
