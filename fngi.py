@@ -1039,8 +1039,8 @@ def testCallLoop_addLiterals():
 #   data types.
 # - native and user-defined functions. In stage0 these can only push/pop native values
 #   from the stack and define local variables.
-# - native and user-defined macros which for stage0 call only popToken and
-#   pushToken
+# - native and user-defined macros which for stage0 call only popLexeme and
+#   pushLexeme
 #
 # When calling a function, the compiler must insert the following. fnStackSize is known
 # at compile time.
@@ -1194,8 +1194,8 @@ def compareI32(env, a, b):
 # First we are going to build the parser, which fairly self-explanatory. We
 # parse and emit tokens.
 
-## Tokens
-class TokenVariant(enum.Enum):
+## Lexemes
+class LexemeVariant(enum.Enum):
     # TODO: use solid integer values
     EOF = enum.auto()
 
@@ -1229,30 +1229,30 @@ class TokenVariant(enum.Enum):
 
 
 @dataclasses.dataclass
-class Token(object):
-    variant: TokenVariant
+class Lexeme(object):
+    variant: LexemeVariant
     string: str = None
 
-EOF = Token(TokenVariant.EOF)
+EOF = Lexeme(LexemeVariant.EOF)
 
-SINGLE_MACRO = Token(TokenVariant.SINGLE_MACRO)
-DOUBLE_MACRO = Token(TokenVariant.DOUBLE_MACRO)
-ARROW = Token(TokenVariant.ARROW)
+SINGLE_MACRO = Lexeme(LexemeVariant.SINGLE_MACRO)
+DOUBLE_MACRO = Lexeme(LexemeVariant.DOUBLE_MACRO)
+ARROW = Lexeme(LexemeVariant.ARROW)
 
-SEMICOLON = Token(TokenVariant.SEMICOLON)
-EQUAL = Token(TokenVariant.EQUAL)
-REF = Token(TokenVariant.REF)
-DEREF = Token(TokenVariant.DEREF)
-BLOCK_OPEN = Token(TokenVariant.BLOCK_OPEN)
-BLOCK_CLOSE = Token(TokenVariant.BLOCK_CLOSE)
-DATA_OPEN = Token(TokenVariant.DATA_OPEN)
-DATA_CLOSE = Token(TokenVariant.DATA_CLOSE)
-TYPE_OPEN = Token(TokenVariant.TYPE_OPEN)
-TYPE_CLOSE = Token(TokenVariant.TYPE_CLOSE)
+SEMICOLON = Lexeme(LexemeVariant.SEMICOLON)
+EQUAL = Lexeme(LexemeVariant.EQUAL)
+REF = Lexeme(LexemeVariant.REF)
+DEREF = Lexeme(LexemeVariant.DEREF)
+BLOCK_OPEN = Lexeme(LexemeVariant.BLOCK_OPEN)
+BLOCK_CLOSE = Lexeme(LexemeVariant.BLOCK_CLOSE)
+DATA_OPEN = Lexeme(LexemeVariant.DATA_OPEN)
+DATA_CLOSE = Lexeme(LexemeVariant.DATA_CLOSE)
+TYPE_OPEN = Lexeme(LexemeVariant.TYPE_OPEN)
+TYPE_CLOSE = Lexeme(LexemeVariant.TYPE_CLOSE)
 
-FN = Token(TokenVariant.FN)
-LET = Token(TokenVariant.LET)
-RETURN = Token(TokenVariant.RETURN)
+FN = Lexeme(LexemeVariant.FN)
+LET = Lexeme(LexemeVariant.LET)
+RETURN = Lexeme(LexemeVariant.RETURN)
 
 
 def isWhitespace(c: int) -> bool:
@@ -1337,7 +1337,7 @@ class Scanner(object):
             self.line -= 1
 
 
-class TokenStream(object):
+class Lexer(object):
     def __init__(self, fo: io.TextIOWrapper):
         fo.seek(0)
         self.scanner = Scanner(fo)
@@ -1347,7 +1347,7 @@ class TokenStream(object):
         self.tokenIndex = 0
         self.lineno = 0
 
-    def nextToken(self) -> Token:
+    def nextLexeme(self) -> Lexeme:
         sc = self.scanner
         c = sc.nextByte()
         while isWhitespace(c):
@@ -1364,10 +1364,10 @@ class TokenStream(object):
                 while c != 0 and c != ord(b'\n'):
                     c = sc.nextByte()
                     out.append(c)
-                return Token(TokenVariant.LINE_COMMENT, out)
+                return Lexeme(LexemeVariant.LINE_COMMENT, out)
             else:
                 self.backByte()
-                return Token(TokenVariant.INVALID, c)
+                return Lexeme(LexemeVariant.INVALID, c)
 
         elif c == ord(b'!'):
             c = sc.nextByte()
@@ -1381,14 +1381,14 @@ class TokenStream(object):
             if c == ord(b'>'):
                 return ARROW
             sc.backByte()
-            return Token(TokenVariant.INVALID, b'-')
+            return Lexeme(LexemeVariant.INVALID, b'-')
 
         elif c == ord(b'\\'): # Escape, must be \"
             out = bytearray([c])
             c = sc.nextByte()
             out.append(c)
             if c != ord(b'"'):
-                return Token(TokenVariant.INVALID, out)
+                return Lexeme(LexemeVariant.INVALID, out)
 
             while True:
                 c = sc.nextByte()
@@ -1399,7 +1399,7 @@ class TokenStream(object):
                     if c == ord(b'"'):
                         break
 
-            return Token(TokenVariant.ESCAPED_STR, out)
+            return Lexeme(LexemeVariant.ESCAPED_STR, out)
 
         elif c == ord(b';'): return SEMICOLON
         elif c == ord(b'='): return EQUAL
@@ -1411,7 +1411,7 @@ class TokenStream(object):
         elif c == ord(b'}'): return DATA_CLOSE
         elif c == ord(b'['): return TYPE_OPEN
         elif c == ord(b']'): return TYPE_CLOSE
-        elif isSymbol(c): return Token(TokenVariant.INVALID, bytearray([c]))
+        elif isSymbol(c): return Lexeme(LexemeVariant.INVALID, bytearray([c]))
 
         name = bytearray([c])
         while True:
@@ -1425,24 +1425,24 @@ class TokenStream(object):
         if name == b'let': return LET
         if name == b'return': return RETURN
 
-        return Token(TokenVariant.NAME, name)
+        return Lexeme(LexemeVariant.NAME, name)
 
-    def getAllTokens(self) -> List[Token]:
+    def getAllLexemes(self) -> List[Lexeme]:
         """Used in testing."""
         out = []
         while True:
-            token = self.nextToken()
+            token = self.nextLexeme()
             out.append(token)
             if token is EOF:
                 return out
 
-    def getAllVariants(self) -> List[TokenVariant]:
-        return [t.variant for t in self.getAllTokens()]
+    def getAllVariants(self) -> List[LexemeVariant]:
+        return [t.variant for t in self.getAllLexemes()]
 
-def testTokenStream():
-    ts = TokenStream(open("test_data/hello_world.fn", 'rb', buffering=0))
+def testLexer():
+    ts = Lexer(open("test_data/hello_world.fn", 'rb', buffering=0))
     result = ts.getAllVariants()
-    tv = TokenVariant
+    tv = LexemeVariant
     expected = [
         # let [&CStr] HELLO 
         tv.LET, tv.TYPE_OPEN, tv.REF, tv.NAME, tv.TYPE_CLOSE, tv.NAME,
@@ -1466,11 +1466,11 @@ def testTokenStream():
 
 
 if __name__ == '__main__':
-    def printTokens(fo):
-        ts = TokenStream(fo)
+    def printLexemes(fo):
+        ts = Lexer(fo)
         token = None
         while token is not EOF:
-            token = ts.nextToken()
+            token = ts.nextLexeme()
             print(token)
 
-    printTokens(open(sys.argv[1], 'rb', buffering=0))
+    printLexemes(open(sys.argv[1], 'rb', buffering=0))

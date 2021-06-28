@@ -1,3 +1,10 @@
+// Note: not all of this is in the stage0 compiler. The stage0 compiler will only support:
+// - comments
+// - native types, refs, stacks, structs, enums and arrays
+// - fn which take in and return unnamed stk types
+// - local or global native types, structs and enums.
+// - temporaries must be declared explicitly.
+// - macros
 
 // Simplest function, simply returns 3.
 // Note: [] is the "void" type, this function takes no parameters.
@@ -54,11 +61,11 @@ type array_len16_U32: arr[16; U32]
 // stacks grow down, this is the lowest location in memory.
 type stack_example: stk[U32, U16, U8, U64];
 
-// A slice is a pointer to an array of data of known length up to max!U16
-// gen! means "generic"
-gen![T]
+// A slice is a pointer to an array of data with a constant length
+// with a maximum value of max!U16.
+gen![T] // generic
 struct Slice: [
-  cap: U16; // not used by slice
+  _al: U16; // align
   len: U16;
   ptr: Ptr;
 ]
@@ -69,36 +76,33 @@ impl Slice: [
   fn slotSize: [] -> [U32] ( sizeOf!T );
 
   // Of course, some of this can be inlined -- and is through constant folding.
-  fn get: stk[sliceRef: &Slice[T], index: U32] -> stk[T] (
+  fn get: stk[/*sliceRef*/ &Slice[T], /*index*/ U32] -> stk[T] (
     refToPtr[]; // {slicePtr, index}
     swap[]; // {index, slicePtr}
     sizePo2Of! T; // {sizePo2T, index, slicePtr}
     shiftLeft[]; // (same as index^po2) {byteOffset, slicePtr}
     addU32[]; // valuePtr
-    getU32[];
+    fetchU32[];
   )
 ]
 
-
-// Vectors are also generic. They can have a max length and capacity of
-// maxValue![U16]
-//
-// An &Vec is identical to a &Slice, except a Slice will never read the `cap`.
-// Therefore a Vec can be converted directly into a Slice with zero overhead
-// The sice will also update if the vector is mutated.
-
-gen![T]
-struct Vec: [
-  cap: U16;
-  len: U16;
-  ptr: Ptr;
-]
+// using enums
+fn createU32SliceRaw: [ptr: Ptr, len: U16] -> Slice {
+  // Note: unlike most C-like languages do not have to specify the type of the
+  // struct -- type is known because this is the result of the expression.
+  {
+    _al = 0;
+    len = len;
+    ptr = ptr;
+  }
+}
 
 // Enums can contain values.
-enum MaybeIntOrStr: [
-  none: []; // no value
-  int: Int;
+enum ExampleEnum: [
+  none: []; // void i.e. no value
+  int: I32;
   str: Str;
+  both: [int: I32, str: Str];
 ]
 
 // Example simple use.
@@ -107,5 +111,6 @@ fn is3: [v: MaybeIntOrStr] -> Bool (
     case none then false;
     case int then int == 3;
     case str then false;
+    case both then both.int == 3;
   )
 )
