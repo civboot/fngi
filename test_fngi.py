@@ -9,6 +9,7 @@ from fngi import BLOCK_SIZE, BLOCKS_TOTAL
 from fngi import BLOCK_FREE, BLOCK_USED
 from fngi import BLOCK_FREE, BLOCK_USED, BLOCK_OOB
 from fngi import Ptr, U8, I8, U16, I16, U32, I32
+from fngi import ENV
 from ctypes import sizeof
 
 class TestStack(unittest.TestCase):
@@ -160,5 +161,12 @@ class TestBlockAllocator(unittest.TestCase):
                     bt.free(bi)
 
 
+class TestArena(unittest.TestCase):
+    def setUp(self):
+        self.env = ENV.copyForTest()
 
-
+    def testAllocFree(self):
+        a = self.env.arena
+        ptr = a.alloc(4)
+        assert ptr != 0
+        a.free(4, ptr)

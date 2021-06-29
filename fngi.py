@@ -553,17 +553,19 @@ def findPo2(size: int) -> int:
         number = number * 2
         exponent += 1
 
+# array of the 8 po2 roots (2**3, 2**4, ... 2**11)
+ARENA_PO2_MIN = 3
+ARENA_PO2_MAX = 12
+MArenaPo2Roots = U32 * (ARENA_PO2_MAX - ARENA_PO2_MIN)
 
 class MArena(ctypes.Structure):
     _fields_ = [
         ('baPtr', Ptr), # block allocator ptr
         ('blockRootIndex', U16), # root index for allocated blocks (inside baPtr's blocks)
         ('_align', U16), # alignment
-        ('po2Roots', U32 * 8), # array of the 8 po2 roots (2**3, 2**4, ... 2**11)
+        ('po2Roots', MArenaPo2Roots),
     ]
 
-ARENA_PO2_MIN = 3
-ARENA_PO2_MAX = 12
 ARENA_STRUCT_PO2 = findPo2(sizeof(MArena))
 assert 6 == ARENA_STRUCT_PO2 # MArena takes 40 bytes, 2**6 (=64) byte region
 
@@ -633,6 +635,13 @@ class Arena(object):
         marena = memory.get(arenaPtr, MArena)
         return cls(parent, memory, ba, marena)
 
+    def copyForTest(self, memory: Memory, ba: BlockAllocator):
+        mptr = self.memory.getPtrTo(self.marena)
+        return self.__class__(
+            None,
+            memory,
+            ba,
+            memory.get(mptr, getDataTy(self.marena)))
 
     def allocBlock(self) -> int:
         """Allocate a block, return the pointer to it."""
@@ -640,37 +649,40 @@ class Arena(object):
         if index == BLOCK_OOB:
             return 0
 
-        self.ba.setBlock(index, self.blockRoot)
-        self.blockRoot = index
+        self.ba.setBlock(index, self.marena.blockRootIndex)
+        self.marena.blockRootIndex = index
         return self.ba.getBlockPtr(index)
 
     def pushFreePo2(self, po2, ptr):
-        if po2 == 12:
+        if po2 == ARENA_PO2_MAX:
             index = self.ba.getPtrBlock(ptr)
 
             # find the index in the LL and pop it
-            if index == self.blockRoot:
-                self.blockRoot = self.ba.getBlock(index)
+            if index == self.marena.blockRootIndex:
+                self.marena.blockRootIndex = self.ba.getBlock(index)
             else:
-                prev = self.blockRoot
+                prev = self.marena.blockRootIndex
                 while self.ba.getBlock(prev) != index:
                     prev = self.ba.getBlock(prev)
                 self.ba.setBlock(prev, self.ba.getBlock(prev))
 
             self.ba.free(index)
         else:
-            oldRoot = self.po2Roots[po2]
-            self.memory.set(oldRoot, Ptr(ptr))
-            self.po2Roots[po2] = ptr
+            po2i = po2 - ARENA_PO2_MIN
+            oldRoot = self.marena.po2Roots[po2i]
+            if oldRoot != 0:
+                self.memory.set(oldRoot, Ptr(ptr))
+            self.marena.po2Roots[po2i] = ptr
 
     def popFreePo2(self, po2):
-        if po2 == 12:
+        if po2 == ARENA_PO2_MAX:
             freeMem = self.allocBlock()
         else:
-            freeMem = self.po2roots[po2]
+            po2i = po2 - ARENA_PO2_MIN
+            freeMem = self.marena.po2Roots[po2i]
             if freeMem != 0:
                 newRoot = self.memory.get(freeMem, Ptr)
-                self.po2roots[po2] = newRoot
+                self.marena.po2Roots[po2i] = newRoot
         return freeMem
 
     def alloc(self, wantPo2: int):
@@ -682,7 +694,7 @@ class Arena(object):
         # Find a block of size greather than or equal to wantPo2
         while True:
             freeMem = self.popFreePo2(po2)
-            if po2 == 12 or freeMem != 0:
+            if po2 == ARENA_PO2_MAX or freeMem != 0:
                 break
             po2 += 1
 
@@ -700,10 +712,10 @@ class Arena(object):
 
     def free(self, po2: int, ptr: int):
         while True:
-            if po2 == 12:
+            if po2 == ARENA_PO2_MAX:
                 self.pushFreePo2(po2, ptr)
                 break
-            joinedMem = joinMem(ptr, self.po2Roots[po2], 2**po2)
+            joinedMem = joinMem(ptr, self.marena.po2Roots[po2], 2**po2)
             if joinedMem == 0:
                 self.pushFreePo2(po2, ptr)
                 break
@@ -776,6 +788,16 @@ BLOCK_ALLOCATOR = BlockAllocator(
     MEMORY,
     HEAP.push(MBlockAllocator(0, BLOCK_ALLOCATOR_MEM)))
 
+ARENA = Arena( # global arena
+    None,
+    MEMORY,
+    BLOCK_ALLOCATOR,
+    HEAP.push(MArena(
+        baPtr=MEMORY.getPtrTo(BLOCK_ALLOCATOR.mba),
+        blockRootIndex=BLOCK_USED,
+        _align=0,
+        po2Roots=MArenaPo2Roots(*[0 for _ in range(8)]))))
+
 RETURN_STACK_MEM_END = RETURN_STACK_MEM + RETURN_STACK_SIZE
 RETURN_STACK = Stack(
     MEMORY,
@@ -802,6 +824,7 @@ class Env(object):
             heap: Heap,
             codeHeap: Heap,
             ba: BlockAllocator,
+            arena: Arena,
             returnStack: Stack,
             fnPtrLookup: Dict[int, Fn],
             tys: Dict[str, Ty],
@@ -812,6 +835,7 @@ class Env(object):
         self.heap = heap
         self.codeHeap = codeHeap
         self.ba = ba
+        self.arena = arena
         self.returnStack = returnStack
         self.fnPtrLookup = fnPtrLookup
 
@@ -829,6 +853,7 @@ class Env(object):
         heap = self.heap.copyForTest(m)
         codeHeap = self.codeHeap.copyForTest(m)
         ba = self.ba.copyForTest(m)
+        arena = self.arena.copyForTest(m, ba)
         returnStack = self.returnStack.copyForTest(m)
 
         out = Env(
@@ -837,6 +862,7 @@ class Env(object):
             heap=heap,
             codeHeap=codeHeap,
             ba=ba,
+            arena=arena,
             returnStack=returnStack,
             fnPtrLookup=copy.deepcopy(self.fnPtrLookup),
             tys=copy.deepcopy(self.tys),
@@ -853,6 +879,7 @@ ENV = Env(
     heap=HEAP,
     codeHeap=CODE_HEAP,
     ba=BLOCK_ALLOCATOR,
+    arena=ARENA,
     returnStack=RETURN_STACK,
     fnPtrLookup={},
     tys={},
