@@ -47,78 +47,8 @@ class TestStack(unittest.TestCase):
         assert expected == v.value
 
 
-class TestBlockAllocator(unittest.TestCase):
-    def setUp(self):
-        self.mem = Memory(MEMORY_SIZE)
-        self.heap = Heap(self.mem, MHeap.new(0, MEMORY_SIZE))
-        self.heap.grow(BLOCK_SIZE) # don't use first block (especially address 0)
-        ba_mem = self.heap.grow(BLOCKS_ALLOCATOR_SIZE)
-        self.heap_mem = self.heap.heap
-        self.heap.mheap = self.heap.push(self.heap.mheap)
-        self.ba = BlockAllocator(
-            self.mem,
-            self.heap.push(Mba(0, ba_mem)))
-
-    def testHeapLocation(self):
-        expectedHeap = self.heap_mem + sizeof(MHeap) + sizeof(Mba)
-        assert expectedHeap == self.heap.heap
-
-        # Walking through MHeap data inside memory, asserting that it mutated
-        start = self.mem.get(self.heap_mem, Ptr).value
-        assert 0 == start
-
-        end = self.mem.get(self.heap_mem + 4, Ptr).value
-        assert MEMORY_SIZE == end
-
-        heap = self.mem.get(self.heap_mem + 8, Ptr).value
-        assert expectedHeap == heap
-
-    def testBlockAlloc_two(self):
-        assert 0 == self.ba.freeRootIndex # free root index starts at 0
-        assert 1 == self.ba._getBlock(0) # nextFree is 1
-        first = self.ba.alloc()
-        assert 0 == first
-
-        assert 1 == self.ba.freeRootIndex
-        assert 2 == self.ba._getBlock(1) # nextFree is 2
-        second = self.ba.alloc()
-        assert 1 == second
-
-        assert 2 == self.ba.freeRootIndex
-
-    def testBlockAlloc(self):
-        """Randomly allocate and free blocks."""
-        random.seed(b"fun times")
-        bt = BTracker(self.ba)
-        allocated = []
-
-        allocThreshold = 7
-        for _ in range(0, 1000):
-            if random.randint(0, 10) < allocThreshold:
-                # allocate branch
-                noneFree = (bt.numFree == 0)
-                bi = bt.alloc()
-                if noneFree:
-                    assert BLOCK_OOB == bi
-                    # out of blocks, start freeing more
-                    allocThreshold -= random.randint(0, 3)
-                else:
-                    allocated.append(bi)
-            else:
-                # free branch
-                if len(allocated) == 0:
-                    # cannot free, start allocating more
-                    allocThreshold += random.randint(0, 3)
-                else:
-                    ai = random.randint(0, len(allocated) - 1)
-                    bi = allocated.pop(ai)
-                    bt.free(bi)
-
-
-
-
 class BTracker(object):
-    """An object to make it easier to track and assert on the block allocator.
+    """An object to make it easier to track and assert the block allocator.
 
     Allocations happen through the block tracker, which tracks them and can
     assert on the state.
@@ -160,3 +90,75 @@ class BTracker(object):
                 U16).value
 
         return out
+
+
+class TestBlockAllocator(unittest.TestCase):
+    def setUp(self):
+        self.mem = Memory(MEMORY_SIZE)
+        self.heap = Heap(self.mem, MHeap.new(0, MEMORY_SIZE))
+        self.heap.grow(BLOCK_SIZE) # don't use first block (especially address 0)
+        ba_mem = self.heap.grow(BLOCKS_ALLOCATOR_SIZE)
+        self.heap_mem = self.heap.heap
+        self.heap.mheap = self.heap.push(self.heap.mheap)
+        self.ba = BlockAllocator(
+            self.mem,
+            self.heap.push(Mba(0, ba_mem)))
+
+    def testHeapLocation(self):
+        expectedHeap = self.heap_mem + sizeof(MHeap) + sizeof(Mba)
+        assert expectedHeap == self.heap.heap
+
+        # Walking through MHeap data inside memory, asserting that it mutated
+        start = self.mem.get(self.heap_mem, Ptr).value
+        assert 0 == start
+
+        end = self.mem.get(self.heap_mem + 4, Ptr).value
+        assert MEMORY_SIZE == end
+
+        heap = self.mem.get(self.heap_mem + 8, Ptr).value
+        assert expectedHeap == heap
+
+    def testBlockAlloc_two(self):
+        assert 0 == self.ba.freeRootIndex # free root index starts at 0
+        assert 1 == self.ba.getBlock(0) # nextFree is 1
+        first = self.ba.alloc()
+        assert 0 == first
+
+        assert 1 == self.ba.freeRootIndex
+        assert 2 == self.ba.getBlock(1) # nextFree is 2
+        second = self.ba.alloc()
+        assert 1 == second
+
+        assert 2 == self.ba.freeRootIndex
+
+    def testBlockAlloc(self):
+        """Randomly allocate and free blocks."""
+        random.seed(b"fun times")
+        bt = BTracker(self.ba)
+        allocated = []
+
+        allocThreshold = 7
+        for _ in range(0, 1000):
+            if random.randint(0, 10) < allocThreshold:
+                # allocate branch
+                noneFree = (bt.numFree == 0)
+                bi = bt.alloc()
+                if noneFree:
+                    assert BLOCK_OOB == bi
+                    # out of blocks, start freeing more
+                    allocThreshold -= random.randint(0, 3)
+                else:
+                    allocated.append(bi)
+            else:
+                # free branch
+                if len(allocated) == 0:
+                    # cannot free, start allocating more
+                    allocThreshold += random.randint(0, 3)
+                else:
+                    ai = random.randint(0, len(allocated) - 1)
+                    bi = allocated.pop(ai)
+                    bt.free(bi)
+
+
+
+

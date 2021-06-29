@@ -420,8 +420,8 @@ class Stack(MManBase):
 #
 # Note: tests for the allocators can be found in test_allocator.py
 
-BLOCK_USED = 0xFA7E # sentinel for last used block in a linked-list
-BLOCK_FREE = 0xF4EE # sentinal for last free block in a linked-list
+BLOCK_USED = 0x8000 # sentinel for last used block in a linked-list
+BLOCK_FREE = 0xE4EE # sentinal for last free block in a linked-list
 BLOCK_OOB = 0xFFFF # block allocator is Out Of Blocks
 
 
@@ -447,8 +447,8 @@ class BlockAllocator(MManBase):
         self.memory = memory
         self.mba = mba
         for i in range(0, BLOCKS_TOTAL - 1):
-            self._setBlock(i, i+1)
-        self._setBlock(BLOCKS_TOTAL - 1, BLOCK_FREE)
+            self.setBlock(i, i+1)
+        self.setBlock(BLOCKS_TOTAL - 1, BLOCK_FREE)
 
 
     def getMValue(self):
@@ -462,17 +462,8 @@ class BlockAllocator(MManBase):
     def blocksPtr(self) -> int:
         return self.mba.blocksPtr
 
-    def selfPtr(self):
-        return self.memory.getPtrTo(self.mba)
-
-    def freeRootPtr(self):
-        return self.selfPtr() + BlockAllocator.freeRoot.offset
-
-    def blocksStart(self) -> int:
-        return self.blocksPtr
-
     def blocksEnd(self) -> int:
-        return self.blockStart() + BLOCKS_ALLOCATOR_SIZE
+        return self.blocksPtr + BLOCKS_ALLOCATOR_SIZE
 
     def alloc(self) -> int:
         """Return the index to a free block, or BLOCK_OOM."""
@@ -483,12 +474,14 @@ class BlockAllocator(MManBase):
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
-        if ptr < self.start or ptr > self.start + self.size or ptrAlign != 0:
+        if (ptr < self.blocksPtr
+                or ptr > self.blocksPtr + BLOCKS_ALLOCATOR_SIZE
+                or ptrAlign != 0):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
-                ptr, ptrAlign, self.blocksStart(), self.blocksEnd()))
+                ptr, ptrAlign, self.blocksPtr, self.blocksEnd()))
 
     def getBlockPtr(self, block: int):
-        ptr = self.start + (block * BLOCK_SIZE)
+        ptr = self.blocksPtr + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
@@ -499,9 +492,9 @@ class BlockAllocator(MManBase):
     def _push(self, i: int):
         # FROM: root -> a -> b -> ...
         #   TO: root -> i -> a -> b -> ...
-
+        self.checkPtr(self.getBlockPtr(i))
         # Set: i -> a
-        self._setBlock(i, self.freeRootIndex)
+        self.setBlock(i, self.freeRootIndex)
         # Set: root -> i
         self.mba.freeRootIndex = i
 
@@ -513,17 +506,14 @@ class BlockAllocator(MManBase):
         if i == BLOCK_FREE:
             return BLOCK_OOB
 
-        self.mba.freeRootIndex = self._getBlock(i)
+        self.mba.freeRootIndex = self.getBlock(i)
         return i
 
-    def _getBlock(self, i):
+    def getBlock(self, i):
         return self.memory.get(self.blocksPtr + i * sizeof(U16), U16).value
 
-    def _setBlock(self, i, value):
+    def setBlock(self, i, value):
         self.memory.set(self.blocksPtr + i * sizeof(U16), U16(value))
-
-
-
 
 
 def joinMem(ptr1: int, ptr2: int, size: int):
@@ -540,13 +530,51 @@ def joinMem(ptr1: int, ptr2: int, size: int):
     return 0
 
 
+def testJoinMem():
+    assert 0 == joinMem(4, 16, 4)
+    assert 4 == joinMem(4, 8, 4)
+    assert 4 == joinMem(8, 4, 4)
+
+    assert 102 == joinMem(104, 102, 2)
+    assert 0x400 == joinMem(0x400, 0x500, 0x100)
+    assert 0x400 == joinMem(0x500, 0x400, 0x100)
+    assert 0 == joinMem(0x600, 0x400, 0x100)
+
+
+def findPo2(size: int) -> int:
+    if size <= 0:
+        raise ValueError(size)
+
+    number = 2
+    exponent = 1
+    while True:
+        if number >= size:
+            return exponent
+        number = number * 2
+        exponent += 1
+
+
+class MArena(ctypes.Structure):
+    _fields_ = [
+        ('baPtr', Ptr), # block allocator ptr
+        ('blockRootIndex', U16), # root index for allocated blocks (inside baPtr's blocks)
+        ('_align', U16), # alignment
+        ('po2Roots', U32 * 8), # array of the 8 po2 roots (2**3, 2**4, ... 2**11)
+    ]
+
+ARENA_PO2_MIN = 3
+ARENA_PO2_MAX = 12
+ARENA_STRUCT_PO2 = findPo2(sizeof(MArena))
+assert 6 == ARENA_STRUCT_PO2 # MArena takes 40 bytes, 2**6 (=64) byte region
+
+
 class Arena(object):
     """For the arena allocator we use a few tricks for storing free regions of
-    memory. Please note that this allocator is designed to be a prototype for
+    memory. Please note that this allocator is designed to be a prototype of
     one written in forth wich can run on microcontrollers, so it uses extremely
     low level concepts (i.e. raw pointers stored inside of freed blocks)
 
-    The arena allocator can allocate memory in powers of 2, from 16 (2**4)
+    The arena allocator can allocate memory in powers of 2, from 8 (2**3)
     bytes up to 4kiB (2**12). It keeps track of free blocks of memory by using
     an array of linked lists, where each index in the array is 4+po2. Unlike
     the BlockAllocator, the pointers to the "next free node" is kept _within
@@ -556,55 +584,83 @@ class Arena(object):
     The arena keeps track of all the 4KiB blocks it is using by using the
     BlockAllocator's blocks array. This is the exact same method that the block
     allocator itself uses to track it's free blocks (difference being the arena
-    is tracking the allocated blocks). This allows all of the blocks the arena is using to
-    be freed when the arena is dropped.
+    is tracking the allocated blocks instead of free ones). This allows all of
+    the blocks the arena is using to be freed when the arena is dropped.
 
-    The algorighm our arena allocator uses for small allocations is called a
-    "buddy allocator".  Blocks are allocated by po2, if a free block is not
-    available it is requested from the next-highest po2, which will ask from
-    the next highest, etc. When a block is found, it will be split in half
-    repeateldy (storing the unused half) until it is the correct size. When a
-    block is freed, merging will be attempted on the next available free block.
-    Both alloc and free run in O(1) time (approximately 10 to 100 "executions").
+    The algorithm our arena allocator uses for small allocations is called a
+    "buddy allocator", although this is a very peculiar variant. Blocks are
+    allocated by po2 (power of 2), if a free block is not available it is
+    requested from the next-highest po2, which will ask from the next highest,
+    etc. When a block is found, it will be split in half repeatedly (storing
+    the unused half) until it is the correct size. When a block is freed,
+    merging will be attempted on the next available free block. Both alloc and
+    free run in O(1) time (approximately 10 to 100 "executions" depending on
+    how many blocks must be split/merged).
 
-    We allow allocating 2^4 to 2^12 size blocks (8 sizes). 7 of these have a
+    We allow allocating 2^3 to 2^12 size blocks (9 sizes). 8 of these have a
     linked list, while size 2^12 uses a single index into the block allocator.
     """
-    def __init__(self, parent, blockAllocator: BlockAllocator):
+    def __init__(self,
+            parent: 'Arena',
+            memory: Memory,
+            blockAllocator: BlockAllocator,
+            marena: MArena):
         self.parent = parent
-        self.blockAllocator = blockAllocator
-        self.blockRoot = BLOCK_USED
-        self.po2Roots = { po2: 0 for po2 in range(4, 12) }
+        self.memory = memory
+        self.ba = blockAllocator
+        self.marena = marena
+
+    @classmethod
+    def new(cls, parent: 'Arena', aId: int):
+        """Allocate a new arena from the parent."""
+        # Note: The aId (arena id) is a sentinel allowing investigation of the
+        # block allocator in postmortems. Where it appears in the ba.blocks it
+        # is known that it should be the last element of this arena's allocated
+        # blocks linked-list.
+        memory = parent.memory
+        ba = parent.ba
+
+        baPtr = memory.getPtrTo(ba.mba)
+
+        arenaPtr = parent.alloc(ARENA_STRUCT_PO2)
+        memory.set(
+            arenaPtr,
+            MArena(
+                baPtr=baPtr,
+                blockRootIndex=U16(BLOCK_USED | aId).value,
+                _align=0,
+                po2Roots=[0 for _ in range(8)]))
+        marena = memory.get(arenaPtr, MArena)
+        return cls(parent, memory, ba, marena)
+
 
     def allocBlock(self) -> int:
         """Allocate a block, return the pointer to it."""
-        index = self.blockAllocator.alloc()
+        index = self.ba.alloc()
         if index == BLOCK_OOB:
             return 0
 
-        self.blockAllocator.blocks[index] = self.blockRoot
+        self.ba.setBlock(index, self.blockRoot)
         self.blockRoot = index
-        return self.blockAllocator.getBlockPtr(index)
+        return self.ba.getBlockPtr(index)
 
     def pushFreePo2(self, po2, ptr):
         if po2 == 12:
-            blocks = self.blockAllocator.blocks
-            index = self.blockAllocator.getPtrBlock(ptr)
+            index = self.ba.getPtrBlock(ptr)
 
             # find the index in the LL and pop it
             if index == self.blockRoot:
-                self.blockRoot = blocks[index]
+                self.blockRoot = self.ba.getBlock(index)
             else:
                 prev = self.blockRoot
-                while blocks[prev] != index:
-                    prev = blocks[prev]
-                blocks[prev] = blocks[index]
+                while self.ba.getBlock(prev) != index:
+                    prev = self.ba.getBlock(prev)
+                self.ba.setBlock(prev, self.ba.getBlock(prev))
 
-            self.blockAllocator.free(index)
+            self.ba.free(index)
         else:
-            memory = self.blockAllocator.memory
             oldRoot = self.po2Roots[po2]
-            memory.set(oldRoot, Ptr(ptr))
+            self.memory.set(oldRoot, Ptr(ptr))
             self.po2Roots[po2] = ptr
 
     def popFreePo2(self, po2):
@@ -613,8 +669,7 @@ class Arena(object):
         else:
             freeMem = self.po2roots[po2]
             if freeMem != 0:
-                memory = self.blockAllocator.memory
-                newRoot = memory.get(freeMem, Ptr)
+                newRoot = self.memory.get(freeMem, Ptr)
                 self.po2roots[po2] = newRoot
         return freeMem
 
