@@ -372,21 +372,6 @@ class Stack(MManBase):
         return "STACK<{}/{}>".format(len(self), self.total_size)
 
 
-class TestStack(object):
-    def newStack(self):
-        return Stack.forTest(16)
-
-    def testPushPopI16(self):
-        s = self.newStack()
-        s.push(I16(0x7008))
-        assert len(s) == 4
-        assert s.pop(I16).value == 0x7008
-
-    def testPushPopI32(self):
-        s = self.newStack()
-        s.push(I32(0x4200FF))
-        assert s.pop(I32).value == 0x4200FF
-
 
 #########################################
 # Memory Manager
