@@ -51,7 +51,7 @@ class TestBlockAllocator(unittest.TestCase):
 
     def testBlockAlloc(self):
         """Randomly allocate and free blocks."""
-        random.seed(b"fun times")
+        random.seed(b"fun times bob")
         bt = BTracker(self.ba)
         allocated = []
 
