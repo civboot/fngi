@@ -432,43 +432,13 @@ class TestStack(object):
 #   will rarely be fragmentation below 4k in size.
 # - There is no global allocator except for heap.grow(), heap.shrink() and a
 #   a single global arena instance (which can be used to create child arenas).
+#
+# Note: tests for the allocators can be found in test_allocator.py
 
 BLOCK_USED = 0xFA7E # sentinel for last used block in a linked-list
 BLOCK_FREE = 0xF4EE # sentinal for last free block in a linked-list
 BLOCK_OOB = 0xFFFF # block allocator is Out Of Blocks
 
-
-class U16IndexSll(ctypes.Structure):
-    """Our allocators will make estensive use of an "indexed" singly linked
-    list.
-
-    Unlike normal SLL's, the "nextNode" item is an index into the array memory
-    instead of a pointer into global memory.
-    """
-    _fields_ = [
-        ('root', U16),
-        ('arrayPtr', Ptr),
-    ]
-
-    def push(self, memory, i: int):
-        # FROM: root -> a -> b -> ...
-        #   TO: root -> i -> a -> b -> ...
-
-        # Set: i -> a
-        memory.set(memory.arrayPtr + i * sizeof(U16), U16(self.root))
-        # Set: root -> i
-        self.root = i
-
-    def pop(self, memory) -> int:
-        # FROM: root -> a -> b -> ...
-        #   TO: root -> b -> ...
-        # RETURN: ptr to a (value that was in root)
-        out = self.root
-        if out != BLOCK_FREE:
-            return BLOCK_OOB
-
-        self.root = memory.get(memory.arrayPtr, U16)
-        return out
 
 class MBlockAllocator(ctypes.Structure):
     _fields_ = [
@@ -491,6 +461,10 @@ class BlockAllocator(MManBase):
     def __init__(self, memory: Memory, mba: MBlockAllocator):
         self.memory = memory
         self.mba = mba
+        for i in range(0, BLOCKS_TOTAL - 1):
+            self._setBlock(i, i+1)
+        self._setBlock(BLOCKS_TOTAL - 1, BLOCK_FREE)
+
 
     def getMValue(self):
         return self.mba
@@ -500,7 +474,7 @@ class BlockAllocator(MManBase):
         return self.mba.freeRootIndex
 
     @property
-    def blocksPtr(self) -> BlocksArray:
+    def blocksPtr(self) -> int:
         return self.mba.blocksPtr
 
     def selfPtr(self):
@@ -516,20 +490,11 @@ class BlockAllocator(MManBase):
         return self.blockStart() + BLOCKS_ALLOCATOR_SIZE
 
     def alloc(self) -> int:
-        """Return the indeex to a free block, or 0."""
-        out = self.freeRoot
-        if out == BLOCK_FREE:
-            return BLOCK_OOB
-
-        self.freeRoot = self.blocks[self.freeRoot]
-        self.blocks[out] = BLOCK_USED
-        return out
+        """Return the index to a free block, or BLOCK_OOM."""
+        return self._pop()
 
     def free(self, block: int):
-        newRoot = block
-        self.checkPtr(self.getPtrTo(newRoot))
-        self.blocks[newRoot] = self.freeRoot
-        self.freeRoot = newRoot
+        return self._push(block)
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
@@ -537,14 +502,42 @@ class BlockAllocator(MManBase):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
                 ptr, ptrAlign, self.blocksStart(), self.blocksEnd()))
 
-    def getPtrTo(self, block: int):
+    def getBlockPtr(self, block: int):
         ptr = self.start + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
-    def getIndex(self, ptr: int):
+    def getPtrBlock(self, ptr: int):
         self.checkPtr(ptr)
         return (ptr - self.start) % BLOCK_SIZE
+
+    def _push(self, i: int):
+        # FROM: root -> a -> b -> ...
+        #   TO: root -> i -> a -> b -> ...
+
+        # Set: i -> a
+        self._setBlock(i, self.freeRootIndex)
+        # Set: root -> i
+        self.mba.freeRootIndex = i
+
+    def _pop(self) -> int:
+        # FROM: root -> a -> b -> ...
+        #   TO: root -> b -> ...
+        # RETURN: ptr to a (value that was in root)
+        i = self.freeRootIndex
+        if i == BLOCK_FREE:
+            return BLOCK_OOB
+
+        self.mba.freeRootIndex = self._getBlock(i)
+        return i
+
+    def _getBlock(self, i):
+        return self.memory.get(self.blocksPtr + i * sizeof(U16), U16).value
+
+    def _setBlock(self, i, value):
+        self.memory.set(self.blocksPtr + i * sizeof(U16), U16(value))
+
+
 
 
 
@@ -606,12 +599,12 @@ class Arena(object):
 
         self.blockAllocator.blocks[index] = self.blockRoot
         self.blockRoot = index
-        return self.blockAllocator.getPtrTo(index)
+        return self.blockAllocator.getBlockPtr(index)
 
     def pushFreePo2(self, po2, ptr):
         if po2 == 12:
             blocks = self.blockAllocator.blocks
-            index = self.blockAllocator.getIndex(ptr)
+            index = self.blockAllocator.getPtrBlock(ptr)
 
             # find the index in the LL and pop it
             if index == self.blockRoot:
@@ -731,7 +724,8 @@ DATA_STACK = Stack(
     Memory(DATA_STACK_SIZE + 4),
     MStack.new(4, DATA_STACK_SIZE))
 
-# Note: Heap.push sets the memory and returns a mutable reference
+# Reserve a space for the HEAP.mheap data inside of MEMORY that automatically
+# mutates when HEAP.mheap is mutated. Do the same for all other values.
 HEAP.mheap = HEAP.push(HEAP.mheap)
 CODE_HEAP = Heap(
     MEMORY,

@@ -1,7 +1,7 @@
 let HELLO: &Str = \"Hello world!\";
 
 fn main: [] -> [] (
-  fdWriteString {
+  fdWriteStr {
     fd = 1; // stdout
     str = HELLO;
   };
