@@ -8,8 +8,10 @@ from fngi import MEMORY_SIZE, BLOCKS_ALLOCATOR_SIZE
 from fngi import BLOCK_SIZE, BLOCKS_TOTAL
 from fngi import BLOCK_FREE, BLOCK_USED
 from fngi import BLOCK_FREE, BLOCK_USED, BLOCK_OOB
+from fngi import ARENA_PO2_MIN, ARENA_PO2_MAX
 from fngi import Ptr, U8, I8, U16, I16, U32, I32
 from fngi import ENV
+from fngi import getPo2
 from ctypes import sizeof
 
 class TestStack(unittest.TestCase):
@@ -54,14 +56,14 @@ class BTracker(object):
     Allocations happen through the block tracker, which tracks them and can
     assert on the state.
     """
-    def __init__(self, mba):
-        self.mba = mba
+    def __init__(self, ba):
+        self.ba = ba
         self.numFree = BLOCKS_TOTAL
         self.freeBlocks = [True] * BLOCKS_TOTAL
 
     def alloc(self) -> int:
         noneFree = (self.numFree == 0)
-        bindex = self.mba.alloc()
+        bindex = self.ba.alloc()
         if bindex == BLOCK_OOB:
             assert noneFree
         else:
@@ -73,14 +75,14 @@ class BTracker(object):
 
     def free(self, bindex):
         assert not self.freeBlocks[bindex]
-        self.mba.free(bindex)
+        self.ba.free(bindex)
         self.numFree += 1
         self.freeBlocks[bindex] = True
 
     def getFree(self):
         """Return all free indexes."""
-        blocksPtr = self.mba.blocksPtr
-        blocki = self.mba.freeRootIndex
+        blocksPtr = self.ba.blocksPtr
+        blocki = self.ba.freeRootIndex
 
         out = []
         # Just walk the linked list, returning all values
@@ -132,9 +134,9 @@ class TestBlockAllocator(unittest.TestCase):
 
         assert 2 == self.ba.freeRootIndex
 
-    def testBlockAlloc(self):
+    def testRandomLoop(self):
         """Randomly allocate and free blocks."""
-        random.seed(b"fun times")
+        random.seed(b"blocks are fun")
         bt = BTracker(self.ba)
         allocated = []
 
@@ -148,6 +150,7 @@ class TestBlockAllocator(unittest.TestCase):
                     assert BLOCK_OOB == bi
                     # out of blocks, start freeing more
                     allocThreshold -= random.randint(0, 3)
+                    allocThreshold = min(1, allocThreshold)
                 else:
                     allocated.append(bi)
             else:
@@ -155,10 +158,45 @@ class TestBlockAllocator(unittest.TestCase):
                 if len(allocated) == 0:
                     # cannot free, start allocating more
                     allocThreshold += random.randint(0, 3)
+                    allocThreshold = max(allocThreshold, 9)
                 else:
                     ai = random.randint(0, len(allocated) - 1)
                     bi = allocated.pop(ai)
                     bt.free(bi)
+
+class ATracker(object):
+    """Arena allocator tracker."""
+    def __init__(self, arena):
+        self.arena = arena
+        self.po2Allocated = {i: [] for i in range(1, ARENA_PO2_MAX + 1)}
+        self.allAllocated = []
+
+    def alloc(self, po2) -> int:
+        ptr = self.arena.alloc(po2)
+        if ptr == 0:
+            return
+
+        assert ptr not in self.po2Allocated[po2]
+        index = (ptr, 2**min(ARENA_PO2_MIN, po2))
+
+        # assert the pointer doesn't fall into any allocated blocks
+        for allocPtr, allocSize in self.allAllocated:
+            assert not (allocPtr <= ptr < allocPtr + allocSize)
+
+        self.allAllocated.append(index)
+        self.allAllocated.sort(key=lambda a: a[0])
+        self.po2Allocated[po2].append(ptr)
+
+        return ptr
+
+    def free(self, po2, ptr) -> int:
+        index = (ptr, 2**min(ARENA_PO2_MIN, po2))
+        assert index in self.allAllocated
+        assert ptr in self.po2Allocated[po2]
+        self.arena.free(po2, ptr)
+
+        self.allAllocated.remove(index)
+        self.po2Allocated[po2].remove(ptr)
 
 
 class TestArena(unittest.TestCase):
@@ -170,3 +208,38 @@ class TestArena(unittest.TestCase):
         ptr = a.alloc(4)
         assert ptr != 0
         a.free(4, ptr)
+
+    def testRandomLoop(self):
+        random.seed(b"are you not entertained?")
+        sizeMin = 1
+        sizeMax = 2**12
+        a = ATracker(self.env.arena)
+
+        allocThreshold = 7
+        for allocatingTry in range(0, 1000):
+            print(allocatingTry)
+            size = random.randint(sizeMin, sizeMax)
+            po2 = getPo2(size)
+            allocated = set()
+            if random.randint(0, 10) < allocThreshold:
+                # allocate branch
+                ptr = a.alloc(po2)
+                if ptr == 0:
+                    # out of mem, start freeing more
+                    allocThreshold -= random.randint(0, 3)
+                    allocThreshold = min(1, allocThreshold)
+                else:
+                    allocated.add(ptr)
+            else:
+                # free branch
+                if allocated:
+                    ptr = random.choice(allocated)
+                    a.free(po2, ptr)
+                    del allocated[ptr]
+                else:
+                    # cannot free, start allocating more
+                    allocThreshold += random.randint(0, 3)
+                    allocThreshold = max(allocThreshold, 9)
+
+
+

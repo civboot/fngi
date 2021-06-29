@@ -541,7 +541,7 @@ def testJoinMem():
     assert 0 == joinMem(0x600, 0x400, 0x100)
 
 
-def findPo2(size: int) -> int:
+def getPo2(size: int) -> int:
     if size <= 0:
         raise ValueError(size)
 
@@ -566,7 +566,7 @@ class MArena(ctypes.Structure):
         ('po2Roots', MArenaPo2Roots),
     ]
 
-ARENA_STRUCT_PO2 = findPo2(sizeof(MArena))
+ARENA_STRUCT_PO2 = getPo2(sizeof(MArena))
 assert 6 == ARENA_STRUCT_PO2 # MArena takes 40 bytes, 2**6 (=64) byte region
 
 
@@ -688,6 +688,7 @@ class Arena(object):
     def alloc(self, wantPo2: int):
         if wantPo2 > 12:
             raise ValueError("wantPo2=" + str(wantPo2))
+        wantPo2 = min(wantPo2, ARENA_PO2_MIN)
         po2 = wantPo2
         freeMem = 0
 
