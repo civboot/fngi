@@ -185,23 +185,28 @@ class ATracker(object):
         out = []
         while blocki != BLOCK_USED:
             bPtr = ba.blockToPtr(blocki)
-            if bPtr <= ptr <= bPtr + BLOCK_SIZE:
+            if bPtr <= ptr < bPtr + BLOCK_SIZE:
                 return True
-
-            blocki = ba.memory.get(
-                blocksPtr + blocki * sizeof(U16),
-                U16).value
+            blocki = ba.getBlock(blocki)
         return False
 
     def checkArena(self):
         marena = self.arena.marena
         ba = self.arena.ba
 
-        for i in range(ARENA_PO2_MAX - ARENA_PO2_MIN):
-            ptr = self.arena.marena.po2Roots[i]
+        for po2i, ptr in enumerate(self.getPo2Roots()):
+            history = []
             while ptr != 0:
+                history.append(ptr)
                 assert self.ptrInAllocatedBlocks(ptr), ptr
                 ptr = ba.memory.get(ptr, Ptr).value
+
+    def assertNoOverlap(self):
+        i = 0
+        while i < len(self.allAllocated) - 1:
+            allocPtr, allocSize = self.allAllocated[i]
+            nextallocPtr, _ = self.allAllocated[i+1]
+            assert allocPtr + allocSize <= nextAllocPtr
 
     def alloc(self, po2) -> int:
         print("Allocating", po2)
@@ -235,29 +240,28 @@ class ATracker(object):
         self.allAllocated.remove(index)
         self.po2Allocated[po2].remove(ptr)
 
+    def getPo2Roots(self):
+        ma = self.arena.marena
+        return [ma.po2Roots[i] for i in range(ARENA_PO2_MAX - ARENA_PO2_MIN)]
+
 
 class TestArena(unittest.TestCase):
     def setUp(self):
         self.env = ENV.copyForTest()
+        self.ma = self.env.arena.marena
+        self.at = ATracker(self.env.arena)
 
     def assertRootsEmpty(self):
-        ma = self.env.arena.marena
-        roots = [ma.po2Roots[i] for i in range(ARENA_PO2_MAX - ARENA_PO2_MIN)]
+        roots = self.at.getPo2Roots()
         assert [0] * 9 == roots
 
     def testInit(self):
         self.assertRootsEmpty()
 
-    def testAllocFree(self):
-        a = self.env.arena
-        ptr = a.alloc(4)
-        assert ptr != 0
-        a.free(4, ptr)
-
     def testAllocBlock(self):
         arena = self.env.arena
-        a = ATracker(arena)
-        ptr = a.alloc(12)
+        at = self.at
+        ptr = at.alloc(12)
 
         self.assertRootsEmpty()
 
@@ -265,8 +269,24 @@ class TestArena(unittest.TestCase):
         assert 0 == blocki
         assert arena.marena.blockRootIndex == blocki
         assert self.env.ba.getBlock(blocki) == BLOCK_USED
-        a.free(12, ptr)
+        at.free(12, ptr)
         assert self.env.ba.getBlock(blocki) == 1
+
+    def testAllocSmall(self):
+        ptr = self.at.alloc(3)
+        assert ptr != 0
+        roots = self.at.getPo2Roots()
+        assert 0 == roots[0], "no free at po2=3"
+
+        self.at.assertNoOverlap()
+        blocki = self.env.ba.ptrToBlock(ptr)
+        assert (
+            [blocki] * 7
+            == [self.env.ba.ptrToBlock(p) for p in roots[1:]]
+        )
+
+        self.at.free(4, ptr)
+
 
     def _testRandomLoop(self):
         random.seed(b"are you not entertained?")

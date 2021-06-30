@@ -644,18 +644,18 @@ class Arena(object):
 
     def pushFreePo2(self, po2, ptr):
         if po2 == ARENA_PO2_MAX:
-            index = self.ba.ptrToBlock(ptr)
+            bindex = self.ba.ptrToBlock(ptr)
 
-            # find the index in the LL and pop it
-            if index == self.marena.blockRootIndex:
-                self.marena.blockRootIndex = self.ba.getBlock(index)
+            # find the bindex in the LL and pop it
+            if bindex == self.marena.blockRootIndex:
+                self.marena.blockRootIndex = self.ba.getBlock(bindex)
             else:
                 prev = self.marena.blockRootIndex
-                while self.ba.getBlock(prev) != index:
+                while self.ba.getBlock(prev) != bindex:
                     prev = self.ba.getBlock(prev)
                 self.ba.setBlock(prev, self.ba.getBlock(prev))
 
-            self.ba.free(index)
+            self.ba.free(bindex)
         else:
             po2i = po2 - ARENA_PO2_MIN
             oldRoot = self.marena.po2Roots[po2i]
@@ -684,13 +684,14 @@ class Arena(object):
         # Find a block of size greather than or equal to wantPo2
         while True:
             freeMem = self.popFreePo2(po2)
-            if po2 == ARENA_PO2_MAX or freeMem != 0:
+            if freeMem != 0 or po2 == ARENA_PO2_MAX:
                 break
             po2 += 1
 
         if freeMem == 0:
-            return 0
+            return 0 # no memory found
 
+        # Split the found block of memory until it is the right size
         while True:
             if po2 == wantPo2:
                 return freeMem
