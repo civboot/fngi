@@ -494,7 +494,11 @@ class BlockAllocator(MManBase):
 
     def ptrToBlock(self, ptr: int):
         self.checkPtr(ptr)
-        return (ptr - self.mba.blocksPtr) % BLOCK_SIZE
+        return (ptr - self.mba.blocksPtr) // BLOCK_SIZE
+
+    def ptrToBlockInside(self, ptr: int):
+        return self.ptrToBlock(
+            self.blockToPtr((ptr - self.mba.blocksPtr) // BLOCK_SIZE))
 
     def getBlock(self, i):
         """Get the value in the blocks array"""
@@ -676,7 +680,7 @@ class Arena(object):
     def alloc(self, wantPo2: int):
         if wantPo2 > 12:
             raise ValueError("wantPo2=" + str(wantPo2))
-        wantPo2 = max(wantPo2, ARENA_PO2_MIN)
+        wantPo2 = max(ARENA_PO2_MIN, wantPo2)
         po2 = wantPo2
         freeMem = 0
 

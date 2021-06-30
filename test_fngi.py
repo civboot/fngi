@@ -242,7 +242,7 @@ class ATracker(object):
 
     def getPo2Roots(self):
         ma = self.arena.marena
-        return [ma.po2Roots[i] for i in range(ARENA_PO2_MAX - ARENA_PO2_MIN)]
+        return [ma.po2Roots[i] for i in range(0, ARENA_PO2_MAX - ARENA_PO2_MIN)]
 
 
 class TestArena(unittest.TestCase):
@@ -276,19 +276,17 @@ class TestArena(unittest.TestCase):
         ptr = self.at.alloc(3)
         assert ptr != 0
         roots = self.at.getPo2Roots()
-        assert 0 == roots[0], "no free at po2=3"
 
         self.at.assertNoOverlap()
         blocki = self.env.ba.ptrToBlock(ptr)
         assert (
-            [blocki] * 7
-            == [self.env.ba.ptrToBlock(p) for p in roots[1:]]
+            [blocki] * 9
+            == [self.env.ba.ptrToBlockInside(p) for p in roots]
         )
+        self.at.free(3, ptr)
 
-        self.at.free(4, ptr)
 
-
-    def _testRandomLoop(self):
+    def testRandomLoop(self):
         random.seed(b"are you not entertained?")
         sizeMin = 1
         sizeMax = 2**12
@@ -306,17 +304,17 @@ class TestArena(unittest.TestCase):
                 if ptr == 0:
                     # out of mem, start freeing more
                     allocThreshold -= random.randint(0, 3)
-                    allocThreshold = min(1, allocThreshold)
+                    allocThreshold = max(1, allocThreshold)
                 else:
                     allocated.add(ptr)
             else:
                 # free branch
                 if allocated:
-                    ptr = random.choice(allocated)
+                    ptr = random.choice(tuple(allocated))
                     a.free(po2, ptr)
-                    del allocated[ptr]
+                    allocated.discard(ptr)
                 else:
                     # cannot free, start allocating more
                     allocThreshold += random.randint(0, 3)
-                    allocThreshold = max(allocThreshold, 9)
+                    allocThreshold = min(allocThreshold, 9)
 
