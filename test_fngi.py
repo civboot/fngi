@@ -171,8 +171,37 @@ class ATracker(object):
         self.po2Allocated = {i: [] for i in range(1, ARENA_PO2_MAX + 1)}
         self.allAllocated = []
 
+    def ptrInAllocatedBlocks(self, ptr):
+        ba = self.arena.ba
+        blocksPtr = ba.blocksPtr
+        blocki = self.arena.marena.blockRootIndex
+
+        out = []
+        while blocki != BLOCK_USED:
+            bPtr = ba.getBlockPtr(blocki)
+            if bPtr <= ptr <= bPtr + BLOCK_SIZE:
+                return True
+
+            blocki = ba.memory.get(
+                blocksPtr + blocki * sizeof(U16),
+                U16).value
+        return False
+
+    def checkArena(self):
+        marena = self.arena.marena
+        ba = self.arena.ba
+
+        for i in range(ARENA_PO2_MAX - ARENA_PO2_MIN):
+            ptr = self.arena.marena.po2Roots[i]
+            while ptr != 0:
+                assert self.ptrInAllocatedBlocks(ptr), ptr
+                ptr = ba.memory.get(ptr, Ptr).value
+
     def alloc(self, po2) -> int:
+        print("Allocating", po2)
         ptr = self.arena.alloc(po2)
+        print("Allocated", po2, "->", ptr)
+        self.checkArena()
         if ptr == 0:
             return
 
@@ -190,10 +219,12 @@ class ATracker(object):
         return ptr
 
     def free(self, po2, ptr) -> int:
+        print("Freeing", po2, ptr)
         index = (ptr, 2**min(ARENA_PO2_MIN, po2))
         assert index in self.allAllocated
         assert ptr in self.po2Allocated[po2]
         self.arena.free(po2, ptr)
+        self.checkArena()
 
         self.allAllocated.remove(index)
         self.po2Allocated[po2].remove(ptr)
@@ -209,18 +240,18 @@ class TestArena(unittest.TestCase):
         assert ptr != 0
         a.free(4, ptr)
 
-    def testRandomLoop(self):
+    def _testRandomLoop(self):
         random.seed(b"are you not entertained?")
         sizeMin = 1
         sizeMax = 2**12
         a = ATracker(self.env.arena)
+        allocated = set()
 
         allocThreshold = 7
         for allocatingTry in range(0, 1000):
             print(allocatingTry)
             size = random.randint(sizeMin, sizeMax)
             po2 = getPo2(size)
-            allocated = set()
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 ptr = a.alloc(po2)
@@ -240,6 +271,4 @@ class TestArena(unittest.TestCase):
                     # cannot free, start allocating more
                     allocThreshold += random.randint(0, 3)
                     allocThreshold = max(allocThreshold, 9)
-
-
 

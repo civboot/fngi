@@ -467,15 +467,31 @@ class BlockAllocator(MManBase):
 
     def alloc(self) -> int:
         """Return the index to a free block, or BLOCK_OOM."""
-        return self._pop()
+        # An "indexed linked list" pop
+        # FROM: root -> a -> b -> ...
+        #   TO: root -> b -> ...
+        # RETURN: ptr to a (value that was in root)
+        i = self.freeRootIndex
+        if i == BLOCK_FREE:
+            return BLOCK_OOB
 
-    def free(self, block: int):
-        return self._push(block)
+        self.mba.freeRootIndex = self.getBlock(i)
+        return i
+
+    def free(self, i: int):
+        # An "indexed linked list" push
+        # FROM: root -> a -> b -> ...
+        #   TO: root -> i -> a -> b -> ...
+        self.checkPtr(self.getBlockPtr(i))
+        # Set: i -> a
+        self.setBlock(i, self.freeRootIndex)
+        # Set: root -> i
+        self.mba.freeRootIndex = i
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
         if (ptr < self.blocksPtr
-                or ptr > self.blocksPtr + BLOCKS_ALLOCATOR_SIZE
+                or ptr >= self.blocksPtr + BLOCKS_ALLOCATOR_SIZE
                 or ptrAlign != 0):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
                 ptr, ptrAlign, self.blocksPtr, self.blocksEnd()))
@@ -487,27 +503,7 @@ class BlockAllocator(MManBase):
 
     def getPtrBlock(self, ptr: int):
         self.checkPtr(ptr)
-        return (ptr - self.start) % BLOCK_SIZE
-
-    def _push(self, i: int):
-        # FROM: root -> a -> b -> ...
-        #   TO: root -> i -> a -> b -> ...
-        self.checkPtr(self.getBlockPtr(i))
-        # Set: i -> a
-        self.setBlock(i, self.freeRootIndex)
-        # Set: root -> i
-        self.mba.freeRootIndex = i
-
-    def _pop(self) -> int:
-        # FROM: root -> a -> b -> ...
-        #   TO: root -> b -> ...
-        # RETURN: ptr to a (value that was in root)
-        i = self.freeRootIndex
-        if i == BLOCK_FREE:
-            return BLOCK_OOB
-
-        self.mba.freeRootIndex = self.getBlock(i)
-        return i
+        return (ptr - self.blocksPtr) % BLOCK_SIZE
 
     def getBlock(self, i):
         return self.memory.get(self.blocksPtr + i * sizeof(U16), U16).value
