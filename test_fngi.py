@@ -81,14 +81,15 @@ class BTracker(object):
 
     def getFree(self):
         """Return all free indexes."""
-        blocksPtr = self.ba.blocksPtr
-        blocki = self.ba.freeRootIndex
+        blocksPtr = self.ba.mba.blocksPtr
+        blocki = self.ba.mba.freeRootIndex
 
-        out = []
+        out = set()
         # Just walk the linked list, returning all values
         while blocki != BLOCK_FREE:
-            out.append(blocki)
-            blocki = self.memory.get(
+            assert blocki not in out
+            out.add(blocki)
+            blocki = self.ba.memory.get(
                 blocksPtr + blocki * sizeof(U16),
                 U16).value
 
@@ -122,23 +123,23 @@ class TestBlockAllocator(unittest.TestCase):
         assert expectedHeap == heap
 
     def testBlockAlloc_two(self):
-        assert 0 == self.ba.freeRootIndex # free root index starts at 0
+        assert 0 == self.ba.mba.freeRootIndex # free root index starts at 0
         assert 1 == self.ba.getBlock(0) # nextFree is 1
         first = self.ba.alloc()
         assert 0 == first
 
-        assert 1 == self.ba.freeRootIndex
+        assert 1 == self.ba.mba.freeRootIndex
         assert 2 == self.ba.getBlock(1) # nextFree is 2
         second = self.ba.alloc()
         assert 1 == second
 
-        assert 2 == self.ba.freeRootIndex
+        assert 2 == self.ba.mba.freeRootIndex
 
     def testRandomLoop(self):
         """Randomly allocate and free blocks."""
         random.seed(b"blocks are fun")
         bt = BTracker(self.ba)
-        allocated = []
+        allocated = set()
 
         allocThreshold = 7
         for _ in range(0, 1000):
@@ -152,7 +153,8 @@ class TestBlockAllocator(unittest.TestCase):
                     allocThreshold -= random.randint(0, 3)
                     allocThreshold = min(1, allocThreshold)
                 else:
-                    allocated.append(bi)
+                    assert bi not in allocated
+                    allocated.add(bi)
             else:
                 # free branch
                 if len(allocated) == 0:
@@ -160,9 +162,13 @@ class TestBlockAllocator(unittest.TestCase):
                     allocThreshold += random.randint(0, 3)
                     allocThreshold = max(allocThreshold, 9)
                 else:
-                    ai = random.randint(0, len(allocated) - 1)
-                    bi = allocated.pop(ai)
+                    bi = random.choice(tuple(allocated))
+                    allocated.discard(bi)
                     bt.free(bi)
+
+            if random.randint(0, 10) >= 10:
+                bt.getFree() & allocated == set()
+
 
 class ATracker(object):
     """Arena allocator tracker."""
@@ -173,7 +179,7 @@ class ATracker(object):
 
     def ptrInAllocatedBlocks(self, ptr):
         ba = self.arena.ba
-        blocksPtr = ba.blocksPtr
+        blocksPtr = ba.mba.blocksPtr
         blocki = self.arena.marena.blockRootIndex
 
         out = []

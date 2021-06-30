@@ -450,20 +450,11 @@ class BlockAllocator(MManBase):
             self.setBlock(i, i+1)
         self.setBlock(BLOCKS_TOTAL - 1, BLOCK_FREE)
 
-
     def getMValue(self):
         return self.mba
 
-    @property
-    def freeRootIndex(self) -> int:
-        return self.mba.freeRootIndex
-
-    @property
-    def blocksPtr(self) -> int:
-        return self.mba.blocksPtr
-
     def blocksEnd(self) -> int:
-        return self.blocksPtr + BLOCKS_ALLOCATOR_SIZE
+        return self.mba.blocksPtr + BLOCKS_ALLOCATOR_SIZE
 
     def alloc(self) -> int:
         """Return the index to a free block, or BLOCK_OOM."""
@@ -471,7 +462,7 @@ class BlockAllocator(MManBase):
         # FROM: root -> a -> b -> ...
         #   TO: root -> b -> ...
         # RETURN: ptr to a (value that was in root)
-        i = self.freeRootIndex
+        i = self.mba.freeRootIndex
         if i == BLOCK_FREE:
             return BLOCK_OOB
 
@@ -484,32 +475,34 @@ class BlockAllocator(MManBase):
         #   TO: root -> i -> a -> b -> ...
         self.checkPtr(self.getBlockPtr(i))
         # Set: i -> a
-        self.setBlock(i, self.freeRootIndex)
+        self.setBlock(i, self.mba.freeRootIndex)
         # Set: root -> i
         self.mba.freeRootIndex = i
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
-        if (ptr < self.blocksPtr
-                or ptr >= self.blocksPtr + BLOCKS_ALLOCATOR_SIZE
+        if (ptr < self.mba.blocksPtr
+                or ptr >= self.mba.blocksPtr + BLOCKS_ALLOCATOR_SIZE
                 or ptrAlign != 0):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
-                ptr, ptrAlign, self.blocksPtr, self.blocksEnd()))
+                ptr, ptrAlign, self.mba.blocksPtr, self.blocksEnd()))
 
     def getBlockPtr(self, block: int):
-        ptr = self.blocksPtr + (block * BLOCK_SIZE)
+        ptr = self.mba.blocksPtr + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
     def getPtrBlock(self, ptr: int):
         self.checkPtr(ptr)
-        return (ptr - self.blocksPtr) % BLOCK_SIZE
+        return (ptr - self.mba.blocksPtr) % BLOCK_SIZE
 
     def getBlock(self, i):
-        return self.memory.get(self.blocksPtr + i * sizeof(U16), U16).value
+        """Get the value in the blocks array"""
+        return self.memory.get(self.mba.blocksPtr + i * sizeof(U16), U16).value
 
     def setBlock(self, i, value):
-        self.memory.set(self.blocksPtr + i * sizeof(U16), U16(value))
+        """Set the value in the blocks array"""
+        self.memory.set(self.mba.blocksPtr + i * sizeof(U16), U16(value))
 
 
 def joinMem(ptr1: int, ptr2: int, size: int):
@@ -897,7 +890,7 @@ def _testMemoryLayout(env: Env):
     assert expected == env.heap.heap
 
     # Block allocator
-    assert CODE_HEAP_SIZE == env.ba.blocksPtr
+    assert CODE_HEAP_SIZE == env.ba.mba.blocksPtr
     assert 0 == env.ba.freeRootIndex
     expected = reservedSpace + 2 * sizeof(MHeap)
     assert expected == env.memory.getPtrTo(env.ba.mba)
