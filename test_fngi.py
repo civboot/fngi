@@ -194,7 +194,6 @@ class ATracker(object):
         return False
 
     def checkArena(self):
-        return
         marena = self.arena.marena
         ba = self.arena.ba
 
