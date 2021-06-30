@@ -473,7 +473,7 @@ class BlockAllocator(MManBase):
         # An "indexed linked list" push
         # FROM: root -> a -> b -> ...
         #   TO: root -> i -> a -> b -> ...
-        self.checkPtr(self.getBlockPtr(i))
+        self.checkPtr(self.blockToPtr(i))
         # Set: i -> a
         self.setBlock(i, self.mba.freeRootIndex)
         # Set: root -> i
@@ -487,12 +487,12 @@ class BlockAllocator(MManBase):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
                 ptr, ptrAlign, self.mba.blocksPtr, self.blocksEnd()))
 
-    def getBlockPtr(self, block: int):
+    def blockToPtr(self, block: int):
         ptr = self.mba.blocksPtr + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
-    def getPtrBlock(self, ptr: int):
+    def ptrToBlock(self, ptr: int):
         self.checkPtr(ptr)
         return (ptr - self.mba.blocksPtr) % BLOCK_SIZE
 
@@ -620,7 +620,7 @@ class Arena(object):
                 baPtr=baPtr,
                 blockRootIndex=U16(BLOCK_USED | aId).value,
                 _align=0,
-                po2Roots=[0 for _ in range(8)]))
+                po2Roots=MArenaPo2Roots(*[0 for _ in range(8)])))
         marena = memory.get(arenaPtr, MArena)
         return cls(parent, memory, ba, marena)
 
@@ -634,17 +634,17 @@ class Arena(object):
 
     def allocBlock(self) -> int:
         """Allocate a block, return the pointer to it."""
-        index = self.ba.alloc()
-        if index == BLOCK_OOB:
+        bi = self.ba.alloc()
+        if bi == BLOCK_OOB:
             return 0
 
-        self.ba.setBlock(index, self.marena.blockRootIndex)
-        self.marena.blockRootIndex = index
-        return self.ba.getBlockPtr(index)
+        self.ba.setBlock(bi, self.marena.blockRootIndex)
+        self.marena.blockRootIndex = bi
+        return self.ba.blockToPtr(bi)
 
     def pushFreePo2(self, po2, ptr):
         if po2 == ARENA_PO2_MAX:
-            index = self.ba.getPtrBlock(ptr)
+            index = self.ba.ptrToBlock(ptr)
 
             # find the index in the LL and pop it
             if index == self.marena.blockRootIndex:
@@ -677,7 +677,7 @@ class Arena(object):
     def alloc(self, wantPo2: int):
         if wantPo2 > 12:
             raise ValueError("wantPo2=" + str(wantPo2))
-        wantPo2 = min(wantPo2, ARENA_PO2_MIN)
+        wantPo2 = max(wantPo2, ARENA_PO2_MIN)
         po2 = wantPo2
         freeMem = 0
 
@@ -904,6 +904,7 @@ def testEnvCopy():
     assert env.dataStack.mstack is not ENV.dataStack.mstack
     assert env.heap.mheap is not ENV.heap.mheap
     assert env.ba.mba is not ENV.ba.mba
+    assert env.arena.marena is not ENV.arena.marena
     assert env.returnStack.mstack is not ENV.returnStack.mstack
 
     _testMemoryLayout(env)

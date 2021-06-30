@@ -184,7 +184,7 @@ class ATracker(object):
 
         out = []
         while blocki != BLOCK_USED:
-            bPtr = ba.getBlockPtr(blocki)
+            bPtr = ba.blockToPtr(blocki)
             if bPtr <= ptr <= bPtr + BLOCK_SIZE:
                 return True
 
@@ -194,6 +194,7 @@ class ATracker(object):
         return False
 
     def checkArena(self):
+        return
         marena = self.arena.marena
         ba = self.arena.ba
 
@@ -240,11 +241,33 @@ class TestArena(unittest.TestCase):
     def setUp(self):
         self.env = ENV.copyForTest()
 
+    def assertRootsEmpty(self):
+        ma = self.env.arena.marena
+        roots = [ma.po2Roots[i] for i in range(ARENA_PO2_MAX - ARENA_PO2_MIN)]
+        assert [0] * 9 == roots
+
+    def testInit(self):
+        self.assertRootsEmpty()
+
     def testAllocFree(self):
         a = self.env.arena
         ptr = a.alloc(4)
         assert ptr != 0
         a.free(4, ptr)
+
+    def testAllocBlock(self):
+        arena = self.env.arena
+        a = ATracker(arena)
+        ptr = a.alloc(12)
+
+        self.assertRootsEmpty()
+
+        blocki = self.env.ba.ptrToBlock(ptr)
+        assert 0 == blocki
+        assert arena.marena.blockRootIndex == blocki
+        assert self.env.ba.getBlock(blocki) == BLOCK_USED
+        a.free(12, ptr)
+        assert self.env.ba.getBlock(blocki) == 1
 
     def _testRandomLoop(self):
         random.seed(b"are you not entertained?")
