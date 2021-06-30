@@ -659,8 +659,7 @@ class Arena(object):
         else:
             po2i = po2 - ARENA_PO2_MIN
             oldRoot = self.marena.po2Roots[po2i]
-            if oldRoot != 0:
-                self.memory.set(ptr, Ptr(oldRoot))
+            self.memory.set(ptr, Ptr(oldRoot))
             self.marena.po2Roots[po2i] = ptr
 
     def popFreePo2(self, po2):
