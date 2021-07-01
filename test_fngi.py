@@ -289,13 +289,12 @@ class TestArena(unittest.TestCase):
         )
         self.at.free(3, ptr)
 
-
     def testRandomLoop(self):
         random.seed(b"are you not entertained?")
         sizeMin = 1
         sizeMax = 2**12
         a = ATracker(self.env.arena)
-        allocated = set()
+        allocated = []
 
         allocThreshold = 7
         for allocatingTry in range(0, 1000):
@@ -310,13 +309,13 @@ class TestArena(unittest.TestCase):
                     allocThreshold -= random.randint(0, 3)
                     allocThreshold = max(1, allocThreshold)
                 else:
-                    allocated.add(ptr)
+                    allocated.append((po2, ptr))
             else:
                 # free branch
                 if allocated:
-                    ptr = random.choice(tuple(allocated))
-                    a.free(po2, ptr)
-                    allocated.discard(ptr)
+                    i = random.randint(0, len(allocated) - 1)
+                    a.free(*allocated[i])
+                    del allocated[i]
                 else:
                     # cannot free, start allocating more
                     allocThreshold += random.randint(0, 3)
