@@ -672,10 +672,9 @@ class Arena(object):
         if po2 == ARENA_PO2_MAX:
             return self.freeBlock(self.ba.ptrToBlock(ptr))
 
-        po2i = po2 - ARENA_PO2_MIN
-        oldRoot = self.marena.po2Roots[po2i]
+        oldRoot = self.getPo2Root(po2)
         self.memory.set(ptr, Ptr(oldRoot))
-        self.marena.po2Roots[po2i] = ptr
+        self.setPo2Root(po2, ptr)
 
     def popFreePo2(self, po2):
         if po2 == ARENA_PO2_MAX:
@@ -691,7 +690,7 @@ class Arena(object):
     def alloc(self, wantPo2: int):
         if wantPo2 > 12:
             raise ValueError("wantPo2=" + str(wantPo2))
-        wantPo2 = max(ARENA_PO2_MIN, wantPo2)
+        wantPo2 = self._realPo2(wantPo2)
         po2 = wantPo2
         freeMem = 0
 
@@ -716,11 +715,13 @@ class Arena(object):
             self.pushFreePo2(po2, extraMem)
 
     def free(self, po2: int, ptr: int):
+        po2 = self._realPo2(po2)
         while True:
             if po2 == ARENA_PO2_MAX:
                 self.pushFreePo2(po2, ptr)
                 break
-            joinedMem = joinMem(ptr, self.marena.po2Roots[po2], 2**po2)
+
+            joinedMem = joinMem(ptr, self.getPo2Root(po2), 2**po2)
             if joinedMem == 0:
                 self.pushFreePo2(po2, ptr)
                 break
@@ -729,6 +730,18 @@ class Arena(object):
                 ptr = joinedMem
                 # then try to join the next largest po2
                 po2 += 1
+
+    def getPo2Root(self, po2):
+        po2i = po2 - ARENA_PO2_MIN
+        return self.marena.po2Roots[po2i]
+
+    def setPo2Root(self, po2, ptr):
+        po2i = po2 - ARENA_PO2_MIN
+        self.marena.po2Roots[po2i] = ptr
+
+    @staticmethod
+    def _realPo2(po2):
+        return max(ARENA_PO2_MIN, po2)
 
 
 # We now come to the "global" environment. This contains all the data which

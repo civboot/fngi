@@ -221,11 +221,11 @@ class ATracker(object):
             return
 
         assert ptr not in self.po2Allocated[po2]
-        index = (ptr, 2**min(ARENA_PO2_MIN, po2))
+        index = (ptr, 2**max(ARENA_PO2_MIN, po2))
 
         # assert the pointer doesn't fall into any allocated blocks
         for allocPtr, allocSize in self.allAllocated:
-            assert not (allocPtr <= ptr < allocPtr + allocSize)
+            assert not (allocPtr <= ptr < (allocPtr + allocSize))
 
         self.allAllocated.append(index)
         self.allAllocated.sort(key=lambda a: a[0])
@@ -235,7 +235,7 @@ class ATracker(object):
 
     def free(self, po2, ptr) -> int:
         print("Freeing", po2, ptr)
-        index = (ptr, 2**min(ARENA_PO2_MIN, po2))
+        index = (ptr, 2**max(ARENA_PO2_MIN, po2))
         assert index in self.allAllocated
         assert ptr in self.po2Allocated[po2]
         self.arena.free(po2, ptr)
@@ -297,7 +297,7 @@ class TestArena(unittest.TestCase):
         allocated = []
 
         allocThreshold = 7
-        for allocatingTry in range(0, 1000):
+        for allocatingTry in range(0, 10000):
             print(allocatingTry)
             size = random.randint(sizeMin, sizeMax)
             po2 = 1 + ARENA_PO2_MAX - getPo2(size)
