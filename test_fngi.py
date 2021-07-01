@@ -142,7 +142,7 @@ class TestBlockAllocator(unittest.TestCase):
         allocated = set()
 
         allocThreshold = 7
-        for _ in range(0, 1000):
+        for _ in range(0, 10000):
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 noneFree = (bt.numFree == 0)
@@ -214,6 +214,8 @@ class ATracker(object):
 
     def alloc(self, po2) -> int:
         print("Allocating", po2)
+        # if po2 == 12:
+        #     import pdb; pdb.set_trace()
         ptr = self.arena.alloc(po2)
         print("Allocated", po2, "->", ptr)
         self.checkArena()

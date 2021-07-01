@@ -646,16 +646,16 @@ class Arena(object):
         self.marena.blockRootIndex = bi
         return self.ba.blockToPtr(bi)
 
-    def freeBlock(self, bindex) -> int:
+    def freeBlock(self, ptr) -> int:
+        bindex = self.ba.ptrToBlock(ptr)
         # find the bindex in the LL and pop it
         if bindex == self.marena.blockRootIndex:
             # from: (root) bindex -> a -> b -> ...
             # to  : (root) a -> b -> ...
             self.marena.blockRootIndex = self.ba.getBlock(bindex)
         else:
-            # root -> a -> ... t -> w -> bindex -> x
-            #   to -> a -> ... t -> w -> x
-
+            # from: root -> a -> ... t -> w -> bindex -> x
+            #   to: root -> a -> ... t -> w -> x
             # Trying to find w.
             w = self.ba.getBlock(self.marena.blockRootIndex)
             # w is not w until it points to bindex
@@ -669,9 +669,6 @@ class Arena(object):
         self.ba.free(bindex)
 
     def pushFreePo2(self, po2, ptr):
-        if po2 == ARENA_PO2_MAX:
-            return self.freeBlock(self.ba.ptrToBlock(ptr))
-
         oldRoot = self.getPo2Root(po2)
         self.memory.set(ptr, Ptr(oldRoot))
         self.setPo2Root(po2, ptr)
@@ -680,11 +677,9 @@ class Arena(object):
         if po2 == ARENA_PO2_MAX:
             freeMem = self.allocBlock()
         else:
-            po2i = po2 - ARENA_PO2_MIN
-            freeMem = self.marena.po2Roots[po2i]
+            freeMem = self.getPo2Root(po2)
             if freeMem != 0:
-                newRoot = self.memory.get(freeMem, Ptr)
-                self.marena.po2Roots[po2i] = newRoot
+                self.setPo2Root(po2, self.memory.get(freeMem, Ptr))
         return freeMem
 
     def alloc(self, wantPo2: int):
@@ -718,15 +713,13 @@ class Arena(object):
         po2 = self._realPo2(po2)
         while True:
             if po2 == ARENA_PO2_MAX:
-                self.pushFreePo2(po2, ptr)
-                break
+                return self.freeBlock(ptr)
 
             joinedMem = joinMem(ptr, self.getPo2Root(po2), 2**po2)
             if joinedMem == 0:
-                self.pushFreePo2(po2, ptr)
-                break
+                return self.pushFreePo2(po2, ptr)
             else:
-                self.popFreePo2(po2) # remove it, we are joining it
+                self.popFreePo2(po2) # remove root, we are joining it
                 ptr = joinedMem
                 # then try to join the next largest po2
                 po2 += 1
