@@ -646,25 +646,36 @@ class Arena(object):
         self.marena.blockRootIndex = bi
         return self.ba.blockToPtr(bi)
 
+    def freeBlock(self, bindex) -> int:
+        # find the bindex in the LL and pop it
+        if bindex == self.marena.blockRootIndex:
+            # from: (root) bindex -> a -> b -> ...
+            # to  : (root) a -> b -> ...
+            self.marena.blockRootIndex = self.ba.getBlock(bindex)
+        else:
+            # root -> a -> ... t -> w -> bindex -> x
+            #   to -> a -> ... t -> w -> x
+
+            # Trying to find w.
+            w = self.ba.getBlock(self.marena.blockRootIndex)
+            # w is not w until it points to bindex
+            while True:
+                wPointsTo = self.ba.getBlock(w)
+                if wPointsTo == bindex:
+                    break
+                w = wPointsTo
+            self.ba.setBlock(w, self.ba.getBlock(bindex))
+
+        self.ba.free(bindex)
+
     def pushFreePo2(self, po2, ptr):
         if po2 == ARENA_PO2_MAX:
-            bindex = self.ba.ptrToBlock(ptr)
+            return self.freeBlock(self.ba.ptrToBlock(ptr))
 
-            # find the bindex in the LL and pop it
-            if bindex == self.marena.blockRootIndex:
-                self.marena.blockRootIndex = self.ba.getBlock(bindex)
-            else:
-                prev = self.marena.blockRootIndex
-                while self.ba.getBlock(prev) != bindex:
-                    prev = self.ba.getBlock(prev)
-                self.ba.setBlock(prev, self.ba.getBlock(prev))
-
-            self.ba.free(bindex)
-        else:
-            po2i = po2 - ARENA_PO2_MIN
-            oldRoot = self.marena.po2Roots[po2i]
-            self.memory.set(ptr, Ptr(oldRoot))
-            self.marena.po2Roots[po2i] = ptr
+        po2i = po2 - ARENA_PO2_MIN
+        oldRoot = self.marena.po2Roots[po2i]
+        self.memory.set(ptr, Ptr(oldRoot))
+        self.marena.po2Roots[po2i] = ptr
 
     def popFreePo2(self, po2):
         if po2 == ARENA_PO2_MAX:

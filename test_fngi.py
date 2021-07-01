@@ -174,7 +174,7 @@ class ATracker(object):
     """Arena allocator tracker."""
     def __init__(self, arena):
         self.arena = arena
-        self.po2Allocated = {i: [] for i in range(1, ARENA_PO2_MAX + 1)}
+        self.po2Allocated = {i: set() for i in range(1, ARENA_PO2_MAX + 1)}
         self.allAllocated = []
 
     def ptrInAllocatedBlocks(self, ptr):
@@ -182,11 +182,15 @@ class ATracker(object):
         blocksPtr = ba.mba.blocksPtr
         blocki = self.arena.marena.blockRootIndex
 
-        out = []
-        while blocki != BLOCK_USED:
+        track = [] # TODO: remove
+        while True:
+            assert blocki != BLOCK_FREE, "somehow followed free LL"
+            track.append(blocki)
             bPtr = ba.blockToPtr(blocki)
             if bPtr <= ptr < bPtr + BLOCK_SIZE:
                 return True
+            if blocki == BLOCK_USED:
+                break
             blocki = ba.getBlock(blocki)
         return False
 
@@ -225,7 +229,7 @@ class ATracker(object):
 
         self.allAllocated.append(index)
         self.allAllocated.sort(key=lambda a: a[0])
-        self.po2Allocated[po2].append(ptr)
+        self.po2Allocated[po2].add(ptr)
 
         return ptr
 
@@ -238,7 +242,7 @@ class ATracker(object):
         self.checkArena()
 
         self.allAllocated.remove(index)
-        self.po2Allocated[po2].remove(ptr)
+        self.po2Allocated[po2].discard(ptr)
 
     def getPo2Roots(self):
         ma = self.arena.marena
@@ -297,7 +301,7 @@ class TestArena(unittest.TestCase):
         for allocatingTry in range(0, 1000):
             print(allocatingTry)
             size = random.randint(sizeMin, sizeMax)
-            po2 = getPo2(size)
+            po2 = 1 + ARENA_PO2_MAX - getPo2(size)
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 ptr = a.alloc(po2)
