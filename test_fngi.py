@@ -226,7 +226,9 @@ class ATracker(object):
         index = (ptr, 2**max(ARENA_PO2_MIN, po2))
 
         # assert the pointer doesn't fall into any allocated blocks
+        ba = self.arena.ba
         for allocPtr, allocSize in self.allAllocated:
+            ??? TODO: what is going on with ba.mba.freeRootIndex???
             assert not (allocPtr <= ptr < (allocPtr + allocSize))
 
         self.allAllocated.append(index)

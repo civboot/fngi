@@ -647,6 +647,7 @@ class Arena(object):
         return self.ba.blockToPtr(bi)
 
     def freeBlock(self, ptr) -> int:
+        import pdb; pdb.set_trace()
         bindex = self.ba.ptrToBlock(ptr)
         # find the bindex in the LL and pop it
         if bindex == self.marena.blockRootIndex:
@@ -675,11 +676,11 @@ class Arena(object):
 
     def popFreePo2(self, po2):
         if po2 == ARENA_PO2_MAX:
-            freeMem = self.allocBlock()
-        else:
-            freeMem = self.getPo2Root(po2)
-            if freeMem != 0:
-                self.setPo2Root(po2, self.memory.get(freeMem, Ptr))
+            return self.allocBlock()
+        freeMem = self.getPo2Root(po2)
+        if freeMem != 0:
+            # Pop item from linked list
+            self.setPo2Root(po2, self.memory.get(freeMem, Ptr))
         return freeMem
 
     def alloc(self, wantPo2: int):
@@ -725,8 +726,7 @@ class Arena(object):
                 po2 += 1
 
     def getPo2Root(self, po2):
-        po2i = po2 - ARENA_PO2_MIN
-        return self.marena.po2Roots[po2i]
+        return self.marena.po2Roots[po2 - ARENA_PO2_MIN]
 
     def setPo2Root(self, po2, ptr):
         po2i = po2 - ARENA_PO2_MIN
