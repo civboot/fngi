@@ -424,12 +424,15 @@ class BlockAllocator(MManBase):
         return self.m.memPtr + BLOCKS_ALLOCATOR_SIZE
 
     def alloc(self, po2: int) -> int:
-        """Return the index to a free block, or BLOCK_OOM."""
+        if po2 != BLOCK_PO2: raise ValueError(po2)
+        return self.blockToPtr(self.allocBlock())
+
+    def allocBlock(self) -> int:
+        """Return the index to a free block, or BLOCK_OOB."""
         # An "indexed linked list" pop
         # FROM: root -> a -> b -> ...
         #   TO: root -> b -> ...
         # RETURN: ptr to a (value that was in root)
-        if po2 != BLOCK_PO2: raise ValueError(po2)
         i = self.m.freeRootIndex
         if i == BLOCK_FREE:
             if self.blocksFree != 0:
@@ -440,8 +443,11 @@ class BlockAllocator(MManBase):
         self.blocksFree -= 1
         return i
 
-    def free(self, po2: int, i: int):
+    def free(self, po2: int, ptr: int):
         if po2 != BLOCK_PO2: raise ValueError(po2)
+        self.freeBlock(self.ptrToBlock(ptr))
+
+    def freeBlock(self, i):
         if self.blocksFree >= BLOCKS_TOTAL:
             raise ValueError("invalid free")
         # An "indexed linked list" push
@@ -463,6 +469,8 @@ class BlockAllocator(MManBase):
                 ptr, ptrAlign, self.m.memPtr, self.blocksEnd()))
 
     def blockToPtr(self, block: int):
+        if block == BLOCK_OOB:
+            return 0
         ptr = self.m.memPtr + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
@@ -617,7 +625,7 @@ class Arena(object):
 
     def allocBlock(self) -> int:
         """Allocate a block, return the pointer to it."""
-        bi = self.ba.alloc(BLOCK_PO2)
+        bi = self.ba.allocBlock()
         if bi == BLOCK_OOB:
             return 0
 
@@ -647,7 +655,7 @@ class Arena(object):
                 w = wPointsTo
             self.ba.setBlock(w, self.ba.getBlock(wPointsTo))
 
-        self.ba.free(BLOCK_PO2, bindex)
+        self.ba.freeBlock(bindex)
 
     def pushFreePo2(self, po2, ptr):
         oldRoot = self.getPo2Root(po2)

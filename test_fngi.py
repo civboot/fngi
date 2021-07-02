@@ -72,9 +72,9 @@ class BTracker(object):
     def setBlock(self, i, v):
         return self.ba.setBlock(i, v)
 
-    def alloc(self, po2: int) -> int:
+    def allocBlock(self) -> int:
         noneFree = (self.numFree == 0)
-        bindex = self.ba.alloc(po2)
+        bindex = self.ba.allocBlock()
         if bindex == BLOCK_OOB:
             assert noneFree
         else:
@@ -84,9 +84,9 @@ class BTracker(object):
             self.freeBlocks[bindex] = False
         return bindex
 
-    def free(self, po2, bindex):
+    def freeBlock(self, bindex):
         assert not self.freeBlocks[bindex]
-        self.ba.free(po2, bindex)
+        self.ba.freeBlock(bindex)
         self.numFree += 1
         self.freeBlocks[bindex] = True
 
@@ -133,12 +133,12 @@ class TestBlockAllocator(unittest.TestCase):
     def testBlockAlloc_two(self):
         assert 0 == self.ba.m.freeRootIndex # free root index starts at 0
         assert 1 == self.ba.getBlock(0) # nextFree is 1
-        first = self.ba.alloc(BLOCK_PO2)
+        first = self.ba.allocBlock()
         assert 0 == first
 
         assert 1 == self.ba.m.freeRootIndex
         assert 2 == self.ba.getBlock(1) # nextFree is 2
-        second = self.ba.alloc(BLOCK_PO2)
+        second = self.ba.allocBlock()
         assert 1 == second
 
         assert 2 == self.ba.m.freeRootIndex
@@ -154,7 +154,7 @@ class TestBlockAllocator(unittest.TestCase):
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 noneFree = (bt.numFree == 0)
-                bi = bt.alloc(BLOCK_PO2)
+                bi = bt.allocBlock()
                 if noneFree:
                     assert BLOCK_OOB == bi
                     # out of blocks, start freeing more
@@ -172,7 +172,7 @@ class TestBlockAllocator(unittest.TestCase):
                 else:
                     bi = random.choice(tuple(allocated))
                     allocated.discard(bi)
-                    bt.free(BLOCK_PO2, bi)
+                    bt.freeBlock(bi)
 
             if random.randint(0, 10) >= 10:
                 bt.getFree() & allocated == set()
