@@ -663,7 +663,6 @@ class Arena(object):
         return self.ba.blockToPtr(bi)
 
     def freeBlock(self, ptr) -> int:
-        # pdb.set_trace()
         bindex = self.ba.ptrToBlock(ptr)
         # find the bindex in the LL and pop it
         if bindex == self.marena.blockRootIndex:
@@ -674,17 +673,15 @@ class Arena(object):
             # from: root -> a -> ... t -> w -> bindex -> x
             #   to: root -> a -> ... t -> w -> x
             # Trying to find w.
-            w = self.ba.getBlock(self.marena.blockRootIndex)
+            # pdb.set_trace()
+            w = self.marena.blockRootIndex
+            wPointsTo = self.ba.getBlock(w)
             # w is not w until it points to bindex
-            while True:
-                print('w', w)
+            while wPointsTo != bindex:
                 wPointsTo = self.ba.getBlock(w)
-                if wPointsTo == bindex:
-                    break
                 if wPointsTo & BLOCK_USED == BLOCK_USED:
                     raise ValueError('could not find block')
                 w = wPointsTo
-            # pdb.set_trace()
             self.ba.setBlock(w, self.ba.getBlock(bindex))
 
         self.ba.free(bindex)
