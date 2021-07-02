@@ -14,6 +14,10 @@ from fngi import ENV
 from fngi import getPo2
 from ctypes import sizeof
 
+# update/modify for randomized memory tests
+MEM_SEED = "(in the arena) Are you not entertained?"
+MEM_LOOPS = int(1e6)
+
 class TestStack(unittest.TestCase):
     def newStack(self):
         return Stack.forTest(16)
@@ -144,12 +148,12 @@ class TestBlockAllocator(unittest.TestCase):
 
     def testRandomLoop(self):
         """Randomly allocate and free blocks."""
-        random.seed(b"blocks are fun")
+        random.seed(MEM_SEED)
         bt = BTracker(self.ba)
         allocated = set()
 
         allocThreshold = 7
-        for _ in range(0, 1000):
+        for _ in range(0, MEM_LOOPS):
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 noneFree = (bt.numFree == 0)
@@ -220,8 +224,6 @@ class ATracker(object):
             assert allocPtr + allocSize <= nextAllocPtr
 
     def alloc(self, po2) -> int:
-        # if po2 == 12:
-        #     import pdb; pdb.set_trace()
         ptr = self.arena.alloc(po2)
         self.checkArena()
         if ptr == 0:
@@ -298,7 +300,7 @@ class TestArena(unittest.TestCase):
         self.at.free(3, ptr)
 
     def testRandomLoop(self):
-        random.seed(b"(in the arena) Are you not entertained?")
+        random.seed(MEM_SEED)
         sizeMin = 1
         sizeMax = 2**12
         a = ATracker(self.env.arena)
@@ -308,12 +310,11 @@ class TestArena(unittest.TestCase):
         totalBytesFreed = 0
 
         allocThreshold = 7
-        for allocatingTry in range(0, 10000):
+        for allocatingTry in range(0, MEM_LOOPS):
             size = random.randint(sizeMin, sizeMax)
             po2 = 1 + ARENA_PO2_MAX - getPo2(size)
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
-                print("### Allocating", po2, "try", allocatingTry)
                 ptr = a.alloc(po2)
                 if ptr == 0:
                     # out of mem, start freeing more
@@ -325,9 +326,9 @@ class TestArena(unittest.TestCase):
             else:
                 # free branch
                 if allocated:
-                    print("### Freeing", po2, "try", allocatingTry)
                     i = random.randint(0, len(allocated) - 1)
-                    a.free(*allocated[i])
+                    po2, ptr = allocated[i]
+                    a.free(po2, ptr)
                     del allocated[i]
                     totalBytesFreed += 2**po2
                 else:

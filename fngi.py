@@ -475,7 +475,6 @@ class BlockAllocator(MManBase):
                 raise RuntimeError("Failed to detect OOM")
             return BLOCK_OOB
 
-        # pdb.set_trace()
         self.mba.freeRootIndex = self.getBlock(i)
         self.blocksFree -= 1
         return i
@@ -488,7 +487,6 @@ class BlockAllocator(MManBase):
         #   TO: root -> i -> a -> b -> ...
         self.checkPtr(self.blockToPtr(i))
         # Set: i -> a
-        # pdb.set_trace()
         self.setBlock(i, self.mba.freeRootIndex)
         # Set: root -> i
         self.mba.freeRootIndex = i
@@ -517,7 +515,8 @@ class BlockAllocator(MManBase):
 
     def getBlock(self, i):
         """Get the value in the blocks array"""
-        return self.memory.get(self.mba.blocksPtr + i * sizeof(U16), U16).value
+        out = self.memory.get(self.mba.blocksPtr + i * sizeof(U16), U16).value
+        return out
 
     def setBlock(self, i, value):
         """Set the value in the blocks array"""
@@ -661,7 +660,6 @@ class Arena(object):
         if bi == BLOCK_OOB:
             return 0
 
-        # pdb.set_trace()
         self.ba.setBlock(bi, self.marena.blockRootIndex)
         self.marena.blockRootIndex = bi
         return self.ba.blockToPtr(bi)
@@ -677,18 +675,15 @@ class Arena(object):
             # from: root -> a -> ... t -> w -> bindex -> x
             #   to: root -> a -> ... t -> w -> x
             # Trying to find w.
-            # pdb.set_trace()
             w = self.marena.blockRootIndex
-            wPointsTo = self.ba.getBlock(w)
             # w is not w until it points to bindex
-            while wPointsTo != bindex:
-                print("w", w, "wPointsTo", wPointsTo)
+            while True:
                 wPointsTo = self.ba.getBlock(w)
+                if wPointsTo == bindex:
+                    break
                 if wPointsTo & BLOCK_USED == BLOCK_USED:
                     raise ValueError('could not find block')
                 w = wPointsTo
-            print("bindex", bindex, "w", w, "wPointsTo", wPointsTo, "*wPointsTo", self.ba.getBlock(wPointsTo))
-            import pdb; pdb.set_trace()
             self.ba.setBlock(w, self.ba.getBlock(wPointsTo))
 
         self.ba.free(bindex)
@@ -736,18 +731,14 @@ class Arena(object):
 
     def free(self, po2: int, ptr: int):
         po2 = self._realPo2(po2)
-        print("# Freeing", po2, ptr)
         while True:
             if po2 == ARENA_PO2_MAX:
-                print("Freeing block", ptr)
                 return self.freeBlock(ptr)
 
             joinedMem = joinMem(ptr, self.getPo2Root(po2), 2**po2)
             if joinedMem == 0:
-                print("pushFreePo2", po2, ptr)
                 return self.pushFreePo2(po2, ptr)
             else:
-                print("Joined", po2, ptr)
                 self.popFreePo2(po2) # remove root, we are joining it
                 ptr = joinedMem
                 # then try to join the next largest po2
