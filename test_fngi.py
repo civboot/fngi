@@ -213,11 +213,11 @@ class ATracker(object):
             assert allocPtr + allocSize <= nextAllocPtr
 
     def alloc(self, po2) -> int:
-        print("Allocating", po2)
+        # print("Allocating", po2)
         # if po2 == 12:
         #     import pdb; pdb.set_trace()
         ptr = self.arena.alloc(po2)
-        print("Allocated", po2, "->", ptr)
+        # print("Allocated", po2, "->", ptr)
         self.checkArena()
         if ptr == 0:
             return
@@ -228,7 +228,7 @@ class ATracker(object):
         # assert the pointer doesn't fall into any allocated blocks
         ba = self.arena.ba
         for allocPtr, allocSize in self.allAllocated:
-            ??? TODO: what is going on with ba.mba.freeRootIndex???
+            # ??? TODO: what is going on with ba.mba.freeRootIndex???
             assert not (allocPtr <= ptr < (allocPtr + allocSize))
 
         self.allAllocated.append(index)
@@ -238,7 +238,7 @@ class ATracker(object):
         return ptr
 
     def free(self, po2, ptr) -> int:
-        print("Freeing", po2, ptr)
+        # print("Freeing", po2, ptr)
         index = (ptr, 2**max(ARENA_PO2_MIN, po2))
         assert index in self.allAllocated
         assert ptr in self.po2Allocated[po2]
@@ -302,7 +302,6 @@ class TestArena(unittest.TestCase):
 
         allocThreshold = 7
         for allocatingTry in range(0, 10000):
-            print(allocatingTry)
             size = random.randint(sizeMin, sizeMax)
             po2 = 1 + ARENA_PO2_MAX - getPo2(size)
             if random.randint(0, 10) < allocThreshold:

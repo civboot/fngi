@@ -8,6 +8,7 @@
 # This requires careful and extensive use of python's `ctypes` module,
 # which provides c-like (and therefore fngi-like) datatypes for us to use.
 
+import pdb
 import abc
 import sys
 import struct
@@ -162,6 +163,7 @@ RETURN_STACK_SIZE = MiB // 2 # 1/2 MiB return stack
 # can be allocatd without growing a heap.
 BLOCK_SIZE = 2**12 
 BLOCKS_TOTAL = BLOCKS_ALLOCATOR_SIZE // BLOCK_SIZE
+BLOCKS_INDEXES_SIZE = BLOCKS_TOTAL * sizeof(U16)
 BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
 
 
@@ -429,6 +431,7 @@ class MBlockAllocator(ctypes.Structure):
     _fields_ = [
         ('freeRootIndex', U16),
         ('blocksPtr', Ptr),
+        ('memPtr', Ptr),
     ]
 
 class BlockAllocator(MManBase):
@@ -449,6 +452,7 @@ class BlockAllocator(MManBase):
         for i in range(0, BLOCKS_TOTAL - 1):
             self.setBlock(i, i+1)
         self.setBlock(BLOCKS_TOTAL - 1, BLOCK_FREE)
+        self.blocksFree = BLOCKS_TOTAL
 
     def getMValue(self):
         return self.mba
@@ -462,22 +466,30 @@ class BlockAllocator(MManBase):
         # FROM: root -> a -> b -> ...
         #   TO: root -> b -> ...
         # RETURN: ptr to a (value that was in root)
+        if self.blocksFree <= 0:
+            raise ValueError("OOM")
         i = self.mba.freeRootIndex
         if i == BLOCK_FREE:
             return BLOCK_OOB
 
+        # pdb.set_trace()
         self.mba.freeRootIndex = self.getBlock(i)
+        self.blocksFree -= 1
         return i
 
     def free(self, i: int):
+        if self.blocksFree >= BLOCKS_TOTAL:
+            raise ValueError("invalid free")
         # An "indexed linked list" push
         # FROM: root -> a -> b -> ...
         #   TO: root -> i -> a -> b -> ...
         self.checkPtr(self.blockToPtr(i))
         # Set: i -> a
+        # pdb.set_trace()
         self.setBlock(i, self.mba.freeRootIndex)
         # Set: root -> i
         self.mba.freeRootIndex = i
+        self.blocksFree += 1
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
@@ -507,6 +519,9 @@ class BlockAllocator(MManBase):
     def setBlock(self, i, value):
         """Set the value in the blocks array"""
         self.memory.set(self.mba.blocksPtr + i * sizeof(U16), U16(value))
+
+    def allBlockIndexes(self):
+        return [self.getBlock(i) for i in range(BLOCKS_TOTAL)]
 
 
 def joinMem(ptr1: int, ptr2: int, size: int):
@@ -642,12 +657,13 @@ class Arena(object):
         if bi == BLOCK_OOB:
             return 0
 
+        # pdb.set_trace()
         self.ba.setBlock(bi, self.marena.blockRootIndex)
         self.marena.blockRootIndex = bi
         return self.ba.blockToPtr(bi)
 
     def freeBlock(self, ptr) -> int:
-        import pdb; pdb.set_trace()
+        # pdb.set_trace()
         bindex = self.ba.ptrToBlock(ptr)
         # find the bindex in the LL and pop it
         if bindex == self.marena.blockRootIndex:
@@ -665,6 +681,7 @@ class Arena(object):
                 if wPointsTo == bindex:
                     break
                 w = wPointsTo
+            # pdb.set_trace()
             self.ba.setBlock(w, self.ba.getBlock(bindex))
 
         self.ba.free(bindex)
@@ -765,10 +782,10 @@ MEMORY.data[0:4] = b'\xA0\xDE\xFE\xC7' # address 0 is "A DEFECT"
 HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
 CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
 BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
+BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
 REAL_HEAP_START = HEAP.heap
 
-RETURN_STACK_MEM = BLOCK_ALLOCATOR_MEM + EXTRA_HEAP_SIZE
-# data_stack: not in main memory.
+RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 
 
 # Now that we have the _space_ for all of our memory regions, we need to
@@ -797,7 +814,7 @@ CODE_HEAP = Heap(
 
 BLOCK_ALLOCATOR = BlockAllocator(
     MEMORY,
-    HEAP.push(MBlockAllocator(0, BLOCK_ALLOCATOR_MEM)))
+    HEAP.push(MBlockAllocator(0, BLOCK_INDEXES_MEM, BLOCK_ALLOCATOR_MEM)))
 
 ARENA = Arena( # global arena
     None,
@@ -901,18 +918,25 @@ def testMemoryLayout():
     _testMemoryLayout(ENV)
 
 def _testMemoryLayout(env: Env):
-    reservedSpace = CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE
+    reservedSpace = CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE + BLOCKS_INDEXES_SIZE
     assert reservedSpace == env.memory.getPtrTo(env.heap.mheap)
+    assert reservedSpace == REAL_HEAP_START
 
     # Assert current heap location
     assert 0 == env.heap.start
     expected = reservedSpace
-    expected += 2 * sizeof(MHeap) + sizeof(MBlockAllocator) + sizeof(MStack)
+    expected += (
+        2 * sizeof(MHeap) 
+        + sizeof(MBlockAllocator) 
+        + sizeof(MStack)
+        + sizeof(MArena)
+    )
     assert expected == env.heap.heap
 
     # Block allocator
-    assert CODE_HEAP_SIZE == env.ba.mba.blocksPtr
-    assert 0 == env.ba.freeRootIndex
+    assert CODE_HEAP_SIZE == env.ba.mba.memPtr
+    assert CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE == env.ba.mba.blocksPtr
+    assert 0 == env.ba.mba.freeRootIndex
     expected = reservedSpace + 2 * sizeof(MHeap)
     assert expected == env.memory.getPtrTo(env.ba.mba)
 
