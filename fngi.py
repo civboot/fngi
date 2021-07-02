@@ -556,22 +556,22 @@ class Arena(object):
     one written in forth wich can run on microcontrollers, so it uses extremely
     low level concepts (i.e. raw pointers stored inside of freed blocks)
 
-    The arena allocator can allocate memory in powers of 2, from 8 (2**3)
-    bytes up to 4kiB (2**12). It keeps track of free blocks of memory by using
-    an array of linked lists, where each index in the array is 4+po2. Unlike
-    the BlockAllocator, the pointers to the "next free node" is kept _within
-    the allocateable memory itself_. This allows each arena allocator to have
-    only ~64 bytes of memory overhead.
+    The arena allocator can allocate memory in powers of 2, from 8 (2**3) bytes
+    up to 4k (2**12) bytes. It keeps track of free blocks of memory by using an
+    array of linked lists, where each index in the array is 4+po2. Unlike the
+    BlockAllocator, the pointers to the "next free node" is kept _within the
+    allocateable memory itself_. This allows each arena allocator to have only
+    ~64 bytes of memory overhead.
 
-    The arena keeps track of all the 4KiB blocks it is using by using the
-    BlockAllocator's blocks array. This is the exact same method that the block
-    allocator itself uses to track it's free blocks (difference being the arena
-    is tracking the allocated blocks instead of free ones). This allows all of
-    the blocks the arena is using to be freed when the arena is dropped.
+    The arena keeps track of all the 4KiB blocks it is using by keeping a LL in
+    the BlockAllocator's blocks array. This is the exact same method that the
+    block allocator itself uses to track it's free blocks (difference being the
+    arena is tracking the allocated blocks instead of free ones). This allows
+    all of the blocks the arena is using to be freed when the arena is dropped.
 
     The algorithm our arena allocator uses for small allocations is called a
     "buddy allocator", although this is a very peculiar variant. Blocks are
-    allocated by po2 (power of 2), if a free block is not available it is
+    allocated by po2 (power of 2). If a free block is not available it is
     requested from the next-highest po2, which will ask from the next highest,
     etc. When a block is found, it will be split in half repeatedly (storing
     the unused half) until it is the correct size. When a block is freed,
@@ -581,6 +581,11 @@ class Arena(object):
 
     We allow allocating 2^3 to 2^12 size blocks (9 sizes). 8 of these have a
     linked list, while size 2^12 uses a single index into the block allocator.
+
+    The allocator is generally performant, although freeing blocks can
+    potentially be slow (requires traversing the block LL to pop it). It is
+    recommended to directly use the block allocator if you know your data will
+    require a whole block.
     """
     def __init__(self,
             parent: 'Arena',
@@ -725,7 +730,7 @@ class Arena(object):
         return max(ARENA_PO2_MIN, po2)
 
 
-# We now come to the "global" environment. This contains all the data which
+# We now come to the "global" environment. This contains all the memory which
 # functions (native or user, we'll get to that) and the compiler itself mutate
 # while compiling and executing fngi code. As we'll see, fngi will be
 # simultaniously executing while compiling, as we will write a large amount of
@@ -734,9 +739,10 @@ class Arena(object):
 # Memory layout:
 # CODE_HEAP: location where "code" and native fn indexes go.
 #   note: memory address 0 has something special written.
-# BLOCK_ALLOCATOR: location for block allocator to use
-# EXTRA_HEAP: some extra heap space to put global variables and data
-#   such as the global allocators, user-defined globals, compiler state, etc.
+# BLOCK_ALLOCATOR: location for block allocator to use. The arena allocator
+#   uses blocks, so this also includes the arena allocator.
+# EXTRA_HEAP: some extra heap space to put global variables and data such as
+#   the global allocators, user-defined globals, compiler state, etc.
 # RETURN_STACK: the return stack
 MEMORY_SIZE = (
     CODE_HEAP_SIZE
@@ -744,18 +750,14 @@ MEMORY_SIZE = (
     + EXTRA_HEAP_SIZE
     + RETURN_STACK_SIZE)
 
-
 MEMORY = Memory(MEMORY_SIZE)
 MEMORY.data[0:4] = b'\xA0\xDE\xFE\xC7' # address 0 is "A DEFECT"
 
-
-# Note: return stack is "above" the heap
 HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
 CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
 BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
 BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
 REAL_HEAP_START = HEAP.m.heap
-
 RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 
 
@@ -767,8 +769,7 @@ RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 # at all points of execution. This will make testing and debugging much easier.
 # For example, we can write tests that compile a fngi program using both python
 # and forth compilers and assert they are identical. Also, this means we can
-# write assembly dumping and debugging tools in python and use them on our
-# Forth implementation.
+# write debugging tools in python and use them on our Forth implementation.
 
 # Data stack kept in separate memory region
 DATA_STACK = Stack(
@@ -910,7 +911,6 @@ def _testMemoryLayout(env: Env):
     assert 0 == env.ba.m.freeRootIndex
     expected = reservedSpace + 2 * sizeof(MHeap)
     assert expected == env.memory.getPtrTo(env.ba.m)
-
 
 def testEnvCopy():
     env = ENV.copyForTest()
