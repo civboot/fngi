@@ -457,6 +457,9 @@ class BlockAllocator(MManBase):
     def getMValue(self):
         return self.mba
 
+    def blocksAlloc(self):
+        return BLOCKS_TOTAL - self.blocksFree
+
     def blocksEnd(self) -> int:
         return self.mba.memPtr + BLOCKS_ALLOCATOR_SIZE
 
@@ -518,6 +521,7 @@ class BlockAllocator(MManBase):
 
     def setBlock(self, i, value):
         """Set the value in the blocks array"""
+        assert i != value, "never valid to have the block point to itself"
         self.memory.set(self.mba.blocksPtr + i * sizeof(U16), U16(value))
 
     def allBlockIndexes(self):
@@ -678,11 +682,14 @@ class Arena(object):
             wPointsTo = self.ba.getBlock(w)
             # w is not w until it points to bindex
             while wPointsTo != bindex:
+                print("w", w, "wPointsTo", wPointsTo)
                 wPointsTo = self.ba.getBlock(w)
                 if wPointsTo & BLOCK_USED == BLOCK_USED:
                     raise ValueError('could not find block')
                 w = wPointsTo
-            self.ba.setBlock(w, self.ba.getBlock(bindex))
+            print("bindex", bindex, "w", w, "wPointsTo", wPointsTo, "*wPointsTo", self.ba.getBlock(wPointsTo))
+            import pdb; pdb.set_trace()
+            self.ba.setBlock(w, self.ba.getBlock(wPointsTo))
 
         self.ba.free(bindex)
 
