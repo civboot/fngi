@@ -81,7 +81,6 @@ class BTracker(object):
 
     def getFree(self):
         """Return all free indexes."""
-        blocksPtr = self.ba.mba.blocksPtr
         blocki = self.ba.mba.freeRootIndex
 
         out = set()
@@ -89,9 +88,7 @@ class BTracker(object):
         while blocki != BLOCK_FREE:
             assert blocki not in out
             out.add(blocki)
-            blocki = self.ba.memory.get(
-                blocksPtr + blocki * sizeof(U16),
-                U16).value
+            blocki = self.ba.getBlock(blocki)
 
         return out
 
@@ -179,7 +176,6 @@ class ATracker(object):
 
     def ptrInAllocatedBlocks(self, ptr):
         ba = self.arena.ba
-        blocksPtr = ba.mba.blocksPtr
         blocki = self.arena.marena.blockRootIndex
 
         track = [] # TODO: remove

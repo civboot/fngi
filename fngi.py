@@ -458,7 +458,7 @@ class BlockAllocator(MManBase):
         return self.mba
 
     def blocksEnd(self) -> int:
-        return self.mba.blocksPtr + BLOCKS_ALLOCATOR_SIZE
+        return self.mba.memPtr + BLOCKS_ALLOCATOR_SIZE
 
     def alloc(self) -> int:
         """Return the index to a free block, or BLOCK_OOM."""
@@ -466,10 +466,10 @@ class BlockAllocator(MManBase):
         # FROM: root -> a -> b -> ...
         #   TO: root -> b -> ...
         # RETURN: ptr to a (value that was in root)
-        if self.blocksFree <= 0:
-            raise ValueError("OOM")
         i = self.mba.freeRootIndex
         if i == BLOCK_FREE:
+            if self.blocksFree != 0:
+                raise RuntimeError("Failed to detect OOM")
             return BLOCK_OOB
 
         # pdb.set_trace()
@@ -493,24 +493,24 @@ class BlockAllocator(MManBase):
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
-        if (ptr < self.mba.blocksPtr
-                or ptr >= self.mba.blocksPtr + BLOCKS_ALLOCATOR_SIZE
+        if (ptr < self.mba.memPtr
+                or ptr >= self.mba.memPtr + BLOCKS_ALLOCATOR_SIZE
                 or ptrAlign != 0):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
-                ptr, ptrAlign, self.mba.blocksPtr, self.blocksEnd()))
+                ptr, ptrAlign, self.mba.memPtr, self.blocksEnd()))
 
     def blockToPtr(self, block: int):
-        ptr = self.mba.blocksPtr + (block * BLOCK_SIZE)
+        ptr = self.mba.memPtr + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
     def ptrToBlock(self, ptr: int):
         self.checkPtr(ptr)
-        return (ptr - self.mba.blocksPtr) // BLOCK_SIZE
+        return (ptr - self.mba.memPtr) // BLOCK_SIZE
 
     def ptrToBlockInside(self, ptr: int):
         return self.ptrToBlock(
-            self.blockToPtr((ptr - self.mba.blocksPtr) // BLOCK_SIZE))
+            self.blockToPtr((ptr - self.mba.memPtr) // BLOCK_SIZE))
 
     def getBlock(self, i):
         """Get the value in the blocks array"""
