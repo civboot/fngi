@@ -65,10 +65,6 @@ class BTracker(object):
         self.numFree = BLOCKS_TOTAL
         self.freeBlocks = [True] * BLOCKS_TOTAL
 
-    @property
-    def mba(self):
-        return self.ba.mba
-
     def getBlock(self, i):
         return self.ba.getBlock(i)
 
@@ -95,7 +91,7 @@ class BTracker(object):
 
     def getFree(self):
         """Return all free indexes."""
-        blocki = self.ba.mba.freeRootIndex
+        blocki = self.ba.m.freeRootIndex
 
         out = set()
         # Just walk the linked list, returning all values
@@ -113,15 +109,15 @@ class TestBlockAllocator(unittest.TestCase):
         self.heap = Heap(self.mem, MHeap.new(0, MEMORY_SIZE))
         self.heap.grow(BLOCK_SIZE) # don't use first block (especially address 0)
         ba_mem = self.heap.grow(BLOCKS_ALLOCATOR_SIZE)
-        self.heap_mem = self.heap.mheap.heap
-        self.heap.mheap = self.heap.push(self.heap.mheap)
+        self.heap_mem = self.heap.m.heap
+        self.heap.m = self.heap.push(self.heap.m)
         self.ba = BlockAllocator(
             self.mem,
             self.heap.push(Mba(0, ba_mem)))
 
     def testHeapLocation(self):
         expectedHeap = self.heap_mem + sizeof(MHeap) + sizeof(Mba)
-        assert expectedHeap == self.heap.mheap.heap
+        assert expectedHeap == self.heap.m.heap
 
         # Walking through MHeap data inside memory, asserting that it mutated
         start = self.mem.get(self.heap_mem, Ptr).value
@@ -134,17 +130,17 @@ class TestBlockAllocator(unittest.TestCase):
         assert expectedHeap == heap
 
     def testBlockAlloc_two(self):
-        assert 0 == self.ba.mba.freeRootIndex # free root index starts at 0
+        assert 0 == self.ba.m.freeRootIndex # free root index starts at 0
         assert 1 == self.ba.getBlock(0) # nextFree is 1
         first = self.ba.alloc()
         assert 0 == first
 
-        assert 1 == self.ba.mba.freeRootIndex
+        assert 1 == self.ba.m.freeRootIndex
         assert 2 == self.ba.getBlock(1) # nextFree is 2
         second = self.ba.alloc()
         assert 1 == second
 
-        assert 2 == self.ba.mba.freeRootIndex
+        assert 2 == self.ba.m.freeRootIndex
 
     def testRandomLoop(self):
         """Randomly allocate and free blocks."""

@@ -215,18 +215,17 @@ class Memory(object):
 
 
 class MManBase(object):
-    """Base class for memory manager objects."""
+    """Base class for memory manager objects.
 
-    @abc.abstractmethod
-    def getMValue(self):
-        pass
+    These must define an `m` attribute which is the memory object that needs to
+    be moved to the new memory region during copy.
+    """
 
     def copyForTest(self, memory: Memory):
-        mvalue = self.getMValue()
-        mptr = self.memory.getPtrTo(mvalue)
+        mptr = self.memory.getPtrTo(self.m)
         return self.__class__(
             memory,
-            memory.get(mptr, getDataTy(mvalue)))
+            memory.get(mptr, getDataTy(self.m)))
 
 
 class MHeap(ctypes.Structure):
@@ -246,28 +245,25 @@ class Heap(MManBase):
     """The heap grows up."""
     def __init__(self, memory, mheap):
         self.memory = memory
-        self.mheap = mheap
-
-    def getMValue(self):
-        return self.mheap
+        self.m = mheap
 
     def checkRange(self, ptr, size):
-        if ptr < self.mheap.start or ptr + size >= self.mheap.end:
+        if ptr < self.m.start or ptr + size >= self.m.end:
             raise IndexError(
-                    "start={} end={} ptr={} size={}".format(self.mheap.start, self.mheap.end, ptr, size))
+                    "start={} end={} ptr={} size={}".format(self.m.start, self.m.end, ptr, size))
 
     def grow(self, size, align=True):
         """Grow the heap, return the beginning of the grown region."""
         size = size + (needAlign(size) if align else 0)
-        self.checkRange(self.mheap.heap, size)
-        out = self.mheap.heap
-        self.mheap.heap += size
+        self.checkRange(self.m.heap, size)
+        out = self.m.heap
+        self.m.heap += size
         return out
 
     def shrink(self, size, align=True):
         size = size + (needAlign(size) if align else 0)
-        self.checkRange(self.mheap.heap - size, size)
-        self.mheap.heap -= size
+        self.checkRange(self.m.heap - size, size)
+        self.m.heap -= size
 
     def push(self, value: DataTy, align=True) -> DataTy:
         """Push a DataTy then return it's mutable reference inside memory"""
@@ -295,11 +291,8 @@ class Stack(MManBase):
     """
     def __init__(self, memory: Memory, mstack: MStack):
         self.memory = memory
-        self.mstack = mstack
+        self.m = mstack
         self.total_size = mstack.end - mstack.start
-
-    def getMValue(self):
-        return self.mstack
 
     @classmethod
     def forTest(cls, size: int):
@@ -307,19 +300,19 @@ class Stack(MManBase):
 
     @property # property without name.setter is immutable access
     def start(self) -> int:
-        return self.mstack.start
+        return self.m.start
 
     @property
     def end(self) -> int:
-        return self.mstack.end
+        return self.m.end
 
     @property
     def sp(self) -> int:
-        return self.mstack.sp
+        return self.m.sp
 
     @sp.setter
     def sp(self, val: int):
-        self.mstack.sp = val
+        self.m.sp = val
 
     def checkRange(self, index, size):
         if index < 0 or index + size > self.total_size:
@@ -435,20 +428,17 @@ class BlockAllocator(MManBase):
     """
     def __init__(self, memory: Memory, mba: MBlockAllocator):
         self.memory = memory
-        self.mba = mba
+        self.m = mba
         for i in range(0, BLOCKS_TOTAL - 1):
             self.setBlock(i, i+1)
         self.setBlock(BLOCKS_TOTAL - 1, BLOCK_FREE)
         self.blocksFree = BLOCKS_TOTAL
 
-    def getMValue(self):
-        return self.mba
-
     def blocksAlloc(self):
         return BLOCKS_TOTAL - self.blocksFree
 
     def blocksEnd(self) -> int:
-        return self.mba.memPtr + BLOCKS_ALLOCATOR_SIZE
+        return self.m.memPtr + BLOCKS_ALLOCATOR_SIZE
 
     def alloc(self) -> int:
         """Return the index to a free block, or BLOCK_OOM."""
@@ -456,13 +446,13 @@ class BlockAllocator(MManBase):
         # FROM: root -> a -> b -> ...
         #   TO: root -> b -> ...
         # RETURN: ptr to a (value that was in root)
-        i = self.mba.freeRootIndex
+        i = self.m.freeRootIndex
         if i == BLOCK_FREE:
             if self.blocksFree != 0:
                 raise RuntimeError("Failed to detect OOM")
             return BLOCK_OOB
 
-        self.mba.freeRootIndex = self.getBlock(i)
+        self.m.freeRootIndex = self.getBlock(i)
         self.blocksFree -= 1
         return i
 
@@ -474,41 +464,41 @@ class BlockAllocator(MManBase):
         #   TO: root -> i -> a -> b -> ...
         self.checkPtr(self.blockToPtr(i))
         # Set: i -> a
-        self.setBlock(i, self.mba.freeRootIndex)
+        self.setBlock(i, self.m.freeRootIndex)
         # Set: root -> i
-        self.mba.freeRootIndex = i
+        self.m.freeRootIndex = i
         self.blocksFree += 1
 
     def checkPtr(self, ptr):
         ptrAlign = ptr % BLOCK_SIZE 
-        if (ptr < self.mba.memPtr
-                or ptr >= self.mba.memPtr + BLOCKS_ALLOCATOR_SIZE
+        if (ptr < self.m.memPtr
+                or ptr >= self.m.memPtr + BLOCKS_ALLOCATOR_SIZE
                 or ptrAlign != 0):
             raise IndexError("ptr not managed: ptr={}, ptrAlign={} start={} end={}".format(
-                ptr, ptrAlign, self.mba.memPtr, self.blocksEnd()))
+                ptr, ptrAlign, self.m.memPtr, self.blocksEnd()))
 
     def blockToPtr(self, block: int):
-        ptr = self.mba.memPtr + (block * BLOCK_SIZE)
+        ptr = self.m.memPtr + (block * BLOCK_SIZE)
         self.checkPtr(ptr)
         return ptr
 
     def ptrToBlock(self, ptr: int):
         self.checkPtr(ptr)
-        return (ptr - self.mba.memPtr) // BLOCK_SIZE
+        return (ptr - self.m.memPtr) // BLOCK_SIZE
 
     def ptrToBlockInside(self, ptr: int):
         return self.ptrToBlock(
-            self.blockToPtr((ptr - self.mba.memPtr) // BLOCK_SIZE))
+            self.blockToPtr((ptr - self.m.memPtr) // BLOCK_SIZE))
 
     def getBlock(self, i):
         """Get the value in the blocks array"""
-        out = self.memory.get(self.mba.blocksPtr + i * sizeof(U16), U16).value
+        out = self.memory.get(self.m.blocksPtr + i * sizeof(U16), U16).value
         return out
 
     def setBlock(self, i, value):
         """Set the value in the blocks array"""
         assert i != value, "never valid to have the block point to itself"
-        self.memory.set(self.mba.blocksPtr + i * sizeof(U16), U16(value))
+        self.memory.set(self.m.blocksPtr + i * sizeof(U16), U16(value))
 
     def allBlockIndexes(self):
         return [self.getBlock(i) for i in range(BLOCKS_TOTAL)]
@@ -620,7 +610,7 @@ class Arena(object):
         memory = parent.memory
         ba = parent.ba
 
-        baPtr = memory.getPtrTo(ba.mba)
+        baPtr = memory.getPtrTo(ba.m)
 
         arenaPtr = parent.alloc(ARENA_STRUCT_PO2)
         memory.set(
@@ -772,7 +762,7 @@ HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
 CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
 BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
 BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
-REAL_HEAP_START = HEAP.mheap.heap
+REAL_HEAP_START = HEAP.m.heap
 
 RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 
@@ -793,9 +783,9 @@ DATA_STACK = Stack(
     Memory(DATA_STACK_SIZE + 4),
     MStack.new(4, DATA_STACK_SIZE))
 
-# Reserve a space for the HEAP.mheap data inside of MEMORY that automatically
-# mutates when HEAP.mheap is mutated. Do the same for all other values.
-HEAP.mheap = HEAP.push(HEAP.mheap)
+# Reserve a space for the HEAP.m data inside of MEMORY that automatically
+# mutates when HEAP.m is mutated. Do the same for all other values.
+HEAP.m = HEAP.push(HEAP.m)
 CODE_HEAP = Heap(
     MEMORY,
     HEAP.push(MHeap.new(
@@ -810,7 +800,7 @@ ARENA = Arena( # global arena
     MEMORY,
     BLOCK_ALLOCATOR,
     HEAP.push(MArena(
-        baPtr=MEMORY.getPtrTo(BLOCK_ALLOCATOR.mba),
+        baPtr=MEMORY.getPtrTo(BLOCK_ALLOCATOR.m),
         blockRootIndex=BLOCK_USED,
         _align=0,
         po2Roots=MArenaPo2Roots(*[0 for _ in range(8)]))))
@@ -886,7 +876,7 @@ class Env(object):
             refs=copy.deepcopy(self.refs))
 
         out.running = True
-        out.ep = self.heap.mheap.heap
+        out.ep = self.heap.m.heap
         return out
 
 
@@ -908,11 +898,11 @@ def testMemoryLayout():
 
 def _testMemoryLayout(env: Env):
     reservedSpace = CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE + BLOCKS_INDEXES_SIZE
-    assert reservedSpace == env.memory.getPtrTo(env.heap.mheap)
+    assert reservedSpace == env.memory.getPtrTo(env.heap.m)
     assert reservedSpace == REAL_HEAP_START
 
     # Assert current heap location
-    assert 0 == env.heap.start
+    assert 0 == env.heap.m.start
     expected = reservedSpace
     expected += (
         2 * sizeof(MHeap) 
@@ -920,14 +910,14 @@ def _testMemoryLayout(env: Env):
         + sizeof(MStack)
         + sizeof(MArena)
     )
-    assert expected == env.heap.heap
+    assert expected == env.heap.m.heap
 
     # Block allocator
-    assert CODE_HEAP_SIZE == env.ba.mba.memPtr
-    assert CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE == env.ba.mba.blocksPtr
-    assert 0 == env.ba.mba.freeRootIndex
+    assert CODE_HEAP_SIZE == env.ba.m.memPtr
+    assert CODE_HEAP_SIZE + BLOCKS_ALLOCATOR_SIZE == env.ba.m.blocksPtr
+    assert 0 == env.ba.m.freeRootIndex
     expected = reservedSpace + 2 * sizeof(MHeap)
-    assert expected == env.memory.getPtrTo(env.ba.mba)
+    assert expected == env.memory.getPtrTo(env.ba.m)
 
 
 def testEnvCopy():
@@ -935,11 +925,11 @@ def testEnvCopy():
     assert env.memory is not ENV.memory
     assert env.memory.data is not ENV.memory.data
     assert bytes(env.memory.data) == bytes(ENV.memory.data)
-    assert env.dataStack.mstack is not ENV.dataStack.mstack
-    assert env.heap.mheap is not ENV.heap.mheap
-    assert env.ba.mba is not ENV.ba.mba
+    assert env.dataStack.m is not ENV.dataStack.m
+    assert env.heap.m is not ENV.heap.m
+    assert env.ba.m is not ENV.ba.m
     assert env.arena.marena is not ENV.arena.marena
-    assert env.returnStack.mstack is not ENV.returnStack.mstack
+    assert env.returnStack.m is not ENV.returnStack.m
 
     _testMemoryLayout(env)
 
@@ -1107,7 +1097,7 @@ def testCallLoop_addLiterals():
     """
     env = ENV.copyForTest()
     env.memory.setArray(
-        env.heap.heap,
+        env.heap.m.heap,
         [
             literalU32.u32(), U32(22),
             literalU32.u32(), U32(20),
