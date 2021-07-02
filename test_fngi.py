@@ -183,7 +183,7 @@ class ATracker(object):
     """Arena allocator tracker."""
     def __init__(self, arena):
         self.arena = arena
-        self.po2Allocated = {i: set() for i in range(1, BLOCK_PO2 + 1)}
+        self.po2Allocated = {i: set() for i in range(0, BLOCK_PO2 + 1)}
         self.allAllocated = []
 
     def ptrInAllocatedBlocks(self, ptr):
@@ -302,9 +302,11 @@ class TestArena(unittest.TestCase):
         totalBytesFreed = 0
 
         allocThreshold = 7
+        maxPo2 = 0
         for allocatingTry in range(0, MEM_LOOPS):
             size = random.randint(sizeMin, sizeMax)
-            po2 = 1 + BLOCK_PO2 - getPo2(size)
+            po2 = BLOCK_PO2 - getPo2(size)
+            maxPo2 = max(maxPo2, po2)
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 ptr = a.alloc(po2)
@@ -327,6 +329,8 @@ class TestArena(unittest.TestCase):
                     # cannot free, start allocating more
                     allocThreshold += random.randint(0, 3)
                     allocThreshold = min(allocThreshold, 9)
+
+        assert maxPo2 == 12
 
         print("Total Allocated:", totalBytesAllocated, "  Total Freed:", totalBytesFreed)
 

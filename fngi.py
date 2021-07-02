@@ -526,12 +526,12 @@ def getPo2(size: int) -> int:
     if size <= 0:
         raise ValueError(size)
 
-    number = 2
-    exponent = 1
+    x = 1
+    exponent = 0
     while True:
-        if number >= size:
+        if x >= size:
             return exponent
-        number = number * 2
+        x = x * 2
         exponent += 1
 
 # array of the 8 po2 roots (2**3, 2**4, ... 2**11)
