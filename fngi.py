@@ -160,7 +160,8 @@ RETURN_STACK_SIZE = MiB // 2 # 1/2 MiB return stack
 
 # 4KiB is the size of a "block" of memory, the maximum amount that
 # can be allocatd without growing a heap.
-BLOCK_SIZE = 2**12
+BLOCK_PO2 = 12
+BLOCK_SIZE = 2**BLOCK_PO2
 BLOCKS_TOTAL = BLOCKS_ALLOCATOR_SIZE // BLOCK_SIZE
 BLOCKS_INDEXES_SIZE = BLOCKS_TOTAL * sizeof(U16)
 BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
@@ -334,7 +335,6 @@ class Stack(MManBase):
         return "STACK<{}/{}>".format(len(self), self.total_size)
 
 
-
 #########################################
 # Memory Manager
 #
@@ -344,9 +344,9 @@ class Stack(MManBase):
 # macros, so there will be a lot of need for non-static memory allocation.
 #
 # Trying to do this without a memory manager would be extremely annoying to say
-# the least. Furthermore, once we have built the stage0 compiler we
-# will want to compile the stage1 compiler, and for that we definitely need a
-# memory manager as well.
+# the least. Furthermore, once we have built the bootstrapping compiler we will
+# want to build out the rest of the language and have it compile itself, and
+# for that we definitely need a memory manager.
 #
 # There are an extremely wide range of memory managers. One of the core
 # problems with "simpler" memory managers with minimal hardware support has to
@@ -366,17 +366,20 @@ class Stack(MManBase):
 # > implementation.
 #
 # We will avoid the issue of complicated memory management with a few
-# restrictions on the programs supported by our stage0 compiler:
-# - Memory can only be allocated in up to 4k (2**12) blocks
-# - Memory size must be a power of 2, with a minimum size of 16 (2**4)
+# restrictions on the programs supported by our compiler and std library. A
+# more "full featured" std library can be written for systems with more
+# features.
+# - Memory can only be allocated in up to 4k (2**12) byte blocks
+# - Allocation size must be a power of 2, with a minimum size of 8 (2**3)
 # - It is the program's/compiler's job (aka not the memory manager's job) to
 #   track the size of it's pointers. The allocator does not know the size of a
 #   pointer. This means that unlike the "standard C" function signature
-#   of `free(ptr)` in stage0 fngi it is `free(ptrSize, ptr)`
-# - Memory must be allocated from arenas. An arena is an object with alloc/free methods,
-#   but unlike a "global allocator" the entire arena can be dropped. Since the max block
-#   size is 4k, this makes sure that all "holes" are at least 4k in size and so there
-#   will rarely be fragmentation below 4k in size.
+#   of `free(ptr)` in fngi it is `free(ptrPo2, ptr)`
+# - Multiple allocators are permitted, with arenas being preferred for most
+#   cases. An arena is an object with alloc/free methods, but unlike a "global
+#   allocator" the entire arena can be dropped. Since the max block size is 4k,
+#   this makes sure that all "holes" are at least 4k in size and so there will
+#   rarely be fragmentation below 4k in size.
 # - There is no global allocator except for heap.grow(), heap.shrink() and a
 #   a single global arena instance (which can be used to create child arenas).
 #
@@ -420,12 +423,13 @@ class BlockAllocator(MManBase):
     def blocksEnd(self) -> int:
         return self.m.memPtr + BLOCKS_ALLOCATOR_SIZE
 
-    def alloc(self) -> int:
+    def alloc(self, po2: int) -> int:
         """Return the index to a free block, or BLOCK_OOM."""
         # An "indexed linked list" pop
         # FROM: root -> a -> b -> ...
         #   TO: root -> b -> ...
         # RETURN: ptr to a (value that was in root)
+        if po2 != BLOCK_PO2: raise ValueError(po2)
         i = self.m.freeRootIndex
         if i == BLOCK_FREE:
             if self.blocksFree != 0:
@@ -436,7 +440,8 @@ class BlockAllocator(MManBase):
         self.blocksFree -= 1
         return i
 
-    def free(self, i: int):
+    def free(self, po2: int, i: int):
+        if po2 != BLOCK_PO2: raise ValueError(po2)
         if self.blocksFree >= BLOCKS_TOTAL:
             raise ValueError("invalid free")
         # An "indexed linked list" push
@@ -523,8 +528,7 @@ def getPo2(size: int) -> int:
 
 # array of the 8 po2 roots (2**3, 2**4, ... 2**11)
 ARENA_PO2_MIN = 3
-ARENA_PO2_MAX = 12
-MArenaPo2Roots = U32 * (ARENA_PO2_MAX - ARENA_PO2_MIN)
+MArenaPo2Roots = U32 * (BLOCK_PO2 - ARENA_PO2_MIN)
 
 class MArena(ctypes.Structure):
     _fields_ = [
@@ -613,7 +617,7 @@ class Arena(object):
 
     def allocBlock(self) -> int:
         """Allocate a block, return the pointer to it."""
-        bi = self.ba.alloc()
+        bi = self.ba.alloc(BLOCK_PO2)
         if bi == BLOCK_OOB:
             return 0
 
@@ -643,7 +647,7 @@ class Arena(object):
                 w = wPointsTo
             self.ba.setBlock(w, self.ba.getBlock(wPointsTo))
 
-        self.ba.free(bindex)
+        self.ba.free(BLOCK_PO2, bindex)
 
     def pushFreePo2(self, po2, ptr):
         oldRoot = self.getPo2Root(po2)
@@ -651,7 +655,7 @@ class Arena(object):
         self.setPo2Root(po2, ptr)
 
     def popFreePo2(self, po2):
-        if po2 == ARENA_PO2_MAX:
+        if po2 == BLOCK_PO2:
             return self.allocBlock()
         freeMem = self.getPo2Root(po2)
         if freeMem != 0:
@@ -669,7 +673,7 @@ class Arena(object):
         # Find a block of size greather than or equal to wantPo2
         while True:
             freeMem = self.popFreePo2(po2)
-            if freeMem != 0 or po2 == ARENA_PO2_MAX:
+            if freeMem != 0 or po2 == BLOCK_PO2:
                 break
             po2 += 1
 
@@ -689,7 +693,7 @@ class Arena(object):
     def free(self, po2: int, ptr: int):
         po2 = self._realPo2(po2)
         while True:
-            if po2 == ARENA_PO2_MAX:
+            if po2 == BLOCK_PO2:
                 return self.freeBlock(ptr)
 
             joinedMem = joinMem(ptr, self.getPo2Root(po2), 2**po2)
