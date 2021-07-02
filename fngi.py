@@ -100,7 +100,6 @@ class Fn(object):
     New function types are created by instantiating a subclass of Fn.
     """
     def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnPtr: int):
-        super().__init__()
         self._name, self.inputs, self.outputs = name, inputs, outputs
         self._fnPtr = fnPtr
 
@@ -141,7 +140,7 @@ def getDataTy(v: Any) -> DataTy:
 # We will define more types later. But first let's define how our data is
 # stored.
 #
-# Most data in fngi is passed on either the dataStack or is a pointer into
+# Most data in fngi is passed in either the dataStack or is a pointer into
 # global memory.
 #
 # The dataStack is NOT within global memory, and therefore cannot have a
@@ -151,9 +150,9 @@ def getDataTy(v: Any) -> DataTy:
 # The other data regions (returnStack, heap, allocators, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
-MiB = 2**20
 KiB = 2**10
-DATA_STACK_SIZE = 8 * 4 # Data Stack stores up to 8 usize elements
+MiB = 2**20
+DATA_STACK_SIZE = 8 * sizeof(Ptr)
 CODE_HEAP_SIZE = 32 * KiB
 BLOCKS_ALLOCATOR_SIZE = (5 * MiB) // 2
 EXTRA_HEAP_SIZE = 1 * MiB
@@ -161,7 +160,7 @@ RETURN_STACK_SIZE = MiB // 2 # 1/2 MiB return stack
 
 # 4KiB is the size of a "block" of memory, the maximum amount that
 # can be allocatd without growing a heap.
-BLOCK_SIZE = 2**12 
+BLOCK_SIZE = 2**12
 BLOCKS_TOTAL = BLOCKS_ALLOCATOR_SIZE // BLOCK_SIZE
 BLOCKS_INDEXES_SIZE = BLOCKS_TOTAL * sizeof(U16)
 BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
@@ -192,6 +191,10 @@ class Memory(object):
         self.checkRange(ptr, size)
         self.data[ptr:ptr + size] = bytes(value)
 
+    def setGet(self, ptr, value: DataTy):
+        self.set(ptr, value)
+        self.get(ptr, value.__class__)
+
     def getArray(self, ptr: int, ty: DataTy, length: int):
         arrayTy = ty * length
         return self.get(ptr, arrayTy)
@@ -200,7 +203,7 @@ class Memory(object):
         if len(values) == 0:
             return
 
-        ty = values[0].__class__
+        ty = getDataTy(values[0])
         arrayTy = ty * len(values)
         arrayValue = arrayTy(*values)
         self.set(ptr, arrayValue)
@@ -236,7 +239,7 @@ class MHeap(ctypes.Structure):
 
     @classmethod
     def new(cls, start, end):
-        return cls(start, end, start)
+        return cls(start, end, heap=start)
 
 
 class Heap(MManBase):
@@ -248,39 +251,23 @@ class Heap(MManBase):
     def getMValue(self):
         return self.mheap
 
-    @property # property without name.setter is immutable access
-    def start(self) -> int:
-        return self.mheap.start
-
-    @property
-    def end(self) -> int:
-        return self.mheap.end
-
-    @property
-    def heap(self) -> int:
-        return self.mheap.heap
-
-    @heap.setter
-    def heap(self, val: int):
-        self.mheap.heap = val
-
     def checkRange(self, ptr, size):
-        if ptr < self.start or ptr + size >= self.end:
+        if ptr < self.mheap.start or ptr + size >= self.mheap.end:
             raise IndexError(
-                    "start={} end={} ptr={} size={}".format(self.start, self.end, ptr, size))
+                    "start={} end={} ptr={} size={}".format(self.mheap.start, self.mheap.end, ptr, size))
 
     def grow(self, size, align=True):
         """Grow the heap, return the beginning of the grown region."""
         size = size + (needAlign(size) if align else 0)
-        self.checkRange(self.heap, size)
-        out = self.heap
-        self.heap += size
+        self.checkRange(self.mheap.heap, size)
+        out = self.mheap.heap
+        self.mheap.heap += size
         return out
 
     def shrink(self, size, align=True):
         size = size + (needAlign(size) if align else 0)
-        self.checkRange(self.heap - size, size)
-        self.heap -= size
+        self.checkRange(self.mheap.heap - size, size)
+        self.mheap.heap -= size
 
     def push(self, value: DataTy, align=True) -> DataTy:
         """Push a DataTy then return it's mutable reference inside memory"""
@@ -785,7 +772,7 @@ HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
 CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
 BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
 BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
-REAL_HEAP_START = HEAP.heap
+REAL_HEAP_START = HEAP.mheap.heap
 
 RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 
@@ -899,7 +886,7 @@ class Env(object):
             refs=copy.deepcopy(self.refs))
 
         out.running = True
-        out.ep = self.heap.heap
+        out.ep = self.heap.mheap.heap
         return out
 
 

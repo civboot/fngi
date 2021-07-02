@@ -113,7 +113,7 @@ class TestBlockAllocator(unittest.TestCase):
         self.heap = Heap(self.mem, MHeap.new(0, MEMORY_SIZE))
         self.heap.grow(BLOCK_SIZE) # don't use first block (especially address 0)
         ba_mem = self.heap.grow(BLOCKS_ALLOCATOR_SIZE)
-        self.heap_mem = self.heap.heap
+        self.heap_mem = self.heap.mheap.heap
         self.heap.mheap = self.heap.push(self.heap.mheap)
         self.ba = BlockAllocator(
             self.mem,
@@ -121,7 +121,7 @@ class TestBlockAllocator(unittest.TestCase):
 
     def testHeapLocation(self):
         expectedHeap = self.heap_mem + sizeof(MHeap) + sizeof(Mba)
-        assert expectedHeap == self.heap.heap
+        assert expectedHeap == self.heap.mheap.heap
 
         # Walking through MHeap data inside memory, asserting that it mutated
         start = self.mem.get(self.heap_mem, Ptr).value
