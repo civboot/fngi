@@ -3,7 +3,7 @@ import unittest
 import random
 from fngi import BIG_ENDIAN
 from fngi import Memory, Heap, Stack, BlockAllocator
-from fngi import MHeap, MBlockAllocator as Mba
+from fngi import MHeap, MStack, MBlockAllocator as Mba
 from fngi import MEMORY_SIZE, BLOCKS_ALLOCATOR_SIZE
 from fngi import BLOCK_SIZE, BLOCKS_TOTAL
 from fngi import BLOCK_FREE, BLOCK_USED
@@ -20,7 +20,8 @@ MEM_LOOPS = int(1e3)
 
 class TestStack(unittest.TestCase):
     def newStack(self):
-        return Stack.forTest(16)
+        size = 16
+        return Stack(Memory(size), MStack.new(0, size))
 
     def testPushPopI16(self):
         s = self.newStack()

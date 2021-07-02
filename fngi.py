@@ -294,26 +294,6 @@ class Stack(MManBase):
         self.m = mstack
         self.total_size = mstack.end - mstack.start
 
-    @classmethod
-    def forTest(cls, size: int):
-        return cls(Memory(size), MStack.new(0, size))
-
-    @property # property without name.setter is immutable access
-    def start(self) -> int:
-        return self.m.start
-
-    @property
-    def end(self) -> int:
-        return self.m.end
-
-    @property
-    def sp(self) -> int:
-        return self.m.sp
-
-    @sp.setter
-    def sp(self, val: int):
-        self.m.sp = val
-
     def checkRange(self, index, size):
         if index < 0 or index + size > self.total_size:
             raise IndexError("index={} size={} stack_size={}".format(
@@ -322,33 +302,33 @@ class Stack(MManBase):
     # Set / Push
     def set(self, index: int, value: DataTy):
         """Set a value at an offset from the sp."""
-        self.checkRange(self.sp + index, sizeof(value))
-        self.memory.set(self.sp + index, value)
+        self.checkRange(self.m.sp + index, sizeof(value))
+        self.memory.set(self.m.sp + index, value)
 
     def push(self, value: DataTy):
         size = sizeof(value) + needAlign(sizeof(value))
-        self.checkRange(self.sp - size, size)
-        self.sp -= size
-        self.memory.set(self.sp, U32(0)) # zero the memory first
-        self.memory.set(self.sp, value)
+        self.checkRange(self.m.sp - size, size)
+        self.m.sp -= size
+        self.memory.set(self.m.sp, U32(0)) # zero the memory first
+        self.memory.set(self.m.sp, value)
 
     # Get / Pop
 
     def get(self, index, ty: DataTy) -> bytes:
         """Get a value at an offset from the sp."""
         ty = getDataTy(ty)
-        self.checkRange(self.sp + index, sizeof(ty))
-        return self.memory.get(self.sp + index, ty)
+        self.checkRange(self.m.sp + index, sizeof(ty))
+        return self.memory.get(self.m.sp + index, ty)
 
     def pop(self, ty: DataTy) -> DataTy:
         size = sizeof(ty) + needAlign(sizeof(ty))
-        self.checkRange(self.sp, size)
-        out = self.memory.getCopy(self.sp, ty)
-        self.sp += size
+        self.checkRange(self.m.sp, size)
+        out = self.memory.getCopy(self.m.sp, ty)
+        self.m.sp += size
         return out
 
     def __len__(self):
-        return self.end - self.sp
+        return self.m.end - self.m.sp
 
     def __repr__(self):
         return "STACK<{}/{}>".format(len(self), self.total_size)
