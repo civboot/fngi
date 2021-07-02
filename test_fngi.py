@@ -16,7 +16,7 @@ from ctypes import sizeof
 
 # update/modify for randomized memory tests
 MEM_SEED = "(in the arena) Are you not entertained?"
-MEM_LOOPS = int(1e6)
+MEM_LOOPS = int(1e3)
 
 class TestStack(unittest.TestCase):
     def newStack(self):
@@ -193,10 +193,8 @@ class ATracker(object):
         ba = self.arena.ba
         blocki = self.arena.marena.blockRootIndex
 
-        track = [] # TODO: remove
         while True:
             assert blocki != BLOCK_FREE, "somehow followed free LL"
-            track.append(blocki)
             bPtr = ba.blockToPtr(blocki)
             if bPtr <= ptr < bPtr + BLOCK_SIZE:
                 return True
@@ -210,9 +208,7 @@ class ATracker(object):
         ba = self.arena.ba
 
         for po2i, ptr in enumerate(self.getPo2Roots()):
-            history = []
             while ptr != 0:
-                history.append(ptr)
                 assert self.ptrInAllocatedBlocks(ptr), ptr
                 ptr = ba.memory.get(ptr, Ptr).value
 
@@ -235,7 +231,6 @@ class ATracker(object):
         # assert the pointer doesn't fall into any allocated blocks
         ba = self.arena.ba
         for allocPtr, allocSize in self.allAllocated:
-            # ??? TODO: what is going on with ba.mba.freeRootIndex???
             assert not (allocPtr <= ptr < (allocPtr + allocSize))
 
         self.allAllocated.append(index)
