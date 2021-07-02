@@ -61,6 +61,16 @@ class BTracker(object):
         self.numFree = BLOCKS_TOTAL
         self.freeBlocks = [True] * BLOCKS_TOTAL
 
+    @property
+    def mba(self):
+        return self.ba.mba
+
+    def getBlock(self, i):
+        return self.ba.getBlock(i)
+
+    def setBlock(self, i, v):
+        return self.ba.setBlock(i, v)
+
     def alloc(self) -> int:
         noneFree = (self.numFree == 0)
         bindex = self.ba.alloc()
@@ -139,7 +149,7 @@ class TestBlockAllocator(unittest.TestCase):
         allocated = set()
 
         allocThreshold = 7
-        for _ in range(0, 10000):
+        for _ in range(0, 1000):
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
                 noneFree = (bt.numFree == 0)
@@ -165,6 +175,7 @@ class TestBlockAllocator(unittest.TestCase):
 
             if random.randint(0, 10) >= 10:
                 bt.getFree() & allocated == set()
+
 
 
 class ATracker(object):
@@ -296,8 +307,11 @@ class TestArena(unittest.TestCase):
         a = ATracker(self.env.arena)
         allocated = []
 
+        totalBytesAllocated = 0
+        totalBytesFreed = 0
+
         allocThreshold = 7
-        for allocatingTry in range(0, 10000):
+        for allocatingTry in range(0, 1500):
             size = random.randint(sizeMin, sizeMax)
             po2 = 1 + ARENA_PO2_MAX - getPo2(size)
             if random.randint(0, 10) < allocThreshold:
@@ -309,14 +323,18 @@ class TestArena(unittest.TestCase):
                     allocThreshold = max(1, allocThreshold)
                 else:
                     allocated.append((po2, ptr))
+                    totalBytesAllocated += 2**po2
             else:
                 # free branch
                 if allocated:
                     i = random.randint(0, len(allocated) - 1)
                     a.free(*allocated[i])
                     del allocated[i]
+                    totalBytesFreed += 2**po2
                 else:
                     # cannot free, start allocating more
                     allocThreshold += random.randint(0, 3)
                     allocThreshold = min(allocThreshold, 9)
+
+        print("Total Allocated:", totalBytesAllocated, "  Total Freed:", totalBytesFreed)
 
