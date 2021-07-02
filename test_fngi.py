@@ -301,7 +301,7 @@ class TestArena(unittest.TestCase):
         self.at.free(3, ptr)
 
     def testRandomLoop(self):
-        random.seed(b"are you not entertained?")
+        random.seed(b"(in the arena) Are you not entertained?")
         sizeMin = 1
         sizeMax = 2**12
         a = ATracker(self.env.arena)
@@ -311,11 +311,12 @@ class TestArena(unittest.TestCase):
         totalBytesFreed = 0
 
         allocThreshold = 7
-        for allocatingTry in range(0, 1500):
+        for allocatingTry in range(0, 10000):
             size = random.randint(sizeMin, sizeMax)
             po2 = 1 + ARENA_PO2_MAX - getPo2(size)
             if random.randint(0, 10) < allocThreshold:
                 # allocate branch
+                print("### Allocating", po2, "try", allocatingTry)
                 ptr = a.alloc(po2)
                 if ptr == 0:
                     # out of mem, start freeing more
@@ -327,6 +328,7 @@ class TestArena(unittest.TestCase):
             else:
                 # free branch
                 if allocated:
+                    print("### Freeing", po2, "try", allocatingTry)
                     i = random.randint(0, len(allocated) - 1)
                     a.free(*allocated[i])
                     del allocated[i]

@@ -677,9 +677,12 @@ class Arena(object):
             w = self.ba.getBlock(self.marena.blockRootIndex)
             # w is not w until it points to bindex
             while True:
+                print('w', w)
                 wPointsTo = self.ba.getBlock(w)
                 if wPointsTo == bindex:
                     break
+                if wPointsTo & BLOCK_USED == BLOCK_USED:
+                    raise ValueError('could not find block')
                 w = wPointsTo
             # pdb.set_trace()
             self.ba.setBlock(w, self.ba.getBlock(bindex))
@@ -729,14 +732,18 @@ class Arena(object):
 
     def free(self, po2: int, ptr: int):
         po2 = self._realPo2(po2)
+        print("# Freeing", po2, ptr)
         while True:
             if po2 == ARENA_PO2_MAX:
+                print("Freeing block", ptr)
                 return self.freeBlock(ptr)
 
             joinedMem = joinMem(ptr, self.getPo2Root(po2), 2**po2)
             if joinedMem == 0:
+                print("pushFreePo2", po2, ptr)
                 return self.pushFreePo2(po2, ptr)
             else:
+                print("Joined", po2, ptr)
                 self.popFreePo2(po2) # remove root, we are joining it
                 ptr = joinedMem
                 # then try to join the next largest po2
