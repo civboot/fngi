@@ -7,15 +7,22 @@ alphanumeric = ~"[0-9A-Z]"i
 number = numeric+
 iden   = alpha alphanumeric*
 
-name = iden typeblock?
+statement = ( let / expression ) ";"
+
+expression = never / number / block / fnCall / name
+
+block = "(" statement* expression? ")"
+
+namePart = iden typeblock?
+structMemberOrName = ( iden ":" )? name
 typeblock = (
   "["
-    number?
+    number? # for declaring arrays
 
     # [foo: Bar[Baz]; bob: Bab]
     # or [Bar[Baz]; Bab]
     (
-      ( iden ":" )? name  ( ";" (iden ":")? name)* ";"?
+       structMemberOrName ( ";" structMemberOrName )* ";"?
     )
     /
     # [Foo[Baz], Bab]
@@ -25,6 +32,15 @@ typeblock = (
   "]"
 )
 
+nameNoMacro = namePart ("." namePart)*
+
+singleMacro = "!" nameNoMacro expression
+doubleMacro = "!!" nameNoMacro expression expression
+macro = singleMacro / doubleMacro
+
+# A macro call can be anywhere a name can appear
+name = macro | nameNoMacro
+
 fn = "fn" type "->" type block?
 
 type = never / name / typeblock / fn
@@ -33,12 +49,3 @@ let = "let" iden ":" type "=" expression
 
 fnCall = name expression
 
-singleMacro = name "!" expression
-doubleMacro = name "!!" expression expression
-macro = singleMacro / doubleMacro
-
-statement = ( let / expression ) ";"
-
-expression = never / number / block / macro / fnCall / name
-
-block = "(" statement* expression? ")"
