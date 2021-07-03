@@ -8,16 +8,13 @@
 
 // Simplest function, simply returns 3.
 // Note: [] is the "void" type, this function takes no parameters.
-fn return3: [] -> U32 (
-  3
-)
+let return3: fn [] -> U32 = ( 3 );
 
-// Simple function. Note that expression returns the value.
-fn plus3: [v: U32] -> U32 (
-  v + 3
-)
+// Simple function with named input `v`
+let plus3: fn [v: U32] -> U32 = ( v + 3 );
+
 // Simple function with assignments
-fn plus3Times5: [v:U32] -> U32 (
+let plus3Times5: fn [v:U32] -> U32 = (
   let a: U32 = v + 3;
   a * 5
 )

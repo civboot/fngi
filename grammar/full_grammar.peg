@@ -1,0 +1,44 @@
+never = "[" "]"  # never/void type
+
+numeric = ~"[0-9]"    # note: ~"..." is a regex
+alpha  = ~"[A-Z]"i    # note: i means "ignore case"
+alphanumeric = ~"[0-9A-Z]"i
+
+number = numeric+
+iden   = alpha alphanumeric*
+
+name = iden typeblock?
+typeblock = (
+  "["
+    number?
+
+    # [foo: Bar[Baz]; bob: Bab]
+    # or [Bar[Baz]; Bab]
+    (
+      ( iden ":" )? name  ( ";" (iden ":")? name)* ";"?
+    )
+    /
+    # [Foo[Baz], Bab]
+    (
+      name ("," name) ","?
+    )
+  "]"
+)
+
+fn = "fn" type "->" type block?
+
+type = never / name / typeblock / fn
+
+let = "let" iden ":" type "=" expression
+
+fnCall = name expression
+
+singleMacro = name "!" expression
+doubleMacro = name "!!" expression expression
+macro = singleMacro / doubleMacro
+
+statement = ( let / expression ) ";"
+
+expression = never / number / block / macro / fnCall / name
+
+block = "(" statement* expression? ")"
