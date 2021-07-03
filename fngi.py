@@ -1023,14 +1023,14 @@ def callLoop(env: Env):
             env.ep = fnPtr
 
 # We want a way to define native fn's in as few lines as possible. We will use
-# decorators and other python tricks extensively to avoid boilerplate, so it's
-# worth learning them if you don't already know them.
+# decorators and other python tricks extensively to avoid boilerplate.
 
 def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
     """Takes some types and a python defined function and converts to an
     instantiated NativeFn.
     """
-    outputsPushOrder = outputs[::-1] # reverse
+    # Stack values must be pushed in reverse order (right to left)
+    outputsPushTys = list(reversed(outputs))
 
     def wrapper(pyDef):
         nonlocal name
@@ -1049,7 +1049,7 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             outStack.reverse()
             assert len(outStack) == len(outputs)
             # push outputs to the data stack
-            for out, ty in zip(outStack, outputsPushOrder):
+            for out, ty in zip(outStack, outputsPushTys):
                 env.dataStack.push(ty(out))
 
         fnPtr = ENV.codeHeap.grow(4)
