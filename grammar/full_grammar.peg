@@ -1,51 +1,69 @@
-never = "[" "]"  # never/void type
+# Base Units
+never = "[" "]"  # never/void type and value
 
 numeric = ~"[0-9]"    # note: ~"..." is a regex
 alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 alphanumeric = ~"[0-9A-Z]"i
+rawStr = "\"" .* "\""           # "this is a raw string"
+escapedStr = "\\\"" .* "\\\""   # \"this is a\n"escaped" string\"
 
 number = numeric+
 iden   = alpha alphanumeric*
-
-statement = ( let / expression ) ";"
-
-expression = never / number / block / fnCall / name
-
-block = "(" statement* expression? ")"
-
-namePart = iden typeblock?
-structMemberOrName = ( iden ":" )? name
-typeblock = (
-  "["
-    number? # for declaring arrays
-
-    # [foo: Bar[Baz]; bob: Bab]
-    # or [Bar[Baz]; Bab]
-    (
-       structMemberOrName ( ";" structMemberOrName )* ";"?
-    )
-    /
-    # [Foo[Baz], Bab]
-    (
-      name ("," name) ","?
-    )
-  "]"
+operator =  (
+  "$"
+  / "==" / "!=" / "and" / "or"
+  / "bitand" / "bitor"
+  / "+" / "-" / "<<" / ">>"
 )
 
-nameNoMacro = namePart ("." namePart)*
+
+# A file is a list of let statements
+file = ( let ";"? )*
+
+
+# Blocks, expressions and statements
+expression = expressionUnit ( operator expressionUnit )*
+block = "(" statement* expression? ")"
+statement = ( let / expression ) ";"
+
+let = "let" iden ":" type "=" expression
+expressionUnit = value / name / block
+
+
+# Names: A macro call can be anywhere a name can appear
+name = singleMacro / doubleMacro / nameNoMacro
 
 singleMacro = "!" nameNoMacro expression
 doubleMacro = "!!" nameNoMacro expression expression
-macro = singleMacro / doubleMacro
 
-# A macro call can be anywhere a name can appear
-name = macro | nameNoMacro
+# A non-macro name is composed of name units chained by "."
+nameNoMacro = nameUnit ("." nameUnit)*
+nameUnit = iden nameBlock?
+nameBlock = "[" name (";" name)* ";"? "]"
 
-fn = "fn" type "->" type block?
 
-type = never / name / typeblock / fn
+# Types
+type = typeFn / typeNoFn
+typeFn = typeNoFn "->" typeNoFn
+typeNoFn = (
+  never / stack / array
+  / structTyBlock / paramsTyBlock
+  / name
+)
 
-let = "let" iden ":" type "=" expression
+idenName = iden ":" name
+structTyBlock = "[" idenName (";" idenName)* ";"? "]"
+paramsTyBlock = "[" idenName ("," idenName)* ","? "]"
 
-fnCall = name expression
+stack = "stk" "[" name ("," name)* ","? "]"
+array = "[" number name "]"
 
+# Values
+value = (
+  never / number / rawStr / escapedStr
+  / structValue / paramsValue
+)
+
+idenEq = iden "=" expression
+structValue = "{" idenEq ( ";" idenEq )* ";"? "}"
+paramsValue = "{" expression ( "," expression )* ","? "}"

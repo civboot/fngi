@@ -8,14 +8,19 @@
 
 // Simplest function, simply returns 3.
 // Note: [] is the "void" type, this function takes no parameters.
-let return3: fn [] -> U32 = ( 3 );
+let return3: $[] -> U32 = ( 3 );
 
 // Simple function with named input `v`
-let plus3: fn [v: U32] -> U32 = ( v + 3 );
+// And a function call to return3
+let plus3: $[v: U32] -> U32 = ( v + $return3[] );
+
+// Equivalent:
+// $plus3 ($plus3 ($plus3 2))
+// $plus3 $plus3 $plus3 2
 
 // Simple function with assignments
-let plus3Times5: fn [v:U32] -> U32 = (
-  let a: U32 = v + 3;
+let plus3Times5: $[v:U32] -> U32 = (
+  let a: U32 = $plus3 v;
   a * 5
 )
 
