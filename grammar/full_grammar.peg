@@ -13,7 +13,11 @@ operator =  (
   "$"
   / "==" / "!=" / "and" / "or"
   / "bitand" / "bitor"
-  / "+" / "-" / "<<" / ">>"
+  / "+" / "-" / "*" / "/"
+)
+
+preOperator = (
+  "&" / "@" / "not"
 )
 
 
@@ -27,7 +31,7 @@ block = "(" statement* expression? ")"
 statement = ( let / expression ) ";"
 
 let = "let" iden ":" type "=" expression
-expressionUnit = value / name / block
+expressionUnit = preOperator? ( value / name / block )
 
 
 # Names: A macro call can be anywhere a name can appear
@@ -39,11 +43,11 @@ doubleMacro = "!!" nameNoMacro expression expression
 # A non-macro name is composed of name units chained by "."
 nameNoMacro = nameUnit ("." nameUnit)*
 nameUnit = iden nameBlock?
-nameBlock = "[" name (";" name)* ";"? "]"
+nameBlock = "[" number? "&"? name (";" number? "&"? name)* ";"? "]"
 
 
 # Types
-type = typeFn / typeNoFn
+type = "&"? ( typeFn / typeNoFn )
 typeFn = typeNoFn "->" typeNoFn
 typeNoFn = (
   never / stack / array
@@ -51,12 +55,12 @@ typeNoFn = (
   / name
 )
 
-idenName = iden ":" name
-structTyBlock = "[" idenName (";" idenName)* ";"? "]"
-paramsTyBlock = "[" idenName ("," idenName)* ","? "]"
+idenType = iden ":" type
+structTyBlock = "[" idenType (";" idenType)* ";"? "]"
+paramsTyBlock = "[" idenType ("," idenType)* ","? "]"
 
-stack = "stk" "[" name ("," name)* ","? "]"
-array = "[" number name "]"
+stack = "stk" "[" type ("," type)* ","? "]"
+array = "[" number type "]"
 
 # Values
 value = (
