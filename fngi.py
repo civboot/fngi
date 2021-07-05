@@ -285,6 +285,7 @@ class MStack(ctypes.Structure):
     def new(cls, start, end):
         return cls(start, end, end)
 
+
 class Stack(MManBase):
     """Stack implementation, used for the data stack and the return stack.
 

@@ -1,9 +1,29 @@
-let x: U32 = 42
+let x: U32 = 42;
+let world: Str = "World \n";
 
-fn plus3: U32 -> [] (
-  x + 3
+fn plus3: U32 -> U32 (
+  inp + 3  // inp is reserved name, means "input"
 )
 
-fn helloWorld: [] -> [] (
-  !writeln "Hello World"
-)
+struct Point: [
+  x: I32;
+  y: I32;
+]
+
+// stk[U32, I32, I8]
+// [3 U32]
+// [3 [7 U32]]
+// let a: [3 U32] = {42, 900, 0};
+// let p: Point = {x=10; y=77};
+
+// fn plus3Param: [x: U32] -> U32 (
+//   inp.x + 3
+// )
+// 
+// fn helloWorld: [] -> [] (
+//   !writeln "Hello World"
+// )
+// 
+// fn stkPlus3: stk[U32] -> stk[U32] (
+//   popU32$[] + 3
+// )

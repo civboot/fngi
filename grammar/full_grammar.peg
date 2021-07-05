@@ -1,8 +1,8 @@
 # A file is a list of let statements
-file = ( (ws / comment / let / fn) ws? ";"? )*
+file = ( (ws / comment / let / fn / struct) ws? ";"? )*
 
 # Lexemes
-ws = ~"\\s+"          # whitespace is ignored
+ws = (whitespace / comment)+
 numeric = ~"[0-9]"    # note: ~"..." is a regex
 alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 alphanumeric = ~"[0-9A-Z]"i
@@ -13,9 +13,9 @@ escapedStr = ws? ~'(?s)\\\".*?\\\"'s  # \"this is an escaped string\"
 
 # Comments
 comment = lineComment / blockComment
-lineComment = ws? ~"//.*\n"       # // a line comment
-blockComment = ws? ~"/\\*.*?\\*/"s  # /* a block comment */
-
+lineComment = whitespace? ~"//.*\n"       # // a line comment
+blockComment = whitespace? ~"/\\*.*?\\*/"s  # /* a block comment */
+whitespace = ~"\\s+"          # whitespace is ignored
 
 number = ws? numeric+
 iden   = ws? alpha alphanumeric*
@@ -68,6 +68,8 @@ typeNoFn = ws? (
   / name
 )
 
+struct = ws? "struct" name ws? ":" structTyBlock
+
 idenType = iden ws? ":" type
 structTyBlock = ws? "[" idenType (ws? ";" idenType)* ws? ";"? ws? "]"
 paramsTyBlock = ws? "[" idenType (ws? "," idenType)* ws? ","? ws? "]"
@@ -84,3 +86,15 @@ value = ws? (
 idenEq = iden ws? "=" expr
 structValue = ws? "{" idenEq ( ws? ";" idenEq )* ws? ";"? ws? "}"
 paramsValue = ws? "{" expr ( ws? "," expr )* ws? ","? ws? "}"
+
+
+# Flow (if/loop/etc)
+IF = ws? "if"
+ELIF = ws? "elif"
+THEN = ws? "then"
+ELSE = ws? "else"
+WHILE = ws? "hile"
+
+flow = if / while
+if = IF expr THEN expr (ELIF expr THEN expr)* (ELSE expr)?
+while = WHILE expr expr
