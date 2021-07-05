@@ -19,32 +19,35 @@ blockComment = ws? ~"/\\*.*?\\*/"s  # /* a block comment */
 
 number = ws? numeric+
 iden   = ws? alpha alphanumeric*
-operator =  (
+op =  (  # binary operator
   "$"
   / "==" / "!=" / "and" / "or"
   / "bitand" / "bitor" / "bitxor"
   / "+" / "-" / "*" / "/"
 )
 
-unaryOperator = (
+unaryOp = (
   "&" / "@" / "not" / "-"
 )
 
 
 # Blocks, expressions and statements
-expression = ws? expressionUnit ( ws? operator expressionUnit )*
-block = ws? "(" statement* expression? ws? ")"
-statement = ( let / expression ) ws? ";"
+expr = exprUnit ( ws? op exprUnit )*
+block = ws? "(" stmt* expr? ws? ")"
+stmt = ( let / expr ) ws? ";"
 
-let = ws? "let" iden ws? ":" type ws? "=" expression
-expressionUnit = ws? unaryOperator? ( value / name / block )
+let = ws? "let" iden ws? ":" type ws? "=" expr
+exprUnit = ws? unaryOp? ( value / name / block )
 
 
 # Names: A macro call can be anywhere a name can appear
-name = singleMacro / doubleMacro / nameNoMacro
+# Macros are the only prefix operators because they
+# must be parsed in the expression. Normally they
+# are part of the name, i.e. `!foo` instead of `! foo`
+name = macro1 / macro2 / nameNoMacro
 
-singleMacro = ws? "!" nameNoMacro expression
-doubleMacro = ws? "!!" nameNoMacro expression expression
+macro1 = ws? "!" nameNoMacro expr
+macro2 = ws? "!!" nameNoMacro expr expr
 
 # A non-macro name is composed of name units chained by "."
 nameNoMacro = nameUnit (ws? "." nameUnit)*
@@ -78,6 +81,6 @@ value = ws? (
   / structValue / paramsValue
 )
 
-idenEq = iden ws? "=" expression
+idenEq = iden ws? "=" expr
 structValue = ws? "{" idenEq ( ws? ";" idenEq )* ws? ";"? ws? "}"
-paramsValue = ws? "{" expression ( ws? "," expression )* ws? ","? ws? "}"
+paramsValue = ws? "{" expr ( ws? "," expr )* ws? ","? ws? "}"
