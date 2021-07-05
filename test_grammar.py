@@ -20,8 +20,12 @@ def getGrammar():
 def testFullGrammar():
     grammar = getGrammar()
 
-def testParse_simple():
-    txt = readf('grammar/simple.fn')
-    grammar = getGrammar()
-    grammar.parse(txt)
+# def testParse_simple():
+#     txt = readf('grammar/simple.fn')
+#     grammar = getGrammar()
+#     grammar.parse(txt)
+
+def testTry():
+    g = Grammar(readf('grammar/try_grammar.peg'))
+    g.parse(readf('grammar/try.fn'))
 

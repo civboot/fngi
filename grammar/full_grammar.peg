@@ -1,5 +1,9 @@
 # A file is a list of let statements
-file = ( let ";"? )*
+file = ( (comment / let) ";"? )*
+
+comment = lineComment / blockComment
+lineComment = ~"//.*\n"       # // a line comment
+blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
 
 # Base Units
 never = "[" "]"  # never/void type and value
@@ -7,8 +11,8 @@ never = "[" "]"  # never/void type and value
 numeric = ~"[0-9]"    # note: ~"..." is a regex
 alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 alphanumeric = ~"[0-9A-Z]"i
-rawStr = ~'"[^"]"'                  # "this is a raw string"
-escapedStr = "CANNOT_REPR_IN_REGEX" # \"this is a\n"escaped" string\"
+rawStr = ~'"[^"]"'s               # "this is a raw string"
+escapedStr = ~'(?s)\\\".*?\\\"'s  # \"this is an escaped string\"
 
 number = numeric+
 iden   = alpha alphanumeric*
