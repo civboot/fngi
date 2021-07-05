@@ -1,1 +1,9 @@
-let x: U32 = 42;
+let x: U32 = 42
+
+fn plus3: U32 -> [] (
+  x + 3
+)
+
+fn helloWorld: [] -> [] (
+  !writeln "Hello World"
+)

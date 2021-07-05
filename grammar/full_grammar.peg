@@ -1,5 +1,5 @@
 # A file is a list of let statements
-file = ( (ws / comment / let) ws? ";"? )*
+file = ( (ws / comment / let / fn) ws? ";"? )*
 
 # Lexemes
 ws = ~"\\s+"          # whitespace is ignored
@@ -37,6 +37,7 @@ block = ws? "(" stmt* expr? ws? ")"
 stmt = ( let / expr ) ws? ";"
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
+fn = ws? "fn" iden ws? ":" typeFn block
 exprUnit = ws? unaryOp? ( value / name / block )
 
 
