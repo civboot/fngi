@@ -1,8 +1,0 @@
-let HELLO: &Str = \"Hello world!\";
-
-fn main: [] -> [] (
-  fdWriteStr {
-    fd = 1; // stdout
-    str = HELLO;
-  };
-)
