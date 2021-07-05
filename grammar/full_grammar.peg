@@ -1,21 +1,24 @@
 # A file is a list of let statements
-file = ( (comment / let) ";"? )*
+file = ( (ws / comment / let) ws? ";"? )*
 
-comment = lineComment / blockComment
-lineComment = ~"//.*\n"       # // a line comment
-blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
-
-# Base Units
-never = "[" "]"  # never/void type and value
-
+# Lexemes
+ws = ~"\\s+"          # whitespace is ignored
 numeric = ~"[0-9]"    # note: ~"..." is a regex
 alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 alphanumeric = ~"[0-9A-Z]"i
-rawStr = ~'"[^"]"'s               # "this is a raw string"
-escapedStr = ~'(?s)\\\".*?\\\"'s  # \"this is an escaped string\"
+never = ws? "[" "]"  # never/void type and value
+rawStr = ws? ~'"[^"]"'s               # "this is a raw string"
+escapedStr = ws? ~'(?s)\\\".*?\\\"'s  # \"this is an escaped string\"
 
-number = numeric+
-iden   = alpha alphanumeric*
+
+# Comments
+comment = lineComment / blockComment
+lineComment = ws? ~"//.*\n"       # // a line comment
+blockComment = ws? ~"/\\*.*?\\*/"s  # /* a block comment */
+
+
+number = ws? numeric+
+iden   = ws? alpha alphanumeric*
 operator =  (
   "$"
   / "==" / "!=" / "and" / "or"
@@ -28,50 +31,53 @@ unaryOperator = (
 )
 
 
-
 # Blocks, expressions and statements
-expression = expressionUnit ( operator expressionUnit )*
-block = "(" statement* expression? ")"
-statement = ( let / expression ) ";"
+expression = ws? expressionUnit ( ws? operator expressionUnit )*
+block = ws? "(" statement* expression? ws? ")"
+statement = ( let / expression ) ws? ";"
 
-let = "let" iden ":" type "=" expression
-expressionUnit = unaryOperator? ( value / name / block )
+let = ws? "let" iden ws? ":" type ws? "=" expression
+expressionUnit = ws? unaryOperator? ( value / name / block )
 
 
 # Names: A macro call can be anywhere a name can appear
 name = singleMacro / doubleMacro / nameNoMacro
 
-singleMacro = "!" nameNoMacro expression
-doubleMacro = "!!" nameNoMacro expression expression
+singleMacro = ws? "!" nameNoMacro expression
+doubleMacro = ws? "!!" nameNoMacro expression expression
 
 # A non-macro name is composed of name units chained by "."
-nameNoMacro = nameUnit ("." nameUnit)*
-nameUnit = iden nameBlock?
-nameBlock = "[" number? "&"? name (";" number? "&"? name)* ";"? "]"
+nameNoMacro = nameUnit (ws? "." nameUnit)*
+nameUnit = ws? iden nameBlock?
+nameBlock = (
+  ws? "[" 
+    number? ws? "&"? name 
+    (ws? ";" number? ws? "&"? name)* ws? ";"? ws? 
+  "]")
 
 
 # Types
-type = "&"? ( typeFn / typeNoFn )
-typeFn = typeNoFn "->" typeNoFn
-typeNoFn = (
+type = ws? "&"? ( typeFn / typeNoFn )
+typeFn = typeNoFn ws? "->" typeNoFn
+typeNoFn = ws? (
   never / stack / array
   / structTyBlock / paramsTyBlock
   / name
 )
 
-idenType = iden ":" type
-structTyBlock = "[" idenType (";" idenType)* ";"? "]"
-paramsTyBlock = "[" idenType ("," idenType)* ","? "]"
+idenType = iden ws? ":" type
+structTyBlock = ws? "[" idenType (ws? ";" idenType)* ws? ";"? ws? "]"
+paramsTyBlock = ws? "[" idenType (ws? "," idenType)* ws? ","? ws? "]"
 
-stack = "stk" "[" type ("," type)* ","? "]"
-array = "[" number type "]"
+stack = ws? "stk" ws? "[" type (ws? "," type)* ws? ","? ws? "]"
+array = ws? "[" number type ws? "]"
 
 # Values
-value = (
+value = ws? (
   never / number / rawStr / escapedStr
   / structValue / paramsValue
 )
 
-idenEq = iden "=" expression
-structValue = "{" idenEq ( ";" idenEq )* ";"? "}"
-paramsValue = "{" expression ( "," expression )* ","? "}"
+idenEq = iden ws? "=" expression
+structValue = ws? "{" idenEq ( ws? ";" idenEq )* ws? ";"? ws? "}"
+paramsValue = ws? "{" expression ( ws? "," expression )* ws? ","? ws? "}"
