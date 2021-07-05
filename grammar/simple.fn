@@ -10,20 +10,55 @@ struct Point: [
   y: I32;
 ]
 
+let x: U32 = 7;
+let refX: &U32 = &x;
+let derefRefX: U32 = @refX;
+
+// Some example usage:
 // stk[U32, I32, I8]
 // [3 U32]
 // [3 [7 U32]]
 // let a: [3 U32] = {42, 900, 0};
 // let p: Point = {x=10; y=77};
 
-// fn plus3Param: [x: U32] -> U32 (
-//   inp.x + 3
-// )
-// 
-// fn helloWorld: [] -> [] (
-//   !writeln "Hello World"
-// )
-// 
-// fn stkPlus3: stk[U32] -> stk[U32] (
-//   popU32$[] + 3
-// )
+fn plus3Param: [x: U32] -> U32 (
+  inp.x + 3
+)
+
+fn isEqual3: I32 -> Bool (
+  if inp == 3 then true
+  elif inp == -666 then !panic "devil"
+  else false
+)
+
+fn plus3Times7: U32 -> U32 (
+  // Equivalent: (inp + 3) * 7
+  // Using function to demo function calls
+  plus3$ inp * 7
+)
+
+fn helloWorld: [] -> [] (
+  !writeln "Hello World"
+)
+
+fn stkPlus3: stk[U32] -> stk[U32] (
+  popU32$[] + 3
+)
+
+// struct Map[U32, Str]: [
+//   // ..
+// ]
+//
+// struct Map[K, V]: [
+//   cap: U16;
+//   len: U16;
+//   data: Ptr
+// ]
+//
+// !!gen {K=@Hashable; V=[]}
+// impl Map [
+//   fn get: [self: &Vec; index: U16] -> U32 (
+//     @(data + index * sizeof(U32))
+//   )
+// ]
+

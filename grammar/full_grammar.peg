@@ -37,7 +37,7 @@ stmt = ( let / (flowCtrl? expr )) ws? ";"
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block
-exprUnit = unaryOp? ( value / name / block )
+exprUnit = unaryOp? ( flowExpr / value / block / name )
 
 
 # Names: A macro call can be anywhere a name can appear
@@ -90,11 +90,11 @@ paramsValue = ws? "{" expr ( ws? "," expr )* ws? ","? ws? "}"
 
 # Flow (if/loop/etc)
 IF = ws? "if"
-ELIF = ws? "elif"
 THEN = ws? "then"
+ELIF = ws? "elif"
 ELSE = ws? "else"
 WHILE = ws? "hile"
 
-flow = if / while
+flowExpr = if / while
 if = IF expr THEN expr (ELIF expr THEN expr)* (ELSE expr)?
-while = WHILE expr expr
+while = WHILE expr THEN expr
