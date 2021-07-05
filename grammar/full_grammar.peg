@@ -19,26 +19,25 @@ blockComment = ws? ~"/\\*.*?\\*/"s  # /* a block comment */
 
 number = ws? numeric+
 iden   = ws? alpha alphanumeric*
-op =  (  # binary operator
+op =  ws? (  # binary operator
   "$"
   / "==" / "!=" / "and" / "or"
   / "bitand" / "bitor" / "bitxor"
   / "+" / "-" / "*" / "/"
 )
+flowCtrl = ws? ("return" / ("break" iden?) / "defer")
 
-unaryOp = (
-  "&" / "@" / "not" / "-"
-)
+unaryOp = ws? ( "&" / "@" / "not" / "-" )
 
 
 # Blocks, expressions and statements
-expr = exprUnit ( ws? op exprUnit )*
+expr = exprUnit ( op exprUnit )*
 block = ws? "(" stmt* expr? ws? ")"
-stmt = ( let / expr ) ws? ";"
+stmt = ( let / (flowCtrl? expr )) ws? ";"
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block
-exprUnit = ws? unaryOp? ( value / name / block )
+exprUnit = unaryOp? ( value / name / block )
 
 
 # Names: A macro call can be anywhere a name can appear
