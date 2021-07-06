@@ -1,5 +1,5 @@
 # A file is a list of let statements
-file = ( stmt ws? ";"? )* ws?
+file = ( ws / stmt ws? ";" )* ws?
 
 # Lexemes
 ws = (whitespace / comment)+
