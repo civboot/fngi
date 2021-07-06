@@ -33,7 +33,7 @@ unaryOp = ws? ( "&" / "@" / "not" / "-" )
 # Blocks, expressions and statements
 expr = exprUnit ( op exprUnit )*
 block = ws? "(" ( stmt ws? ";" )* expr? ws? ")"
-stmt = macro / let / fn / struct / ( flowCtrl? expr )
+stmt = macro / let / fn / struct / impl / ( flowCtrl? expr )
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block
@@ -99,3 +99,7 @@ WHILE = ws? "hile"
 flowExpr = if / while
 if = IF expr THEN expr (ELIF expr THEN expr)* (ELSE expr)?
 while = WHILE expr THEN expr
+
+
+# Type implementations
+impl = ws? "impl" name ws? ":" type block

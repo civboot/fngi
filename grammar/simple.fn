@@ -5,11 +5,6 @@ fn plus3: U32 -> U32 (
   inp + 3  // inp is reserved name, means "input"
 )
 
-struct Point: [
-  x: I32;
-  y: I32;
-]
-
 let x: U32 = 7;
 let refX: &U32 = &x;
 let derefRefX: U32 = @refX;
@@ -23,33 +18,48 @@ let derefRefX: U32 = @refX;
 
 fn plus3Param: [x: U32] -> U32 (
   inp.x + 3
-)
+);
 
 fn isEqual3: I32 -> Bool (
   if inp == 3 then true
   elif inp == -666 then !panic "devil"
   else false
-)
+);
 
 fn plus3Times7: U32 -> U32 (
   // Equivalent: (inp + 3) * 7
   // Using function to demo function calls
   plus3$ inp * 7
-)
+);
 
 fn letBlock: [] -> U32 (
   let x: U32 = (4 + 7 * 3);
   x
-)
+);
 
 fn helloWorld: [] -> [] (
   // !writeln "Hello World";
   // !writeln ("Hello " + World");
-)
+);
 
 fn stkPlus3: stk[U32] -> stk[U32] (
   popU32$[] + 3
-)
+);
+
+struct Point: [
+  x: I32;
+  y: I32;
+];
+
+impl Point: [] (
+  fn distance: [self: &Point; other: &Point] -> U32 (
+    sqrt[U32]$ (
+      po2[U32]$(self.x - other.x)
+      + po2[U32]$(self.y - other.y)
+    )
+  );
+);
+
 
 !gen (
   struct Vec[V]: [
@@ -58,12 +68,12 @@ fn stkPlus3: stk[U32] -> stk[U32] (
     data: Ptr;
   ];
 
-  // impl Vec[V] [
+  // impl Vec[V]: [] (
   //   fn get: [self: &Vec[V]; index: U16] -> V (
   //     let ref: &V = asRef(self.data + index * sizeOf(U32));
   //     @ref
   //   )
 
   //   // etc
-  // ];
+  // );
 );
