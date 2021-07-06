@@ -37,8 +37,14 @@ fn plus3Times7: U32 -> U32 (
   plus3$ inp * 7
 )
 
+fn letBlock: [] -> U32 (
+  let x: U32 = (4 + 7 * 3);
+  x
+)
+
 fn helloWorld: [] -> [] (
-  !writeln "Hello World"
+  // !writeln "Hello World";
+  // !writeln ("Hello " + World");
 )
 
 fn stkPlus3: stk[U32] -> stk[U32] (
@@ -46,5 +52,18 @@ fn stkPlus3: stk[U32] -> stk[U32] (
 )
 
 !gen (
-  42
-)
+  struct Vec[V]: [
+    cap: U16;
+    len: U16;
+    data: Ptr;
+  ];
+
+  // impl Vec[V] [
+  //   fn get: [self: &Vec[V]; index: U16] -> V (
+  //     let ref: &V = asRef(self.data + index * sizeOf(U32));
+  //     @ref
+  //   )
+
+  //   // etc
+  // ];
+);

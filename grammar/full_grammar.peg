@@ -1,5 +1,5 @@
 # A file is a list of let statements
-file = ( stmt ws? ";"? )*
+file = ( stmt ws? ";"? )* ws?
 
 # Lexemes
 ws = (whitespace / comment)+
@@ -18,7 +18,7 @@ blockComment = whitespace? ~"/\\*.*?\\*/"s  # /* a block comment */
 whitespace = ~"\\s+"          # whitespace is ignored
 
 number = ws? numeric+
-iden   = ws? alpha alphanumeric*
+iden = ws? alpha alphanumeric*
 op =  ws? (  # binary operator
   "$"
   / "==" / "!=" / "and" / "or"
@@ -33,7 +33,7 @@ unaryOp = ws? ( "&" / "@" / "not" / "-" )
 # Blocks, expressions and statements
 expr = exprUnit ( op exprUnit )*
 block = ws? "(" ( stmt ws? ";" )* expr? ws? ")"
-stmt = ws / let / fn / struct / ( flowCtrl? expr )
+stmt = macro / let / fn / struct / ( flowCtrl? expr )
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block
@@ -52,7 +52,7 @@ macro2 = ws? "!!" nameNoMacro expr expr
 
 # A non-macro name is composed of name units chained by "."
 nameNoMacro = nameUnit (ws? "." nameUnit)*
-nameUnit = ws? iden nameBlock?
+nameUnit = iden nameBlock?
 nameBlock = (
   ws? "[" 
     number? ws? "&"? name 
