@@ -1,5 +1,5 @@
 # A file is a list of let statements
-file = ( (ws / macro / let / fn / struct) ws? ";"? )*
+file = ( stmt ws? ";"? )*
 
 # Lexemes
 ws = (whitespace / comment)+
@@ -33,7 +33,7 @@ unaryOp = ws? ( "&" / "@" / "not" / "-" )
 # Blocks, expressions and statements
 expr = exprUnit ( op exprUnit )*
 block = ws? "(" ( stmt ws? ";" )* expr? ws? ")"
-stmt = let / (flowCtrl? expr ) / fn / struct
+stmt = ws / let / ( flowCtrl? expr ) / fn / struct
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block
