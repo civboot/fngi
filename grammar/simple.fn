@@ -45,20 +45,20 @@ fn stkPlus3: stk[U32] -> stk[U32] (
   popU32$[] + 3
 )
 
-// struct Map[U32, Str]: [
-//   // ..
-// ]
-//
-// struct Map[K, V]: [
-//   cap: U16;
-//   len: U16;
-//   data: Ptr
-// ]
-//
-// !!gen {K=@Hashable; V=[]}
-// impl Map [
-//   fn get: [self: &Vec; index: U16] -> U32 (
-//     @(data + index * sizeof(U32))
-//   )
-// ]
+!!gen {V=[]} (
+ // struct Vec[V]: [
+ //   cap: U16;
+ //   len: U16;
+ //   data: Ptr;
+ // ];
+
+ // impl Vec[V] [
+ //   fn get: [self: &Vec[V]; index: U16] -> V (
+ //     let ref: &V = asRef(self.data + index * sizeOf(U32));
+ //     @ref
+ //   )
+
+ //   // etc
+ // ];
+);
 

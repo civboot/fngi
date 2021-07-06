@@ -1,5 +1,5 @@
 # A file is a list of let statements
-file = ( (ws / comment / let / fn / struct) ws? ";"? )*
+file = ( (ws / macro / let / fn / struct) ws? ";"? )*
 
 # Lexemes
 ws = (whitespace / comment)+
@@ -32,8 +32,8 @@ unaryOp = ws? ( "&" / "@" / "not" / "-" )
 
 # Blocks, expressions and statements
 expr = exprUnit ( op exprUnit )*
-block = ws? "(" stmt* expr? ws? ")"
-stmt = ( let / (flowCtrl? expr )) ws? ";"
+block = ws? "(" ( stmt ws? ";" )* expr? ws? ")"
+stmt = let / (flowCtrl? expr ) / fn / struct
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block
@@ -44,8 +44,9 @@ exprUnit = unaryOp? ( flowExpr / value / block / name )
 # Macros are the only prefix operators because they
 # must be parsed in the expression. Normally they
 # are part of the name, i.e. `!foo` instead of `! foo`
-name = macro1 / macro2 / nameNoMacro
+name = macro / nameNoMacro
 
+macro = macro2 / macro1
 macro1 = ws? "!" nameNoMacro expr
 macro2 = ws? "!!" nameNoMacro expr expr
 
