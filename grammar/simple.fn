@@ -47,4 +47,4 @@ fn stkPlus3: stk[U32] -> stk[U32] (
 
 !gen (
   42
-);
+)
