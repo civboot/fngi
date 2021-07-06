@@ -33,7 +33,7 @@ unaryOp = ws? ( "&" / "@" / "not" / "-" )
 # Blocks, expressions and statements
 expr = exprUnit ( op exprUnit )*
 block = ws? "(" ( stmt ws? ";" )* expr? ws? ")"
-stmt = ws / let / ( flowCtrl? expr ) / fn / struct
+stmt = ws / let / fn / struct / ( flowCtrl? expr )
 
 let = ws? "let" iden ws? ":" type ws? "=" expr
 fn = ws? "fn" iden ws? ":" typeFn block

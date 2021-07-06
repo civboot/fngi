@@ -45,20 +45,6 @@ fn stkPlus3: stk[U32] -> stk[U32] (
   popU32$[] + 3
 )
 
-!!gen {V=[]} (
- // struct Vec[V]: [
- //   cap: U16;
- //   len: U16;
- //   data: Ptr;
- // ];
-
- // impl Vec[V] [
- //   fn get: [self: &Vec[V]; index: U16] -> V (
- //     let ref: &V = asRef(self.data + index * sizeOf(U32));
- //     @ref
- //   )
-
- //   // etc
- // ];
+!gen (
+  42
 );
-
