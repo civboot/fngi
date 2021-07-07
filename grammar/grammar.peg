@@ -10,22 +10,17 @@ blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
 stmt = expr
 
 # # Expression
-expr = macro2
-macro2 = IDEN (ws? "!!" macro1 macro1)*
-macro1 = IDEN (ws? "!" call)*
-call = equality (ws? "$" equality)*
-equality = comparison (ws? ( "!=" / "==" ) comparison )*
-comparison = term (ws? ( ">" / ">=" / "<" / "<=" ) term )*
-# bitand = bitxor (ws? "bitand" bitxor)*
-# bitxor = bitor (ws? "bitxor" bitor)*
-# bitor = and (ws? "bitor" and)*
-# and = or (ws? "and" or)*
-# or = term (ws? "or" term)*
+expr = equality
+equality = logical (ws? ( "!=" / "==" ) logical )*
+logical = comparison (ws? ("or" / "and") comparison)*
+comparison = bitwise (ws? ( ">" / ">=" / "<" / "<=" ) bitwise )*
+bitwise = term (ws? ("bitor" / "bitxor" / "bitand") term)*
 term = factor (ws? ( "-" / "+" ) factor)*
-factor = unary (ws? ( "/" / "*" ) unary)*
-unary = ("not" / "-") (unary / primary)
-primary = "foo"
-
+factor = call (ws? ( "/" / "*" ) unary)*
+call = unary (ws? "$" unary)*
+unary = ("not" / "bitnot" / "-" ) ws? (unary / macro1)
+macro1 = (macro2 ws? "!" macro2) / macro2
+macro2 = (primary ws? "!!" primary primary) / primary
 primary = ws? (
   NUMBER / STR / NEVER / block
 )
