@@ -11,8 +11,8 @@ stmt = expr
 
 # # Expression
 expr = macro2
-macro2 = macro1 (ws? "!!" macro1 macro1)*
-macro1 = call (ws? "!" call)*
+macro2 = IDEN (ws? "!!" macro1 macro1)*
+macro1 = IDEN (ws? "!" call)*
 call = equality (ws? "$" equality)*
 equality = comparison (ws? ( "!=" / "==" ) comparison )*
 comparison = term (ws? ( ">" / ">=" / "<" / "<=" ) term )*
