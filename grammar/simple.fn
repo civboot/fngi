@@ -3,7 +3,7 @@ let world: Str = "World \n";
 
 fn plus3: U32 -> U32 (
   inp + 3  // inp is reserved name, means "input"
-)
+);
 
 let x: U32 = 7;
 let refX: &U32 = &x;
@@ -68,12 +68,12 @@ impl Point: [] (
     data: Ptr;
   ];
 
-  // impl Vec[V]: [] (
-  //   fn get: [self: &Vec[V]; index: U16] -> V (
-  //     let ref: &V = asRef(self.data + index * sizeOf(U32));
-  //     @ref
-  //   )
+  impl Vec[V]: [] (
+    fn get: [self: Vec[V]; index: U16] -> V (
+      // let ref: &V = asRef(self.data + index * sizeOf(U32));
+      // @ref
+    )
 
-  //   // etc
-  // );
+    // etc
+  );
 );

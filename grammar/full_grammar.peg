@@ -1,5 +1,5 @@
 # A file is a list of let statements
-file = ( ws / stmt ws? ";" )* ws?
+file = ( stmt ws? ";"? )* ws?
 
 # Lexemes
 ws = (whitespace / comment)+
@@ -94,7 +94,7 @@ IF = ws? "if"
 THEN = ws? "then"
 ELIF = ws? "elif"
 ELSE = ws? "else"
-WHILE = ws? "hile"
+WHILE = ws? "while"
 
 flowExpr = if / while
 if = IF expr THEN expr (ELIF expr THEN expr)* (ELSE expr)?
