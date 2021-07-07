@@ -1,0 +1,48 @@
+file = (stmt ws? ";"?)* ws?
+
+# Whitespace and comments
+ws = (whitespace / lineComment / blockComment)+
+whitespace = ~"\\s+"          # whitespace is ignored
+lineComment = ~"//.*\n"         # // a line comment
+blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
+
+
+stmt = expr
+
+# # Expression
+expr = macro2
+macro2 = macro1 (ws? "!!" macro1 macro1)*
+macro1 = call (ws? "!" call)*
+call = equality (ws? "$" equality)*
+equality = comparison (ws? ( "!=" / "==" ) comparison )*
+comparison = term (ws? ( ">" / ">=" / "<" / "<=" ) term )*
+# bitand = bitxor (ws? "bitand" bitxor)*
+# bitxor = bitor (ws? "bitxor" bitor)*
+# bitor = and (ws? "bitor" and)*
+# and = or (ws? "and" or)*
+# or = term (ws? "or" term)*
+term = factor (ws? ( "-" / "+" ) factor)*
+factor = unary (ws? ( "/" / "*" ) unary)*
+unary = ("not" / "-") (unary / primary)
+primary = "foo"
+
+primary = ws? (
+  NUMBER / STR / NEVER / block
+)
+
+
+# Primaries
+# block = "(" (stmt ws? ";")* expr? ws? ")"
+block = "(" expr ws? ")"
+NEVER = "[" "]"
+NUMBER = _numeric+
+IDEN = _alpha _alphanumeric*
+
+STR = _escStr / _rawStr
+
+# Regexes
+_numeric = ~"[0-9]"    # note: ~"..." is a regex
+_alpha  = ~"[A-Z]"i    # note: i means "ignore case"
+_alphanumeric = ~"[0-9A-Z]"i
+_escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
+_rawStr = ~'"[^"]"'s           #  "this is a raw string"

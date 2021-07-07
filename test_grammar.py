@@ -6,7 +6,7 @@ def readf(path):
     with open(path) as f:
         return f.read()
 
-grammarTxt = readf('grammar/full_grammar.peg')
+grammarTxt = readf('grammar/grammar.peg')
 
 RAW_REGEX = re.compile(r'"[^"]*"')
 
@@ -21,7 +21,7 @@ def testFullGrammar():
     grammar = getGrammar()
 
 def testParseFull():
-    txt = readf('grammar/simple.fn')
+    txt = readf('grammar/example.fn')
     grammar = getGrammar()
     grammar.parse(txt)
 
