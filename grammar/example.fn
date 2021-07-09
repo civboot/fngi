@@ -55,6 +55,8 @@ z[b].k!! a.b {42; 33};
 x[a].y! 8 $ 42;
 z[b].k!! a.b {42; 33} $ 42;
 
+if true do foo${};
+
 
 // Valid Statements
 x: U32 = 42;
@@ -75,12 +77,12 @@ derefRefX: U32 = @refX;
 
 fn plus3Param: [x: U32] -> U32 do x + 3;
 
-// fn isEqual3: I32 -> Bool (
-//   if inp == 3 then true
-//   elif inp == -666 then !panic "devil"
-//   else false
-// );
-//
+fn isEqual3: I32 -> Bool do (
+  if inp == 3 do true
+  elif inp == -666 do panic! "devil"
+  else false
+);
+
 // fn plus3Times7: U32 -> U32 (
 //   // Equivalent: (inp + 3) * 7
 //   // Using function to demo function calls

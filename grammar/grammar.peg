@@ -14,6 +14,7 @@ NUMBER = ("0x" _hex+) / _numeric+
 IDEN = _alphanumeric+
 STR = _escStr / _rawStr
 FN = "fn"
+DO = "do"
 STRUCT = "struct"
 STK = "stk"
 ARR = "arr"
@@ -26,8 +27,9 @@ BITXOR = "bitxor"
 BITAND = "bitand"
 
 IF = "if"
-DO = "do"
+ELIF = "elif"
 ELSE = "else"
+WHILE = "while"
 
 
 # Helper Regexes
@@ -56,19 +58,28 @@ call = unary (w? "$" unary)*
 unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / primary
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
+  / ifElse / while
   / name
 )
 
 
-# Primary Values (non-lexeme)
+# Primary Expressions (non-lexeme)
 block = "(" multiStmt w? ")" # but last un-SC stmt must be expr
 stk = STK w? "{" multiExpr w? "}"
 arr = ARR w? "{" multiExpr w? "}"
-struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiStmt = stmt (SC stmt)* SC?
 multiExpr = expr (SC expr)* SC?
+
+struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
+
+ifElse = (
+  IF expr (C ty)? w? DO expr
+  (w? ELIF expr w? DO expr)*
+  (w? ELSE expr)?
+)
+while = WHILE expr (C ty)? w? DO expr (ELSE expr)?
 
 
 # Name Recursive Descent
@@ -98,3 +109,6 @@ decl = w? (declStruct / declFn / declVar)
 declStruct = STRUCT name C ty w? structBlock
 declFn = FN name C fnTy w? DO expr
 declVar = IDEN C ty (w? "=" expr)?
+
+
+
