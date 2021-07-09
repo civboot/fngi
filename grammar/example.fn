@@ -1,4 +1,7 @@
-// let x: U32 = 42;
+1;
+
+// x: U32 = 42;
+
 // let world: Str = "World \n";
 // 
 // fn plus3: U32 -> U32 (

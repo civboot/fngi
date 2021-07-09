@@ -1,4 +1,4 @@
-file = (expr SC)* ws
+file = (stmt SC)* ws
 
 # Lexemes
 ws = (whitespace / lineComment / blockComment)*
@@ -6,6 +6,7 @@ whitespace = ~"\\s+"          # whitespace is ignored
 lineComment = ~"//.*\n"         # // a line comment
 blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
 
+C = ws ":" # colon
 SC = ws ";" # semi-colon
 VOID = "[" ws "]"
 EMPTY = "{" ws "}"
@@ -14,7 +15,6 @@ IDEN = _alphanumeric+
 STR = _escStr / _rawStr
 FN = "fn"
 STRUCT = "struct"
-VAR = "var"
 STK = "stk"
 ARR = "arr"
 NOT = "not"
@@ -58,9 +58,9 @@ nameUnit = ws NUMBER? ws "&"? name
 
 # Statement Selection
 stmt = (ws (declStruct / declFn / declVar)) / expr
-declStruct = ws "struct" name ws ":" ty ws structBlock
-declFn = ws FN name ws ":" fnTy block
-declVar = ws IDEN ws ":" ty (ws "=" expr)
+declStruct = STRUCT name C ty ws structBlock
+declFn = FN name C fnTy block
+declVar = IDEN C ty (ws "=" expr)?
 
 
 # Expression Recursive Descent
