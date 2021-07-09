@@ -34,30 +34,9 @@ _escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
 _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 
-# Ty Recursive Descent
-ty = "&"? fnTy
-fnTy = primaryTy (w? "->" primaryTy)?
-primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / name )
-
-stkBlock = STK w? "[" multiTy w? "]"
-arrBlock = ARR w? "[" w? NUMBER ty w? "]"
-structBlock = "[" (multiVar / multiTy) w? "]"
-multiTy = ty (SC ty)* SC?
-multiVar = declVar (SC declVar)* SC?
-
-
-# Name Recursive Descent
-name = macro2
-macro2 = macro1 (w? "!!" primary primary)?
-macro1 = nameLiteral (w? "!" primary)?
-nameLiteral = w? IDEN (w? nameBlock)? (w? "." nameLiteral)*
-
-nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
-nameUnit = w? NUMBER? w? "&"? name
-
-
 # Statement Selection
-stmt = (w? (declStruct / declFn / declVar)) / expr
+stmt = decl / expr
+decl = w? (declStruct / declFn / declVar)
 declStruct = STRUCT name C ty w? structBlock
 declFn = FN name C fnTy block
 declVar = IDEN C ty (w? "=" expr)?
@@ -85,3 +64,27 @@ struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiExpr = expr (SC expr)* SC?
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
+
+
+# Name Recursive Descent
+name = macro2
+macro2 = macro1 (w? "!!" primary primary)?
+macro1 = nameLiteral (w? "!" primary)?
+nameLiteral = w? IDEN (w? nameBlock)? (w? "." nameLiteral)*
+
+nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
+nameUnit = w? NUMBER? w? "&"? name
+
+
+# Ty Recursive Descent
+ty = "&"? fnTy
+fnTy = primaryTy (w? "->" primaryTy)?
+primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / name )
+
+stkBlock = STK w? "[" multiTy w? "]"
+arrBlock = ARR w? "[" w? NUMBER ty w? "]"
+structBlock = "[" (multiVar / multiTy) w? "]"
+multiTy = ty (SC ty)* SC?
+multiVar = declVar (SC declVar)* SC?
+
+
