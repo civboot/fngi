@@ -48,7 +48,7 @@ bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
 term = factor (w? ( "-" / "+" ) factor)*
 factor = call (w? ( "/" / "*" ) unary)*
 call = unary (w? "$" unary)*
-unary = (NOT / BITNOT / "-" )? (unary / primary)
+unary = primary / (w? (NOT / BITNOT / "-" ) unary)
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
   # TODO: name
