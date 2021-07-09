@@ -12,6 +12,9 @@ EMPTY = "{" ws "}"
 NUMBER = _numeric+
 IDEN = _alpha _alphanumeric*
 STR = _escStr / _rawStr
+FN = "fn"
+STRUCT = "struct"
+VAR = "var"
 STK = "stk"
 ARR = "arr"
 NOT = "not"
@@ -33,12 +36,13 @@ _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 # Ty Recursive Descent
 ty = "&"? fnTy
-fnTy = primaryTy (ws "->" ws primaryTy)?
-primaryTy = VOID / structBlock / stkBlock / arrBlock / name
+fnTy = primaryTy (ws "->" primaryTy)?
+primaryTy = ws ( VOID / structBlock / stkBlock / arrBlock / name )
 
-structBlock = ws "[" ws var (SC var ws) SC? ws "]"
-stkBlock = ws STK ws "[" (ws ty SC)+ ws "]"
-arrBlock = ws ARR ws "[" ws NUMBER ws name ws "]"
+stkBlock = STK ws "[" multiTy ws "]"
+arrBlock = ARR ws "[" ws NUMBER ty ws "]"
+structBlock = "[" multiVar ws "]"
+multiVar = declVar (SC declVar)* SC?
 
 
 # Name Recursive Descent
@@ -52,10 +56,10 @@ nameUnit = ws NUMBER? ws "&"? name
 
 
 # Statement Selection
-stmt = struct / fn / var / structAssign / expr
-struct = ws "struct" name ws ":" ty structBlock
-fn = ws "fn" name ws ":" fnTy block
-var = ws "var" ws IDEN ws ":" ty (ws "=" expr)
+stmt = struct / fn / declVar / structAssign / expr
+declStruct = ws "struct" name ws ":" ty ws structBlock
+declFn = ws FN name ws ":" fnTy block
+declVar = ws VAR ws IDEN ws ":" ty (ws "=" expr)
 structAssign = ws IDEN ws "=" assign
 
 
