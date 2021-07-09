@@ -10,7 +10,7 @@ C = w? ":" # colon
 SC = w? ";" # semi-colon
 VOID = "[" w? "]"
 EMPTY = "{" w? "}"
-NUMBER = _numeric+
+NUMBER = ("0x" _hex+) / _numeric+
 IDEN = _alphanumeric+
 STR = _escStr / _rawStr
 FN = "fn"
@@ -28,6 +28,7 @@ BITAND = "bitand"
 
 # Helper Regexes
 _numeric = ~"[0-9]"    # note: ~"..." is a regex
+_hex = ~"[0-9A-F]"i
 _alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 _alphanumeric = ~"[0-9A-Z]"i
 _escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
@@ -43,17 +44,19 @@ expr = assign
 assign = equality (w? ":=" equality)*
 equality = logical (w? ( "!=" / "==" ) logical )*
 logical = comparison (w? (OR / AND) comparison)*
-comparison = bitwise (w? ( ">" / ">=" / "<" / "<=" ) bitwise )*
+comparison = bitwise (w? ( ">=" / "<=" / ">" / "<" ) bitwise )*
 bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
 term = factor (w? ( "-" / "+" ) factor)*
 factor = call (w? ( "/" / "*" ) unary)*
 call = unary (w? "$" unary)*
-unary = primary / (w? (NOT / BITNOT / "-" ) unary)
+unary = primary / (w? (BITNOT / NOT / "-" ) unary)
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
-  # TODO: name
+  / IDEN # TODO: name
 )
 
+
+# Primary Values (non-lexeme)
 block = "(" multiExpr w? ")"
 stk = STK w? "{" multiExpr w? "}"
 arr = ARR w? "{" multiExpr w? "}"
@@ -61,3 +64,13 @@ struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiExpr = expr (SC expr)* SC?
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
+
+
+# Name Recursive Descent
+name = macro2
+macro2 = macro1 (w? "!!" primary primary)?
+macro1 = nameLiteral (w? "!" primary)?
+nameLiteral = w? IDEN (w? nameBlock)? (w? "." nameLiteral)*
+
+nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
+nameUnit = w? NUMBER? w? "&"? name
