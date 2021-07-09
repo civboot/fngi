@@ -10,7 +10,7 @@ SC = ws ";" # semi-colon
 VOID = "[" ws "]"
 EMPTY = "{" ws "}"
 NUMBER = _numeric+
-IDEN = _alpha _alphanumeric*
+IDEN = _alphanumeric+
 STR = _escStr / _rawStr
 FN = "fn"
 STRUCT = "struct"
@@ -41,7 +41,8 @@ primaryTy = ws ( VOID / structBlock / stkBlock / arrBlock / name )
 
 stkBlock = STK ws "[" multiTy ws "]"
 arrBlock = ARR ws "[" ws NUMBER ty ws "]"
-structBlock = "[" multiVar ws "]"
+structBlock = "[" (multiVar / multiTy) ws "]"
+multiTy = ty (SC ty)* SC?
 multiVar = declVar (SC declVar)* SC?
 
 
@@ -56,11 +57,10 @@ nameUnit = ws NUMBER? ws "&"? name
 
 
 # Statement Selection
-stmt = struct / fn / declVar / structAssign / expr
+stmt = (ws (declStruct / declFn / declVar)) / expr
 declStruct = ws "struct" name ws ":" ty ws structBlock
 declFn = ws FN name ws ":" fnTy block
-declVar = ws VAR ws IDEN ws ":" ty (ws "=" expr)
-structAssign = ws IDEN ws "=" assign
+declVar = ws IDEN ws ":" ty (ws "=" expr)
 
 
 # Expression Recursive Descent
@@ -84,3 +84,4 @@ arr = ARR ws "{" multiExpr ws "}"
 struct = "{" (multiStructAssign / multiExpr) ws "}"
 multiExpr = expr (SC expr)* SC?
 multiStructAssign = structAssign (SC structAssign)* SC?
+structAssign = ws IDEN ws "=" assign
