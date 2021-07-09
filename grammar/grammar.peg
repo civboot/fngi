@@ -1,43 +1,82 @@
-file = (stmt ws? ";"?)* ws?
+file = (expr SC)* ws
 
-# Whitespace and comments
-ws = (whitespace / lineComment / blockComment)+
+# Lexemes
+ws = (whitespace / lineComment / blockComment)*
 whitespace = ~"\\s+"          # whitespace is ignored
 lineComment = ~"//.*\n"         # // a line comment
 blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
 
-
-stmt = expr
-
-# # Expression
-expr = equality
-equality = logical (ws? ( "!=" / "==" ) logical )*
-logical = comparison (ws? ("or" / "and") comparison)*
-comparison = bitwise (ws? ( ">" / ">=" / "<" / "<=" ) bitwise )*
-bitwise = term (ws? ("bitor" / "bitxor" / "bitand") term)*
-term = factor (ws? ( "-" / "+" ) factor)*
-factor = call (ws? ( "/" / "*" ) unary)*
-call = unary (ws? "$" unary)*
-unary = ("not" / "bitnot" / "-" ) ws? (unary / macro1)
-macro1 = (macro2 ws? "!" macro2) / macro2
-macro2 = (primary ws? "!!" primary primary) / primary
-primary = ws? (
-  NUMBER / STR / NEVER / block
-)
-
-
-# Primaries
-# block = "(" (stmt ws? ";")* expr? ws? ")"
-block = "(" expr ws? ")"
-NEVER = "[" "]"
+SC = ws ";" # semi-colon
+VOID = "[" ws "]"
+EMPTY = "{" ws "}"
 NUMBER = _numeric+
 IDEN = _alpha _alphanumeric*
-
 STR = _escStr / _rawStr
+STK = "stk"
+ARR = "arr"
+NOT = "not"
+AND = "and"
+OR = "or"
+BITNOT = "bitnot"
+BITOR = "bitor"
+BITXOR = "bitxor"
+BITAND = "bitand"
 
-# Regexes
+
+# Helper Regexes
 _numeric = ~"[0-9]"    # note: ~"..." is a regex
 _alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 _alphanumeric = ~"[0-9A-Z]"i
 _escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
 _rawStr = ~'"[^"]"'s           #  "this is a raw string"
+
+
+# Ty Recursive Descent
+ty = "&"? fnTy
+fnTy = primaryTy (ws "->" ws primaryTy)?
+primaryTy = VOID / structBlock / stkBlock / arrBlock / name
+
+structBlock = ws "[" ws var (SC var ws) SC? ws "]"
+stkBlock = ws STK ws "[" (ws ty SC)+ ws "]"
+arrBlock = ws ARR ws "[" ws NUMBER ws name ws "]"
+
+
+# Name Recursive Descent
+name = macro2
+macro2 = macro1 (ws "!!" primary primary)?
+macro1 = nameLiteral (ws "!" primary)?
+nameLiteral = ws IDEN (ws nameBlock)? (ws "." nameLiteral)*
+
+nameBlock = "[" nameUnit (SC nameUnit)* SC? ws "]"
+nameUnit = ws NUMBER? ws "&"? name
+
+
+# Statement Selection
+stmt = struct / fn / var / structAssign / expr
+struct = ws "struct" name ws ":" ty structBlock
+fn = ws "fn" name ws ":" fnTy block
+var = ws "var" ws IDEN ws ":" ty (ws "=" expr)
+structAssign = ws IDEN ws "=" assign
+
+
+# Expression Recursive Descent
+expr = assign
+assign = equality (ws ":=" equality)*
+equality = logical (ws ( "!=" / "==" ) logical )*
+logical = comparison (ws (OR / AND) comparison)*
+comparison = bitwise (ws ( ">" / ">=" / "<" / "<=" ) bitwise )*
+bitwise = term (ws (BITOR / BITXOR / BITAND) term)*
+term = factor (ws ( "-" / "+" ) factor)*
+factor = call (ws ( "/" / "*" ) unary)*
+call = unary (ws "$" unary)*
+unary = (NOT / BITNOT / "-" ) ws (unary / primary)
+primary = ws (
+  EMPTY / NUMBER / STR / block / stk / arr / struct / name
+)
+
+block = "(" multiExpr ws ")"
+stk = STK ws "{" multiExpr ws "}"
+arr = ARR ws "{" multiExpr ws "}"
+struct = "{" (multiStructAssign / multiExpr) ws "}"
+multiExpr = expr (SC expr)* SC?
+multiStructAssign = structAssign (SC structAssign)* SC?
