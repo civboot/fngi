@@ -55,8 +55,30 @@ z[b].k!! a.b {42; 33};
 x[a].y! 8 $ 42;
 z[b].k!! a.b {42; 33} $ 42;
 
+
+// Valid Expressions and Statements
 if true do foo${};
 
+if x == 7: U32 do 7 eldo 22;
+
+if x == 7: U32 do 7
+elif x == -7 do -77
+eldo 22;
+
+while x <= 7 do (
+  x := x + 3;
+);
+
+while x <= 7: U32 do (
+  x := x + 3
+) eldo -77;
+
+break 42;
+
+while x <= 7: U32 do (
+  x := x + 3;
+  if x >= 8 do break 42;
+) eldo -77;
 
 // Valid Statements
 x: U32 = 42;
@@ -80,7 +102,7 @@ fn plus3Param: [x: U32] -> U32 do x + 3;
 fn isEqual3: I32 -> Bool do (
   if inp == 3 do true
   elif inp == -666 do panic! "devil"
-  else false
+  eldo false
 );
 
 // fn plus3Times7: U32 -> U32 (

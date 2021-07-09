@@ -28,9 +28,11 @@ BITAND = "bitand"
 
 IF = "if"
 ELIF = "elif"
-ELSE = "else"
+ELDO = "eldo"
 WHILE = "while"
 
+BREAK = "break"
+RETURN = "return"
 
 # Helper Regexes
 _numeric = ~"[0-9]"    # note: ~"..." is a regex
@@ -42,7 +44,7 @@ _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 
 # Statement Selection
-stmt = decl / expr
+stmt = flow / decl / expr
 
 
 # Expression Recursive Descent
@@ -58,7 +60,7 @@ call = unary (w? "$" unary)*
 unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / primary
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
-  / ifElse / while
+  / ifEldo / while
   / name
 )
 
@@ -74,12 +76,12 @@ struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
 
-ifElse = (
-  IF expr (C ty)? w? DO expr
-  (w? ELIF expr w? DO expr)*
-  (w? ELSE expr)?
+ifEldo = (
+  IF expr (C ty)? w? DO stmt
+  (w? ELIF expr w? DO stmt)*
+  (w? ELDO stmt)?
 )
-while = WHILE expr (C ty)? w? DO expr (ELSE expr)?
+while = WHILE expr (C ty)? w? DO expr (w? ELDO expr)?
 
 
 # Name Recursive Descent
@@ -111,4 +113,7 @@ declFn = FN name C fnTy w? DO expr
 declVar = IDEN C ty (w? "=" expr)?
 
 
-
+# Flow Control
+flow = w? (break / return)
+break = BREAK expr?
+return = RETURN expr?
