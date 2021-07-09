@@ -1,0 +1,63 @@
+file = (stmt SC)* w?
+
+# Lexemes
+w = (whitespace / lineComment / blockComment)+
+whitespace = ~"\\s+"          # whitespace is ignored
+lineComment = ~"//.*\n"         # // a line comment
+blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
+
+C = w? ":" # colon
+SC = w? ";" # semi-colon
+VOID = "[" w? "]"
+EMPTY = "{" w? "}"
+NUMBER = _numeric+
+IDEN = _alphanumeric+
+STR = _escStr / _rawStr
+FN = "fn"
+STRUCT = "struct"
+STK = "stk"
+ARR = "arr"
+NOT = "not"
+AND = "and"
+OR = "or"
+BITNOT = "bitnot"
+BITOR = "bitor"
+BITXOR = "bitxor"
+BITAND = "bitand"
+
+
+# Helper Regexes
+_numeric = ~"[0-9]"    # note: ~"..." is a regex
+_alpha  = ~"[A-Z]"i    # note: i means "ignore case"
+_alphanumeric = ~"[0-9A-Z]"i
+_escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
+_rawStr = ~'"[^"]"'s           #  "this is a raw string"
+
+
+# Statement Selection
+stmt = expr
+
+
+# Expression Recursive Descent
+expr = assign
+assign = equality (w? ":=" equality)*
+equality = logical (w? ( "!=" / "==" ) logical )*
+logical = comparison (w? (OR / AND) comparison)*
+comparison = bitwise (w? ( ">" / ">=" / "<" / "<=" ) bitwise )*
+bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
+term = factor (w? ( "-" / "+" ) factor)*
+factor = call (w? ( "/" / "*" ) unary)*
+call = unary (w? "$" unary)*
+unary = (NOT / BITNOT / "-" )? (unary / primary)
+primary = w? (
+  EMPTY / NUMBER / STR / block / stk / arr / struct
+  # TODO: name
+)
+
+block = "(" multiExpr w? ")"
+stk = STK w? "{" multiExpr w? "}"
+arr = ARR w? "{" multiExpr w? "}"
+struct = "{" (multiStructAssign / multiExpr) w? "}"
+multiExpr = expr (SC expr)* SC?
+multiStructAssign = structAssign (SC structAssign)* SC?
+structAssign = w? IDEN w? "=" assign
