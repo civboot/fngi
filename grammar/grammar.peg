@@ -25,6 +25,10 @@ BITOR = "bitor"
 BITXOR = "bitxor"
 BITAND = "bitand"
 
+IF = "if"
+DO = "do"
+ELSE = "else"
+
 
 # Helper Regexes
 _numeric = ~"[0-9]"    # note: ~"..." is a regex
@@ -36,7 +40,7 @@ _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 
 # Statement Selection
-stmt = expr
+stmt = decl / expr
 
 
 # Expression Recursive Descent
@@ -49,18 +53,19 @@ bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
 term = factor (w? ( "-" / "+" ) factor)*
 factor = call (w? ( "/" / "*" ) unary)*
 call = unary (w? "$" unary)*
-unary = primary / (w? (BITNOT / NOT / "-" ) unary)
+unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / primary
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
-  / IDEN # TODO: name
+  / name
 )
 
 
 # Primary Values (non-lexeme)
-block = "(" multiExpr w? ")"
+block = "(" multiStmt w? ")" # but last un-SC stmt must be expr
 stk = STK w? "{" multiExpr w? "}"
 arr = ARR w? "{" multiExpr w? "}"
 struct = "{" (multiStructAssign / multiExpr) w? "}"
+multiStmt = stmt (SC stmt)* SC?
 multiExpr = expr (SC expr)* SC?
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
@@ -73,4 +78,23 @@ macro1 = nameLiteral (w? "!" primary)?
 nameLiteral = w? IDEN (w? nameBlock)? (w? "." nameLiteral)*
 
 nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
-nameUnit = w? NUMBER? w? "&"? name
+nameUnit = w? NUMBER? w? ("&" / "@")? name
+
+
+# Ty Recursive Descent
+ty = (w? "&")* fnTy
+fnTy = primaryTy (w? "->" primaryTy)?
+primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / name )
+
+stkBlock = STK w? "[" multiTy w? "]"
+arrBlock = ARR w? "[" w? NUMBER ty w? "]"
+structBlock = "[" (multiVar / multiTy) w? "]"
+multiTy = ty (SC ty)* SC?
+multiVar = declVar (SC declVar)* SC?
+
+
+# Declaration Selection
+decl = w? (declStruct / declFn / declVar)
+declStruct = STRUCT name C ty w? structBlock
+declFn = FN name C fnTy w? DO expr
+declVar = IDEN C ty (w? "=" expr)?

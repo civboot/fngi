@@ -14,6 +14,13 @@ x bitor 999;
 z bitand 999;
 x and y;
 d or z;
+-7;
+&-7;
+not 0;
+{3; 7};
+{x=3; y=7};
+arr{3; 4; 5};
+stk{0; 42; 77;};
 
 foo$ {};
 foo$ 3;
@@ -23,42 +30,57 @@ foo$ {
   x=3;
   y=7;
 };
+x.y.z;
+inp.0;
+X[T; Y];
+X[T; A[B[C; D]]];
+a[foo].X[S; T].0;
+X[T; Y]$ 3;
+X[T; Y].foo$ {3; 7};
+x.y.z + 99 / x.y.a;
+X[4 &T; Z];
 
 "foo";
 "foo" + " bar";
 1 * (2 + 3);
 x + 3 >= z$ 3 and j bitor 0x100 != FLAG;
+(
+  x + 8;
+  y := 98;
+  y
+);
+
+x[a].y! 8;
+z[b].k!! a.b {42; 33};
+x[a].y! 8 $ 42;
+z[b].k!! a.b {42; 33} $ 42;
 
 
-// x: U32 = 42;
+// Valid Statements
+x: U32 = 42;
 
-// let world: Str = "World \n";
-// 
-// fn plus3: U32 -> U32 (
-//   inp + 3  // inp is reserved name, means "input"
-// );
-// 
-// let x: U32 = 7;
-// let refX: &U32 = &x;
-// let derefRefX: U32 = @refX;
-// 
-// // Some example usage:
-// // stk[U32, I32, I8]
-// // [3 U32]
-// // [3 [7 U32]]
-// // let a: [3 U32] = {42, 900, 0};
-// // let p: Point = {x=10; y=77};
-// 
-// fn plus3Param: [x: U32] -> U32 (
-//   inp.x + 3
-// );
-// 
+world: Str = "World \n";
+myFn: U32 -> U32 = bob;
+
+fn returnEmpty: [] -> [] do {};
+fn return3: [] -> U32 do 3;
+
+fn plus3: U32 -> U32 do (
+  inp + 3  // inp is reserved name, means "input"
+);
+
+x: U32 = 7;
+refX: &U32 = &x;
+derefRefX: U32 = @refX;
+
+fn plus3Param: [x: U32] -> U32 do x + 3;
+
 // fn isEqual3: I32 -> Bool (
 //   if inp == 3 then true
 //   elif inp == -666 then !panic "devil"
 //   else false
 // );
-// 
+//
 // fn plus3Times7: U32 -> U32 (
 //   // Equivalent: (inp + 3) * 7
 //   // Using function to demo function calls
@@ -66,7 +88,7 @@ x + 3 >= z$ 3 and j bitor 0x100 != FLAG;
 // );
 // 
 // fn letBlock: [] -> U32 (
-//   let x: U32 = (4 + 7 * 3);
+//   x: U32 = (4 + 7 * 3);
 //   x
 // );
 // 
@@ -103,7 +125,7 @@ x + 3 >= z$ 3 and j bitor 0x100 != FLAG;
 // 
 //   impl Vec[V]: [] (
 //     fn get: [self: Vec[V]; index: U16] -> V (
-//       // let ref: &V = asRef(self.data + index * sizeOf(U32));
+//       // ref: &V = asRef(self.data + index * sizeOf(U32));
 //       // @ref
 //     )
 // 
