@@ -56,10 +56,10 @@ comparison = bitwise (w? ( ">=" / "<=" / ">" / "<" ) bitwise )*
 bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
 term = factor (w? ( "-" / "+" ) factor)*
 factor = call (w? ( "/" / "*" ) unary)*
-call = macro2 (w? "$" macro2)*
-macro2 = macro1 (w? "!!" unary (decl / macro1))*
-macro1 = unary (w? "!" unary)*
-unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / name
+call = unary (w? "$" unary)*
+unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
+macro2 = macro1 (w? "!!" name (decl / macro1))*
+macro1 = name (w? "!" name)*
 name = nameNoDot (w? "." nameNoDot)*
 nameNoDot = primary (w? nameBlock)?
 primary = w? (
