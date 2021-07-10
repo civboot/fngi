@@ -59,15 +59,17 @@ factor = call (w? ( "/" / "*" ) unary)*
 call = macro2 (w? "$" macro2)*
 macro2 = macro1 (w? "!!" unary (decl / macro1))*
 macro1 = unary (w? "!" unary)*
-unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / primary
+unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / name
+name = nameNoDot (w? "." nameNoDot)*
+nameNoDot = primary (w? nameBlock)?
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
   / ifEldo / while
-  / name
+  / IDEN
 )
 
 # Primary Expressions (non-lexeme)
-block = "(" multiStmt w? ")" # but last un-SC stmt must be expr
+block = "(" multiStmt w? ")" # lint: last un-SC stmt must be expr
 stk = STK w? "{" multiExpr w? "}"
 arr = ARR w? "{" multiExpr w? "}"
 multiStmt = stmt (SC stmt)* SC?
@@ -77,9 +79,8 @@ struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
 
-name = IDEN (w? nameBlock)? (w? "." name)*
-nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
-nameUnit = w? NUMBER? w? ("&" / "@")? name
+nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
+nameBlUnit = w? NUMBER? w? ("&" / "@")? macro2
 
 ifEldo = (
   IF expr (C ty)? w? DO stmt
