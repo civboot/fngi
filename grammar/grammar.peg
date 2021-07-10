@@ -57,13 +57,14 @@ bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
 term = factor (w? ( "-" / "+" ) factor)*
 factor = call (w? ( "/" / "*" ) unary)*
 call = unary (w? "$" unary)*
-unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / primary
+unary = (w? (BITNOT / NOT / "-" / "&" / "@") unary) / macro2
+macro2 = macro1 (w? "!!" primary (decl / macro1))*
+macro1 = primary (w? "!" primary)*
 primary = w? (
   EMPTY / NUMBER / STR / block / stk / arr / struct
   / ifEldo / while
   / name
 )
-
 
 # Primary Expressions (non-lexeme)
 block = "(" multiStmt w? ")" # but last un-SC stmt must be expr
@@ -76,6 +77,10 @@ struct = "{" (multiStructAssign / multiExpr) w? "}"
 multiStructAssign = structAssign (SC structAssign)* SC?
 structAssign = w? IDEN w? "=" assign
 
+name = IDEN (w? nameBlock)? (w? "." name)*
+nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
+nameUnit = w? NUMBER? w? ("&" / "@")? name
+
 ifEldo = (
   IF expr (C ty)? w? DO stmt
   (w? ELIF expr w? DO stmt)*
@@ -84,20 +89,10 @@ ifEldo = (
 while = WHILE expr (C ty)? w? DO expr (w? ELDO expr)?
 
 
-# Name Recursive Descent
-name = macro2
-macro2 = macro1 (w? "!!" primary primary)?
-macro1 = nameLiteral (w? "!" primary)?
-nameLiteral = w? IDEN (w? nameBlock)? (w? "." nameLiteral)*
-
-nameBlock = "[" nameUnit (SC nameUnit)* SC? w? "]"
-nameUnit = w? NUMBER? w? ("&" / "@")? name
-
-
 # Ty Recursive Descent
 ty = (w? "&")* fnTy
 fnTy = primaryTy (w? "->" primaryTy)?
-primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / name )
+primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / macro2 )
 
 stkBlock = STK w? "[" multiTy w? "]"
 arrBlock = ARR w? "[" w? NUMBER ty w? "]"
@@ -108,8 +103,8 @@ multiVar = declVar (SC declVar)* SC?
 
 # Declaration Selection
 decl = w? (declStruct / declFn / declVar)
-declStruct = STRUCT name C ty w? structBlock
-declFn = FN name C fnTy w? DO expr
+declStruct = STRUCT w? name C ty w? structBlock
+declFn = FN w? name C fnTy w? DO expr
 declVar = IDEN C ty (w? "=" expr)?
 
 
