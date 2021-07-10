@@ -167,15 +167,16 @@ fn isEqual3: I32 -> Bool do (
 //   );
 // );
 
+
 fn nestedLabels: [] -> [] do (
   #first
-  whileVal: U32 = while x: U32 do (
+  v: U32 = while x: U32 do (
     #second while y do (
-      x = x + 3;
-      if x == y do continue #first;
-      if x == 42 do break #first 442;
+      x := x + 3;
+      if x == y do cont #first
+      elif x == 42 do break #first 442;
     )
   ) eldo -77;
 
-  whileVal
-)
+  v
+);

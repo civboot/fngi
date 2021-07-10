@@ -10,6 +10,7 @@ C = w? ":" # colon
 SC = w? ";" # semi-colon
 VOID = "[" w? "]"
 EMPTY = "{" w? "}"
+EMPTY_BLOCK = "(" w? ")"
 NUMBER = ("0x" _hex+) / _numeric+
 IDEN = _alphanumeric+
 STR = _escStr / _rawStr
@@ -31,6 +32,7 @@ ELIF = "elif"
 ELDO = "eldo"
 WHILE = "while"
 
+CONT = "cont" # continue
 BREAK = "break"
 RETURN = "return"
 
@@ -63,7 +65,7 @@ macro1 = name (w? "!" name)*
 name = nameNoDot (w? "." nameNoDot)*
 nameNoDot = primary (w? nameBlock)?
 primary = w? (
-  EMPTY / NUMBER / STR / block / stk / arr / struct
+  EMPTY / EMPTY_BLOCK / NUMBER / STR / block / stk / arr / struct
   / ifEldo / while
   / IDEN
 )
@@ -112,6 +114,7 @@ declVar = IDEN C ty (w? "=" expr)?
 
 
 # Flow Control
-flow = w? (break / return)
-break = BREAK expr?
+flow = w? (cont / break / return)
+cont = CONT label?
+break = BREAK label? expr?
 return = RETURN expr?
