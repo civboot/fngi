@@ -65,6 +65,16 @@ if x == 7: U32 do 7
 elif x == -7 do -77
 eldo 22;
 
+if x == 7: U32 do (
+  if x == 10: U32 do x
+  eldo y
+) eldo z;
+
+if x == 7: U32 do
+  if x == 10: U32 do x
+  eldo y
+eldo z;
+
 while x <= 7 do (
   x := x + 3;
 );
@@ -156,3 +166,16 @@ fn isEqual3: I32 -> Bool do (
 //     // etc
 //   );
 // );
+
+fn nestedLabels: [] -> [] do (
+  #first
+  whileVal: U32 = while x: U32 do (
+    #second while y do (
+      x = x + 3;
+      if x == y do continue #first;
+      if x == 42 do break #first 442;
+    )
+  ) eldo -77;
+
+  whileVal
+)
