@@ -40,6 +40,7 @@ CONT = "cont" # continue
 BREAK = "break"
 RETURN = "return"
 
+
 # Helper Regexes
 _numeric = ~"[0-9]"    # note: ~"..." is a regex
 _hex = ~"[0-9A-F]"i
@@ -49,45 +50,27 @@ _escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
 _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 
-# Statement Selection
-stmt = (flow / decl / expr)
+# High Level: will be defined as fn ptrs. Everything else can be defined
+# in the order listed here.
+# - stmt
+# - expr
+# - ty
+# - macro2
+# - name
 
-
-# Expression Recursive Descent
-expr = assign
-assign = equality (w? ":=" equality)*
-equality = logical (w? ( "!=" / "==" ) logical )*
-logical = comparison (w? (OR / AND) comparison)*
-comparison = bitwise (w? ( ">=" / "<=" / ">" / "<" ) bitwise )*
-bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
-term = factor (w? ( "-" / "+" ) factor)*
-factor = call (w? ( "/" / "*" ) unary)*
-call = unary (w? "$" unary)*
-unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
-macro2 = macro1 (w? "!!" name (decl / macro1))*
-macro1 = name (w? "!" (decl / name))*
-name = nameNoDot (w? "." nameNoDot)*
-nameNoDot = primary (w? nameBlock)?
-primary = w? (
-  EMPTY / EMPTY_BLOCK / NUMBER / STR / block / stk / arr / struct
-  / ifElDo / match / while
-  / IDEN
-)
 
 # Primary Expressions (non-lexeme)
+label = w? "#" IDEN
+multiLabelStmt = label? stmt (SC label? stmt)* SC?
+multiExpr = expr (SC expr)* SC?
+
 block = "(" multiLabelStmt w? ")" # lint: last un-SC stmt must be expr
 stk = STK w? "{" multiExpr w? "}"
 arr = ARR w? "{" multiExpr w? "}"
-multiLabelStmt = label? stmt (SC label? stmt)* SC?
-label = w? "#" IDEN
-multiExpr = expr (SC expr)* SC?
 
-struct = "{" (multiStructAssign / multiExpr) w? "}"
+structAssign = w? IDEN w? "=" expr
 multiStructAssign = structAssign (SC structAssign)* SC?
-structAssign = w? IDEN w? "=" assign
-
-nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
-nameBlUnit = w? NUMBER? w? ("&" / "@")? macro2
+struct = "{" (multiStructAssign / multiExpr) w? "}"
 
 ifElDo = (
   IF expr (C ty)? w? DO stmt
@@ -105,25 +88,29 @@ match = (
 while = WHILE expr (C ty)? w? DO expr (w? ELDO expr)?
 
 
-# Ty Recursive Descent
-ty = (w? "&")* fnTy
-fnTy = primaryTy (w? "->" primaryTy)?
-primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / macro2 )
-
-stkBlock = STK w? "[" multiTy w? "]"
-arrBlock = ARR w? "[" w? NUMBER ty w? "]"
-structBlock = "[" (multiVar / multiTy) w? "]"
-multiTy = ty (SC ty)* SC?
-multiVar = declVar (SC declVar)* SC?
-
-
 # Declaration Selection
 decl = declStruct / declEnum / declImpl / declFn /declVar
 declStruct = w? STRUCT name C w? structBlock
 declEnum = w? ENUM name C w? structBlock
 declImpl = w? IMPL name C ty w? block
-declFn = w? FN w? name C fnTy w? DO expr
+declFn = w? FN w? name C ty w? DO expr # lint: must be fnTy
 declVar = w? IDEN C ty (w? "=" expr)?
+
+
+# Type Blocks
+multiVar = declVar (SC declVar)* SC?
+multiTy = ty (SC ty)* SC?
+stkBlock = STK w? "[" multiTy w? "]"
+arrBlock = ARR w? "[" w? NUMBER ty w? "]"
+structBlock = "[" (multiVar / multiTy) w? "]"
+nameBlUnit = w? NUMBER? w? ("&" / "@")? macro2
+nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
+
+
+# Ty Recursive Descent
+primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / macro2 )
+fnTy = primaryTy (w? "->" primaryTy)?
+ty = (w? "&")* fnTy
 
 
 # Flow Control
@@ -131,3 +118,29 @@ flow = w? (cont / break / return)
 cont = CONT label?
 break = BREAK label? expr?
 return = RETURN expr?
+
+
+# Expression Recursive Descent
+primary = w? (
+  EMPTY / EMPTY_BLOCK
+  / NUMBER / STR
+  / block / stk / arr / struct
+  / ifElDo / match / while
+  / IDEN
+)
+nameNoDot = primary (w? nameBlock)?
+name = nameNoDot (w? "." nameNoDot)*
+macro1 = name (w? "!" (decl / name))*
+macro2 = macro1 (w? "!!" name (decl / macro1))*
+unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
+call = unary (w? "$" unary)*
+factor = call (w? ( "/" / "*" ) unary)*
+term = factor (w? ( "-" / "+" ) factor)*
+bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
+comparison = bitwise (w? ( ">=" / "<=" / ">" / "<" ) bitwise )*
+logical = comparison (w? (OR / AND) comparison)*
+equality = logical (w? ( "!=" / "==" ) logical )*
+assign = equality (w? ":=" equality)*
+
+expr = assign
+stmt = (flow / decl / expr)
