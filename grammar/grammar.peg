@@ -107,10 +107,10 @@ multiVar = declVar (SC declVar)* SC?
 
 
 # Declaration Selection
-decl = w? (declStruct / declFn / declVar)
-declStruct = STRUCT w? name C ty w? structBlock
-declFn = FN w? name C fnTy w? DO expr
-declVar = IDEN C ty (w? "=" expr)?
+decl = declStruct / declFn / declVar
+declStruct = w? STRUCT name C w? structBlock
+declFn = w? FN w? name C fnTy w? DO expr
+declVar = w? IDEN C ty (w? "=" expr)?
 
 
 # Flow Control

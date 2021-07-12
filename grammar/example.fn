@@ -115,31 +115,32 @@ fn isEqual3: I32 -> Bool do (
   eldo false
 );
 
-// fn plus3Times7: U32 -> U32 (
-//   // Equivalent: (inp + 3) * 7
-//   // Using function to demo function calls
-//   plus3$ inp * 7
-// );
-// 
-// fn letBlock: [] -> U32 (
-//   x: U32 = (4 + 7 * 3);
-//   x
-// );
-// 
-// fn helloWorld: [] -> [] (
-//   // !writeln "Hello World";
-//   // !writeln ("Hello " + World");
-// );
-// 
-// fn stkPlus3: stk[U32] -> stk[U32] (
-//   popU32$[] + 3
-// );
-// 
-// struct Point: [
-//   x: I32;
-//   y: I32;
-// ];
-// 
+fn plus3Times7: U32 -> U32 do (
+  // Equivalent: (inp + 3) * 7
+  // Using function to demo function calls
+  plus3$ inp * 7
+);
+
+fn useVar: [] -> U32 do (
+  x: U32 = (4 + 7 * 3);
+  x
+);
+
+fn helloWorld: [] -> [] do (
+  // println! "Hello World";
+  println! ("Hello " + "World");
+);
+
+fn stkPlus3: stk[U32] -> stk[U32] do (
+  popU32${} + 3;
+  pushU32${}
+);
+
+struct Point: [
+  x: I32
+  y: I32;
+];
+
 // impl Point: [] (
 //   fn distance: [self: &Point; other: &Point] -> U32 (
 //     sqrt[U32]$ (
