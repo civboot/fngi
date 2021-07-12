@@ -153,22 +153,22 @@ impl Point: [] (
 );
 
 
-// !gen (
-//   struct Vec[V]: [
-//     cap: U16;
-//     len: U16;
-//     data: Ptr;
-//   ];
-// 
-//   impl Vec[V]: [] (
-//     fn get: [self: Vec[V]; index: U16] -> V (
-//       // ref: &V = asRef(self.data + index * sizeOf(U32));
-//       // @ref
-//     )
-// 
-//     // etc
-//   );
-// );
+gen!(
+  struct Vec[V]: [
+    cap: U16;
+    len: U16;
+    data: Ptr;
+  ];
+
+  impl Vec[V]: [] (
+    fn get: [self: &Vec[V]; index: U16] -> V do (
+      ref: &V = asRef$(self.data + index * sizeOf!U32);
+      @ref
+    );
+
+    // etc
+  );
+);
 
 
 fn nestedLabels: [] -> [] do (
