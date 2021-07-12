@@ -17,6 +17,7 @@ STR = _escStr / _rawStr
 FN = "fn"
 DO = "do"
 STRUCT = "struct"
+ENUM = "enum"
 IMPL = "impl"
 STK = "stk"
 ARR = "arr"
@@ -31,6 +32,8 @@ BITAND = "bitand"
 IF = "if"
 ELIF = "elif"
 ELDO = "eldo"
+MATCH = "match"
+CASE = "case"
 WHILE = "while"
 
 CONT = "cont" # continue
@@ -67,7 +70,7 @@ name = nameNoDot (w? "." nameNoDot)*
 nameNoDot = primary (w? nameBlock)?
 primary = w? (
   EMPTY / EMPTY_BLOCK / NUMBER / STR / block / stk / arr / struct
-  / ifEldo / while
+  / ifElDo / match / while
   / IDEN
 )
 
@@ -86,10 +89,17 @@ structAssign = w? IDEN w? "=" assign
 nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 nameBlUnit = w? NUMBER? w? ("&" / "@")? macro2
 
-ifEldo = (
+ifElDo = (
   IF expr (C ty)? w? DO stmt
   (w? ELIF expr w? DO stmt)*
   (w? ELDO stmt)?
+)
+
+match = (
+  MATCH expr (C ty)? w? "{"
+  (w? IDEN w? DO stmt SC)*
+  (w? ELDO stmt SC)?
+  w? "}"
 )
 
 while = WHILE expr (C ty)? w? DO expr (w? ELDO expr)?
@@ -108,10 +118,11 @@ multiVar = declVar (SC declVar)* SC?
 
 
 # Declaration Selection
-decl = declStruct / declFn / declImpl / declVar
+decl = declStruct / declEnum / declImpl / declFn /declVar
 declStruct = w? STRUCT name C w? structBlock
-declFn = w? FN w? name C fnTy w? DO expr
+declEnum = w? ENUM name C w? structBlock
 declImpl = w? IMPL name C ty w? block
+declFn = w? FN w? name C fnTy w? DO expr
 declVar = w? IDEN C ty (w? "=" expr)?
 
 

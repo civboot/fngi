@@ -171,7 +171,7 @@ gen!(
 );
 
 
-fn nestedLabels: [] -> [] do (
+fn nestedLabels: [] -> U32 do (
   #first
   v: U32 = while x: U32 do (
     #second while y do (
@@ -181,5 +181,24 @@ fn nestedLabels: [] -> [] do (
     )
   ) eldo -77;
 
-  v
+  v + 777
+);
+
+enum Meat: [
+  beef: [];
+  chicken: [];
+  other: Str;
+];
+
+fn meatCost: Meat -> U32 do (
+  match inp: U32 {
+    beef do 5;
+    chicken do 3;
+    other do (
+      if other == "tofu" do 2
+      elif other == "salmon" do 15
+      eldo 77
+    );
+    eldo unreachable!{};
+  }
 );
