@@ -137,20 +137,22 @@ fn stkPlus3: stk[U32] -> stk[U32] do (
 );
 
 struct Point: [
-  x: I32
+  x: I32;
   y: I32;
 ];
 
-// impl Point: [] (
-//   fn distance: [self: &Point; other: &Point] -> U32 (
-//     sqrt[U32]$ (
-//       po2[U32]$(self.x - other.x)
-//       + po2[U32]$(self.y - other.y)
-//     )
-//   );
-// );
-// 
-// 
+impl Point: [] (
+  x: U32 = 32;
+
+  fn distance: [self: &Point; other: &Point] -> U32 do (
+    sqrt[U32]$(
+      po2[U32]$(self.x - other.x)
+      + po2[U32]$(self.y - other.y)
+    )
+  );
+);
+
+
 // !gen (
 //   struct Vec[V]: [
 //     cap: U16;

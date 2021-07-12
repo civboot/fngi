@@ -17,6 +17,7 @@ STR = _escStr / _rawStr
 FN = "fn"
 DO = "do"
 STRUCT = "struct"
+IMPL = "impl"
 STK = "stk"
 ARR = "arr"
 NOT = "not"
@@ -61,7 +62,7 @@ factor = call (w? ( "/" / "*" ) unary)*
 call = unary (w? "$" unary)*
 unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
 macro2 = macro1 (w? "!!" name (decl / macro1))*
-macro1 = name (w? "!" name)*
+macro1 = name (w? "!" (decl / name))*
 name = nameNoDot (w? "." nameNoDot)*
 nameNoDot = primary (w? nameBlock)?
 primary = w? (
@@ -107,9 +108,10 @@ multiVar = declVar (SC declVar)* SC?
 
 
 # Declaration Selection
-decl = declStruct / declFn / declVar
+decl = declStruct / declFn / declImpl / declVar
 declStruct = w? STRUCT name C w? structBlock
 declFn = w? FN w? name C fnTy w? DO expr
+declImpl = w? IMPL name C ty w? block
 declVar = w? IDEN C ty (w? "=" expr)?
 
 
