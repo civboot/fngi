@@ -32,7 +32,7 @@ BITAND = "bitand"
 IF = "if"
 ELIF = "elif"
 ELDO = "eldo"
-MATCH = "match"
+SWITCH = "switch"
 CASE = "case"
 WHILE = "while"
 
@@ -55,8 +55,8 @@ _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 # - stmt
 # - expr
 # - ty
-# - macro2
 # - name
+# - macro2
 
 
 # Primary Expressions (non-lexeme)
@@ -78,11 +78,10 @@ ifElDo = (
   (w? ELDO stmt)?
 )
 
-match = (
-  MATCH expr (C ty)? w? "{"
-  (w? IDEN w? DO stmt SC)*
-  (w? ELDO stmt SC)?
-  w? "}"
+switch = (
+  SWITCH expr (C ty)?
+  (w? CASE w? IDEN w? DO stmt)*
+  (w? ELDO stmt)?
 )
 
 while = WHILE expr (C ty)? w? DO expr (w? ELDO expr)?
@@ -125,7 +124,7 @@ primary = w? (
   EMPTY / EMPTY_BLOCK
   / NUMBER / STR
   / block / stk / arr / struct
-  / ifElDo / match / while
+  / ifElDo / switch / while
   / IDEN
 )
 nameNoDot = primary (w? nameBlock)?
@@ -142,5 +141,7 @@ logical = comparison (w? (OR / AND) comparison)*
 equality = logical (w? ( "!=" / "==" ) logical )*
 assign = equality (w? ":=" equality)*
 
+
+# Highest Level
 expr = assign
 stmt = (flow / decl / expr)

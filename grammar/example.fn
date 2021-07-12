@@ -191,14 +191,13 @@ enum Meat: [
 ];
 
 fn meatCost: Meat -> U32 do (
-  match inp: U32 {
-    beef do 5;
-    chicken do 3;
-    other do (
-      if other == "tofu" do 2
-      elif other == "salmon" do 15
-      eldo 77
-    );
-    eldo unreachable!{};
-  }
+  switch inp: U32
+  case beef do 5
+  case chicken do 3
+  case other do (
+    if other == "tofu" do 2
+    elif other == "salmon" do 15
+    eldo 77
+  )
+  eldo unreachable!{}
 );
