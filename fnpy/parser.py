@@ -7,10 +7,12 @@
 # First we are going to build the parser, which is fairly self-explanatory. We
 # parse and emit lexemes (sometimes also called tokens).
 
+import copy
 import dataclasses
 import enum
 import os
 import io
+import pprint
 
 from typing import List
 
@@ -18,18 +20,37 @@ from typing import List
 class LexemeVariant(enum.Enum):
     # TODO: use solid integer values
     EOF = enum.auto()
+    INVALID = enum.auto()
 
-    # Multi char symbols
+    # Values
+    LINE_COMMENT = enum.auto() # //
+    BLOCK_COMMENT = enum.auto() # /* ... */
+    NUMBER = enum.auto()
+    IDEN = enum.auto()
+    ESC_STR = enum.auto() # \"
+    RAW_STR = enum.auto() # "
+
+    # Symbol Operators (Grammar Order)
     SINGLE_MACRO = enum.auto() # !
     DOUBLE_MACRO = enum.auto() # !!
-    ARROW = enum.auto() # ->
+    MINUS = enum.auto() # -
+    REF = enum.auto() # &
+    DEREF = enum.auto() # @
+    CALL = enum.auto() # $
+    DIVIDE = enum.auto() # /
+    MULTIPLY = enum.auto() # *
+    PLUS = enum.auto() # +
+    GE = enum.auto() # >=
+    GT = enum.auto() # >
+    LE = enum.auto() # <=
+    LT = enum.auto() # <
+    NE = enum.auto() # !=
+    EQ = enum.auto() # ==
+    SET = enum.auto() # :=
 
-    # Single char symbols
     SEMICOLON = enum.auto() # ;
     COLON = enum.auto() # :
     EQUAL = enum.auto() # =
-    REF = enum.auto() # &
-    DEREF = enum.auto() # @
     BLOCK_OPEN = enum.auto() # (
     BLOCK_CLOSE = enum.auto() # )
     DATA_OPEN = enum.auto() # {
@@ -37,35 +58,70 @@ class LexemeVariant(enum.Enum):
     TYPE_OPEN = enum.auto() # [
     TYPE_CLOSE = enum.auto() # ]
 
-    # Keywords
-    FN = enum.auto() # fn
-    LET = enum.auto() # let
-    RETURN = enum.auto() # return
+    # Type operators
+    ARROW = enum.auto() # ->
+    DOT = enum.auto() # .
+    LOC = enum.auto() # #
 
-    # Contains Direct Data
-    INVALID = enum.auto()
-    NUMBER = enum.auto()
-    IDEN = enum.auto()
-    LINE_COMMENT = enum.auto() # //
-    ESCAPED_STR = enum.auto() # \"
+    # Keywords
+    FN = enum.auto()
+    DO = enum.auto()
+    STRUCT = enum.auto()
+    ENUM = enum.auto()
+    IMPL = enum.auto()
+    STK = enum.auto()
+    ARR = enum.auto()
+
+    IF = enum.auto()
+    ELIF = enum.auto()
+    ELDO = enum.auto()
+    SWITCH = enum.auto()
+    CASE = enum.auto()
+    WHILE = enum.auto()
+
+    NOT = enum.auto()
+    AND = enum.auto()
+    OR = enum.auto()
+    BITNOT = enum.auto()
+    BITOR = enum.auto()
+    BITXOR = enum.auto()
+    BITAND = enum.auto()
+
+    CONT = enum.auto()
+    BREAK = enum.auto()
+    RETURN = enum.auto()
+
+
 
 
 @dataclasses.dataclass
-class Lexeme(object):
+class Lexeme:
     variant: LexemeVariant
     string: str = None
+
 
 EOF = Lexeme(LexemeVariant.EOF)
 
 SINGLE_MACRO = Lexeme(LexemeVariant.SINGLE_MACRO)
 DOUBLE_MACRO = Lexeme(LexemeVariant.DOUBLE_MACRO)
-ARROW = Lexeme(LexemeVariant.ARROW)
+MINUS = Lexeme(LexemeVariant.MINUS)
+REF = Lexeme(LexemeVariant.REF)
+DEREF = Lexeme(LexemeVariant.DEREF)
+CALL = Lexeme(LexemeVariant.CALL)
+DIVIDE = Lexeme(LexemeVariant.DIVIDE)
+MULTIPLY = Lexeme(LexemeVariant.MULTIPLY)
+PLUS = Lexeme(LexemeVariant.PLUS)
+GE = Lexeme(LexemeVariant.GE)
+GT = Lexeme(LexemeVariant.GT)
+LE = Lexeme(LexemeVariant.LE)
+LT = Lexeme(LexemeVariant.LT)
+NE = Lexeme(LexemeVariant.NE)
+EQ = Lexeme(LexemeVariant.EQ)
+SET = Lexeme(LexemeVariant.SET)
 
 SEMICOLON = Lexeme(LexemeVariant.SEMICOLON)
 COLON = Lexeme(LexemeVariant.COLON)
 EQUAL = Lexeme(LexemeVariant.EQUAL)
-REF = Lexeme(LexemeVariant.REF)
-DEREF = Lexeme(LexemeVariant.DEREF)
 BLOCK_OPEN = Lexeme(LexemeVariant.BLOCK_OPEN)
 BLOCK_CLOSE = Lexeme(LexemeVariant.BLOCK_CLOSE)
 DATA_OPEN = Lexeme(LexemeVariant.DATA_OPEN)
@@ -73,8 +129,35 @@ DATA_CLOSE = Lexeme(LexemeVariant.DATA_CLOSE)
 TYPE_OPEN = Lexeme(LexemeVariant.TYPE_OPEN)
 TYPE_CLOSE = Lexeme(LexemeVariant.TYPE_CLOSE)
 
+ARROW = Lexeme(LexemeVariant.ARROW)
+DOT = Lexeme(LexemeVariant.DOT)
+LOC = Lexeme(LexemeVariant.LOC)
+
 FN = Lexeme(LexemeVariant.FN)
-LET = Lexeme(LexemeVariant.LET)
+DO = Lexeme(LexemeVariant.DO)
+STRUCT = Lexeme(LexemeVariant.STRUCT)
+ENUM = Lexeme(LexemeVariant.ENUM)
+IMPL = Lexeme(LexemeVariant.IMPL)
+STK = Lexeme(LexemeVariant.STK)
+ARR = Lexeme(LexemeVariant.ARR)
+
+IF = Lexeme(LexemeVariant.IF)
+ELIF = Lexeme(LexemeVariant.ELIF)
+ELDO = Lexeme(LexemeVariant.ELDO)
+SWITCH = Lexeme(LexemeVariant.SWITCH)
+CASE = Lexeme(LexemeVariant.CASE)
+WHILE = Lexeme(LexemeVariant.WHILE)
+
+NOT = Lexeme(LexemeVariant.NOT)
+AND = Lexeme(LexemeVariant.AND)
+OR = Lexeme(LexemeVariant.OR)
+BITNOT = Lexeme(LexemeVariant.BITNOT)
+BITOR = Lexeme(LexemeVariant.BITOR)
+BITXOR = Lexeme(LexemeVariant.BITXOR)
+BITAND = Lexeme(LexemeVariant.BITAND)
+
+CONT = Lexeme(LexemeVariant.CONT)
+BREAK = Lexeme(LexemeVariant.BREAK)
 RETURN = Lexeme(LexemeVariant.RETURN)
 
 
@@ -90,6 +173,12 @@ def isSymbol(c: int) -> bool:
 
 def isNumber(c: int) -> bool:
     return ord('0') <= c <= ord('9')
+
+def isHex(c: int) -> bool:
+    return (
+        isNumber(c)
+        or (ord('A') <= c <= ord('F'))
+        or (ord('a') <= c <= ord('f')))
 
 def isNameChar(c: int) -> bool:
     return not isWhitespace(c) and not isSymbol(c)
@@ -171,7 +260,6 @@ class Lexer(object):
         self.fo = fo
         self.fileSize = os.stat(fo.fileno()).st_size
         self.tokenIndex = 0
-        self.lineno = 0
 
     def nextLexeme(self) -> Lexeme:
         sc = self.scanner
@@ -186,18 +274,44 @@ class Lexer(object):
         elif c == ord(b'/'):
             c = sc.nextByte()
             if c == ord(b'/'): # LINE_COMMENT
-                out = bytearray(b'//')
+                out = bytearray()
                 while c != 0 and c != ord(b'\n'):
+                    out.append(c)
+                    c = sc.nextByte()
+                return Lexeme(LexemeVariant.LINE_COMMENT, out)
+            elif c == ord(b'*'): # BLOCK_COMMENT
+                out = bytearray(b'/*')
+                lastWasStar = False
+                while True:
                     c = sc.nextByte()
                     out.append(c)
-                return Lexeme(LexemeVariant.LINE_COMMENT, out)
+                    if c == '*':
+                        lastWasStar = True
+                    elif c == 0 or (lastWasStar and c == '/'):
+                        return Lexeme(LexemeVariant.BLOCK_COMMENT, out)
+                    else:
+                        lastWasStar = False
+
             else:
-                self.backByte()
-                return Lexeme(LexemeVariant.INVALID, c)
+                return DIVIDE
+
+        elif c == ord(b'"'):
+            out = bytearray()
+            c = sc.nextByte()
+            while True:
+                if c == 0:
+                    return Lexeme(LexemeVariant.INVALID, out)
+                out.append(c)
+                if c == ord('"'):
+                    break
+                c = sc.nextByte()
+            return Lexeme(LexemeVariant.RAW_STR, out)
 
         elif c == ord(b'!'):
             c = sc.nextByte()
-            if c == ord(b'!'):
+            if c == ord('='):
+                return NE
+            elif c == ord(b'!'):
                 return DOUBLE_MACRO
             sc.backByte()
             return SINGLE_MACRO
@@ -206,8 +320,28 @@ class Lexer(object):
             c = sc.nextByte()
             if c == ord(b'>'):
                 return ARROW
+            return MINUS
+
+        elif c == ord(b'>'):
+            c = sc.nextByte()
+            if c == ord('='):
+                return GE
             sc.backByte()
-            return Lexeme(LexemeVariant.INVALID, b'-')
+            return GT
+
+        elif c == ord('<'):
+            c = sc.nextByte()
+            if c == ord('='):
+                return LE
+            sc.backByte()
+            return LT
+
+        elif c == ord(':'):
+            c = sc.nextByte()
+            if c == ord('='):
+                return SET
+            sc.backByte()
+            return COLON
 
         elif c == ord(b'\\'): # Escape, must be \"
             out = bytearray([c])
@@ -225,13 +359,21 @@ class Lexer(object):
                     if c == ord(b'"'):
                         break
 
-            return Lexeme(LexemeVariant.ESCAPED_STR, out)
+            return Lexeme(LexemeVariant.ESC_STR, out)
 
         elif ord('0') <= c <= ord('9'):
             out = bytearray([c])
-
             c = sc.nextByte()
-            if isNumber(c):
+
+            numIsHex = False
+            if c == ord('x'):
+                numIsHex = True
+                out.append(c)
+                c = sc.nextByte()
+
+            if numIsHex and isHex(c):
+                out.append(c)
+            elif isNumber(c):
                 out.append(c)
             elif isNameChar(c):
                 sc.backByte()
@@ -241,11 +383,16 @@ class Lexer(object):
                 sc.backByte()
                 return Lexeme(LexemeVariant.NUMBER, out)
 
-        elif c == ord(b';'): return SEMICOLON
-        elif c == ord(b':'): return COLON
-        elif c == ord(b'='): return EQUAL
         elif c == ord(b'&'): return REF
         elif c == ord(b'@'): return DEREF
+        elif c == ord(b'$'): return CALL
+        elif c == ord(b'+'): return PLUS
+        elif c == ord(b'*'): return MULTIPLY
+
+        elif c == ord(b'.'): return DOT
+        elif c == ord(b'#'): return LOC
+        elif c == ord(b';'): return SEMICOLON
+        elif c == ord(b'='): return EQUAL
         elif c == ord(b'('): return BLOCK_OPEN
         elif c == ord(b')'): return BLOCK_CLOSE
         elif c == ord(b'{'): return DATA_OPEN
@@ -263,7 +410,29 @@ class Lexer(object):
             name.append(c)
 
         if name == b'fn': return FN
-        if name == b'let': return LET
+        if name == b'do': return DO
+        if name == b'struct': return STRUCT
+        if name == b'enum': return ENUM
+        if name == b'impl': return IMPL
+        if name == b'stk': return STK
+        if name == b'arr': return ARR
+
+        if name == b'if': return IF
+        if name == b'elif': return ELIF
+        if name == b'eldo': return ELDO
+        if name == b'switch': return SWITCH
+        if name == b'case': return CASE
+        if name == b'while': return WHILE
+
+        if name == b'not': return NOT
+        if name == b'and': return AND
+        if name == b'or': return OR
+        if name == b'bitnot': return BITNOT
+        if name == b'bitor': return BITOR
+        if name == b'bitand': return BITAND
+
+        if name == b'cont': return CONT
+        if name == b'break': return BREAK
         if name == b'return': return RETURN
 
         return Lexeme(LexemeVariant.IDEN, name)
@@ -272,38 +441,43 @@ class Lexer(object):
         """Used in testing."""
         out = []
         while True:
-            token = self.nextLexeme()
-            out.append(token)
-            if token is EOF:
+            lexeme = self.nextLexeme()
+            out.append((self.scanner.line, lexeme))
+            if lexeme is EOF:
                 return out
 
     def getAllVariants(self) -> List[LexemeVariant]:
         return [t.variant for t in self.getAllLexemes()]
 
 def testLexer():
-    ts = Lexer(open("test_data/hello_world.fn", 'rb', buffering=0))
-    result = ts.getAllVariants()
     tv = LexemeVariant
-    expected = [
-        # let HELLO: &Str = \"Hello world!\";
-        tv.LET, tv.IDEN, tv.COLON, tv.REF, tv.IDEN,
-        # = \"Hello world!\"; 
-        tv.EQUAL, tv.ESCAPED_STR, tv.SEMICOLON,
-        # fn main:
-        tv.FN, tv.IDEN, tv.COLON, 
-        #  [] -> []
-        tv.TYPE_OPEN, tv.TYPE_CLOSE, tv.ARROW, tv.TYPE_OPEN, tv.TYPE_CLOSE,
-        # ( fdWriteString {
-        tv.BLOCK_OPEN, tv.IDEN, tv.DATA_OPEN,
-        # fd = 1; // stdout
-        tv.IDEN, tv.EQUAL, tv.NUMBER, tv.SEMICOLON, tv.LINE_COMMENT,
-        # str = HELLO;
-        tv.IDEN, tv.EQUAL, tv.IDEN, tv.SEMICOLON,
-        # }; )
-        tv.DATA_CLOSE, tv.SEMICOLON, tv.BLOCK_CLOSE,
-        tv.EOF,
-    ]
-    assert expected == result
+    ts = Lexer(open("grammar/example.fn", 'rb', buffering=0))
+    result = ts.getAllLexemes()
+    resultVariants = [l[1].variant for l in result]
+
+    pprint.pprint(result)
+    assert tv.INVALID not in resultVariants
+
+    # expected = [
+    #     # # let HELLO: &Str = \"Hello world!\";
+    #     # tv.LET, tv.IDEN, tv.COLON, tv.REF, tv.IDEN,
+    #     # # = \"Hello world!\"; 
+    #     # tv.EQUAL, tv.ESC_STR, tv.SEMICOLON,
+    #     # # fn main:
+    #     # tv.FN, tv.IDEN, tv.COLON, 
+    #     # #  [] -> []
+    #     # tv.TYPE_OPEN, tv.TYPE_CLOSE, tv.ARROW, tv.TYPE_OPEN, tv.TYPE_CLOSE,
+    #     # # ( fdWriteString {
+    #     # tv.BLOCK_OPEN, tv.IDEN, tv.DATA_OPEN,
+    #     # # fd = 1; // stdout
+    #     # tv.IDEN, tv.EQUAL, tv.NUMBER, tv.SEMICOLON, tv.LINE_COMMENT,
+    #     # # str = HELLO;
+    #     # tv.IDEN, tv.EQUAL, tv.IDEN, tv.SEMICOLON,
+    #     # # }; )
+    #     # tv.DATA_CLOSE, tv.SEMICOLON, tv.BLOCK_CLOSE,
+    #     # tv.EOF,
+    # ]
+    # assert expected == result
 
 
 if __name__ == '__main__':

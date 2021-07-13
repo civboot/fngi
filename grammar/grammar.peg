@@ -6,14 +6,9 @@ whitespace = ~"\\s+"          # whitespace is ignored
 lineComment = ~"//.*\n"         # // a line comment
 blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
 
-C = w? ":" # colon
 SC = w? ";" # semi-colon
-VOID = "[" w? "]"
-EMPTY = "{" w? "}"
-EMPTY_BLOCK = "(" w? ")"
-NUMBER = ("0x" _hex+) / _numeric+
-IDEN = _alphanumeric+
-STR = _escStr / _rawStr
+C = w? ":" # colon
+
 FN = "fn"
 DO = "do"
 STRUCT = "struct"
@@ -21,13 +16,6 @@ ENUM = "enum"
 IMPL = "impl"
 STK = "stk"
 ARR = "arr"
-NOT = "not"
-AND = "and"
-OR = "or"
-BITNOT = "bitnot"
-BITOR = "bitor"
-BITXOR = "bitxor"
-BITAND = "bitand"
 
 IF = "if"
 ELIF = "elif"
@@ -36,9 +24,22 @@ SWITCH = "switch"
 CASE = "case"
 WHILE = "while"
 
+NOT = "not"
+AND = "and"
+OR = "or"
+BITNOT = "bitnot"
+BITOR = "bitor"
+BITXOR = "bitxor"
+BITAND = "bitand"
+
 CONT = "cont" # continue
 BREAK = "break"
 RETURN = "return"
+
+NUMBER = ("0x" _hex+) / _numeric+
+IDEN = _alphanumeric+
+ESC_STR = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
+RAW_STR = ~'"[^"]"'s           #  "this is a raw string"
 
 
 # Helper Regexes
@@ -46,8 +47,6 @@ _numeric = ~"[0-9]"    # note: ~"..." is a regex
 _hex = ~"[0-9A-F]"i
 _alpha  = ~"[A-Z]"i    # note: i means "ignore case"
 _alphanumeric = ~"[0-9A-Z]"i
-_escStr = ~'(?s)\\\".*?\\\"'s  # \"this is a\n"escaped" string\"
-_rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 
 # High Level: will be defined as fn ptrs. Everything else can be defined
@@ -61,6 +60,9 @@ _rawStr = ~'"[^"]"'s           #  "this is a raw string"
 
 # Primary Expressions (non-lexeme)
 label = w? "#" IDEN
+void = "[" w? "]"
+empty = "{" w? "}"
+emptyBlock = "(" w? ")"
 multiLabelStmt = label? stmt (SC label? stmt)* SC?
 multiExpr = expr (SC expr)* SC?
 
@@ -107,7 +109,7 @@ nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 
 
 # Ty Recursive Descent
-primaryTy = w? ( VOID / structBlock / stkBlock / arrBlock / macro2 )
+primaryTy = w? ( void / structBlock / stkBlock / arrBlock / macro2 )
 fnTy = primaryTy (w? "->" primaryTy)?
 ty = (w? "&")* fnTy
 
@@ -121,8 +123,8 @@ return = RETURN expr?
 
 # Expression Recursive Descent
 primary = w? (
-  EMPTY / EMPTY_BLOCK
-  / NUMBER / STR
+  NUMBER / ESC_STR / RAW_STR
+  / empty / emptyBlock
   / block / stk / arr / struct
   / ifElDo / switch / while
   / IDEN
@@ -136,7 +138,7 @@ call = unary (w? "$" unary)*
 factor = call (w? ( "/" / "*" ) unary)*
 term = factor (w? ( "-" / "+" ) factor)*
 bitwise = term (w? (BITOR / BITXOR / BITAND) term)*
-comparison = bitwise (w? ( ">=" / "<=" / ">" / "<" ) bitwise )*
+comparison = bitwise (w? ( ">=" / ">" / "<=" / "<" ) bitwise )*
 logical = comparison (w? (OR / AND) comparison)*
 equality = logical (w? ( "!=" / "==" ) logical )*
 assign = equality (w? ":=" equality)*
