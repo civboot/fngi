@@ -807,6 +807,7 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
             return None
 
         labelStmt = LabelStmt(label, stmt)
-        if ll.peek().lexeme is SEMICOLON:
+        lastSemiColon = ll.peek().lexeme is SEMICOLON
+        if lastSemiColon:
             ll.pop()
             lastSemiColon = True
