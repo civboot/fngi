@@ -767,29 +767,26 @@ def test_parseLabel_bad():
     assert None == result
     assertAndCleanError(LABEL_ERR)
 
-# Grammar: void = "[" w? "]"
-def parseVoid(ll: LexemeLL) -> Void:
-    assert ll.pop().lexeme is TYPE_OPEN
-    assert ll.pop().lexeme is TYPE_CLOSE
-    return PrimaryNoValue(LV.VOID)
+# Grammar: multiExpr = expr (SC expr)* SC?
+# Note: we add on a bit here with endLexeme
+def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
+    """Parse the label statements and consume the endLexeme."""
+    out = []
+    while True:
+        if ll.peek().lexeme is endLexeme:
+            ll.pop()
+            return lastSemiColon, labelStmts
 
-# Grammar: empty = "{" w? "}"
-def parseEmpty(ll: LexemeLL) -> Empty:
-    assert ll.pop().lexeme is DATA_OPEN
-    assert ll.pop().lexeme is DATA_CLOSE
-    return Empty()
+        expr = parseExpr.ptr(ll)
+        if expr is None:
+            return None
+        out.append(expr)
 
-# Grammar: emptyBlock = "(" w? ")"
-def parseEmpty(ll: LexemeLL) -> Empty:
-    assert ll.pop().lexeme is BLOCK_OPEN
-    assert ll.pop().lexeme is BLOCK_CLOSE
-    return Empty()
 
 # Grammar: multiLabelStmt = label? stmt (SC label? stmt)* SC?
-# Note: we add on a bit here with endLexeme
 def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStmt]):
     """Parse the label statements and consume the endLexeme."""
-    labelStmts = []
+    out = []
     lastSemiColon = False
     while True:
         if ll.peek().lexeme is endLexeme:
@@ -805,8 +802,9 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
         stmt = parseStmt.ptr(ll)
         if stmt is None:
             return None
-
         labelStmt = LabelStmt(label, stmt)
+        out.append(labelStmt)
+
         lastSemiColon = ll.peek().lexeme is SEMICOLON
         if lastSemiColon:
             ll.pop()

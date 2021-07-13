@@ -63,8 +63,8 @@ label = w? "#" IDEN
 void = "[" w? "]"
 empty = "{" w? "}"
 emptyBlock = "(" w? ")"
-multiLabelStmt = label? stmt (SC label? stmt)* SC?
 multiExpr = expr (SC expr)* SC?
+multiLabelStmt = label? stmt (SC label? stmt)* SC?
 
 block = "(" multiLabelStmt w? ")" # lint: last un-SC stmt must be expr
 stk = STK w? "{" multiExpr w? "}"
