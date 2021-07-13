@@ -1,17 +1,17 @@
 
 import unittest
 import random
-from fngi import BIG_ENDIAN
-from fngi import Memory, Heap, Stack, BlockAllocator
-from fngi import MHeap, MStack, MBlockAllocator as Mba
-from fngi import MEMORY_SIZE, BLOCKS_ALLOCATOR_SIZE
-from fngi import BLOCK_SIZE, BLOCKS_TOTAL
-from fngi import BLOCK_FREE, BLOCK_USED
-from fngi import BLOCK_FREE, BLOCK_USED, BLOCK_OOB
-from fngi import ARENA_PO2_MIN, BLOCK_PO2
-from fngi import Ptr, U8, I8, U16, I16, U32, I32
-from fngi import ENV
-from fngi import getPo2
+from fnpy.types import BIG_ENDIAN
+from fnpy.types import Memory, Heap, Stack, BlockAllocator
+from fnpy.types import MHeap, MStack, MBlockAllocator as Mba
+from fnpy.types import MEMORY_SIZE, BLOCKS_ALLOCATOR_SIZE
+from fnpy.types import BLOCK_SIZE, BLOCKS_TOTAL
+from fnpy.types import BLOCK_FREE, BLOCK_USED
+from fnpy.types import BLOCK_FREE, BLOCK_USED, BLOCK_OOB
+from fnpy.types import ARENA_PO2_MIN, BLOCK_PO2
+from fnpy.types import Ptr, U8, I8, U16, I16, U32, I32
+from fnpy.types import ENV
+from fnpy.types import getPo2
 from ctypes import sizeof
 
 # update/modify for randomized memory tests
