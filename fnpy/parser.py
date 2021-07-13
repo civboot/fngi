@@ -61,7 +61,7 @@ class LexemeVariant(enum.Enum):
     # Type operators
     ARROW = enum.auto() # ->
     DOT = enum.auto() # .
-    LOC = enum.auto() # #
+    LABEL = enum.auto() # #
 
     # Keywords
     FN = enum.auto()
@@ -97,7 +97,7 @@ class LexemeVariant(enum.Enum):
 @dataclasses.dataclass
 class Lexeme:
     variant: LexemeVariant
-    string: str = None
+    text: str = None
 
 
 EOF = Lexeme(LexemeVariant.EOF)
@@ -131,7 +131,7 @@ TYPE_CLOSE = Lexeme(LexemeVariant.TYPE_CLOSE)
 
 ARROW = Lexeme(LexemeVariant.ARROW)
 DOT = Lexeme(LexemeVariant.DOT)
-LOC = Lexeme(LexemeVariant.LOC)
+LABEL = Lexeme(LexemeVariant.LABEL)
 
 FN = Lexeme(LexemeVariant.FN)
 DO = Lexeme(LexemeVariant.DO)
@@ -160,6 +160,79 @@ CONT = Lexeme(LexemeVariant.CONT)
 BREAK = Lexeme(LexemeVariant.BREAK)
 RETURN = Lexeme(LexemeVariant.RETURN)
 
+################################
+# Scanner
+# The scanner reads into a 32 byte buffer and provides nextByte() and
+# backByte() methods.
+#
+# The scanner only allows going back by 1 byte before progressing again.
+# Any more may throw an error. The scanner also tracks the filePos, line, and
+# col.
+#
+# Obviously there are python classes that can do this for us, but we
+# want something that we can emulate in the forth implementation.
+
+class Scanner(object):
+    BUF_SIZE = 32
+    LAST_COL_SENTINEL = 0xFFFFFFFF
+
+    def __init__(self, fo: io.TextIOWrapper):
+        self.fo = fo
+        self.buffer = bytearray(self.BUF_SIZE)
+        self.bufMax = 0
+        self.bufIndex = 0
+        self.filePos = 0
+        self.lastCol = self.LAST_COL_SENTINEL
+        self.col = 0
+        self.line = 0
+
+    def nextByte(self) -> int:
+        if self.bufIndex == self.bufMax:
+            if self.bufMax != 0:
+                # Move the last character to the start to allow backByte()
+                self.buffer[0] = self.buffer[self.bufMax -1]
+                self.bufIndex = 1
+            else:
+                self.bufIndex = 0 # no byte to go back to
+
+            # try to fill the buffer
+            readBytes = self.fo.read(self.BUF_SIZE - 1)
+            self.bufMax = self.bufIndex + len(readBytes)
+            self.buffer[self.bufIndex:self.bufMax] = readBytes
+
+        if self.bufIndex == self.bufMax:
+            return 0 # EOF
+
+        self.lastCol = self.col
+
+        b = self.buffer[self.bufIndex]
+        self.bufIndex += 1
+        self.filePos += 1
+        if b == ord('\n'):
+            self.line += 1
+            self.col = 0
+        else:
+            self.col += 1
+
+        return b
+
+    def backByte(self):
+        if self.bufIndex == 0:
+            raise IndexError("Cannot go back at start.")
+        if self.lastCol == self.LAST_COL_SENTINEL:
+            raise IndexError("Cannot go back > 1 byte")
+        self.bufIndex -= 1
+        self.filePos -= 1
+        self.col = self.lastCol
+        self.lastCol = self.LAST_COL_SENTINEL
+        if self.buffer[self.bufIndex] == ord('\n'):
+            self.line -= 1
+
+################################
+# Lexer
+# The lexer returns a stream of Lexemes, which must be stored by another data
+# structure. Complex tokens like numbers, full identifiers and strings are
+# handled directly.
 
 def isWhitespace(c: int) -> bool:
     if c == 0: return False
@@ -182,74 +255,6 @@ def isHex(c: int) -> bool:
 
 def isNameChar(c: int) -> bool:
     return not isWhitespace(c) and not isSymbol(c)
-
-
-class Scanner(object):
-    """The scanner reads into a 32 byte buffer and provides nextByte() and
-    backByte() methods.
-
-    The scanner only allows going back by 1 byte before progressing again.
-    Any more may throw an error.
-
-    The scanner also tracks the filePos, line, and column.
-
-    Obviously there are python classes that can do this for us, but we
-    want something that we can emulate in the forth implementation.
-    """
-    BUF_SIZE = 32
-    LAST_COL_SENTINEL = 0xFFFFFFFF
-
-    def __init__(self, fo: io.TextIOWrapper):
-        self.fo = fo
-        self.buffer = bytearray(self.BUF_SIZE)
-        self.bufMax = 0
-        self.bufIndex = 0
-        self.filePos = 0
-        self.lastColumn = self.LAST_COL_SENTINEL
-        self.column = 0
-        self.line = 0
-
-    def nextByte(self) -> int:
-        if self.bufIndex == self.bufMax:
-            if self.bufMax != 0:
-                # Move the last character to the start to allow backByte()
-                self.buffer[0] = self.buffer[self.bufMax -1]
-                self.bufIndex = 1
-            else:
-                self.bufIndex = 0 # no byte to go back to
-
-            # try to fill the buffer
-            readBytes = self.fo.read(self.BUF_SIZE - 1)
-            self.bufMax = self.bufIndex + len(readBytes)
-            self.buffer[self.bufIndex:self.bufMax] = readBytes
-
-        if self.bufIndex == self.bufMax:
-            return 0 # EOF
-
-        self.lastColumn = self.column
-
-        b = self.buffer[self.bufIndex]
-        self.bufIndex += 1
-        self.filePos += 1
-        if b == ord('\n'):
-            self.line += 1
-            self.column = 0
-        else:
-            self.column += 1
-
-        return b
-
-    def backByte(self):
-        if self.bufIndex == 0:
-            raise IndexError("Cannot go back at start.")
-        if self.lastColumn == self.LAST_COL_SENTINEL:
-            raise IndexError("Cannot go back > 1 byte")
-        self.bufIndex -= 1
-        self.filePos -= 1
-        self.column = self.lastColumn
-        self.lastColumn = self.LAST_COL_SENTINEL
-        if self.buffer[self.bufIndex] == ord('\n'):
-            self.line -= 1
 
 
 class Lexer(object):
@@ -394,7 +399,7 @@ class Lexer(object):
         elif c == ord('*'): return MULTIPLY
 
         elif c == ord('.'): return DOT
-        elif c == ord('#'): return LOC
+        elif c == ord('#'): return LABEL
         elif c == ord(';'): return SEMICOLON
         elif c == ord('='): return EQUAL
         elif c == ord('('): return BLOCK_OPEN
@@ -487,13 +492,177 @@ def testLexer():
     assert expectLineVariants == resultLineVariants
 
 
-if __name__ == '__main__':
-    def printLexemes(fo):
-        ts = Lexer(fo)
-        token = None
-        while token is not EOF:
-            token = ts.nextLexeme()
-            print(token)
+################################
+# Lexeme Node List
+# For the parser to be implemented it must be able to:
+# - Retrieve lexeme nodes that contain metadata (line, col, etc)
+# - Do lookahead of at least 1 lexeme, probably more (we will see)
+# - Advance the root (dropping nodes) up until a specific node.
 
-    printLexemes(open(sys.argv[1], 'rb', buffering=0))
+@dataclasses.dataclass
+class LexemeNode:
+    lexeme: Lexeme
+    line: int
+    col: int
+    next: "LexemeNode" = None
 
+
+class LexemeLL(object):
+    """Lexeme linked list."""
+    def __init__(self, lexer: Lexer):
+        self.lexer = lexer
+        self.root = None
+        self.last = None
+        self.gotEof = False
+
+    def pop(self) -> LexemeNode:
+        """Get the next lexeme node and advance the root."""
+        if self.root is None:
+            self._populateNext()
+        out = self.root
+        self.root = out.next
+        if self.root is None:
+            assert self.last == out
+            self.last = None
+        return out
+
+    def advance(self, node):
+        """Advance the root until node."""
+        while self.root is not node:
+            if self.root is None:
+                raise IndexError(node)
+            self.pop()
+
+    def peek(self, node = None, index: int = 0) -> LexemeNode:
+        """Peek at the Lexeme Node at index relative to node
+
+        If node is None, it is relative to root.
+        """
+        if node is None:
+            if self.root is None and not self.gotEof:
+                self._populateNext()
+            node = self.root
+        prev = node
+        ln = prev
+        while index > 0:
+            ln = prev.next
+            if ln is None and not self.gotEof:
+                self._populateNext()
+                continue
+            if ln is None: return None
+            prev = ln
+            index = index - 1
+        return ln
+
+    def _populateNext(self):
+        if self.gotEof:
+            raise IndexError("Already to EOF")
+        lexeme = self.lexer.nextLexeme()
+        if lexeme is EOF:
+            self.gotEof = True
+
+        node = LexemeNode(
+            lexeme,
+            self.lexer.scanner.line,
+            self.lexer.scanner.col)
+
+        if self.end is None:
+            assert self.root is None
+            self.root = node
+            self.last = node
+        else:
+            self.last.next = node
+            self.last = node
+################################
+# AST Nodes
+
+class ASTNode(object):
+    pass
+
+
+@dataclasses.dataclass
+class Number(ASTNode):
+    value: int
+
+
+@dataclasses.dataclass
+class RawStr(ASTNode):
+    value: bytes
+
+
+@dataclasses.dataclass
+class Iden(ASTNode):
+    value: bytes
+
+
+@dataclasses.dataclass
+class Label(ASTNode):
+    value: bytes
+
+
+################################
+# Parser
+# The parser implements the syntax defined in grammar/grammar.peg, which is
+# structured (ordered) such that it can be transparently implemented by a
+# recursive-descent style parser.
+#
+# The parser consumes the result of the lexer and converts it into AST nodes.
+
+@dataclasses.dataclass
+class ParseError:
+    msg: str
+    line: int
+    col: int
+
+    @classmethod
+    def new(cls, msg: any, ln: LexemeNode):
+        return cls(str(msg), ln.line, ln.col)
+
+PARSE_ERROR: ParseError = None
+
+def updateError(msg, ln: LexemeNode):
+    PARSE_ERROR = ParseError.new(msg, ln)
+
+def parseNumber(ll: LexemeLL) -> Number:
+    ln = ll.pop()
+    assert ln.lexeme.variant is LexemeVariant.NUMBER
+    numTxt = ln.lexeme.text
+    try:
+        if len(numTxt) >= 2 and numTxt[1] == 'x':
+            value = int(numTxt, 16)
+        else:
+            value = int(numTxt)
+    except ValueError as e:
+        return updateError(e, ln)
+    return Number(value)
+
+
+# TODO parseEscStr(ll: LexmeLL) -> EscStr:
+def parseRawStr(ll: LexmeLL) -> RawStr:
+    ln = ll.pop()
+    assert ln.lexeme.variant is LexemeVariant.RAW_STR
+    return RawStr(ln.lexeme.text[1:-1])
+
+
+@dataclass.dataclass
+class ParsePtr:
+    ptr = None
+
+
+# Mutable globals that will be defined later. Callers will use i.e.
+# parseStmt.ptr(ll) to call them.
+parseStmt = ParsePtr()
+parseExpr = ParsePtr()
+parseTy = ParsePtr()
+parseName = ParsePtr()
+parseMacro2 = ParsePtr()
+
+
+def parseLabel(ll: LexemeLL) -> Label:
+    assert ll.pop().lexeme is LABEL
+    ln = ll.pop()
+
+    if ln.lexeme.variant is not LexemeVariant.IDEN:
+        return updateError("Expected IDEN after '#' for label", ln)
+
+    return Label(ln.text)
