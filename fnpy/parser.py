@@ -31,8 +31,8 @@ class LexemeVariant(enum.Enum):
     RAW_STR = enum.auto() # "
 
     # Symbol Operators (Grammar Order)
-    SINGLE_MACRO = enum.auto() # !
-    DOUBLE_MACRO = enum.auto() # !!
+    MACRO1 = enum.auto() # !
+    MACRO2 = enum.auto() # !!
     MINUS = enum.auto() # -
     REF = enum.auto() # &
     DEREF = enum.auto() # @
@@ -102,8 +102,8 @@ class Lexeme:
 
 EOF = Lexeme(LexemeVariant.EOF)
 
-SINGLE_MACRO = Lexeme(LexemeVariant.SINGLE_MACRO)
-DOUBLE_MACRO = Lexeme(LexemeVariant.DOUBLE_MACRO)
+MACRO1 = Lexeme(LexemeVariant.MACRO1)
+MACRO2 = Lexeme(LexemeVariant.MACRO2)
 MINUS = Lexeme(LexemeVariant.MINUS)
 REF = Lexeme(LexemeVariant.REF)
 DEREF = Lexeme(LexemeVariant.DEREF)
@@ -248,7 +248,7 @@ class Scanner(object):
         self.filePos -= 1
         self.column = self.lastColumn
         self.lastColumn = self.LAST_COL_SENTINEL
-        if self.buffer[self.bufIndex] == ord(b'\n'):
+        if self.buffer[self.bufIndex] == ord('\n'):
             self.line -= 1
 
 
@@ -271,15 +271,19 @@ class Lexer(object):
         if c == 0:
             return EOF
 
-        elif c == ord(b'/'):
+        elif c == ord('/'):
             c = sc.nextByte()
-            if c == ord(b'/'): # LINE_COMMENT
-                out = bytearray()
-                while c != 0 and c != ord(b'\n'):
+            if c == ord('/'): # LINE_COMMENT
+                out = bytearray(b'/')
+                while True:
+                    if c == 0: break
+                    if c == ord('\n'):
+                        sc.backByte()
+                        break
                     out.append(c)
                     c = sc.nextByte()
                 return Lexeme(LexemeVariant.LINE_COMMENT, out)
-            elif c == ord(b'*'): # BLOCK_COMMENT
+            elif c == ord('*'): # BLOCK_COMMENT
                 out = bytearray(b'/*')
                 lastWasStar = False
                 while True:
@@ -295,7 +299,7 @@ class Lexer(object):
             else:
                 return DIVIDE
 
-        elif c == ord(b'"'):
+        elif c == ord('"'):
             out = bytearray()
             c = sc.nextByte()
             while True:
@@ -307,22 +311,22 @@ class Lexer(object):
                 c = sc.nextByte()
             return Lexeme(LexemeVariant.RAW_STR, out)
 
-        elif c == ord(b'!'):
+        elif c == ord('!'):
             c = sc.nextByte()
             if c == ord('='):
                 return NE
-            elif c == ord(b'!'):
-                return DOUBLE_MACRO
+            elif c == ord('!'):
+                return MACRO2
             sc.backByte()
-            return SINGLE_MACRO
+            return MACRO1
 
-        elif c == ord(b'-'):
+        elif c == ord('-'):
             c = sc.nextByte()
-            if c == ord(b'>'):
+            if c == ord('>'):
                 return ARROW
             return MINUS
 
-        elif c == ord(b'>'):
+        elif c == ord('>'):
             c = sc.nextByte()
             if c == ord('='):
                 return GE
@@ -343,20 +347,20 @@ class Lexer(object):
             sc.backByte()
             return COLON
 
-        elif c == ord(b'\\'): # Escape, must be \"
+        elif c == ord('\\'): # Escape, must be \"
             out = bytearray([c])
             c = sc.nextByte()
             out.append(c)
-            if c != ord(b'"'):
+            if c != ord('"'):
                 return Lexeme(LexemeVariant.INVALID, out)
 
             while True:
                 c = sc.nextByte()
                 out.append(c)
-                if c == ord(b'\\'):
+                if c == ord('\\'):
                     c = sc.nextByte()
                     out.append(c)
-                    if c == ord(b'"'):
+                    if c == ord('"'):
                         break
 
             return Lexeme(LexemeVariant.ESC_STR, out)
@@ -383,22 +387,22 @@ class Lexer(object):
                 sc.backByte()
                 return Lexeme(LexemeVariant.NUMBER, out)
 
-        elif c == ord(b'&'): return REF
-        elif c == ord(b'@'): return DEREF
-        elif c == ord(b'$'): return CALL
-        elif c == ord(b'+'): return PLUS
-        elif c == ord(b'*'): return MULTIPLY
+        elif c == ord('&'): return REF
+        elif c == ord('@'): return DEREF
+        elif c == ord('$'): return CALL
+        elif c == ord('+'): return PLUS
+        elif c == ord('*'): return MULTIPLY
 
-        elif c == ord(b'.'): return DOT
-        elif c == ord(b'#'): return LOC
-        elif c == ord(b';'): return SEMICOLON
-        elif c == ord(b'='): return EQUAL
-        elif c == ord(b'('): return BLOCK_OPEN
-        elif c == ord(b')'): return BLOCK_CLOSE
-        elif c == ord(b'{'): return DATA_OPEN
-        elif c == ord(b'}'): return DATA_CLOSE
-        elif c == ord(b'['): return TYPE_OPEN
-        elif c == ord(b']'): return TYPE_CLOSE
+        elif c == ord('.'): return DOT
+        elif c == ord('#'): return LOC
+        elif c == ord(';'): return SEMICOLON
+        elif c == ord('='): return EQUAL
+        elif c == ord('('): return BLOCK_OPEN
+        elif c == ord(')'): return BLOCK_CLOSE
+        elif c == ord('{'): return DATA_OPEN
+        elif c == ord('}'): return DATA_CLOSE
+        elif c == ord('['): return TYPE_OPEN
+        elif c == ord(']'): return TYPE_CLOSE
         elif isSymbol(c): return Lexeme(LexemeVariant.INVALID, bytearray([c]))
 
         name = bytearray([c])
@@ -449,35 +453,38 @@ class Lexer(object):
     def getAllVariants(self) -> List[LexemeVariant]:
         return [t.variant for t in self.getAllLexemes()]
 
+def lineVariants(line: int, variants: List[LexemeVariant]):
+    return [(line, v) for v in variants]
+
 def testLexer():
-    tv = LexemeVariant
-    ts = Lexer(open("grammar/example.fn", 'rb', buffering=0))
+    lv = LexemeVariant
+    ts = Lexer(open("grammar/hello_world.fn", 'rb', buffering=0))
     result = ts.getAllLexemes()
     resultVariants = [l[1].variant for l in result]
+    resultLineVariants = [(l[0], l[1].variant) for l in result]
+    expectLineVariants = (
+        [(0, lv.LINE_COMMENT)]
+        # say: Str = "Hello " + "World";
+        + lineVariants(1, [
+            lv.IDEN, lv.COLON, lv.IDEN, lv.EQUAL, lv.RAW_STR,
+            lv.PLUS, lv.RAW_STR, lv.SEMICOLON])
+
+        # fn helloWorld: [] -> [] do (
+        + lineVariants(3, [
+            lv.FN, lv.IDEN, lv.COLON, lv.TYPE_OPEN, lv.TYPE_CLOSE,
+            lv.ARROW, lv.TYPE_OPEN, lv.TYPE_CLOSE, lv.DO, lv.BLOCK_OPEN])
+
+        # println! say
+        + lineVariants(4, [lv.IDEN, lv.MACRO1, lv.IDEN])
+
+        # );
+        + lineVariants(5, [lv.BLOCK_CLOSE, lv.SEMICOLON])
+        + [(6, lv.EOF)]
+    )
 
     pprint.pprint(result)
-    assert tv.INVALID not in resultVariants
-
-    # expected = [
-    #     # # let HELLO: &Str = \"Hello world!\";
-    #     # tv.LET, tv.IDEN, tv.COLON, tv.REF, tv.IDEN,
-    #     # # = \"Hello world!\"; 
-    #     # tv.EQUAL, tv.ESC_STR, tv.SEMICOLON,
-    #     # # fn main:
-    #     # tv.FN, tv.IDEN, tv.COLON, 
-    #     # #  [] -> []
-    #     # tv.TYPE_OPEN, tv.TYPE_CLOSE, tv.ARROW, tv.TYPE_OPEN, tv.TYPE_CLOSE,
-    #     # # ( fdWriteString {
-    #     # tv.BLOCK_OPEN, tv.IDEN, tv.DATA_OPEN,
-    #     # # fd = 1; // stdout
-    #     # tv.IDEN, tv.EQUAL, tv.NUMBER, tv.SEMICOLON, tv.LINE_COMMENT,
-    #     # # str = HELLO;
-    #     # tv.IDEN, tv.EQUAL, tv.IDEN, tv.SEMICOLON,
-    #     # # }; )
-    #     # tv.DATA_CLOSE, tv.SEMICOLON, tv.BLOCK_CLOSE,
-    #     # tv.EOF,
-    # ]
-    # assert expected == result
+    assert lv.INVALID not in resultVariants
+    assert expectLineVariants == resultLineVariants
 
 
 if __name__ == '__main__':

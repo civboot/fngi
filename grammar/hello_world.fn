@@ -1,0 +1,6 @@
+// A slightly long hello world
+say: Str = "Hello " + "World";
+
+fn helloWorld: [] -> [] do (
+  println! say
+);

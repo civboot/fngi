@@ -127,7 +127,6 @@ fn useVar: [] -> U32 do (
 );
 
 fn helloWorld: [] -> [] do (
-  // println! "Hello World";
   println! ("Hello " + "World");
 );
 
