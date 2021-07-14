@@ -767,6 +767,15 @@ def test_parseLabel_bad():
     assert None == result
     assertAndCleanError(LABEL_ERR)
 
+# def parseCall(ll: LexemeLL) -> ASTNode:
+#     callOperations = [parseUnary(ll)]
+# 
+#     while ll.peek() is CALL:
+#         callOperations.append(parseUnary(ll))
+# 
+#     return Binary(callOperations, CALL)
+
+
 # Grammar: multiExpr = expr (SC expr)* SC?
 # Note: we add on a bit here with endLexeme
 def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
@@ -775,7 +784,7 @@ def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
     while True:
         if ll.peek().lexeme is endLexeme:
             ll.pop()
-            return lastSemiColon, labelStmts
+            return out
 
         expr = parseExpr.ptr(ll)
         if expr is None:
@@ -791,7 +800,7 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
     while True:
         if ll.peek().lexeme is endLexeme:
             ll.pop()
-            return lastSemiColon, labelStmts
+            return lastSemiColon, out
 
         label = None
         if ll.peek().lexeme is LABEL:
@@ -809,3 +818,36 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
         if lastSemiColon:
             ll.pop()
             lastSemiColon = True
+
+def parsePrimary(ll: LexemeLL) -> ASTNode:
+    if ll.peek().lexeme.variant is LV.NUMBER:
+        return parseNumber(ll)
+    # TODO: ESC_STR
+    elif ll.peek().lexeme.variant is LV.RAW_STR:
+        return parseRawStr(ll)
+    elif (
+            (ll.peek().lexeme is DATA_OPEN and ll.peek(1).lexeme is DATA_CLOSED)
+            or (ll.peek().lexeme is BLOCK_OPEN and ll.peek(1).lexeme is BLOCK_CLOSED)
+        ):
+        ll.pop(); ll.pop()
+        return Empty
+    else:
+        raise NotImplementedError(ll.peek())
+
+def parseFile(ll: LexemeLL) -> List[LabelStmt]:
+    out = parseMultiLabelStmt(ll, EOF)
+    if not out:
+        return None
+    return out[1]
+
+def _parseExpr(ll: LexemeLL) -> ASTNode:
+    return parsePrimary(ll)
+
+# Grammar: stmt = (flow / decl / expr)
+def _parseStmt(ll: LexemeLL) -> ASTNode:
+    return parseExpr.ptr(ll)
+
+parseExpr.ptr = _parseExpr
+parseStmt.ptr = _parseStmt
+
+

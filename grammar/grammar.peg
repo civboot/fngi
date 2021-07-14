@@ -1,4 +1,4 @@
-file = (stmt SC)* w?
+file = multiLabelStmt w?
 
 # Lexemes
 w = (whitespace / lineComment / blockComment)+

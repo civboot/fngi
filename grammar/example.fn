@@ -173,7 +173,7 @@ gen!(
 fn nestedLabels: [] -> U32 do (
   #first
   v: U32 = while x: U32 do (
-    #second while y do (
+  #second while y do (
       x := x + 3;
       if x == y do cont #first
       elif x == 42 do break #first 442;
