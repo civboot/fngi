@@ -848,6 +848,26 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
             ll.pop()
             lastSemiColon = True
 
+# Grammar: file = multiLabelStmt w?
+def parseFile(ll: LexemeLL) -> List[LabelStmt]:
+    out = parseMultiLabelStmt(ll, EOF)
+    if not out:
+        return None
+    return out[1]
+
+###################
+# Note for readers following along:
+# During development I am building up the complexity of the parseLabel, parseExpr, etc
+# "pointer" parsers. While I am doing so I am testing the new parsers I have added.
+# Each of these tests represents additional built-up complexity in our
+# recursive descent parser.
+
+def testParseNumbers():
+    ll = FakeLexemeLL(b'42; 33; 009')
+    stmts = parseFile(ll)
+    assert [42, 33, 9] == unrollAST(stmts)
+
+
 def parsePrimary(ll: LexemeLL) -> ASTNode:
     if ll.peek().lexeme.variant is LV.NUMBER:
         return parseNumber(ll)
@@ -862,12 +882,6 @@ def parsePrimary(ll: LexemeLL) -> ASTNode:
         return Empty
     else:
         raise NotImplementedError(ll.peek())
-
-def parseFile(ll: LexemeLL) -> List[LabelStmt]:
-    out = parseMultiLabelStmt(ll, EOF)
-    if not out:
-        return None
-    return out[1]
 
 def _parseExpr(ll: LexemeLL) -> ASTNode:
     return parsePrimary(ll)
