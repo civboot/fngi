@@ -708,6 +708,35 @@ class LabelStmt(ASTNode):
 class Block(ASTNode):
     stmts: List[LabelStmt]
 
+
+# Test Helpers
+def unwrapAST(ast: ASTNode) -> List[any]:
+    """Takes a single node and "unwrapps" it into a list of comparable data types
+    that we can easily write assertions for.
+    """
+    out = []
+    if isinstance(ast, Number):
+        return [ast.value]
+    elif isinstance(ast, PrimaryBytes):
+        return [b'{}::{}'.format(ast.variant.variant.name, ast.value)]
+    elif isinstance(ast, LabelStmt):
+        if ast.label:
+            out.append(b'#' + ast.label)
+        out.extend(unwrapAST(ast.stmt))
+        return out
+
+
+def unrollAST(asts: List[ASTNode]) -> List[ASTNode]:
+    """Takes a list of nodes and "unrolls" them into a flat list that can be
+    more easily asserted against.
+    """
+    out = []
+    for a in asts:
+        out.extend(unwrapAST(a))
+    return out
+
+
+
 ################################
 # Parser
 # The parser is mostly a recursive descent parser. We implement the "least
