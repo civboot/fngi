@@ -879,6 +879,10 @@ def testParseNumbersBlock():
     stmts = parseFile(ll)
     assert ['(', 42, 33, ';)', 0] == unrollAST(stmts)
 
+    ll = FakeLexemeLL(b' (1; 2) 3')
+    stmts = parseFile(ll)
+    assert ['(', 1, 2, ')', 3] == unrollAST(stmts)
+
 
 def parsePrimary(ll: LexemeLL) -> ASTNode:
     peek = ll.peek()
