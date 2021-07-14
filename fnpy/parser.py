@@ -7,6 +7,8 @@
 # First we are going to build the parser, which is fairly self-explanatory. We
 # parse and emit lexemes (sometimes also called tokens).
 
+from pdb import set_trace as debug
+
 import copy
 import enum
 import os
@@ -566,16 +568,16 @@ class LexemeLL(object):
                 raise IndexError(node)
             self.pop()
 
-    def peek(self, node = None, index: int = 0) -> LexemeNode:
+    def peek(self, index: int = 0, fromNode=None) -> LexemeNode:
         """Peek at the Lexeme Node at index relative to node
 
         If node is None, it is relative to root.
         """
-        if node is None:
+        if fromNode is None:
             if self.root is None and not self.gotEof:
                 self._populateNext()
-            node = self.root
-        prev = node
+            fromNode = self.root
+        prev = fromNode
         ln = prev
         while index > 0:
             ln = prev.next
@@ -707,32 +709,37 @@ class LabelStmt(ASTNode):
 @dataclass
 class Block(ASTNode):
     stmts: List[LabelStmt]
+    lastSemicolon: bool
 
 
 # Test Helpers
-def unwrapAST(ast: ASTNode) -> List[any]:
-    """Takes a single node and "unwrapps" it into a list of comparable data types
-    that we can easily write assertions for.
-    """
-    out = []
+def unwrapAST(ast: ASTNode, out=None) -> List[any]:
+    """Takes a single node and "unwrapps" it into a list of values that we can
+    easily write assertions for.  """
+    if out is None:
+        out = []
     if isinstance(ast, Number):
-        return [ast.value]
+        out.append(ast.value)
     elif isinstance(ast, PrimaryBytes):
-        return [b'{}::{}'.format(ast.variant.variant.name, ast.value)]
+        out.append('{}::{}'.format(ast.variant.variant.name, ast.value))
     elif isinstance(ast, LabelStmt):
         if ast.label:
-            out.append(b'#' + ast.label)
-        out.extend(unwrapAST(ast.stmt))
-        return out
+            out.append('#' + str(ast.label))
+        unwrapAST(ast.stmt, out=out)
+    elif isinstance(ast, Block):
+        out.append('(')
+        unrollAST(ast.stmts, out=out)
+        out.append((';' if ast.lastSemicolon else '') + ')')
+    return out
 
-
-def unrollAST(asts: List[ASTNode]) -> List[ASTNode]:
+def unrollAST(asts: List[ASTNode], out=None) -> List[ASTNode]:
     """Takes a list of nodes and "unrolls" them into a flat list that can be
     more easily asserted against.
     """
-    out = []
+    if out is None:
+        out = []
     for a in asts:
-        out.extend(unwrapAST(a))
+        unwrapAST(a, out=out)
     return out
 
 
@@ -825,11 +832,11 @@ def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
 def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStmt]):
     """Parse the label statements and consume the endLexeme."""
     out = []
-    lastSemiColon = False
+    lastSemicolon = False
     while True:
         if ll.peek().lexeme is endLexeme:
             ll.pop()
-            return lastSemiColon, out
+            return lastSemicolon, out
 
         label = None
         if ll.peek().lexeme is LABEL:
@@ -843,10 +850,10 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
         labelStmt = LabelStmt(label, stmt)
         out.append(labelStmt)
 
-        lastSemiColon = ll.peek().lexeme is SEMICOLON
-        if lastSemiColon:
+        lastSemicolon = ll.peek().lexeme is SEMICOLON
+        if lastSemicolon:
             ll.pop()
-            lastSemiColon = True
+            lastSemicolon = True
 
 # Grammar: file = multiLabelStmt w?
 def parseFile(ll: LexemeLL) -> List[LabelStmt]:
@@ -867,21 +874,31 @@ def testParseNumbers():
     stmts = parseFile(ll)
     assert [42, 33, 9] == unrollAST(stmts)
 
+def testParseNumbersBlock():
+    ll = FakeLexemeLL(b' ( 42; 33;) 0')
+    stmts = parseFile(ll)
+    assert ['(', 42, 33, ';)', 0] == unrollAST(stmts)
+
 
 def parsePrimary(ll: LexemeLL) -> ASTNode:
-    if ll.peek().lexeme.variant is LV.NUMBER:
+    peek = ll.peek()
+    if peek.lexeme.variant is LV.NUMBER:
         return parseNumber(ll)
     # TODO: ESC_STR
-    elif ll.peek().lexeme.variant is LV.RAW_STR:
+    elif peek.lexeme.variant is LV.RAW_STR:
         return parseRawStr(ll)
-    elif (
-            (ll.peek().lexeme is DATA_OPEN and ll.peek(1).lexeme is DATA_CLOSED)
-            or (ll.peek().lexeme is BLOCK_OPEN and ll.peek(1).lexeme is BLOCK_CLOSED)
+    elif ( # empty / emptyBlock
+            (peek.lexeme is DATA_OPEN and ll.peek(1).lexeme is DATA_CLOSE)
+            or (peek.lexeme is BLOCK_OPEN and ll.peek(1).lexeme is BLOCK_CLOSE)
         ):
         ll.pop(); ll.pop()
         return Empty
+    elif peek.lexeme is BLOCK_OPEN:
+        ll.pop()
+        lastSemicolon, stmts = parseMultiLabelStmt(ll, BLOCK_CLOSE)
+        return Block(stmts, lastSemicolon)
     else:
-        raise NotImplementedError(ll.peek())
+        raise NotImplementedError(peek)
 
 def _parseExpr(ll: LexemeLL) -> ASTNode:
     return parsePrimary(ll)
