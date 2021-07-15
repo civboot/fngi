@@ -86,8 +86,9 @@ enum ExampleEnum: [
 ];
 
 // Example simple use.
-fn is3: [v: MaybeIntOrStr] -> Bool do (
-  switch v
+fn is3: MaybeIntOrStr -> Bool do (
+  // `inp` is a keyword for the "input value".
+  switch inp
   case none do false;
   case int  do int == 3;
   case str  do false;
