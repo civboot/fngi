@@ -41,7 +41,7 @@ type u32Consumer: &fn [] -> [U32];
 
 
 // Builtin array type: a continuous region of memory with known size
-type array_len16_U32: arr[16 U32]
+type array_len16_U32: arr[16 U32];
 
 // Builtin stack type: for interfacing with core data stack instructions
 // (fngi's intermediate representation is a stack machine)
@@ -52,54 +52,44 @@ type stack_example: stk[U32; U16; U8; U64];
 
 // A slice is a pointer to an array of data with a constant length
 // with a maximum value of max!U16.
-gen![T] // generic
-struct Slice: [
-  _al: U16; // align
-  len: U16;
-  ptr: Ptr;
-]
+gen!![T] // generic
+( 
+  struct Slice: [
+    _al: U16; // align
+    len: U16;
+    ptr: Ptr;
+  ];
 
-// Here are how a slice might be implemented
-gen![T]
-impl Slice: [
-  fn slotSize: [] -> [U32] ( sizeOf!T );
+  // Implementing methods
+  fn Slice.slotSize: [] -> stk[U32] do sizeOf! T;
+
 
   // Of course, some of this can be inlined -- and is through constant folding.
-  fn get: stk[/*sliceRef*/ &Slice[T], /*index*/ U32] -> stk[T] (
-    refToPtr[]; // {slicePtr, index}
-    swap[]; // {index, slicePtr}
-    sizePo2Of! T; // {sizePo2T, index, slicePtr}
-    shiftLeft[]; // (same as index^po2) {byteOffset, slicePtr}
-    addU32[]; // valuePtr
-    fetchU32[];
-  )
-]
+  fn Slice.get: stk[/*sliceRef*/ &Slice[T], /*index*/ U32] -> stk[T] do (
+    // ... implementation
+  );
+);
 
-// using enums
-fn createU32SliceRaw: [ptr: Ptr, len: U16] -> Slice {
-  // Note: unlike most C-like languages do not have to specify the type of the
-  // struct -- type is known because this is the result of the expression.
-  {
+// Structs are instantiated using `{}` and are themselves an expression.
+fn createU32SliceRaw: [ptr: Ptr; len: U16] -> Slice do {
     _al = 0;
     len = len;
     ptr = ptr;
-  }
-}
+};
 
 // Enums can contain values.
 enum ExampleEnum: [
   none: []; // void i.e. no value
   int: I32;
   str: Str;
-  both: [int: I32, str: Str];
-]
+  both: [int: I32; str: Str];
+];
 
 // Example simple use.
-fn is3: [v: MaybeIntOrStr] -> Bool (
-  switch v (
-    case none then false;
-    case int then int == 3;
-    case str then false;
-    case both then both.int == 3;
-  )
-)
+fn is3: [v: MaybeIntOrStr] -> Bool do (
+  switch v
+  case none do false;
+  case int  do int == 3;
+  case str  do false;
+  case both do both.int == 3;
+);
