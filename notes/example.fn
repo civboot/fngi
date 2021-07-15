@@ -1,67 +1,54 @@
-// Note: not all of this is in the stage0 compiler. The stage0 compiler will only support:
-// - comments
-// - native types, refs, stacks, structs, enums and arrays
-// - fn which take in and return unnamed stk types
-// - local or global native types, structs and enums.
-// - temporaries must be declared explicitly.
-// - macros
-
 // Simplest function, simply returns 3.
-// Note: [] is the "void" type, this function takes no parameters.
-let return3: $[] -> U32 = ( 3 );
+// Note: [] is the "Void" type, this function takes no parameters.
+fn return3: [] -> U32 do 3;
 
 // Simple function with named input `v`
-// And a function call to return3
-let plus3: $[v: U32] -> U32 = ( v + $return3[] );
-
-// Equivalent:
-// $plus3 ($plus3 ($plus3 2))
-// $plus3 $plus3 $plus3 2
+// - `$` is the function call operators. It's like `+` but when the left hand
+//   side is a function instead of an int.
+// - `{}` is "empty", i.e. no value. The only value that Void (`[]`) can be.
+fn plus3: [v: U32] -> U32 do ( v + return3${} );
 
 // Simple function with assignments
-let plus3Times5: $[v:U32] -> U32 = (
-  let a: U32 = $plus3 v;
+fn plus3Times5: [v:U32] -> U32 do (
+  let a: U32 = plus3$ v;
   a * 5
 )
 
-// Simple function with conditional
-fn eqauls5: [v: U32] -> Bool (
-  if (v == 5) then true else false
-)
+// Simple function with ifEldo conditional
+fn eqauls5: [v: U32] -> Bool do (
+  if v == 5 do true eldo false
+);
 
 // Simple function with some control logic
-fn mulUsingAdd: [a: U32, b: U32] -> U64 (
+fn mulUsingAdd: [a: U32; b: U32] -> U64 do (
   local out: U64;
-  if b == 0 then return 0;
+  if b == 0 do return 0;
 
   out = 0;
-  while a > 0 (
+  while a > 0 do (
     out = out + b;
   )
   out
 )
 
-// A reference and dereferencing
-fn deref [ref: &U32] -> U32 (
-  @ref // @ is for dereferencing "get value at"
-)
-
+// & is a reference, @ dereferences.
+fn derefU32: [ref: &U32] -> U32 do @ref
 
 // Type aliasing
 type UserId: U32;
-type u32Adder: &fn [U32, U32] -> [U32];
+type u32Adder: &fn [U32; U32] -> [U32]; // function reference
 type u32Consumer: &fn [] -> [U32];
 
 
 // Builtin array type: a continuous region of memory with known size
-type array_len16_U32: arr[16; U32]
+type array_len16_U32: arr[16 U32]
 
 // Builtin stack type: for interfacing with core data stack instructions
 // (fngi's intermediate representation is a stack machine)
 //
 // The "top" (first item to be popped) of the stack is on the left. Since
 // stacks grow down, this is the lowest location in memory.
-type stack_example: stk[U32, U16, U8, U64];
+type stack_example: stk[U32; U16; U8; U64];
 
 // A slice is a pointer to an array of data with a constant length
 // with a maximum value of max!U16.

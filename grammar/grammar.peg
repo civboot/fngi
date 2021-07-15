@@ -94,7 +94,7 @@ decl = declStruct / declEnum / declImpl / declFn /declVar
 declStruct = w? STRUCT name C w? structBlock
 declEnum = w? ENUM name C w? structBlock
 declImpl = w? IMPL name C ty w? block
-declFn = w? FN w? name C ty w? DO expr # lint: must be fnTy
+declFn = w? FN w? name C w? fnTyRaw w? DO expr # lint: must be fnTy
 declVar = w? IDEN C ty (w? "=" expr)?
 
 
@@ -109,9 +109,10 @@ nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 
 
 # Ty Recursive Descent
-primaryTy = w? ( void / structBlock / stkBlock / arrBlock / macro2 )
-fnTy = primaryTy (w? "->" primaryTy)?
-ty = (w? "&")* fnTy
+fnTyRaw = ty w? "->" ty
+fnTy = FN fnTyRaw
+primaryTy = w? ( void / fnTy / structBlock / stkBlock / arrBlock / macro2 )
+ty = (w? "&")* primaryTy
 
 
 # Flow Control
