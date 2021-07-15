@@ -94,13 +94,13 @@ while x <= 7: U32 do (
 x: U32 = 42;
 
 world: Str = "World \n";
-myFn: fn U32 -> U32 = bob;
+myFn: U32 -> U32 = bob;
+THE_ANSWER: const U32 = 42;
 
-fn returnEmpty: [] -> [] do {};
-fn return3: [] -> U32 do 3;
-
+fn returnEmpty: const [] -> [] do {};
+fn return3: const [] -> U32 do 3;
 fn plus3: U32 -> U32 do (
-  inp + 3  // inp is reserved name, means "input"
+  inp + 3
 );
 
 x: U32 = 7;

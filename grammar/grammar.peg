@@ -9,6 +9,8 @@ blockComment = ~"/\\*.*?\\*/"s  # /* a block comment */
 SC = w? ";" # semi-colon
 C = w? ":" # colon
 
+CONST = "const"
+MUT = "mut"
 FN = "fn"
 DO = "do"
 STRUCT = "struct"
@@ -46,7 +48,7 @@ RAW_STR = ~'"[^"]"'s           #  "this is a raw string"
 _numeric = ~"[0-9]"    # note: ~"..." is a regex
 _hex = ~"[0-9A-F]"i
 _alpha  = ~"[A-Z]"i    # note: i means "ignore case"
-_alphanumeric = ~"[0-9A-Z]"i
+_alphanumeric = ~"[_0-9A-Z]"i
 
 
 # High Level: will be defined as fn ptrs. Everything else can be defined
@@ -94,8 +96,8 @@ decl = declStruct / declEnum / declImpl / declFn /declVar
 declStruct = w? STRUCT name C w? structBlock
 declEnum = w? ENUM name C w? structBlock
 declImpl = w? IMPL name C ty w? block
-declFn = w? FN w? name C w? fnTyRaw w? DO expr # lint: must be fnTy
-declVar = w? IDEN C ty (w? "=" expr)?
+declFn = w? FN name C (w? CONST)? ty w? DO expr # lint: must be fnTy
+declVar = w? IDEN C (w? CONST)? ty (w? "=" expr)?
 
 
 # Type Blocks
@@ -109,11 +111,9 @@ nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 
 
 # Ty Recursive Descent
-fnTyRaw = ty w? "->" ty
-fnTy = FN fnTyRaw
-primaryTy = w? ( void / fnTy / structBlock / stkBlock / arrBlock / macro2 )
-ty = (w? "&")* primaryTy
-
+primaryTy = w? ( void / structBlock / stkBlock / arrBlock / macro2 )
+fnTy = primaryTy (w? "->" primaryTy)?
+ty = (w? ("&" / MUT))* fnTy
 
 # Flow Control
 flow = w? (cont / break / return)
