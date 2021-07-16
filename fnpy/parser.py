@@ -17,6 +17,9 @@ import pprint
 
 from dataclasses import dataclass
 from typing import List
+from typing import Dict
+
+from .types import Env
 
 MISSING_SEMICOLON_ERR = "Expected ';'"
 
@@ -681,10 +684,17 @@ def testError():
     assert PARSE_ERROR.ptr is None
     assertAndCleanError()
 
-
 class ASTNode(object):
     """The base AST node type."""
-    pass
+
+@dataclass
+class ParserState:
+    env: Env
+    # whether we are in a function or not
+    inFn: bool = False
+    # whether the fn we are in is const
+    fnIsConst: bool = False
+    localVars: Dict[str, ASTNode] = None
 
 @dataclass
 class Number(ASTNode):
@@ -719,11 +729,6 @@ class NameBlockUnit(ASTNode):
     ref: bool
     deref: bool
     name: "Name"
-
-@dataclass
-class Name(ASTNode):
-    iden: bytes
-    block: List[NameBlockUnit]
 
 
 # Test Helpers
@@ -826,7 +831,7 @@ def test_parseLabel_bad():
 
 # Grammar: multiExpr = expr (SC expr)* SC?
 # Note: we add on a bit here with endLexeme
-def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
+def parseMultiExpr(state: ParserState, ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
     """Parse the label statements and consume the endLexeme."""
     out = []
     while True:
@@ -834,14 +839,16 @@ def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
             ll.pop()
             return out
 
-        expr = parseExpr.ptr(ll)
+        expr = parseExpr.ptr(state, ll)
         if expr is None:
             return None
         out.append(expr)
 
 
 # Grammar: multiLabelStmt = label? stmt (SC label? stmt)* SC?
-def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStmt]):
+def parseMultiLabelStmt(
+        state: ParserState, ll: LexemeLL, endLexeme: Lexeme
+        ) -> (bool, List[LabelStmt]):
     """Parse the label statements and consume the endLexeme."""
     out = []
     while True:
@@ -851,15 +858,14 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
             if label is None:
                 return None
 
-        stmt = parseStmt.ptr(ll)
+        stmt = parseStmt.ptr(state, ll)
         if stmt is None:
             return None
         labelStmt = LabelStmt(label, stmt)
         out.append(labelStmt)
 
         lastSemicolon = ll.peek().lexeme is SEMICOLON
-        if lastSemicolon:
-            ll.pop()
+        if lastSemicolon: ll.pop()
 
         if ll.peek().lexeme is endLexeme:
             ll.pop()
@@ -869,8 +875,9 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
 
 
 # Grammar: file = multiLabelStmt w?
-def parseFile(ll: LexemeLL) -> List[LabelStmt]:
-    out = parseMultiLabelStmt(ll, EOF)
+def parseFile(env: Env, ll: LexemeLL) -> List[LabelStmt]:
+    state = ParserState(env)
+    out = parseMultiLabelStmt(state, ll, EOF)
     if not out:
         return None
     return out[1]
@@ -884,18 +891,18 @@ def parseFile(ll: LexemeLL) -> List[LabelStmt]:
 
 def testParseNumbers():
     ll = FakeLexemeLL(b'42; 33; 009')
-    stmts = parseFile(ll)
+    stmts = parseFile(None, ll)
     assert [42, 33, 9] == unrollAST(stmts)
     assertAndCleanError()
 
 def testParseNumbersBlock():
     ll = FakeLexemeLL(b' ( 42; 33;); 0')
-    stmts = parseFile(ll)
+    stmts = parseFile(None, ll)
     assert ['(', 42, 33, ';)', 0] == unrollAST(stmts)
     assertAndCleanError()
 
     ll = FakeLexemeLL(b' (1; 2); 3')
-    stmts = parseFile(ll)
+    stmts = parseFile(None, ll)
     assert ['(', 1, 2, ')', 3] == unrollAST(stmts)
     assertAndCleanError()
 
@@ -911,7 +918,7 @@ def parseIden(ll: LexemeLL) -> PrimaryBytes:
     return PrimaryBytes(LV.IDEN, ln.lexeme.text)
 
 
-def parsePrimary(ll: LexemeLL) -> ASTNode:
+def parsePrimary(state: ParserState, ll: LexemeLL) -> ASTNode:
     peek = ll.peek()
     if peek.lexeme.variant is LV.NUMBER:
         return parseNumber(ll)
@@ -926,7 +933,7 @@ def parsePrimary(ll: LexemeLL) -> ASTNode:
         return Empty
     elif peek.lexeme is BLOCK_OPEN:
         ll.pop()
-        lastSemicolon, stmts = parseMultiLabelStmt(ll, BLOCK_CLOSE)
+        lastSemicolon, stmts = parseMultiLabelStmt(state, ll, BLOCK_CLOSE)
         return Block(stmts, lastSemicolon)
     # TODO: stk
     # TODO: arr
@@ -942,7 +949,7 @@ def parsePrimary(ll: LexemeLL) -> ASTNode:
 ##
 # Non Primary Expressions
 
-def parseNameBlockUnit(ll: LexemeLL) -> ASTNode:
+def parseNameBlockUnit(state: ParserState, ll: LexemeLL) -> ASTNode:
     number = None
     if ll.peek().lexeme.variant is LV.NUMBER:
         number = parseNumber(ll).value
@@ -950,16 +957,16 @@ def parseNameBlockUnit(ll: LexemeLL) -> ASTNode:
     if ll.peek().lexeme is REF:
         ll.pop(); ref = True
 
-    parseMacro2.ptr(ll)
+    parseMacro2.ptr(state, ll)
 
 
-def parseNameBlock(ll: LexemeLL) -> ASTNode:
+def parseNameBlock(state: ParserState, ll: LexemeLL) -> ASTNode:
     assert ll.pop().lexeme is TYPE_OPEN
 
     out = []
     while True:
-        macro2 = parseMacro2.ptr(ll)
-        if name is None:
+        macro2 = parseMacro2.ptr(state, ll)
+        if macro2 is None:
             return None
 
         name = macro2 # TODO: execute if macro2
@@ -973,15 +980,16 @@ def parseNameBlock(ll: LexemeLL) -> ASTNode:
         out.append(name)
 
         lastSemicolon = ll.peek().lexeme is SEMICOLON
-        if lastSemicolon:
-            ll.pop()
+        if lastSemicolon: ll.pop()
 
         if ll.peek().lexeme is TYPE_CLOSE:
-            ll.pop()
-            return out
+            ll.pop(); return out
         elif not lastSemicolon:
             updateError(MISSING_SEMICOLON_ERR, ll.peek())
 
+
+def parseName(state: ParserState, ll: LexemeLL) -> PrimaryBytes:
+    pass # parse name convert to bytes
 
 # def parseCall(ll: LexemeLL) -> ASTNode:
 #     callOperations = [parseUnary(ll)]
@@ -992,12 +1000,12 @@ def parseNameBlock(ll: LexemeLL) -> ASTNode:
 #     return Binary(callOperations, CALL)
 
 
-def _parseExpr(ll: LexemeLL) -> ASTNode:
-    return parsePrimary(ll)
+def _parseExpr(state: ParserState, ll: LexemeLL) -> ASTNode:
+    return parsePrimary(state, ll)
 
 # Grammar: stmt = (flow / decl / expr)
-def _parseStmt(ll: LexemeLL) -> ASTNode:
-    return parseExpr.ptr(ll)
+def _parseStmt(state: ParserState, ll: LexemeLL) -> ASTNode:
+    return parseExpr.ptr(state, ll)
 
 parseExpr.ptr = _parseExpr
 parseStmt.ptr = _parseStmt
