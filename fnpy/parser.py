@@ -101,6 +101,15 @@ class LexemeVariant(enum.Enum):
 
 LV = LexemeVariant
 
+# A subset of back conversions for testing/debug
+_lvToStr = {
+    LV.MINUS: "-", LV.PLUS: "+",
+    LV.REF: "&", LV.DEREF: "@",
+    LV.NOT: "not", LV.AND: "and", LV.OR: "or",
+    LV.BITNOT: "bitnot",
+    LV.EQ: "==", LV.NE: "!=", LV.SET: ":=",
+}
+
 
 @dataclass
 class Lexeme:
@@ -354,6 +363,7 @@ class Lexer(object):
             c = sc.nextByte()
             if c == ord('>'):
                 return ARROW
+            sc.backByte()
             return MINUS
 
         elif c == ord('>'):
@@ -497,10 +507,13 @@ def lineVariants(line: int, variants: List[LV]):
 
 
 def testLexer_basic():
-    expected = [(0, Lexeme(LV.NUMBER, b'42')), (0, EOF)]
-    result = FakeLexer(b'42').getAllLexemes()
+    expected = [
+        (0, MINUS), (0, BITNOT), (0, REF), (0, DEREF),
+        (0, Lexeme(LV.NUMBER, b'42')),
+        (0, EOF),
+    ]
+    result = FakeLexer(b'-bitnot&@ 42').getAllLexemes()
     assert expected == result
-
 
 def testLexer_helloWorld():
     lv = LV
@@ -690,7 +703,7 @@ def isConst(node: ASTNode) -> bool:
     if type(node) in {Empty, Number}:
         return True
     elif isinstance(node, PrimaryBytes):
-        return node.variant in {RAW_STR, ESC_STR}
+        return node.variant in {LV.RAW_STR, LV.ESC_STR}
     elif type(node) in {Name, LabelStmt, Block}:
         return node.isConst
 
@@ -747,6 +760,15 @@ class NameBlockUnit(ASTNode):
     deref: bool
     name: "Name"
 
+@dataclass
+class Unary(ASTNode):
+    node: ASTNode
+    operators: List[LV]
+
+def forceToStr(value: any):
+    if isinstance(value, str): return value
+    if type(value) in {bytes, bytearray}: return value.decode('utf-8')
+    return str(value)
 
 # Test Helpers
 def unwrapAST(ast: ASTNode, out=None) -> List[any]:
@@ -754,18 +776,23 @@ def unwrapAST(ast: ASTNode, out=None) -> List[any]:
     easily write assertions for.  """
     if out is None:
         out = []
-    if type(ast) in {Number, Name}:
+    if type(ast) == Number:
         out.append(ast.value)
+    elif type(ast) in {Name}:
+        out.append(forceToStr(ast.value))
     elif isinstance(ast, PrimaryBytes):
-        out.append('{}::{}'.format(ast.variant.variant.name, ast.value))
+        out.append('{}::{}'.format(ast.variant.name, forceToStr(ast.value)))
     elif isinstance(ast, LabelStmt):
         if ast.label:
-            out.append('#' + str(ast.label))
+            out.append('#' + forceToStr(ast.label))
         unwrapAST(ast.stmt, out=out)
     elif isinstance(ast, Block):
         out.append('(')
         unrollAST(ast.stmts, out=out)
         out.append((';' if ast.lastSemicolon else '') + ')')
+    elif isinstance(ast, Unary):
+        out.append(' '.join([_lvToStr[v] for v in ast.operators]))
+        unwrapAST(ast.node, out=out)
     return out
 
 def unrollAST(asts: List[ASTNode], out=None) -> List[ASTNode]:
@@ -935,7 +962,7 @@ def testParseNumbersBlock():
 def parseIden(ll: LexemeLL) -> PrimaryBytes:
     ln = ll.pop()
     assert ln.lexeme.variant is LV.IDEN
-    return PrimaryBytes(LV.IDEN, ln.lexeme.text)
+    return PrimaryBytes(LV.IDEN, bytes(ln.lexeme.text))
 
 
 def parsePrimary(state: ParserState, ll: LexemeLL) -> ASTNode:
@@ -1086,9 +1113,22 @@ def _parseMacro2(state: ParserState, ll: LexemeLL) -> ASTNode:
 # Grammar: unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
 def parseUnary(state: ParserState, ll: LexemeLL) -> ASTNode:
     operators = []
-    while ll.peek().lexeme in {BITNOT, NOT, MINUS, REF, DEREF}:
-        variant = ll.pop().lexeme.variant
-        operators.append(variant)
+    while ll.peek().lexeme.variant in {LV.BITNOT, LV.NOT, LV.MINUS, LV.REF, LV.DEREF}:
+        operators.append(ll.pop().lexeme.variant)
+
+    macro2 = parseMacro2.ptr(state, ll)
+    if macro2 is None: return
+
+    if isConst(macro2):
+        pass # TODO: pre-calculate unary.
+
+    return Unary(macro2, operators)
+
+def testParseUnary():
+    result = parseUnary(None, FakeLexemeLL(b'-bitnot&@ 42'))
+    assertAndCleanError()
+    assert unwrapAST(result) == ['- bitnot & @', 42]
+
 
 parseMacro2.ptr = _parseName
 parseExpr.ptr = _parseMacro2
