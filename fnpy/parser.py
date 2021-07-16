@@ -722,7 +722,7 @@ class NameBlockUnit(ASTNode):
 
 @dataclass
 class Name(ASTNode):
-    iden: Iden
+    iden: bytes
     block: List[NameBlockUnit]
 
 
@@ -796,6 +796,7 @@ def parseRawStr(ll: LexemeLL) -> PrimaryBytes:
 def testParseRawStr():
     result = parseRawStr(FakeLexemeLL(b'"foo bar"'))
     assert b'foo bar' == result.value
+    assertAndCleanError()
 
 
 # Grammar: label = w? "#" IDEN
@@ -814,6 +815,7 @@ def test_parseLabel():
     result = parseLabel(ll)
     assert b'foo' == result.value
     assert ll.pop().lexeme is EOF
+    assertAndCleanError()
 
 def test_parseLabel_bad():
     ll = FakeLexemeLL(b'#(foo)')
@@ -884,15 +886,18 @@ def testParseNumbers():
     ll = FakeLexemeLL(b'42; 33; 009')
     stmts = parseFile(ll)
     assert [42, 33, 9] == unrollAST(stmts)
+    assertAndCleanError()
 
 def testParseNumbersBlock():
-    ll = FakeLexemeLL(b' ( 42; 33;) 0')
+    ll = FakeLexemeLL(b' ( 42; 33;); 0')
     stmts = parseFile(ll)
     assert ['(', 42, 33, ';)', 0] == unrollAST(stmts)
+    assertAndCleanError()
 
-    ll = FakeLexemeLL(b' (1; 2) 3')
+    ll = FakeLexemeLL(b' (1; 2); 3')
     stmts = parseFile(ll)
     assert ['(', 1, 2, ')', 3] == unrollAST(stmts)
+    assertAndCleanError()
 
 # TODO: stk
 # TODO: arr
