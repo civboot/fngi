@@ -268,13 +268,14 @@ if __name__ == '__main__':
     f.write("# Don't edit it manually.")
     f.write("# Constants are copy+pasted directly from the WebAssembly spec located at:\n")
     f.write("# https://www.w3.org/TR/wasm-core-1/#a6-index-of-types\n")
+    f.write("from collections import OrderedDict\n")
     f.write("\nclass WasmNamespace: pass\n")
     for ns in ('local', '_global', 'i32', 'i64', 'f32', 'f64', 'memory'):
-        f.write(f'{ns} = WasmNamespace()\n')
+        f.write(f'W{ns} = WasmNamespace()\n')
 
     def keywordReplace(s):
         out = s.split('.')
-        fix = {'global', 'if', 'else', 'and', 'or', 'return'}
+        fix = {'and', 'or'}
         for i in range(len(out)):
             if out[i] in fix:
                 out[i] = out[i] + '_'
@@ -282,7 +283,7 @@ if __name__ == '__main__':
         return '.'.join(out)
 
     writeKeyVal = lambda item: f.write(
-        f'{keywordReplace(item[0])} = {hex(item[1])}\n')
+        f'{keywordReplace("W" + item[0])} = {hex(item[1])}\n')
 
     f.write("\n# A.6 Index of Types\n")
     for item in wasmTypes.items():
