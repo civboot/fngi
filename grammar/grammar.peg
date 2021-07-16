@@ -106,14 +106,15 @@ multiTy = ty (SC ty)* SC?
 stkBlock = STK w? "[" multiTy w? "]"
 arrBlock = ARR w? "[" w? NUMBER ty w? "]"
 structBlock = "[" (multiVar / multiTy) w? "]"
-nameBlUnit = w? NUMBER? w? ("&" / "@")? macro2
-nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 
 
 # Ty Recursive Descent
-primaryTy = w? ( void / structBlock / stkBlock / arrBlock / macro2 )
+primaryTy = (w? ("&" / MUT))* w? (
+  void / structBlock / stkBlock / arrBlock / macro2
+)
 fnTy = primaryTy (w? "->" primaryTy)?
-ty = (w? ("&" / MUT))* fnTy
+ty = fnTy
+
 
 # Flow Control
 flow = w? (cont / break / return)
@@ -130,6 +131,8 @@ primary = w? (
   / ifElDo / switch / while
   / IDEN
 )
+nameBlUnit = w? NUMBER? (w? "&")? macro2
+nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 nameNoDot = primary (w? nameBlock)?
 name = nameNoDot (w? "." nameNoDot)*
 macro1 = name (w? "!" (decl / name))*

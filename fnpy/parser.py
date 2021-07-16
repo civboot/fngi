@@ -18,6 +18,8 @@ import pprint
 from dataclasses import dataclass
 from typing import List
 
+MISSING_SEMICOLON_ERR = "Expected ';'"
+
 ## Lexemes
 class LexemeVariant(enum.Enum):
     # TODO: use solid integer values
@@ -325,7 +327,7 @@ class Lexer(object):
                 return DIVIDE
 
         elif c == ord('"'):
-            out = bytearray()
+            out = bytearray(b'"')
             c = sc.nextByte()
             while True:
                 if c == 0:
@@ -711,6 +713,18 @@ class Block(ASTNode):
     stmts: List[LabelStmt]
     lastSemicolon: bool
 
+@dataclass
+class NameBlockUnit(ASTNode):
+    number: int
+    ref: bool
+    deref: bool
+    name: "Name"
+
+@dataclass
+class Name(ASTNode):
+    iden: Iden
+    block: List[NameBlockUnit]
+
 
 # Test Helpers
 def unwrapAST(ast: ASTNode, out=None) -> List[any]:
@@ -779,6 +793,10 @@ def parseRawStr(ll: LexemeLL) -> PrimaryBytes:
     assert ln.lexeme.variant is LV.RAW_STR
     return PrimaryBytes(LV.RAW_STR, ln.lexeme.text[1:-1])
 
+def testParseRawStr():
+    result = parseRawStr(FakeLexemeLL(b'"foo bar"'))
+    assert b'foo bar' == result.value
+
 
 # Grammar: label = w? "#" IDEN
 LABEL_ERR = "Expected IDEN after '#' for label"
@@ -803,14 +821,6 @@ def test_parseLabel_bad():
     assert None == result
     assertAndCleanError(LABEL_ERR)
 
-# def parseCall(ll: LexemeLL) -> ASTNode:
-#     callOperations = [parseUnary(ll)]
-# 
-#     while ll.peek() is CALL:
-#         callOperations.append(parseUnary(ll))
-# 
-#     return Binary(callOperations, CALL)
-
 
 # Grammar: multiExpr = expr (SC expr)* SC?
 # Note: we add on a bit here with endLexeme
@@ -832,12 +842,7 @@ def parseMultiExpr(ll: LexemeLL, endLexeme: Lexeme) -> List[ASTNode]:
 def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStmt]):
     """Parse the label statements and consume the endLexeme."""
     out = []
-    lastSemicolon = False
     while True:
-        if ll.peek().lexeme is endLexeme:
-            ll.pop()
-            return lastSemicolon, out
-
         label = None
         if ll.peek().lexeme is LABEL:
             label = parseLabel()
@@ -853,7 +858,13 @@ def parseMultiLabelStmt(ll: LexemeLL, endLexeme: Lexeme) -> (bool, List[LabelStm
         lastSemicolon = ll.peek().lexeme is SEMICOLON
         if lastSemicolon:
             ll.pop()
-            lastSemicolon = True
+
+        if ll.peek().lexeme is endLexeme:
+            ll.pop()
+            return lastSemicolon, out
+        elif not lastSemicolon:
+            updateError(MISSING_SEMICOLON_ERR, ll.peek())
+
 
 # Grammar: file = multiLabelStmt w?
 def parseFile(ll: LexemeLL) -> List[LabelStmt]:
@@ -864,10 +875,10 @@ def parseFile(ll: LexemeLL) -> List[LabelStmt]:
 
 ###################
 # Note for readers following along:
-# During development I am building up the complexity of the parseLabel, parseExpr, etc
-# "pointer" parsers. While I am doing so I am testing the new parsers I have added.
-# Each of these tests represents additional built-up complexity in our
-# recursive descent parser.
+# During development I am building up the complexity of the parseStmt,
+# parseExpr, etc "pointer" parsers as well as improving parsePrimary. While I
+# am doing so I am testing the new parsers I have added.  Each of these tests
+# represents additional built-up complexity in our recursive descent parser.
 
 def testParseNumbers():
     ll = FakeLexemeLL(b'42; 33; 009')
@@ -882,6 +893,17 @@ def testParseNumbersBlock():
     ll = FakeLexemeLL(b' (1; 2) 3')
     stmts = parseFile(ll)
     assert ['(', 1, 2, ')', 3] == unrollAST(stmts)
+
+# TODO: stk
+# TODO: arr
+# TODO: struct
+# TODO: ifElDo
+# TODO: switch
+# TODO: while
+def parseIden(ll: LexemeLL) -> PrimaryBytes:
+    ln = ll.pop()
+    assert ln.lexeme is IDEN
+    return PrimaryBytes(LV.IDEN, ln.lexeme.text)
 
 
 def parsePrimary(ll: LexemeLL) -> ASTNode:
@@ -901,8 +923,69 @@ def parsePrimary(ll: LexemeLL) -> ASTNode:
         ll.pop()
         lastSemicolon, stmts = parseMultiLabelStmt(ll, BLOCK_CLOSE)
         return Block(stmts, lastSemicolon)
+    # TODO: stk
+    # TODO: arr
+    # TODO: struct
+    # TODO: ifElDo
+    # TODO: switch
+    # TODO: while
+    elif peek.lexeme is IDEN:
+        return parseIden(ll)
     else:
         raise NotImplementedError(peek)
+
+##
+# Non Primary Expressions
+
+def parseNameBlockUnit(ll: LexemeLL) -> ASTNode:
+    number = None
+    if ll.peek().lexeme.variant is LV.NUMBER:
+        number = parseNumber(ll).value
+
+    if ll.peek().lexeme is REF:
+        ll.pop(); ref = True
+
+    parseMacro2.ptr(ll)
+
+
+def parseNameBlock(ll: LexemeLL) -> ASTNode:
+    assert ll.pop().lexeme is TYPE_OPEN
+
+    out = []
+    while True:
+        macro2 = parseMacro2.ptr(ll)
+        if name is None:
+            return None
+
+        name = macro2 # TODO: execute if macro2
+        if type(name) not in {Name, Void}:
+            msg = (
+                "Expected name or macro that resolves to name."
+                " Got: {}"
+            ).format(name)
+            updateError(msg, macro2)
+
+        out.append(name)
+
+        lastSemicolon = ll.peek().lexeme is SEMICOLON
+        if lastSemicolon:
+            ll.pop()
+
+        if ll.peek().lexeme is TYPE_CLOSE:
+            ll.pop()
+            return out
+        elif not lastSemicolon:
+            updateError(MISSING_SEMICOLON_ERR, ll.peek())
+
+
+# def parseCall(ll: LexemeLL) -> ASTNode:
+#     callOperations = [parseUnary(ll)]
+# 
+#     while ll.peek() is CALL:
+#         callOperations.append(parseUnary(ll))
+# 
+#     return Binary(callOperations, CALL)
+
 
 def _parseExpr(ll: LexemeLL) -> ASTNode:
     return parsePrimary(ll)
