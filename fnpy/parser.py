@@ -740,7 +740,7 @@ def unwrapAST(ast: ASTNode, out=None) -> List[any]:
     easily write assertions for.  """
     if out is None:
         out = []
-    if isinstance(ast, Number):
+    if type(ast) in {Number, Name}:
         out.append(ast.value)
     elif isinstance(ast, PrimaryBytes):
         out.append('{}::{}'.format(ast.variant.variant.name, ast.value))
@@ -985,11 +985,7 @@ def parseNameBlock(state: ParserState, ll: LexemeLL) -> bytes:
         if macro2 is None: return
 
         name = macro2 # TODO: execute if macro2
-        nameBytes = _toNameBytes(
-            name,
-            firstLn,
-            ". Got: " + str(name),
-            allowNumber=False)
+        nameBytes = _toNameBytes(name, firstLn, ". Got: " + str(name), False)
         if nameBytes is None: return
         outb.extend(nameBytes)
 
@@ -1012,11 +1008,7 @@ def parseNameNoDot(state: ParserState, ll: LexemeLL, allowNumber) -> ASTNode:
     primary = parsePrimary(state, ll)
     if primary is None: return
     if ll.peek().lexeme is TYPE_OPEN:
-        primaryBytes = _toNameBytes(
-            primary,
-            firstLn,
-            "before '['",
-            allowNumber=allowNumber)
+        primaryBytes = _toNameBytes(primary, firstLn, "before '['", allowNumber)
         if primaryBytes is None: return
         nameBlock = parseNameBlock(state, ll)
         if nameBlock is None: return
@@ -1029,27 +1021,19 @@ def parseNameNoDot(state: ParserState, ll: LexemeLL, allowNumber) -> ASTNode:
 # grammar: name = nameNoDot (w? "." nameNoDot)*
 def _parseName(state: ParserState, ll: LexemeLL) -> ASTNode:
     firstLexeme = ll.peek()
-    maybeNameNoDot = parseNameNoDot(state, ll, allowNumber=False)
+    maybeNameNoDot = parseNameNoDot(state, ll, False)
     if maybeNameNoDot is None: return
     if ll.peek().lexeme is not DOT:
         return maybeNameNoDot
 
-    outb = _toNameBytes(
-        maybeNameNoDot,
-        firstLexeme,
-        "before '.'",
-        allowNumber=False)
+    outb = _toNameBytes(maybeNameNoDot, firstLexeme, "before '.'", False)
     if outb is None: return
     outb = bytearray(outb)
     while ll.peek().lexeme is DOT:
         ll.pop(); firstLexeme = ll.peek()
-        nameNoDot = parseNameNoDot(state, ll, allowNumber=True)
+        nameNoDot = parseNameNoDot(state, ll, True)
         if not nameNoDot: return
-        nameBytes = _toNameBytes(
-            nameNoDot,
-            firstLexeme,
-            "after '.'",
-            allowNumber=False)
+        nameBytes = _toNameBytes(nameNoDot, firstLexeme, "after '.'", False)
         if not nameBytes: return
         outb.append(ord('.'))
         outb.extend(nameBytes)
