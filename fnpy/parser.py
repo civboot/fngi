@@ -569,8 +569,7 @@ class LexemeLL(object):
     def advance(self, node):
         """Advance the root until node."""
         while self.root is not node:
-            if self.root is None:
-                raise IndexError(node)
+            if self.root is None: raise IndexError(node)
             self.pop()
 
     def peek(self, index: int = 0, fromNode=None) -> LexemeNode:
@@ -589,7 +588,7 @@ class LexemeLL(object):
             if ln is None and not self.gotEof:
                 self._populateNext()
                 continue
-            if ln is None: return None
+            if ln is None: return
             prev = ln
             index = index - 1
         return ln
@@ -840,8 +839,7 @@ def parseMultiExpr(state: ParserState, ll: LexemeLL, endLexeme: Lexeme) -> List[
             return out
 
         expr = parseExpr.ptr(state, ll)
-        if expr is None:
-            return None
+        if expr is None: return
         out.append(expr)
 
 
@@ -855,12 +853,10 @@ def parseMultiLabelStmt(
         label = None
         if ll.peek().lexeme is LABEL:
             label = parseLabel()
-            if label is None:
-                return None
+            if label is None: return
 
         stmt = parseStmt.ptr(state, ll)
-        if stmt is None:
-            return None
+        if stmt is None: return
         labelStmt = LabelStmt(label, stmt)
         out.append(labelStmt)
 
@@ -878,8 +874,7 @@ def parseMultiLabelStmt(
 def parseFile(env: Env, ll: LexemeLL) -> List[LabelStmt]:
     state = ParserState(env)
     out = parseMultiLabelStmt(state, ll, EOF)
-    if not out:
-        return None
+    if not out: return
     return out[1]
 
 ###################
@@ -949,6 +944,7 @@ def parsePrimary(state: ParserState, ll: LexemeLL) -> ASTNode:
 ##
 # Non Primary Expressions
 
+# grammar: nameBlUnit = w? NUMBER? (w? "&")? macro2
 def parseNameBlockUnit(state: ParserState, ll: LexemeLL) -> ASTNode:
     number = None
     if ll.peek().lexeme.variant is LV.NUMBER:
@@ -960,24 +956,28 @@ def parseNameBlockUnit(state: ParserState, ll: LexemeLL) -> ASTNode:
     parseMacro2.ptr(state, ll)
 
 
-def parseNameBlock(state: ParserState, ll: LexemeLL) -> ASTNode:
+# grammar: nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
+def parseNameBlock(state: ParserState, ll: LexemeLL) -> bytes:
     assert ll.pop().lexeme is TYPE_OPEN
 
-    out = []
+    outb = bytearray(b'[')
     while True:
         macro2 = parseMacro2.ptr(state, ll)
-        if macro2 is None:
-            return None
+        if macro2 is None: return
 
         name = macro2 # TODO: execute if macro2
-        if type(name) not in {Name, Void}:
+        if isinstance(name, Void):
+            nameBytes = b'[]'
+        elif isinstance(name, PrimaryBytes) and name.variant is LV.NAME:
+            nameBytes = name.value
+        else:
             msg = (
                 "Expected name or macro that resolves to name."
                 " Got: {}"
             ).format(name)
             updateError(msg, macro2)
 
-        out.append(name)
+        outb.extend(nameBytes)
 
         lastSemicolon = ll.peek().lexeme is SEMICOLON
         if lastSemicolon: ll.pop()
@@ -987,9 +987,44 @@ def parseNameBlock(state: ParserState, ll: LexemeLL) -> ASTNode:
         elif not lastSemicolon:
             updateError(MISSING_SEMICOLON_ERR, ll.peek())
 
+    outb.append(ord(']'))
+    return outb
 
-def parseName(state: ParserState, ll: LexemeLL) -> PrimaryBytes:
-    pass # parse name convert to bytes
+# grammar:nameNoDot = primary (w? nameBlock)?
+def parseNameNoDot(state: ParserState, ll: LexemeLL) -> ASTNode:
+    primary = parsePrimary(state, ll)
+    if primary is None: return
+    if ll.peek().lexeme is TYPE_OPEN:
+        if not isinstance(primary, Iden):
+            return updateError(
+                f"Did not expect name block following {type(primary)}",
+                ll.peek())
+        nameBlock = parseNameBlock(state, ll)
+        return PrimaryBytes(LV.NAME, primary.value + nameBlock)
+
+
+def _checkName(node: ASTNode, ln: Lexeme):
+    if not (isinstance(node, PrimaryBytes) and node.variant is LV.NAME):
+        return updateError(f"Expected name or macro that resolves to name", ln)
+    return True
+
+# grammar: name = nameNoDot (w? "." nameNoDot)*
+def parseName(state: ParserState, ll: LexemeLL) -> ASTNode:
+    firstLexeme = ll.peek()
+    maybeNameNoDot = parseNameNoDot(state, ll)
+    if maybeNameNoDot is None: return
+    if ll.peek().lexeme is not DOT:
+        return maybeNameNoDot
+
+    if not _checkName(maybeNameNoDot, firstLexeme): return
+    outb = bytearray(maybeNameNoDot.value)
+    while ll.peek().lexeme is DOT:
+        ll.pop(); firstLexeme = ll.peek()
+        nameNoDot = parseNameNoDot(state, ll)
+        if not _checkName(nameNoDot, firstLexeme): return
+        outb.append(ord('.'))
+        outb.extend(nameNoDot.value)
+    return PrimaryBytes(LV.NAME, outb)
 
 # def parseCall(ll: LexemeLL) -> ASTNode:
 #     callOperations = [parseUnary(ll)]
