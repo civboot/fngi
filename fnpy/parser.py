@@ -1,4 +1,4 @@
-#########################################
+# ########################################
 # Parser
 #
 # With what is in types.py we should have enough to compile the stage0
@@ -683,8 +683,19 @@ def testError():
     assert PARSE_ERROR.ptr is None
     assertAndCleanError()
 
-class ASTNode(object):
+class ASTNode:
     """The base AST node type."""
+
+def isConst(node: ASTNode) -> bool:
+    if type(node) in {Empty, Number}:
+        return True
+    elif isinstance(node, PrimaryBytes):
+        return node.variant in {RAW_STR, ESC_STR}
+    elif type(node) in {Name, LabelStmt, Block}:
+        return node.isConst
+
+    return False
+
 
 @dataclass
 class ParserState:
@@ -696,19 +707,6 @@ class ParserState:
     localVars: Dict[str, ASTNode] = None
 
 @dataclass
-class Number(ASTNode):
-    value: int
-
-@dataclass
-class Name(ASTNode):
-    value: bytes
-
-@dataclass
-class PrimaryBytes(ASTNode):
-    variant: LV
-    value: bytes
-
-@dataclass
 class Void(ASTNode):
     pass
 
@@ -717,14 +715,30 @@ class Empty(ASTNode):
     pass
 
 @dataclass
+class Number(ASTNode):
+    value: int
+
+@dataclass
+class Name(ASTNode):
+    value: bytes
+    isConst: bool
+
+@dataclass
+class PrimaryBytes(ASTNode):
+    variant: LV
+    value: bytes
+
+@dataclass
 class LabelStmt(ASTNode):
     label: bytes
     stmt: ASTNode
+    isConst: bool
 
 @dataclass
 class Block(ASTNode):
     stmts: List[LabelStmt]
     lastSemicolon: bool
+    isConst: bool
 
 @dataclass
 class NameBlockUnit(ASTNode):
@@ -771,7 +785,7 @@ def unrollAST(asts: List[ASTNode], out=None) -> List[ASTNode]:
 # The parser is mostly a recursive descent parser. We implement the "least
 # complicated" expressions first and work our way up.
 
-# grammar: NUMBER = ("0x" _hex+) / _numeric+
+# Grammar: NUMBER = ("0x" _hex+) / _numeric+
 def parseNumber(ll: LexemeLL) -> Number:
     ln = ll.pop()
     assert ln.lexeme.variant is LV.NUMBER
@@ -850,8 +864,13 @@ def parseMultiExpr(state: ParserState, ll: LexemeLL, endLexeme: Lexeme) -> List[
 # Grammar: multiLabelStmt = label? stmt (SC label? stmt)* SC?
 def parseMultiLabelStmt(
         state: ParserState, ll: LexemeLL, endLexeme: Lexeme
-        ) -> (bool, List[LabelStmt]):
-    """Parse the label statements and consume the endLexeme."""
+        # returns: (labelStmts, lastSemicolon, isConst)
+        ) -> (List[LabelStmt], bool, bool):
+    """Parse the label statements and consume the endLexeme.
+
+    """
+    allAreConst = True
+    lastSemicolon = False
     out = []
     while True:
         label = None
@@ -861,7 +880,8 @@ def parseMultiLabelStmt(
 
         stmt = parseStmt.ptr(state, ll)
         if stmt is None: return
-        labelStmt = LabelStmt(label, stmt)
+        labelStmt = LabelStmt(label, stmt, isConst(stmt))
+        allAreConstant = allAreConst and labelStmt.isConst
         out.append(labelStmt)
 
         lastSemicolon = ll.peek().lexeme is SEMICOLON
@@ -869,9 +889,10 @@ def parseMultiLabelStmt(
 
         if ll.peek().lexeme is endLexeme:
             ll.pop()
-            return lastSemicolon, out
+            break
         elif not lastSemicolon:
             updateError(MISSING_SEMICOLON_ERR, ll.peek())
+    return out, lastSemicolon, allAreConst
 
 
 # Grammar: file = multiLabelStmt w?
@@ -879,7 +900,7 @@ def parseFile(env: Env, ll: LexemeLL) -> List[LabelStmt]:
     state = ParserState(env)
     out = parseMultiLabelStmt(state, ll, EOF)
     if not out: return
-    return out[1]
+    return out[0]
 
 ###################
 # Note for readers following along:
@@ -932,8 +953,8 @@ def parsePrimary(state: ParserState, ll: LexemeLL) -> ASTNode:
         return Empty
     elif peek.lexeme is BLOCK_OPEN:
         ll.pop()
-        lastSemicolon, stmts = parseMultiLabelStmt(state, ll, BLOCK_CLOSE)
-        return Block(stmts, lastSemicolon)
+        stmts, lastSemicolon, isConst = parseMultiLabelStmt(state, ll, BLOCK_CLOSE)
+        return Block(stmts, lastSemicolon, isConst)
     # TODO: stk
     # TODO: arr
     # TODO: struct
@@ -948,7 +969,7 @@ def parsePrimary(state: ParserState, ll: LexemeLL) -> ASTNode:
 ##
 # Non Primary Expressions
 
-# grammar: nameBlUnit = w? NUMBER? (w? "&")? macro2
+# Grammar: nameBlUnit = w? NUMBER? (w? "&")? macro2
 def parseNameBlockUnit(state: ParserState, ll: LexemeLL) -> ASTNode:
     number = None
     if ll.peek().lexeme.variant is LV.NUMBER:
@@ -974,7 +995,7 @@ def _toNameBytes(node: ASTNode, ln: Lexeme, context, allowNumber) -> bytes:
         ln)
 
 
-# grammar: nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
+# Grammar: nameBlock = "[" nameBlUnit (SC nameBlUnit)* SC? w? "]"
 def parseNameBlock(state: ParserState, ll: LexemeLL) -> bytes:
     assert ll.pop().lexeme is TYPE_OPEN
 
@@ -1002,7 +1023,7 @@ def parseNameBlock(state: ParserState, ll: LexemeLL) -> bytes:
     return outb
 
 
-# grammar:nameNoDot = primary (w? nameBlock)?
+# Grammar:nameNoDot = primary (w? nameBlock)?
 def parseNameNoDot(state: ParserState, ll: LexemeLL, allowNumber) -> ASTNode:
     firstLn = ll.peek()
     primary = parsePrimary(state, ll)
@@ -1014,11 +1035,11 @@ def parseNameNoDot(state: ParserState, ll: LexemeLL, allowNumber) -> ASTNode:
         if nameBlock is None: return
         outb = bytearray(primaryBytes)
         outb.extend(nameBlock)
-        return Name(outb)
+        return Name(outb, False)
     return primary
 
 
-# grammar: name = nameNoDot (w? "." nameNoDot)*
+# Grammar: name = nameNoDot (w? "." nameNoDot)*
 def _parseName(state: ParserState, ll: LexemeLL) -> ASTNode:
     firstLexeme = ll.peek()
     maybeNameNoDot = parseNameNoDot(state, ll, False)
@@ -1038,6 +1059,7 @@ def _parseName(state: ParserState, ll: LexemeLL) -> ASTNode:
         outb.append(ord('.'))
         outb.extend(nameBytes)
     return PrimaryBytes(LV.NAME, bytes(outb))
+parseName.ptr = _parseName
 
 def testParseName():
     result = parseName.ptr(None, FakeLexemeLL(b'foo'))
@@ -1046,12 +1068,30 @@ def testParseName():
 
     result = parseName.ptr(None, FakeLexemeLL(b'foo[bar;  ]'))
     assertAndCleanError()
-    assert Name(b'foo[bar]') == result
+    assert Name(b'foo[bar]', False) == result
 
 
-parseName.ptr = _parseName
+# Grammar: macro1 = name (w? "!" (decl / name))*
+def parseMacro1(state: ParserState, ll: LexemeLL) -> ASTNode:
+    # TODO: do macro stuff
+    return parseName.ptr(state, ll)
+
+
+# Grammar: macro2 = macro1 (w? "!!" name (decl / macro1))*
+def _parseMacro2(state: ParserState, ll: LexemeLL) -> ASTNode:
+    # TODO: do macro stuff
+    return parseMacro1(state, ll)
+
+
+# Grammar: unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
+def parseUnary(state: ParserState, ll: LexemeLL) -> ASTNode:
+    operators = []
+    while ll.peek().lexeme in {BITNOT, NOT, MINUS, REF, DEREF}:
+        variant = ll.pop().lexeme.variant
+        operators.append(variant)
+
 parseMacro2.ptr = _parseName
-parseExpr.ptr = parseMacro2.ptr
-parseStmt.ptr = parseExpr.ptr
+parseExpr.ptr = _parseMacro2
+parseStmt.ptr = parseExpr.ptr # TODO: udpate parseMultiLabelStmt isConst
 
 
