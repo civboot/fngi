@@ -930,7 +930,7 @@ def parseFile(env: Env, ll: LexemeLL) -> List[LabelStmt]:
     return out[0]
 
 ###################
-# Note for readers following along:
+# Note for the reader:
 # During development I am building up the complexity of the parseStmt,
 # parseExpr, etc "pointer" parsers as well as improving parsePrimary. While I
 # am doing so I am testing the new parsers I have added.  Each of these tests
@@ -1109,6 +1109,11 @@ def _parseMacro2(state: ParserState, ll: LexemeLL) -> ASTNode:
     # TODO: do macro stuff
     return parseMacro1(state, ll)
 
+###################
+# Note for the reader:
+# It is while developing the next couple expressions that I started work on
+# machine.py. With operators on constants I can do immediate folds, which also
+# allows me to test my compilation and execution engines.
 
 # Grammar: unary = (w? (BITNOT / NOT / "-" / "&" / "@"))* macro2
 def parseUnary(state: ParserState, ll: LexemeLL) -> ASTNode:
