@@ -269,6 +269,14 @@ if __name__ == '__main__':
     f.write("# Constants are copy+pasted directly from the WebAssembly spec located at:\n")
     f.write("# https://www.w3.org/TR/wasm-core-1/#a6-index-of-types\n")
     f.write("from collections import OrderedDict\n")
+    for ctype, fnty in [('uint', 'U'), ('int', 'I')]:
+        for size in [8, 16, 32, 64]:
+            f.write(f"from ctypes import c_{ctype}{size} as {fnty}{size}\n")
+
+    for ctype, fnty in [('float', 'F32'), ('double', 'F64')]:
+        f.write(f"from ctypes import c_{ctype} as {fnty}\n")
+
+
     f.write("\nclass WasmNamespace: pass\n")
     for ns in ('local', '_global', 'i32', 'i64', 'f32', 'f64', 'memory'):
         f.write(f'W{ns} = WasmNamespace()\n')

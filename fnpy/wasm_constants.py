@@ -2,6 +2,16 @@
 # Don't edit it manually.# Constants are copy+pasted directly from the WebAssembly spec located at:
 # https://www.w3.org/TR/wasm-core-1/#a6-index-of-types
 from collections import OrderedDict
+from ctypes import c_uint8 as U8
+from ctypes import c_uint16 as U16
+from ctypes import c_uint32 as U32
+from ctypes import c_uint64 as U64
+from ctypes import c_int8 as I8
+from ctypes import c_int16 as I16
+from ctypes import c_int32 as I32
+from ctypes import c_int64 as I64
+from ctypes import c_float as F32
+from ctypes import c_double as F64
 
 class WasmNamespace: pass
 Wlocal = WasmNamespace()
