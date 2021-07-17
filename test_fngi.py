@@ -34,15 +34,6 @@ class TestStack(unittest.TestCase):
         s.push(I32(0x4200FF))
         assert s.pop(I32).value == 0x4200FF
 
-    def testGetSetI16(self):
-        s = self.newStack()
-        s.push(I16(0x7008))
-        s.push(I16(0x3322))
-        assert s.get(4, I16).value == 0x7008
-        s.set(4, I16(0x1133))
-        assert s.get(4, I16).value == 0x1133
-        assert s.get(0, I16).value == 0x3322
-
     def testDirtyStack(self):
         """Test what happens if you have a dirty stack and pop the wrong type
         (don't do this).

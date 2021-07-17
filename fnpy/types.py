@@ -284,6 +284,10 @@ class Stack(MManBase):
         self.total_size = mstack.end - mstack.start
 
     def checkRange(self, index, size):
+        assert self.m.sp % 4 == 0
+        assert self.m.start <= self.m.sp <= self.m.end
+        if size != 4 and size != 8:
+            raise ValueError("size must be 4 or 8 to push onto stack")
         if index < 0 or index + size > self.total_size:
             raise IndexError("index={} size={} stack_size={}".format(
                 index, size, self.total_size))
@@ -320,7 +324,8 @@ class Stack(MManBase):
         return self.pop(ty).value
 
     def debugStr(self):
-        return 'Stack: {}'.format(' '.join(hex(self.get(i, I32).value) for i in range(len(self) // 4)))
+        return 'Stack: {}'.format(
+            ' '.join(hex(self.get(i, I32).value) for i in range(len(self) // 4)))
 
     def __len__(self):
         return self.m.end - self.m.sp
