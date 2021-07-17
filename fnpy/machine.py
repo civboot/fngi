@@ -5,45 +5,89 @@
 # In it we define a Machine that interacts with our Env class, specifically the
 # memory inside it. This allows us to define and execute functions.
 
+from pdb import set_trace as dbg
 from .wasm_constants import *
 from .types import Env, ENV
 from ctypes import sizeof
 
-WASM_TYPES = {U8, I8, U16, I16, U32, I32, U64, I64, F32, F64}
+STACK_TYPES = {U32, I32, U64, I64, F32, F64}
+WASM_TYPES = {U8, I8, U16, I16}
+WASM_TYPES.update(STACK_TYPES)
 
 def checkTy(value: any, ty: DataTy):
     if type(value) is not ty: raise TypeError(f"{value} is not of type {ty}")
 
-class FakeStack(self):
+def assertTyEq(v1: DataTy, v2: DataTy):
+    assert type(v1) == type(v2)
+    assert v1.value == v2.value
+
+class FakeStack:
     def __init__(self):
         self.data: List[DataTy] = []
 
+    def __len__(self):
+        """Return size in bytes."""
+        return sum(map(sizeof, self.data))
+
     def push(self, value: DataTy):
-        assert type(value) in WASM_TYPES
+        assert type(value) in STACK_TYPES
         self.data.append(value)
 
     def pop(self, ty: DataTy):
-        out = self.data.pop()
-        checkTy(out, ty)
-        return out
+        checkTy(self.data[-1], ty)
+        return self.data.pop()
 
     def get(self, offset: int, ty: DataTy):
         originalOffset = offset # for error handling
         i = len(self.data) - 1 # we go from top -> bottom of stack
         while True:
-            if index < 0: raise IndexError(originalOffset)
+            if i < 0: raise IndexError(originalOffset)
             if offset < 0: raise IndexError(f'{originalOffset} not divisible by type sizes')
             v = self.data[i]
             if offset == 0:
                 checkTy(v, ty)
                 return v
             offset -= sizeof(v)
+            i -= 1
+
+
+def testFakeStack():
+    # test push/pop
+    ds = FakeStack()
+    ds.push(I32(32))
+    assertTyEq(I32(32), ds.pop(I32))
+    assert len(ds) == 0
+
+    # Test get and error cases
+    ds.push(U32(32))
+    ds.push(I32(-32))
+    try: ds.pop(U32); assert False
+    except TypeError: pass
+
+    try: ds.get(2, U32); assert False
+    except IndexError: pass
+    assertTyEq(I32(-32), ds.get(0, I32))
+    assertTyEq(U32(32), ds.get(4, U32))
+    assert len(ds) == 8
+    assertTyEq(I32(-32), ds.pop(I32))
+    assertTyEq(U32(32), ds.pop(U32))
+    assert len(ds) == 0
+
+    # Test larger size
+    ds.push(I32(-111))
+    ds.push(U64(666))
+    ds.push(U32(333))
+    assertTyEq(U64(666), ds.get(4, U64))
+    assertTyEq(I32(-111), ds.get(12, I32))
+    assertTyEq(U32(333), ds.pop(U32))
+    assertTyEq(U64(666), ds.pop(U64))
+    assertTyEq(I32(-111), ds.pop(I32))
 
 
 class FakeEnv:
     def __init__(self):
-        pass
-
+        self.ds = FakeStack()
+        self.localsStack = FakseStack()
 
 def run(env: Env, code):
     ds = env.dataStack
@@ -120,23 +164,23 @@ def testRunSimple():
     ])
     assert 42 == env.dataStack.popv(I32)
 
-def testRunLoop():
-    env = ENV.copyForTest()
-    vPtr = env.heap.grow(4)
-    run(env, [
-        # @v = 0;
-        (Wi32.const, vPtr),
-        (Wi32.const, 0),
-        Wi32.store,
-        (Wloop, [           # while out <= 10: out += 1
-            (Wi32.const, vPtr),
-            (Wi32.const, vPtr),
-            Wi32.load,
-            (Wi32.const, 1), Wi32.add,
-            Wi32.store,
-            (Wi32.const, vPtr), Wi32.load,
-            (Wi32.const, 10), Wi32.le_s,
-            (Wbr_if, 0), # continue if true
-        ]),
-    ])
-    assert 10 == env.dataStack.popv(I32)
+# def testRunLoop():
+#     env = ENV.copyForTest()
+#     vPtr = env.heap.grow(4)
+#     run(env, [
+#         # @v = 0;
+#         (Wi32.const, vPtr),
+#         (Wi32.const, 0),
+#         Wi32.store,
+#         (Wloop, [           # while out <= 10: out += 1
+#             (Wi32.const, vPtr),
+#             (Wi32.const, vPtr),
+#             Wi32.load,
+#             (Wi32.const, 1), Wi32.add,
+#             Wi32.store,
+#             (Wi32.const, vPtr), Wi32.load,
+#             (Wi32.const, 10), Wi32.le_s,
+#             (Wbr_if, 0), # continue if true
+#         ]),
+#     ])
+#     assert 10 == env.dataStack.popv(I32)
