@@ -263,64 +263,9 @@ PY_FILE_START = r'''
 # Don't edit it manually.")
 # Constants are copy+pasted directly from the WebAssembly spec located at:
 # https://www.w3.org/TR/wasm-core-1/#a6-index-of-types
-from collections import OrderedDict
-from dataclasses import dataclass
-import ctypes
-
-# This is the only way to get the base class for ctypes (_CData) which is
-# technically private.
-DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
-
-class Ref(DataTy):
-    _fields_ = []
-    def __init__(self, ty: DataTy): self.ty = ty
-
-FUNCIDX = 0 # globally updated index, increments with each new function
-NATIVE_FUNCS = {}
-''' + r'''
-
-@dataclass
-class NativeFn:
-    name: str
-    funcidx: int # wasm function index
-    inputs: List[DataTy]
-    outputs: List[DataTy]
-    call: Callable[["Env"], None]
-
-def nativeFn(name, inputs: List[DataTy], outputs: List[DataTy]):
-    """Takes some types and a python defined function and converts to an
-    instantiated NativeFn.
-    """
-
-    # Stack values must be pushed in reverse order (right to left)
-    outputsPushTys = list(reversed(outputs))
-
-    def wrapper(pyDef):
-        nonlocal name
-
-        def callDef(env):
-            nonlocal name # for availability when debugging
-            # pop stack items from left to right
-            args = [env.dataStack.pop(ty).value for ty in inputs]
-            # call the function with them in that order
-            outStack = pyDef(env, *args)
-            outStack = outStack if outStack else []
-            # reverse the output stack because that is the correct order for
-            # pushing to the stack
-            outStack.reverse()
-            assert len(outStack) == len(outputs)
-            # push outputs to the data stack
-            for out, ty in zip(outStack, outputsPushTys):
-                env.dataStack.push(ty(out))
-
-    global FUNCIDX
-    funcidx = FUNCIDX
-    FUNCIDX += 1
-    nativeFnInstance = NativeFn(name, funcidx, inputs, outputs, callDef)
-
-    global NATIVE_FUNCS
-    NATIVE_FUNCS[funcidx] = nativeFnInstance
+from .wasm_setup import *
 '''
+
 
 if __name__ == '__main__':
     import sys

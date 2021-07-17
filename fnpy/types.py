@@ -831,6 +831,7 @@ class Env(object):
         self.refs = refs
 
         self.running = False
+        self.rbp = 0 # rstack base ptr
         self.ep = 0 # execution pointer
 
     def copyForTest(self):
