@@ -316,6 +316,12 @@ class Stack(MManBase):
         self.m.sp += size
         return out
 
+    def popv(self, ty: DataTy) -> any:
+        return self.pop(ty).value
+
+    def debugStr(self):
+        return 'Stack: {}'.format(' '.join(hex(self.get(i, I32).value) for i in range(len(self) // 4)))
+
     def __len__(self):
         return self.m.end - self.m.sp
 
