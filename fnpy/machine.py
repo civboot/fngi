@@ -7,6 +7,42 @@
 
 from .wasm_constants import *
 from .types import Env, ENV
+from ctypes import sizeof
+
+WASM_TYPES = {U8, I8, U16, I16, U32, I32, U64, I64, F32, F64}
+
+def checkTy(value: any, ty: DataTy):
+    if type(value) is not ty: raise TypeError(f"{value} is not of type {ty}")
+
+class FakeStack(self):
+    def __init__(self):
+        self.data: List[DataTy] = []
+
+    def push(self, value: DataTy):
+        assert type(value) in WASM_TYPES
+        self.data.append(value)
+
+    def pop(self, ty: DataTy):
+        out = self.data.pop()
+        checkTy(out, ty)
+        return out
+
+    def get(self, offset: int, ty: DataTy):
+        originalOffset = offset # for error handling
+        i = len(self.data) - 1 # we go from top -> bottom of stack
+        while True:
+            if index < 0: raise IndexError(originalOffset)
+            if offset < 0: raise IndexError(f'{originalOffset} not divisible by type sizes')
+            v = self.data[i]
+            if offset == 0:
+                checkTy(v, ty)
+                return v
+            offset -= sizeof(v)
+
+
+class FakeEnv:
+    def __init__(self):
+        pass
 
 
 def run(env: Env, code):
