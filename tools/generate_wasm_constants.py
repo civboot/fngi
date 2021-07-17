@@ -250,9 +250,9 @@ def getTypesName(row):
     constructor = row[1]
     if not constructor: return ''
     elif category == '(reserved)': return ''
-    elif category == 'Type index': return 'tidx'
-    elif category == 'Value type': return constructor
-    else: return category.split()[0].lower()
+    elif category == 'Type index': return 'Tidx'
+    elif category == 'Value type': return 'T' + constructor
+    else: return 'T' + category.split()[0].lower()
 
 wasmTypes = parseIndex(typesIndex, getTypesName)
 wasmInstructions = parseIndex(
@@ -281,7 +281,7 @@ if __name__ == '__main__':
 
 
     f.write("\nclass WasmNamespace: pass\n\n")
-    for ns in ('local', '_global', 'i32', 'i64', 'f32', 'f64', 'memory'):
+    for ns in ('local', 'global', 'i32', 'i64', 'f32', 'f64', 'memory'):
         f.write(f'W{ns} = WasmNamespace()\n')
 
     def keywordReplace(s):

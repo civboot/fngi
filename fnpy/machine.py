@@ -5,3 +5,5 @@
 # In it we define a Machine that interacts with our Env class, specifically the
 # memory inside it. This allows us to define and execute functions.
 
+from .wasm_constants import *
+
