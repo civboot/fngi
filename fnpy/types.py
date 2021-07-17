@@ -289,10 +289,10 @@ class Stack(MManBase):
                 index, size, self.total_size))
 
     # Set / Push
-    def set(self, index: int, value: DataTy):
+    def set(self, offset: int, value: DataTy):
         """Set a value at an offset from the sp."""
-        self.checkRange(self.m.sp + index, sizeof(value))
-        self.memory.set(self.m.sp + index, value)
+        self.checkRange(self.m.sp + offset, sizeof(value))
+        self.memory.set(self.m.sp + offset, value)
 
     def push(self, value: DataTy):
         size = sizeof(value) + needAlign(sizeof(value))
@@ -303,11 +303,11 @@ class Stack(MManBase):
 
     # Get / Pop
 
-    def get(self, index, ty: DataTy) -> bytes:
+    def get(self, offset, ty: DataTy) -> bytes:
         """Get a value at an offset from the sp."""
         ty = getDataTy(ty)
-        self.checkRange(self.m.sp + index, sizeof(ty))
-        return self.memory.get(self.m.sp + index, ty)
+        self.checkRange(self.m.sp + offset, sizeof(ty))
+        return self.memory.get(self.m.sp + offset, ty)
 
     def pop(self, ty: DataTy) -> DataTy:
         size = sizeof(ty) + needAlign(sizeof(ty))

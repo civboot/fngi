@@ -89,6 +89,14 @@ class FakeEnv:
         self.ds = FakeStack()
         self.localsStack = FakseStack()
 
+def formatArgs(args):
+    out = []
+    for a in args:
+        if isinstance(a, int): out.append(hex(a))
+        elif isinstance(a, (tuple, list)): out.append("(block)")
+        else: out.append("???")
+    return "Args: " + ' '.join(out)
+
 def run(env: Env, code):
     ds = env.dataStack
     lenCode = len(code)
@@ -102,7 +110,7 @@ def run(env: Env, code):
             args = ()
         else:
             wi, *args = instr
-        print(wasmName[wi], ds.debugStr())
+        print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
         if wi == Wi32.const:
             ds.push(I32(args[0]))
         elif wi == Wi64.const:
@@ -132,6 +140,7 @@ def run(env: Env, code):
 
             if wi == Wi32.load: ds.push(env.memory.get(ptr, I32))
             elif wi == Wi32.store: env.memory.set(ptr, value)
+        print("END   ", wasmName[wi], ds.debugStr())
 
         if flowControl is None:
             index += 1
@@ -141,15 +150,18 @@ def run(env: Env, code):
             # If the flow control is at a larger level, subtract one and let
             # next level handle it.
             flowControl -= 1
+            print("flow control updated:", flowControl)
             return flowControl
         assert flowControl == 0
 
         if wi == Wloop:
             # repeat current instruction without incrementing index
             # (loop block)
+            print("looping")
             continue
         if wi == Wblock:
             # Break out of the current block
+            print("breaking")
             return
 
 
@@ -164,23 +176,23 @@ def testRunSimple():
     ])
     assert 42 == env.dataStack.popv(I32)
 
-# def testRunLoop():
-#     env = ENV.copyForTest()
-#     vPtr = env.heap.grow(4)
-#     run(env, [
-#         # @v = 0;
-#         (Wi32.const, vPtr),
-#         (Wi32.const, 0),
-#         Wi32.store,
-#         (Wloop, [           # while out <= 10: out += 1
-#             (Wi32.const, vPtr),
-#             (Wi32.const, vPtr),
-#             Wi32.load,
-#             (Wi32.const, 1), Wi32.add,
-#             Wi32.store,
-#             (Wi32.const, vPtr), Wi32.load,
-#             (Wi32.const, 10), Wi32.le_s,
-#             (Wbr_if, 0), # continue if true
-#         ]),
-#     ])
-#     assert 10 == env.dataStack.popv(I32)
+def testRunLoop():
+    env = ENV.copyForTest()
+    vPtr = env.heap.grow(4)
+    run(env, [
+        # @v = 0;
+        (Wi32.const, vPtr),
+        (Wi32.const, 0),
+        Wi32.store,
+        (Wloop, [           # while out <= 10: out += 1
+            (Wi32.const, vPtr),
+            (Wi32.const, vPtr),
+            Wi32.load,
+            (Wi32.const, 1), Wi32.add,
+            Wi32.store,
+            (Wi32.const, vPtr), Wi32.load,
+            (Wi32.const, 10), Wi32.le_s,
+            (Wbr_if, 0), # continue if true
+        ]),
+    ])
+    assert 10 == env.dataStack.popv(I32)
