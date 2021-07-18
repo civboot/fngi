@@ -7,7 +7,7 @@
 # First we are going to build the parser, which is fairly self-explanatory. We
 # parse and emit lexemes (sometimes also called tokens).
 
-from pdb import set_trace as debug
+from pdb import set_trace as dbg
 
 import copy
 import enum

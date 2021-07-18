@@ -127,7 +127,7 @@ def run(env: Env, code):
             ds.push(I32(ds.popv(I32) * ds.popv(I32)))
 
         elif wi == Wi32.le_s:
-            ds.push(Bool(ds.popv(I32) <= ds.popv(I32)))
+            ds.push(U32(ds.popv(I32) <= ds.popv(I32)))
 
         elif wi in {Wi32.load, Wi32.store}:
             offset, align = 0, 0
@@ -194,5 +194,7 @@ def testRunLoop():
             (Wi32.const, 10), Wi32.le_s,
             (Wbr_if, 0), # continue if true
         ]),
+        (Wi32.const, vPtr),
+        Wi32.load,
     ])
     assert 10 == env.dataStack.popv(I32)

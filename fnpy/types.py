@@ -283,26 +283,32 @@ class Stack(MManBase):
         self.m = mstack
         self.total_size = mstack.end - mstack.start
 
-    def checkRange(self, index, size):
-        assert self.m.sp % 4 == 0
-        assert self.m.start <= self.m.sp <= self.m.end
-        if size != 4 and size != 8:
+    def checkRange(self, offset, size, useSp=None, requireSize=False):
+        if not useSp: useSp = self.m.sp
+        ptr = useSp + offset
+        assert useSp % 4 == 0
+        if not (useSp <= ptr < self.m.end):
+            raise IndexError(
+                f"offset={offset} (ptr={hex(ptr)}) does not fit"
+                + f" inside sp={hex(useSp)} end={hex(self.m.end)}")
+        if not (self.m.start <= useSp <= self.m.end):
+            raise IndexError(
+                f"sp={hex(useSp)} is not between"
+                + f" [{hex(self.m.start)}, {hex(self.m.end)}")
+
+        if requireSize and size != 4 and size != 8:
             raise ValueError("size must be 4 or 8 to push onto stack")
-        if index < 0 or index + size > self.total_size:
-            raise IndexError("index={} size={} stack_size={}".format(
-                index, size, self.total_size))
 
     # Set / Push
     def set(self, offset: int, value: DataTy):
         """Set a value at an offset from the sp."""
-        self.checkRange(self.m.sp + offset, sizeof(value))
+        self.checkRange(offset, sizeof(value), requireSize=False)
         self.memory.set(self.m.sp + offset, value)
 
     def push(self, value: DataTy):
-        size = sizeof(value) + needAlign(sizeof(value))
-        self.checkRange(self.m.sp - size, size)
+        size = sizeof(value)
+        self.checkRange(0, size, self.m.sp - size)
         self.m.sp -= size
-        self.memory.set(self.m.sp, U32(0)) # zero the memory first
         self.memory.set(self.m.sp, value)
 
     # Get / Pop
@@ -310,12 +316,12 @@ class Stack(MManBase):
     def get(self, offset, ty: DataTy) -> bytes:
         """Get a value at an offset from the sp."""
         ty = getDataTy(ty)
-        self.checkRange(self.m.sp + offset, sizeof(ty))
+        self.checkRange(offset, sizeof(ty), requireSize=False)
         return self.memory.get(self.m.sp + offset, ty)
 
     def pop(self, ty: DataTy) -> DataTy:
-        size = sizeof(ty) + needAlign(sizeof(ty))
-        self.checkRange(self.m.sp, size)
+        size = sizeof(ty)
+        self.checkRange(0, size)
         out = self.memory.getCopy(self.m.sp, ty)
         self.m.sp += size
         return out
@@ -325,7 +331,7 @@ class Stack(MManBase):
 
     def debugStr(self):
         return 'Stack: {}'.format(
-            ' '.join(hex(self.get(i, I32).value) for i in range(len(self) // 4)))
+            ' '.join(hex(self.get(i, I32).value) for i in range(0, len(self), 4)))
 
     def __len__(self):
         return self.m.end - self.m.sp
