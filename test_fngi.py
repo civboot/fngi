@@ -23,12 +23,6 @@ class TestStack(unittest.TestCase):
         size = 16
         return Stack(Memory(size), MStack.new(0, size))
 
-    def testPushPopI16(self):
-        s = self.newStack()
-        s.push(I16(0x7008))
-        assert len(s) == 4
-        assert s.pop(I16).value == 0x7008
-
     def testPushPopI32(self):
         s = self.newStack()
         s.push(I32(0x4200FF))

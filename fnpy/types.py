@@ -48,7 +48,7 @@ def testNeedAlign():
 # There are two ways to pass data in/out of functions: as data stack values
 # or as a structure. We will get into this more later, but the difference
 # between these is that data stack values are passed direcly on the
-# Env.dataStack (what most Native functions use) whereas struct values
+# Env.ds (what most Native functions use) whereas struct values
 # are done entirely on env.returnStack (i.e. where local variables are stored).
 #
 # The goal with this is to more closely resemble real assembly or a lower-level
@@ -127,10 +127,10 @@ def getDataTy(v: Any) -> DataTy:
 # We will define more types later. But first let's define how our data is
 # stored.
 #
-# Most data in fngi is passed in either the dataStack or is a pointer into
+# Most data in fngi is passed in either the ds or is a pointer into
 # global memory.
 #
-# The dataStack is NOT within global memory, and therefore cannot have a
+# The ds is NOT within global memory, and therefore cannot have a
 # pointer into it. This is because on some platforms it is stored in registers
 # (or a register stack) instead of memory.
 #
@@ -825,7 +825,7 @@ class Env(object):
     def __init__(
             self,
             memory: Memory,
-            dataStack: Stack,
+            ds: Stack,
             heap: Heap,
             codeHeap: Heap,
             ba: BlockAllocator,
@@ -836,7 +836,7 @@ class Env(object):
             refs: Dict[Ty, Ref],
             ):
         self.memory = memory
-        self.dataStack = dataStack
+        self.ds = ds
         self.heap = heap
         self.codeHeap = codeHeap
         self.ba = ba
@@ -854,7 +854,7 @@ class Env(object):
     def copyForTest(self):
         """Copy the env for the test. Sets ep=heap.heap and running=True."""
         m = copy.deepcopy(self.memory)
-        dataStack = copy.deepcopy(self.dataStack)
+        ds = copy.deepcopy(self.ds)
 
         heap = self.heap.copyForTest(m)
         codeHeap = self.codeHeap.copyForTest(m)
@@ -864,7 +864,7 @@ class Env(object):
 
         out = Env(
             memory=m,
-            dataStack=dataStack,
+            ds=ds,
             heap=heap,
             codeHeap=codeHeap,
             ba=ba,
@@ -881,7 +881,7 @@ class Env(object):
 
 ENV = Env(
     memory=MEMORY,
-    dataStack=DATA_STACK,
+    ds=DATA_STACK,
     heap=HEAP,
     codeHeap=CODE_HEAP,
     ba=BLOCK_ALLOCATOR,
@@ -923,7 +923,7 @@ def testEnvCopy():
     assert env.memory is not ENV.memory
     assert env.memory.data is not ENV.memory.data
     assert bytes(env.memory.data) == bytes(ENV.memory.data)
-    assert env.dataStack.m is not ENV.dataStack.m
+    assert env.ds.m is not ENV.ds.m
     assert env.heap.m is not ENV.heap.m
     assert env.ba.m is not ENV.ba.m
     assert env.arena.marena is not ENV.arena.marena
@@ -977,14 +977,14 @@ RefU64 = createNativeRef(U64)
 #
 # Although functions have types (i.e. inputs/outputs), the types are only
 # checked at compile time. At execution time, functions pop values off of the
-# env.dataStack for their parameters and push values on the env.dataStack for their
+# env.ds for their parameters and push values on the env.ds for their
 # results. They also may use the return stack for storing local variables and
 # input/output of values.
 
 class NativeFn(Fn):
     """A native function.
 
-    Aka a function implemented in python which modifies the env.dataStack.
+    Aka a function implemented in python which modifies the env.ds.
     """
     def __init__(
             self,
@@ -1046,7 +1046,7 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
         def callDef(env):
             nonlocal name # available when debugging
             # pop stack items from left to right
-            args = [env.dataStack.pop(ty).value for ty in inputs]
+            args = [env.ds.pop(ty).value for ty in inputs]
             # call the function with them in that order
             outStack = pyDef(env, *args)
             outStack = [] if outStack is None else outStack
@@ -1056,7 +1056,7 @@ def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
             assert len(outStack) == len(outputs)
             # push outputs to the data stack
             for out, ty in zip(outStack, outputsPushTys):
-                env.dataStack.push(ty(out))
+                env.ds.push(ty(out))
 
         fnPtr = ENV.codeHeap.grow(4)
         nativeFnInstance = NativeFn(name, inputs, outputs, callDef, fnPtr)
@@ -1102,7 +1102,7 @@ def testCallLoop_addLiterals():
             addU32.u32(), quit.u32(),
         ])
     callLoop(env)
-    result = env.dataStack.pop(U32).value
+    result = env.ds.pop(U32).value
     assert 42 == result
 
 # Now that we have a basic execution engine, let's flush out some of the language.
@@ -1165,7 +1165,7 @@ def fetchRspOffsetU8(env, offset):
 
 @nativeFn([I32, U8], [])
 def updateRspOffsetU8(env):
-    env.returnStack.set(env.dataStack.pop(I32), env.dataStack.pop(U8))
+    env.returnStack.set(env.ds.pop(I32), env.ds.pop(U8))
 
 # U8 Native Functions
 

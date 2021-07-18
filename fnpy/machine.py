@@ -119,13 +119,13 @@ def loadStorePtr(ds, instr):
 # None of these involve break/loop/etc as those all happen in machine.run
 wasmSubroutines = {
     Wi32.const: lambda e, a:
-        e.dataStack.push(I32(a[0])),
+        e.ds.push(I32(a[0])),
     Wi64.const: lambda e, a:
-        e.dataStack.push(I64(a[0])),
+        e.ds.push(I64(a[0])),
 }
 
 def run(env: Env, code):
-    ds = env.dataStack
+    ds = env.ds
     lenCode = len(code)
     index = 0
     while index < lenCode:
@@ -190,7 +190,7 @@ def testRunSimple():
         (Wi32.const, 2),
         Wi32.mul,
     ])
-    assert 42 == env.dataStack.popv(I32)
+    assert 42 == env.ds.popv(I32)
 
 def testRunLoop():
     env = ENV.copyForTest()
@@ -217,4 +217,4 @@ def testRunLoop():
         (Wi32.const, vPtr),
         Wi32.load,
     ])
-    assert 10 == env.dataStack.popv(I32)
+    assert 10 == env.ds.popv(I32)

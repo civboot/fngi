@@ -1,6 +1,6 @@
 
 Fngi has two ways to do input/output when calling a function:
-- passing values on the env.dataStack
+- passing values on the env.ds
 - passing values within the function's "local variable" space on the env.returnStack
 
 Here is how a function is called (in both assembly and emulated here):
