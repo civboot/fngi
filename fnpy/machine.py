@@ -36,17 +36,6 @@ def formatArgs(args):
     return "Args: " + ' '.join(out)
 
 
-# Wasm subroutines operate on the Env (e) object given the args (a) from the
-# wasm instr.
-#
-# None of these involve break/loop/etc as those all happen in machine.run
-wasmSubroutines = {
-    Wi32.const: lambda e, a:
-        e.ds.push(I32(a[0])),
-    Wi64.const: lambda e, a:
-        e.ds.push(I64(a[0])),
-}
-
 def run(env: Env, code):
     ds = env.ds
     lenCode = len(code)
@@ -89,11 +78,6 @@ def run(env: Env, code):
             ds.push(U32(ds.popv(I32) <= ds.popv(I32)))
         elif wi == Wi32.gt_s:
             ds.push(U32(ds.popv(I32) > ds.popv(I32)))
-
-        elif wi == Wi32.load:
-            ds.push(env.memory.get(loadStorePtr(ds, args)), I32)
-        elif wi == Wi32.store:
-            WstoreValue(env, args, I32)
 
         print("END   ", wasmName[wi], ds.debugStr())
 

@@ -10,7 +10,7 @@ from ctypes import c_bool as Bool
 DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
 
 
-def WloadStorePtr(ds: "Stack", args: any):
+def _loadStorePtr(ds: "Stack", args: any):
     """Used for load/store wasm instructions."""
     offset, align = 0, 0
     if args:
@@ -20,9 +20,13 @@ def WloadStorePtr(ds: "Stack", args: any):
         ptr += align - (ptr % align)
     return ptr
 
+def WloadValue(env: "Env", args: tuple, ty: DataTy):
+    ptr = _loadStorePtr(env.ds, args)
+    value = env.memory.get(ptr, ty)
+    env.ds.push(value)
 
 def WstoreValue(env: "Env", args: tuple, ty: DataTy):
     value = env.ds.pop(I32)
-    ptr = loadStorePtr(env.ds, args)
+    ptr = _loadStorePtr(env.ds, args)
     env.memory.set(ptr, value)
 

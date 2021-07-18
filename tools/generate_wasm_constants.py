@@ -273,35 +273,46 @@ WASM_SUBROUTINE_INTRO = r'''
 # None of these involve break/loop/etc as those all happen in machine.run
 '''
 
-LOAD_TEMPLATE = (
-    '  {ns}.load{post}: lambda e, a:\n    ds.push(env.memory.get('
-    + 'loadStorePtr(e.ds, a)), {ty}),\n'
-)
+LOAD_KEY_TEMPLATE = '{ns}.load{post}'.format
+LOAD_VAL_TEMPLATE = 'lambda e,a: WloadValue(e, a, {ty})'.format
 
-STORE_TEMPLATE = '  {ns}.store{post}: lambda e, a: WstoreValue(e, a, {ty}),\n'
+STORE_KEY_TEMPLATE = '{ns}.store{post}'.format
+STORE_VAL_TEMPLATE = 'lambda e,a: WstoreValue(e, a, {ty})'.format
 
-def _subLoadStore(f, ty):
-    f.write(LOAD_TEMPLATE.format(post='', ns=ns, ty=ty))
-    f.write(STORE_TEMPLATE.format(post='', ns=ns, ty=ty))
+def _subLoadStore(subs, ns, ty):
+    subs[LOAD_KEY_TEMPLATE(ns=ns, post='')] = LOAD_VAL_TEMPLATE(ty=ty)
+    subs[STORE_KEY_TEMPLATE(ns=ns, post='')] = STORE_VAL_TEMPLATE(ty=ty)
     if ty in ('F32', 'F64'): return
     numBits = int(ty[1:])
 
     for bits in 8, 16, 32:
         if numBits <= bits: break
         for post in ('_s', '_u'):
-            f.write(LOAD_TEMPLATE.format(post=post, ns=ns, ty=ty))
-            f.write(STORE_TEMPLATE.format(post=post, ns=ns, ty=ty))
+            bitTy = ('I' if post == '_s' else 'U') + str(bits)
+            post = str(bits) + post
+            subs[LOAD_KEY_TEMPLATE(ns=ns, post=post)] = LOAD_VAL_TEMPLATE(ty=bitTy)
+            subs[STORE_KEY_TEMPLATE(ns=ns, post=post)] = STORE_VAL_TEMPLATE(ty=bitTy)
 
 
 def writeWasmSubroutines(f):
+    subs = {}
+    for ty in nativeTys:
+        ns = ty.lower()
+        subs[f'{ns}.const'] = f'lambda e,a: e.ds.push({ty}(a[0]))'
+        _subLoadStore(subs, ns, ty)
+
     f.write(WASM_SUBROUTINE_INTRO)
     f.write('wasmSubroutines = {\n')
-    for ty in nativeTys:
-        ns = 'W' + ty.lower()
-        f.write(f'  {ns}.const: lambda e, a: e.ds.push({ty}(a[0])),\n')
+    for key in wasmInstructions:
+        if key not in subs: continue
+        value = subs[key]
+        f.write(f'  W{key}: {value},\n')
     f.write('}\n')
 
 
+nativeIntTys = ['I32', 'I64']
+nativeFloatTys = ['F32', 'F64']
+nativeTys = nativeIntTys + nativeFloatTys
 
 if __name__ == '__main__':
     import sys
@@ -347,15 +358,14 @@ if __name__ == '__main__':
         f.write(f"  {keywordReplace('W' + item[0])}: '{item[0]}',\n")
     f.write('}\n')
 
-    nativeIntTys = ['I32', 'I64']
-    nativeFloatTys = ['F32', 'F64']
-    nativeTys = nativeIntTys + nativeFloatTys
+    writeWasmSubroutines(f)
+
 
     # allIntTys = ['U8', 'U16', 'U32', 'U64', 'I8', 'I16'] + nativeIntTys
 
 
-#     Wi32.const: lambda e, a:
+#     Wi32.const: lambda e,a
 #         e.ds.push(I32(a[0])),
-#     Wi64.const: lambda e, a:
+#     Wi64.const: lambda e,a
 #         e.ds.push(I64(a[0])),
 # }
