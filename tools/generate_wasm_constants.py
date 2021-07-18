@@ -383,8 +383,6 @@ if __name__ == '__main__':
     for ctype, fnty in [('float', 'F32'), ('double', 'F64')]:
         f.write(f"from ctypes import c_{ctype} as {fnty}\n")
 
-
-    f.write("\nclass _Namespace: pass\n\n")
     for ns in ('local', 'global', 'i32', 'i64', 'f32', 'f64', 'memory'):
         f.write(f'W{ns} = _Namespace()\n')
 
