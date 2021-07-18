@@ -274,10 +274,57 @@ WASM_SUBROUTINE_INTRO = r'''
 '''
 
 LOAD_KEY_TEMPLATE = '{ns}.load{post}'.format
-LOAD_VAL_TEMPLATE = 'lambda e,a: WloadValue(e, a, {ty})'.format
+LOAD_VAL_TEMPLATE = 'lambda e,a: _loadValue(e, a, {ty})'.format
 
 STORE_KEY_TEMPLATE = '{ns}.store{post}'.format
-STORE_VAL_TEMPLATE = 'lambda e,a: WstoreValue(e, a, {ty})'.format
+STORE_VAL_TEMPLATE = 'lambda e,a: _storeValue(e, a, {ty})'.format
+
+BINARY_FLOAT = [
+    'add', 'sub', 'mul', 'div',
+    'eq', 'ne', 'lt', 'gt', 'le', 'ge',
+]
+
+
+BINARY_INT = [
+    'add', 'sub', 'mul', 'div_s', 'div_u',
+    'rem_s', 'rem_u',
+    'and_', 'or_', 'xor',
+    'shl', 'shr_s', 'shr_u',
+    'rotl', 'rotr',
+    'eq', 'ne',
+    'lt_s', 'lt_u',
+    'gt_s', 'gt_u',
+    'le_s', 'le_u',
+    'ge_s', 'ge_u',
+]
+
+INSTR_INT = [
+  'eqz',
+  'clz',
+  'ctz',
+]
+
+INSTR_FLOAT = [
+  'nearest',
+  'sqrt',
+  'convert_i32_s',
+  'convert_i32_u',
+  'convert_i64_s',
+  'convert_i64_u',
+]
+
+INSTR_SPECIAL = [ # only one
+  'f32.demote_f64',
+  'i32.wrap_i64',
+  'f64.promote_f32',
+  'i64.extend_i32_s',
+  'i64.extend_i32_u',
+  'i32.reinterpret_f32',
+  'i64.reinterpret_f64',
+  'f32.reinterpret_i32',
+  'f64.reinterpret_i64',
+]
+
 
 def _subLoadStore(subs, ns, ty):
     subs[LOAD_KEY_TEMPLATE(ns=ns, post='')] = LOAD_VAL_TEMPLATE(ty=ty)
@@ -292,6 +339,15 @@ def _subLoadStore(subs, ns, ty):
             post = str(bits) + post
             subs[LOAD_KEY_TEMPLATE(ns=ns, post=post)] = LOAD_VAL_TEMPLATE(ty=bitTy)
             subs[STORE_KEY_TEMPLATE(ns=ns, post=post)] = STORE_VAL_TEMPLATE(ty=bitTy)
+
+
+BINARY_KEY_TEMPLATE = '{ns}.{binary}'.format
+
+def _subBinary(subs, ns, ty):
+    if ty[0] == 'F': binarys = BINARY_FLOAT
+    else: binarys = BINARY_INT
+    for b in binarys:
+        key = BINARY_KEY_TEMPLATE(ns, binary)
 
 
 def writeWasmSubroutines(f):
@@ -359,6 +415,10 @@ if __name__ == '__main__':
     f.write('}\n')
 
     writeWasmSubroutines(f)
+
+    f.write("\n# All instructions sorted for lookup and comparison.\n")
+    for key in sorted(wasmInstructions):
+        f.write(f"# {key}\n")
 
 
     # allIntTys = ['U8', 'U16', 'U32', 'U64', 'I8', 'I16'] + nativeIntTys

@@ -389,26 +389,200 @@ wasmName = {
 #
 # None of these involve break/loop/etc as those all happen in machine.run
 wasmSubroutines = {
-  Wi32.load: lambda e,a: WloadValue(e, a, I32),
-  Wi64.load: lambda e,a: WloadValue(e, a, I64),
-  Wf32.load: lambda e,a: WloadValue(e, a, F32),
-  Wf64.load: lambda e,a: WloadValue(e, a, F64),
-  Wi32.load8_s: lambda e,a: WloadValue(e, a, I8),
-  Wi32.load8_u: lambda e,a: WloadValue(e, a, U8),
-  Wi32.load16_s: lambda e,a: WloadValue(e, a, I16),
-  Wi32.load16_u: lambda e,a: WloadValue(e, a, U16),
-  Wi64.load8_s: lambda e,a: WloadValue(e, a, I8),
-  Wi64.load8_u: lambda e,a: WloadValue(e, a, U8),
-  Wi64.load16_s: lambda e,a: WloadValue(e, a, I16),
-  Wi64.load16_u: lambda e,a: WloadValue(e, a, U16),
-  Wi64.load32_s: lambda e,a: WloadValue(e, a, I32),
-  Wi64.load32_u: lambda e,a: WloadValue(e, a, U32),
-  Wi32.store: lambda e,a: WstoreValue(e, a, I32),
-  Wi64.store: lambda e,a: WstoreValue(e, a, I64),
-  Wf32.store: lambda e,a: WstoreValue(e, a, F32),
-  Wf64.store: lambda e,a: WstoreValue(e, a, F64),
+  Wi32.load: lambda e,a: _loadValue(e, a, I32),
+  Wi64.load: lambda e,a: _loadValue(e, a, I64),
+  Wf32.load: lambda e,a: _loadValue(e, a, F32),
+  Wf64.load: lambda e,a: _loadValue(e, a, F64),
+  Wi32.load8_s: lambda e,a: _loadValue(e, a, I8),
+  Wi32.load8_u: lambda e,a: _loadValue(e, a, U8),
+  Wi32.load16_s: lambda e,a: _loadValue(e, a, I16),
+  Wi32.load16_u: lambda e,a: _loadValue(e, a, U16),
+  Wi64.load8_s: lambda e,a: _loadValue(e, a, I8),
+  Wi64.load8_u: lambda e,a: _loadValue(e, a, U8),
+  Wi64.load16_s: lambda e,a: _loadValue(e, a, I16),
+  Wi64.load16_u: lambda e,a: _loadValue(e, a, U16),
+  Wi64.load32_s: lambda e,a: _loadValue(e, a, I32),
+  Wi64.load32_u: lambda e,a: _loadValue(e, a, U32),
+  Wi32.store: lambda e,a: _storeValue(e, a, I32),
+  Wi64.store: lambda e,a: _storeValue(e, a, I64),
+  Wf32.store: lambda e,a: _storeValue(e, a, F32),
+  Wf64.store: lambda e,a: _storeValue(e, a, F64),
   Wi32.const: lambda e,a: e.ds.push(I32(a[0])),
   Wi64.const: lambda e,a: e.ds.push(I64(a[0])),
   Wf32.const: lambda e,a: e.ds.push(F32(a[0])),
   Wf64.const: lambda e,a: e.ds.push(F64(a[0])),
 }
+
+# All instructions sorted for lookup and comparison.
+# block
+# br
+# br_if
+# br_table
+# call
+# call_indirect
+# drop
+# else
+# end
+# f32.abs
+# f32.add
+# f32.ceil
+# f32.const
+# f32.convert_i32_s
+# f32.convert_i32_u
+# f32.convert_i64_s
+# f32.convert_i64_u
+# f32.copysign
+# f32.demote_f64
+# f32.div
+# f32.eq
+# f32.floor
+# f32.ge
+# f32.gt
+# f32.le
+# f32.load
+# f32.lt
+# f32.max
+# f32.min
+# f32.mul
+# f32.ne
+# f32.nearest
+# f32.neg
+# f32.reinterpret_i32
+# f32.sqrt
+# f32.store
+# f32.sub
+# f32.trunc
+# f64.abs
+# f64.add
+# f64.ceil
+# f64.const
+# f64.convert_i32_s
+# f64.convert_i32_u
+# f64.convert_i64_s
+# f64.convert_i64_u
+# f64.copysign
+# f64.div
+# f64.eq
+# f64.floor
+# f64.ge
+# f64.gt
+# f64.le
+# f64.load
+# f64.lt
+# f64.max
+# f64.min
+# f64.mul
+# f64.ne
+# f64.nearest
+# f64.neg
+# f64.promote_f32
+# f64.reinterpret_i64
+# f64.sqrt
+# f64.store
+# f64.sub
+# f64.trunc
+# global.get
+# global.set
+# i32.add
+# i32.and
+# i32.clz
+# i32.const
+# i32.ctz
+# i32.div_s
+# i32.div_u
+# i32.eq
+# i32.eqz
+# i32.ge_s
+# i32.ge_u
+# i32.gt_s
+# i32.gt_u
+# i32.le_s
+# i32.le_u
+# i32.load
+# i32.load16_s
+# i32.load16_u
+# i32.load8_s
+# i32.load8_u
+# i32.lt_s
+# i32.lt_u
+# i32.mul
+# i32.ne
+# i32.or
+# i32.popcnt
+# i32.reinterpret_f32
+# i32.rem_s
+# i32.rem_u
+# i32.rotl
+# i32.rotr
+# i32.shl
+# i32.shr_s
+# i32.shr_u
+# i32.store
+# i32.store16
+# i32.store8
+# i32.sub
+# i32.trunc_f32_s
+# i32.trunc_f32_u
+# i32.trunc_f64_s
+# i32.trunc_f64_u
+# i32.wrap_i64
+# i32.xor
+# i64.add
+# i64.and
+# i64.clz
+# i64.const
+# i64.ctz
+# i64.div_s
+# i64.div_u
+# i64.eq
+# i64.eqz
+# i64.extend_i32_s
+# i64.extend_i32_u
+# i64.ge_s
+# i64.ge_u
+# i64.gt_s
+# i64.gt_u
+# i64.le_s
+# i64.le_u
+# i64.load
+# i64.load16_s
+# i64.load16_u
+# i64.load32_s
+# i64.load32_u
+# i64.load8_s
+# i64.load8_u
+# i64.lt_s
+# i64.lt_u
+# i64.mul
+# i64.ne
+# i64.or
+# i64.popcnt
+# i64.reinterpret_f64
+# i64.rem_s
+# i64.rem_u
+# i64.rotl
+# i64.rotr
+# i64.shl
+# i64.shr_s
+# i64.shr_u
+# i64.store
+# i64.store16
+# i64.store32
+# i64.store8
+# i64.sub
+# i64.trunc_f32_s
+# i64.trunc_f32_u
+# i64.trunc_f64_s
+# i64.trunc_f64_u
+# i64.xor
+# if
+# local.get
+# local.set
+# local.tee
+# loop
+# memory.grow
+# memory.size
+# nop
+# return
+# select
+# unreachable
