@@ -103,7 +103,7 @@ def run(env: Env, code):
     index = 0
     while index < lenCode:
         instr = code[index]
-        flowControl = None
+        brLevel = None
         # wi stands for "webassembly instr"
         if isinstance(instr, int):
             wi = instr
@@ -116,10 +116,21 @@ def run(env: Env, code):
         elif wi == Wi64.const:
             ds.push(I64(args[0]))
 
-        elif wi == Wbr: flowControl = args[0]
+        elif wi == Wbr: brLevel = args[0]
         elif wi == Wbr_if and ds.popv(U32):
-            flowControl = args[0]
-        elif wi in {Wblock, Wloop}: flowControl = run(env, args[0])
+            brLevel = args[0]
+        elif wi == Wblock:
+            brLevel = run(env, args[0])
+            if brLevel == 0:
+                # br has been handled by getting here
+                brLevel = None
+            elif brLevel > 0: return brLevel - 1
+        elif wi == Wloop:
+            while True:
+                brLevel = run(env, args[0])
+                if brLevel is None: break # ended block w/out br
+                if brLevel > 0: return brLevel - 1
+                # else loop again
 
         elif wi == Wi32.add:
             ds.push(I32(ds.popv(I32) + ds.popv(I32)))
@@ -128,6 +139,8 @@ def run(env: Env, code):
 
         elif wi == Wi32.le_s:
             ds.push(U32(ds.popv(I32) <= ds.popv(I32)))
+        elif wi == Wi32.gt_s:
+            ds.push(U32(ds.popv(I32) > ds.popv(I32)))
 
         elif wi in {Wi32.load, Wi32.store}:
             offset, align = 0, 0
@@ -142,27 +155,8 @@ def run(env: Env, code):
             elif wi == Wi32.store: env.memory.set(ptr, value)
         print("END   ", wasmName[wi], ds.debugStr())
 
-        if flowControl is None:
-            index += 1
-            continue
-
-        if flowControl > 0:
-            # If the flow control is at a larger level, subtract one and let
-            # next level handle it.
-            flowControl -= 1
-            print("flow control updated:", flowControl)
-            return flowControl
-        assert flowControl == 0
-
-        if wi == Wloop:
-            # repeat current instruction without incrementing index
-            # (loop block)
-            print("looping")
-            continue
-        if wi == Wblock:
-            # Break out of the current block
-            print("breaking")
-            return
+        if brLevel is not None: return brLevel
+        index += 1
 
 
 def testRunSimple():
@@ -184,14 +178,18 @@ def testRunLoop():
         (Wi32.const, vPtr),
         (Wi32.const, 0),
         Wi32.store,
-        (Wloop, [           # while out <= 10: out += 1
+        # while True:
+        #  out += 1
+        #  if 10 > out: continue
+        (Wloop, [
             (Wi32.const, vPtr),
             (Wi32.const, vPtr),
             Wi32.load,
             (Wi32.const, 1), Wi32.add,
             Wi32.store,
             (Wi32.const, vPtr), Wi32.load,
-            (Wi32.const, 10), Wi32.le_s,
+            (Wi32.const, 10),
+            Wi32.gt_s,
             (Wbr_if, 0), # continue if true
         ]),
         (Wi32.const, vPtr),
