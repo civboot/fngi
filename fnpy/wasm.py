@@ -1,0 +1,26 @@
+from wasm_constants import *
+
+# wasmSubroutines = {
+#   Wi32.load: lambda e,a: _loadValue(e, a, I32),
+#   Wi64.load: lambda e,a: _loadValue(e, a, I64),
+#   Wf32.load: lambda e,a: _loadValue(e, a, F32),
+#   Wf64.load: lambda e,a: _loadValue(e, a, F64),
+#   Wi32.load8_s: lambda e,a: _loadValue(e, a, I8),
+#   Wi32.load8_u: lambda e,a: _loadValue(e, a, U8),
+#   Wi32.load16_s: lambda e,a: _loadValue(e, a, I16),
+#   Wi32.load16_u: lambda e,a: _loadValue(e, a, U16),
+#   Wi64.load8_s: lambda e,a: _loadValue(e, a, I8),
+#   Wi64.load8_u: lambda e,a: _loadValue(e, a, U8),
+#   Wi64.load16_s: lambda e,a: _loadValue(e, a, I16),
+#   Wi64.load16_u: lambda e,a: _loadValue(e, a, U16),
+#   Wi64.load32_s: lambda e,a: _loadValue(e, a, I32),
+#   Wi64.load32_u: lambda e,a: _loadValue(e, a, U32),
+#   Wi32.store: lambda e,a: _storeValue(e, a, I32),
+#   Wi64.store: lambda e,a: _storeValue(e, a, I64),
+#   Wf32.store: lambda e,a: _storeValue(e, a, F32),
+#   Wf64.store: lambda e,a: _storeValue(e, a, F64),
+#   Wi32.const: lambda e,a: e.ds.push(I32(a[0])),
+#   Wi64.const: lambda e,a: e.ds.push(I64(a[0])),
+#   Wf32.const: lambda e,a: e.ds.push(F32(a[0])),
+#   Wf64.const: lambda e,a: e.ds.push(F64(a[0])),
+# }

@@ -414,18 +414,5 @@ if __name__ == '__main__':
         f.write(f"  {keywordReplace('W' + item[0])}: '{item[0]}',\n")
     f.write('}\n')
 
-    writeWasmSubroutines(f)
-
-    f.write("\n# All instructions sorted for lookup and comparison.\n")
-    for key in sorted(wasmInstructions):
-        f.write(f"# {key}\n")
-
-
+    # writeWasmSubroutines(f)
     # allIntTys = ['U8', 'U16', 'U32', 'U64', 'I8', 'I16'] + nativeIntTys
-
-
-#     Wi32.const: lambda e,a
-#         e.ds.push(I32(a[0])),
-#     Wi64.const: lambda e,a
-#         e.ds.push(I64(a[0])),
-# }
