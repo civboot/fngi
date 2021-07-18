@@ -113,6 +113,17 @@ def loadStorePtr(ds, instr):
     return ptr
 
 
+# Wasm subroutines operate on the Env (e) object given the args (a) from the
+# wasm instr.
+#
+# None of these involve break/loop/etc as those all happen in machine.run
+wasmSubroutines = {
+    Wi32.const: lambda e, a:
+        e.dataStack.push(I32(a[0])),
+    Wi64.const: lambda e, a:
+        e.dataStack.push(I64(a[0])),
+}
+
 def run(env: Env, code):
     ds = env.dataStack
     lenCode = len(code)
@@ -127,10 +138,8 @@ def run(env: Env, code):
         else:
             wi, *args = instr
         print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
-        if wi == Wi32.const:
-            ds.push(I32(args[0]))
-        elif wi == Wi64.const:
-            ds.push(I64(args[0]))
+        subroutine = wasmSubroutines.get(wi, None)
+        if subroutine: subroutine(env, args)
 
         elif wi == Wbr: brLevel = args[0]
         elif wi == Wbr_if and ds.popv(U32):
