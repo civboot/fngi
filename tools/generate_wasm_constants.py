@@ -266,6 +266,13 @@ PY_FILE_START = r'''
 from .wasm_setup import *
 '''
 
+WASM_SUBROUTINE_INTRO = r'''
+# Wasm subroutines operate on the Env (e) object given the args (a) from the
+# wasm instr.
+#
+# None of these involve break/loop/etc as those all happen in machine.run
+'''
+
 
 if __name__ == '__main__':
     import sys
@@ -310,4 +317,21 @@ if __name__ == '__main__':
     for item in wasmInstructions.items():
         f.write(f"  {keywordReplace('W' + item[0])}: '{item[0]}',\n")
     f.write('}\n')
+    f.write(WASM_SUBROUTINE_INTRO)
+    f.write('wasmSubroutines = {\n')
 
+    nativeIntTys = ['I32', 'I64']
+    nativeFloatTys = ['F32', 'F64']
+    nativeTys = nativeIntTys + nativeFloatTys
+
+    # allIntTys = ['U8', 'U16', 'U32', 'U64', 'I8', 'I16'] + nativeIntTys
+
+    for ty in nativeTys:
+        ns = 'W' + ty.lower()
+        f.write(f'  {ns}.const: lambda e, a: e.ds.push({ty}(a[0])),\n')
+
+#     Wi32.const: lambda e, a:
+#         e.ds.push(I32(a[0])),
+#     Wi64.const: lambda e, a:
+#         e.ds.push(I64(a[0])),
+# }

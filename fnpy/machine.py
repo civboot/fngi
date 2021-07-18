@@ -27,74 +27,6 @@ def needAlign(size: int) -> int:
         return 0
     return 4 - (size % 4)
 
-class FakeStack:
-    def __init__(self):
-        self.data: List[DataTy] = []
-
-    def __len__(self):
-        """Return size in bytes."""
-        return sum(map(sizeof, self.data))
-
-    def push(self, value: DataTy):
-        assert type(value) in STACK_TYPES
-        self.data.append(value)
-
-    def pop(self, ty: DataTy):
-        checkTy(self.data[-1], ty)
-        return self.data.pop()
-
-    def get(self, offset: int, ty: DataTy):
-        originalOffset = offset # for error handling
-        i = len(self.data) - 1 # we go from top -> bottom of stack
-        while True:
-            if i < 0: raise IndexError(originalOffset)
-            if offset < 0: raise IndexError(f'{originalOffset} not divisible by type sizes')
-            v = self.data[i]
-            if offset == 0:
-                checkTy(v, ty)
-                return v
-            offset -= sizeof(v)
-            i -= 1
-
-
-def testFakeStack():
-    # test push/pop
-    ds = FakeStack()
-    ds.push(I32(32))
-    assertTyEq(I32(32), ds.pop(I32))
-    assert len(ds) == 0
-
-    # Test get and error cases
-    ds.push(U32(32))
-    ds.push(I32(-32))
-    try: ds.pop(U32); assert False
-    except TypeError: pass
-
-    try: ds.get(2, U32); assert False
-    except IndexError: pass
-    assertTyEq(I32(-32), ds.get(0, I32))
-    assertTyEq(U32(32), ds.get(4, U32))
-    assert len(ds) == 8
-    assertTyEq(I32(-32), ds.pop(I32))
-    assertTyEq(U32(32), ds.pop(U32))
-    assert len(ds) == 0
-
-    # Test larger size
-    ds.push(I32(-111))
-    ds.push(U64(666))
-    ds.push(U32(333))
-    assertTyEq(U64(666), ds.get(4, U64))
-    assertTyEq(I32(-111), ds.get(12, I32))
-    assertTyEq(U32(333), ds.pop(U32))
-    assertTyEq(U64(666), ds.pop(U64))
-    assertTyEq(I32(-111), ds.pop(I32))
-
-
-class FakeEnv:
-    def __init__(self):
-        self.ds = FakeStack()
-        self.localsStack = FakseStack()
-
 def formatArgs(args):
     out = []
     for a in args:
@@ -102,15 +34,6 @@ def formatArgs(args):
         elif isinstance(a, (tuple, list)): out.append("(block)")
         else: out.append("???")
     return "Args: " + ' '.join(out)
-
-def loadStorePtr(ds, instr):
-    offset, align = 0, 0
-    if not isinstance(instr, int):
-        _, offset, align = instr
-    ptr = ds.popv(U32) + offset
-    if align and ptr % align != 0:
-        ptr += align - (ptr % align)
-    return ptr
 
 
 # Wasm subroutines operate on the Env (e) object given the args (a) from the
@@ -168,12 +91,9 @@ def run(env: Env, code):
             ds.push(U32(ds.popv(I32) > ds.popv(I32)))
 
         elif wi == Wi32.load:
-            ptr = loadStorePtr(ds, instr)
-            ds.push(env.memory.get(ptr, I32))
+            ds.push(env.memory.get(loadStorePtr(ds, instr)), I32)
         elif wi == Wi32.store:
-            value = ds.pop(I32)
-            ptr = loadStorePtr(ds, instr)
-            env.memory.set(ptr, value)
+            WstoreValue(env, instr, I32)
 
         print("END   ", wasmName[wi], ds.debugStr())
 
