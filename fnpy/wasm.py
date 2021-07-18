@@ -66,6 +66,34 @@ def _1bytes(v): return U8(bytes(v)[:1])
 def _2bytes(v): return U16(bytes(v)[:2])
 def _4bytes(v): return U32(bytes(v)[:4])
 
+def _bitand(l, r): return l & r
+def _bitor(l, r): return l | r
+def _bitxor(l,r): return l ^ r
+def _inverse(l): return ~l
+
+def rotr(ty, a, n):
+    "Rotate a, n times to the right"
+    width = sizeof(ty)
+    if n > 0:
+        mask = (1 << width) - 1
+        a, n = a & mask, n % width
+        return ((a >> n)    # top moved down
+                | ((a & ((1 << n) - 1))   # Bottom masked...
+                   << (width - n)))  # ... then moved up
+    elif n == 0: return a
+    else: return rotl(ty, a, -n)
+ 
+def rotl(ty, a, n):
+    "Rotate a, n times to the left"
+    width = sizeof(ty)
+    if n > 0:
+        mask = (1 << width) - 1
+        a, n = a & mask, n % width
+        return (((a << n) & mask)      # bottom shifted up and masked
+                | (a >> (width - n)))  # Top moved down
+    elif n == 0: return a
+    else: return rotr(width, a, -n)
+
 wasmSubroutine = {
   Wunreachable: _raiseUnreachable(),
   Wnop: lambda e,a: None,
@@ -138,38 +166,38 @@ wasmSubroutine = {
   Wi64.le_u: _doBinCnv(I64, operator.le, U64),
   Wi64.ge_s: _doBinary(I64, operator.ge),
   Wi64.ge_u: _doBinCnv(I64, operator.ge, U64),
-  Wf32.eq: _doBinary(NI, NI),
-  Wf32.ne: _doBinary(NI, NI),
-  Wf32.lt: _doBinary(NI, NI),
-  Wf32.gt: _doBinary(NI, NI),
-  Wf32.le: _doBinary(NI, NI),
-  Wf32.ge: _doBinary(NI, NI),
-  Wf64.eq: _doBinary(NI, NI),
-  Wf64.ne: _doBinary(NI, NI),
-  Wf64.lt: _doBinary(NI, NI),
-  Wf64.gt: _doBinary(NI, NI),
-  Wf64.le: _doBinary(NI, NI),
-  Wf64.ge: _doBinary(NI, NI),
-  Wi32.clz: _doBinary(NI, NI),
-  Wi32.ctz: _doBinary(NI, NI),
+  Wf32.eq: _doBinary(F32, operator.eq),
+  Wf32.ne: _doBinary(F32, operator.ne),
+  Wf32.lt: _doBinary(F32, operator.lt),
+  Wf32.gt: _doBinary(F32, operator.gt),
+  Wf32.le: _doBinary(F32, operator.le),
+  Wf32.ge: _doBinary(F32, operator.ge),
+  Wf64.eq: _doBinary(F64, operator.eq),
+  Wf64.ne: _doBinary(F64, operator.ne),
+  Wf64.lt: _doBinary(F64, operator.le),
+  Wf64.gt: _doBinary(F64, operator.gt),
+  Wf64.le: _doBinary(F64, operator.le),
+  Wf64.ge: _doBinary(F64, operator.ge),
+  Wi32.clz: _doUnary(NI, NI),
+  Wi32.ctz: _doUnary(NI, NI),
   Wi32.popcnt: _doBinary(NI, NI),
-  Wi32.add: _doBinary(NI, NI),
-  Wi32.sub: _doBinary(NI, NI),
-  Wi32.mul: _doBinary(NI, NI),
-  Wi32.div_s: _doBinary(NI, NI),
-  Wi32.div_u: _doBinary(NI, NI),
-  Wi32.rem_s: _doBinary(NI, NI),
-  Wi32.rem_u: _doBinary(NI, NI),
-  Wi32.and_: _doBinary(NI, NI),
-  Wi32.or_: _doBinary(NI, NI),
-  Wi32.xor: _doBinary(NI, NI),
-  Wi32.shl: _doBinary(NI, NI),
-  Wi32.shr_s: _doBinary(NI, NI),
-  Wi32.shr_u: _doBinary(NI, NI),
-  Wi32.rotl: _doBinary(NI, NI),
-  Wi32.rotr: _doBinary(NI, NI),
-  Wi64.clz: _doBinary(NI, NI),
-  Wi64.ctz: _doBinary(NI, NI),
+  Wi32.add: _doBinary(I32, operator.add),
+  Wi32.sub: _doBinary(I32, operator.add),
+  Wi32.mul: _doBinary(I32, operator.add),
+  Wi32.div_s: _doBinary(I32, operator.div),
+  Wi32.div_u: _doBinary(I32, operator.div),
+  Wi32.rem_s: _doBinary(I32, operator.mod),
+  Wi32.rem_u: _doBinary(I32, operator.mod),
+  Wi32.and_: _doBinary(I32, _bitand),
+  Wi32.or_: _doBinary(I32, _bitor),
+  Wi32.xor: _doBinary(I32, _bitxor),
+  Wi32.shl: _doBinary(I32, operator.lshift),
+  Wi32.shr_s: _doBinary(I32, operator.rshift),
+  Wi32.shr_u: _doBinary(I32, operator.rshift),
+  Wi32.rotl: _doBinary(I32, rotl),
+  Wi32.rotr: _doBinary(I32, rotr),
+  Wi64.clz: _doUnary(NI, NI),
+  Wi64.ctz: _doUnary(NI, NI),
   Wi64.popcnt: _doBinary(NI, NI),
   Wi64.add: _doBinary(NI, NI),
   Wi64.sub: _doBinary(NI, NI),
