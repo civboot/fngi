@@ -21,6 +21,12 @@ def assertTyEq(v1: DataTy, v2: DataTy):
     assert type(v1) == type(v2)
     assert v1.value == v2.value
 
+def needAlign(size: int) -> int:
+    """Return padding bytes needed to align a value of size."""
+    if size % 4 == 0:
+        return 0
+    return 4 - (size % 4)
+
 class FakeStack:
     def __init__(self):
         self.data: List[DataTy] = []
@@ -97,6 +103,16 @@ def formatArgs(args):
         else: out.append("???")
     return "Args: " + ' '.join(out)
 
+def loadStorePtr(ds, instr):
+    offset, align = 0, 0
+    if not isinstance(instr, int):
+        _, offset, align = instr
+    ptr = ds.popv(U32) + offset
+    if align and ptr % align != 0:
+        ptr += align - (ptr % align)
+    return ptr
+
+
 def run(env: Env, code):
     ds = env.dataStack
     lenCode = len(code)
@@ -142,17 +158,14 @@ def run(env: Env, code):
         elif wi == Wi32.gt_s:
             ds.push(U32(ds.popv(I32) > ds.popv(I32)))
 
-        elif wi in {Wi32.load, Wi32.store}:
-            offset, align = 0, 0
-            if not isinstance(instr, int):
-                _, offset, align = instr
-            assert align == 0, "TODO: not implemented"
-            value = None
-            if wi == Wi32.store: value = ds.pop(I32)
-            ptr = ds.popv(U32) + offset
+        elif wi == Wi32.load:
+            ptr = loadStorePtr(ds, instr)
+            ds.push(env.memory.get(ptr, I32))
+        elif wi == Wi32.store:
+            value = ds.pop(I32)
+            ptr = loadStorePtr(ds, instr)
+            env.memory.set(ptr, value)
 
-            if wi == Wi32.load: ds.push(env.memory.get(ptr, I32))
-            elif wi == Wi32.store: env.memory.set(ptr, value)
         print("END   ", wasmName[wi], ds.debugStr())
 
         if brLevel is not None: return brLevel
