@@ -91,9 +91,9 @@ def run(env: Env, code):
             ds.push(U32(ds.popv(I32) > ds.popv(I32)))
 
         elif wi == Wi32.load:
-            ds.push(env.memory.get(loadStorePtr(ds, instr)), I32)
+            ds.push(env.memory.get(loadStorePtr(ds, args)), I32)
         elif wi == Wi32.store:
-            WstoreValue(env, instr, I32)
+            WstoreValue(env, args, I32)
 
         print("END   ", wasmName[wi], ds.debugStr())
 

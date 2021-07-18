@@ -273,6 +273,35 @@ WASM_SUBROUTINE_INTRO = r'''
 # None of these involve break/loop/etc as those all happen in machine.run
 '''
 
+LOAD_TEMPLATE = (
+    '  {ns}.load{post}: lambda e, a:\n    ds.push(env.memory.get('
+    + 'loadStorePtr(e.ds, a)), {ty}),\n'
+)
+
+STORE_TEMPLATE = '  {ns}.store{post}: lambda e, a: WstoreValue(e, a, {ty}),\n'
+
+def _subLoadStore(f, ty):
+    f.write(LOAD_TEMPLATE.format(post='', ns=ns, ty=ty))
+    f.write(STORE_TEMPLATE.format(post='', ns=ns, ty=ty))
+    if ty in ('F32', 'F64'): return
+    numBits = int(ty[1:])
+
+    for bits in 8, 16, 32:
+        if numBits <= bits: break
+        for post in ('_s', '_u'):
+            f.write(LOAD_TEMPLATE.format(post=post, ns=ns, ty=ty))
+            f.write(STORE_TEMPLATE.format(post=post, ns=ns, ty=ty))
+
+
+def writeWasmSubroutines(f):
+    f.write(WASM_SUBROUTINE_INTRO)
+    f.write('wasmSubroutines = {\n')
+    for ty in nativeTys:
+        ns = 'W' + ty.lower()
+        f.write(f'  {ns}.const: lambda e, a: e.ds.push({ty}(a[0])),\n')
+    f.write('}\n')
+
+
 
 if __name__ == '__main__':
     import sys
@@ -317,8 +346,6 @@ if __name__ == '__main__':
     for item in wasmInstructions.items():
         f.write(f"  {keywordReplace('W' + item[0])}: '{item[0]}',\n")
     f.write('}\n')
-    f.write(WASM_SUBROUTINE_INTRO)
-    f.write('wasmSubroutines = {\n')
 
     nativeIntTys = ['I32', 'I64']
     nativeFloatTys = ['F32', 'F64']
@@ -326,9 +353,6 @@ if __name__ == '__main__':
 
     # allIntTys = ['U8', 'U16', 'U32', 'U64', 'I8', 'I16'] + nativeIntTys
 
-    for ty in nativeTys:
-        ns = 'W' + ty.lower()
-        f.write(f'  {ns}.const: lambda e, a: e.ds.push({ty}(a[0])),\n')
 
 #     Wi32.const: lambda e, a:
 #         e.ds.push(I32(a[0])),

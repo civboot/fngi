@@ -383,3 +383,26 @@ wasmName = {
   Wf32.reinterpret_i32: 'f32.reinterpret_i32',
   Wf64.reinterpret_i64: 'f64.reinterpret_i64',
 }
+
+# Wasm subroutines operate on the Env (e) object given the args (a) from the
+# wasm instr.
+#
+# None of these involve break/loop/etc as those all happen in machine.run
+wasmSubroutines = {
+  Wi32.const: lambda e, a: e.ds.push(I32(a[0])),
+  Wi32.load: lambda e, a:
+    ds.push(env.memory.get(loadStorePtr(e.ds, a)), I32),
+  Wi32.store: lambda e, a: WstoreValue(e, a, I32),
+  Wi64.const: lambda e, a: e.ds.push(I64(a[0])),
+  Wi64.load: lambda e, a:
+    ds.push(env.memory.get(loadStorePtr(e.ds, a)), I64),
+  Wi64.store: lambda e, a: WstoreValue(e, a, I64),
+  Wf32.const: lambda e, a: e.ds.push(F32(a[0])),
+  Wf32.load: lambda e, a:
+    ds.push(env.memory.get(loadStorePtr(e.ds, a)), F32),
+  Wf32.store: lambda e, a: WstoreValue(e, a, F32),
+  Wf64.const: lambda e, a: e.ds.push(F64(a[0])),
+  Wf64.load: lambda e, a:
+    ds.push(env.memory.get(loadStorePtr(e.ds, a)), F64),
+  Wf64.store: lambda e, a: WstoreValue(e, a, F64),
+}
