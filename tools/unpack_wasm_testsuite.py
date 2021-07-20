@@ -1,3 +1,4 @@
+# Generates wasm_testsuite_unpacked/ which is injested by tests.
 
 import subprocess
 import sys
@@ -11,7 +12,6 @@ def unpackWast(wastFname):
     wastPath = os.path.join(WASM_TESTSUITE, wastFname)
     noExt = os.path.splitext(wastFname)[0]
     unpackedDir = os.path.join(WASM_TESTSUITE_UNPACKED, noExt)
-    if os.path.exists(unpackedDir): shutil.rmtree(unpackedDir)
     os.mkdir(unpackedDir)
 
     wastUnpackedPath = os.path.join(unpackedDir, wastFname)
@@ -19,6 +19,8 @@ def unpackWast(wastFname):
     subprocess.run(['wast2json', wastFname], check=True, cwd=unpackedDir)
 
 def unpackWastDir():
+    if os.path.exists(WASM_TESTSUITE_UNPACKED): shutil.rmtree(WASM_TESTSUITE_UNPACKED)
+    os.mkdir(WASM_TESTSUITE_UNPACKED)
     for wastFname in os.listdir(WASM_TESTSUITE):
         if os.path.splitext(wastFname)[1] != '.wast': continue
         unpackWast(wastFname)
