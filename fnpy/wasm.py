@@ -94,7 +94,7 @@ def rotl(ty, a, n):
     elif n == 0: return a
     else: return rotr(width, a, -n)
 
-wasmSubroutine = {
+wasmSubroutines = {
   Wunreachable: _raiseUnreachable(),
   Wnop: lambda e,a: None,
   # Wblock: NI(),

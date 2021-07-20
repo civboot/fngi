@@ -69,16 +69,6 @@ def run(env: Env, code):
                 if brLevel > 0: return brLevel - 1
                 # else loop again
 
-        elif wi == Wi32.add:
-            ds.push(I32(ds.popv(I32) + ds.popv(I32)))
-        elif wi == Wi32.mul:
-            ds.push(I32(ds.popv(I32) * ds.popv(I32)))
-
-        elif wi == Wi32.le_s:
-            ds.push(U32(ds.popv(I32) <= ds.popv(I32)))
-        elif wi == Wi32.gt_s:
-            ds.push(U32(ds.popv(I32) > ds.popv(I32)))
-
         print("END   ", wasmName[wi], ds.debugStr())
 
         if brLevel is not None: return brLevel
