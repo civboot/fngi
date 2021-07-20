@@ -163,6 +163,7 @@ def parse_instructions(stream):
         if op == 0x0b:
             break
         name, *funcs = _opcodes[op]
+        print("parsing name:", name)
         instructions.append((name, *(func(stream) for func in funcs)))
     return instructions
 
