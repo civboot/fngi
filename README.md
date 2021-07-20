@@ -42,6 +42,16 @@ Strategy](notes/test_strategy.md) to exist with minimal effort.
 
 # Hacking
 
+When opening a PR to submit code to this repository you must ascent to submit
+your code under the license listed in this project. You must put this ascent
+in your commit message. This is only required for your first commit:
+
+```
+I <author> ascent to license this contribution under the dual licenses of
+the UNLICENSE or MIT license listed in the `UNLICENSE` and `README.md` files of
+this repository.
+```
+
 To setup the python environment do the below. 
 
 > Note: `requirements.txt` dependencies are only used for testing purposes.
