@@ -39,3 +39,17 @@ virtual machine.
 Fngi has two parallel implementations, python and Forth. Along with allowing
 faster prototyping in python, it allows for a robust [Test
 Strategy](notes/test_strategy.md) to exist with minimal effort.
+
+# Hacking
+
+To setup the python environment do the below. 
+
+> Note: `requirements.txt` dependencies are only used for testing purposes.
+
+```
+python3 -m venv venv/
+source venv/bin/activate
+pip install -r requirements.txt
+# Run tests
+pytest -vvv fnpy/* tests/*
+```
