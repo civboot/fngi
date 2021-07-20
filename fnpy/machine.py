@@ -54,16 +54,16 @@ def run(env: Env, code):
         subroutine = wasmSubroutines.get(wi, None)
         if subroutine: subroutine(env, args)
 
-        elif wi == Wbr: brLevel = args[0]
-        elif wi == Wbr_if and ds.popv(U32):
+        elif wi == w.br: brLevel = args[0]
+        elif wi == w.br_if and ds.popv(U32):
             brLevel = args[0]
-        elif wi == Wblock:
+        elif wi == w.block:
             brLevel = run(env, args[0])
             if brLevel == 0:
                 # br has been handled by getting here
                 brLevel = None
             elif brLevel > 0: return brLevel - 1
-        elif wi == Wloop:
+        elif wi == w.loop:
             while True:
                 brLevel = run(env, args[0])
                 if brLevel is None: break # ended block w/out br
@@ -79,11 +79,11 @@ def run(env: Env, code):
 def testRunSimple():
     env = ENV.copyForTest()
     run(env, [
-        (Wi32.const, 10),
-        (Wi32.const, 11),
-        Wi32.add,
-        (Wi32.const, 2),
-        Wi32.mul,
+        (w.i32.const, 10),
+        (w.i32.const, 11),
+        w.i32.add,
+        (w.i32.const, 2),
+        w.i32.mul,
     ])
     assert 42 == env.ds.popv(I32)
 
@@ -92,25 +92,25 @@ def testRunLoop():
     vPtr = env.heap.grow(4)
     run(env, [
         # @v = 0;
-        (Wi32.const, vPtr),
-        (Wi32.const, 0),
-        Wi32.store,
+        (w.i32.const, vPtr),
+        (w.i32.const, 0),
+        w.i32.store,
         # while True:
         #  out += 1
         #  if 10 > out: continue
-        (Wloop, [
-            (Wi32.const, vPtr),
-            (Wi32.const, vPtr),
-            Wi32.load,
-            (Wi32.const, 1), Wi32.add,
-            Wi32.store,
-            (Wi32.const, vPtr), Wi32.load,
-            (Wi32.const, 10),
-            Wi32.lt_s,
-            (Wbr_if, 0), # continue if true
+        (w.loop, [
+            (w.i32.const, vPtr),
+            (w.i32.const, vPtr),
+            w.i32.load,
+            (w.i32.const, 1), w.i32.add,
+            w.i32.store,
+            (w.i32.const, vPtr), w.i32.load,
+            (w.i32.const, 10),
+            w.i32.lt_s,
+            (w.br_if, 0), # continue if true
         ]),
-        (Wi32.const, vPtr),
-        Wi32.load,
+        (w.i32.const, vPtr),
+        w.i32.load,
     ])
     result = env.ds.popv(I32)
     assert 10 == result

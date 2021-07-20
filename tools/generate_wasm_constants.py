@@ -250,9 +250,9 @@ def getTypesName(row):
     constructor = row[1]
     if not constructor: return ''
     elif category == '(reserved)': return ''
-    elif category == 'Type index': return 'Tidx'
-    elif category == 'Value type': return 'T' + constructor
-    else: return 'T' + category.split()[0].lower()
+    elif category == 'Type index': return 'idx'
+    elif category == 'Value type': return constructor
+    else: return category.split()[0].lower()
 
 wasmTypes = parseIndex(typesIndex, getTypesName)
 wasmInstructions = parseIndex(
@@ -267,7 +267,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import copy
 import ctypes
-from ctypes import c_bool as Bool
 import operator
 
 # This is the only way to get the base class for ctypes (_CData) which is
@@ -276,6 +275,11 @@ DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
 
 # Used for classifying things into "modules"
 class _Namespace: pass
+
+# The webassembly namespace
+w = _Namespace()
+
+from ctypes import c_bool as Bool
 '''
 
 WASM_SUBROUTINE_INTRO = r'''
@@ -374,7 +378,7 @@ def writeWasmSubroutines(f):
     for key in wasmInstructions:
         if key not in subs: continue
         value = subs[key]
-        f.write(f'  W{key}: {value},\n')
+        f.write(f'  w.{key}: {value},\n')
     f.write('}\n')
 
 
@@ -391,16 +395,16 @@ if __name__ == '__main__':
     for ctype, fnty in [('uint', 'U'), ('int', 'I')]:
         for size in [8, 16, 32, 64]:
             f.write(f"from ctypes import c_{ctype}{size} as {fnty}{size}\n")
-
     for ctype, fnty in [('float', 'F32'), ('double', 'F64')]:
         f.write(f"from ctypes import c_{ctype} as {fnty}\n")
+    f.write('\n')
 
-    for ns in ('local', 'global', 'i32', 'i64', 'f32', 'f64', 'memory'):
-        f.write(f'W{ns} = _Namespace()\n')
+    for ns in ('types', 'local', 'global_', 'i32', 'i64', 'f32', 'f64', 'memory'):
+        f.write(f'w.{ns} = _Namespace()\n')
 
     def keywordReplace(s):
         out = s.split('.')
-        fix = {'and', 'or'}
+        fix = {'and', 'or', 'if', 'else', 'return', 'global', }
         for i in range(len(out)):
             if out[i] in fix:
                 out[i] = out[i] + '_'
@@ -408,11 +412,12 @@ if __name__ == '__main__':
         return '.'.join(out)
 
     writeKeyVal = lambda item: f.write(
-        f'{keywordReplace("W" + item[0])} = {hex(item[1])}\n')
+        f"{keywordReplace('w.' + item[0])} = {hex(item[1])}\n")
 
     f.write("\n# A.6 Index of Types\n")
-    for item in wasmTypes.items():
-        writeKeyVal(item)
+    for key, value in wasmTypes.items():
+        key = 'types.' + key
+        writeKeyVal((key, value))
 
     f.write("\n# A.7 Index of Instructions\n")
     for item in wasmInstructions.items():
@@ -421,7 +426,7 @@ if __name__ == '__main__':
     f.write("\n# Name Lookup Dict (for debugging)\n")
     f.write("wasmName = {\n")
     for item in wasmInstructions.items():
-        f.write(f"  {keywordReplace('W' + item[0])}: '{item[0]}',\n")
+        f.write(f"  {keywordReplace('w.' + item[0])}: '{item[0]}',\n")
     f.write('}\n')
 
     # writeWasmSubroutines(f)
