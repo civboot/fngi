@@ -2,7 +2,19 @@
 # Don't edit it manually."
 # Constants are copy+pasted directly from the WebAssembly spec located at:
 # https://www.w3.org/TR/wasm-core-1/#a6-index-of-types
-from .wasm_setup import *
+from collections import OrderedDict
+from dataclasses import dataclass
+import copy
+import ctypes
+from ctypes import c_bool as Bool
+import operator
+
+# This is the only way to get the base class for ctypes (_CData) which is
+# technically private.
+DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
+
+# Used for classifying things into "modules"
+class _Namespace: pass
 from ctypes import c_uint8 as U8
 from ctypes import c_uint16 as U16
 from ctypes import c_uint32 as U32
@@ -13,9 +25,6 @@ from ctypes import c_int32 as I32
 from ctypes import c_int64 as I64
 from ctypes import c_float as F32
 from ctypes import c_double as F64
-
-class _Namespace: pass
-
 Wlocal = _Namespace()
 Wglobal = _Namespace()
 Wi32 = _Namespace()

@@ -7,6 +7,7 @@
 
 from pdb import set_trace as dbg
 from .wasm_constants import *
+from .wasm import wasmSubroutines
 from .types import Env, ENV
 from ctypes import sizeof
 
@@ -105,10 +106,11 @@ def testRunLoop():
             Wi32.store,
             (Wi32.const, vPtr), Wi32.load,
             (Wi32.const, 10),
-            Wi32.gt_s,
+            Wi32.lt_s,
             (Wbr_if, 0), # continue if true
         ]),
         (Wi32.const, vPtr),
         Wi32.load,
     ])
-    assert 10 == env.ds.popv(I32)
+    result = env.ds.popv(I32)
+    assert 10 == result

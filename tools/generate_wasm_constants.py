@@ -263,7 +263,19 @@ PY_FILE_START = r'''
 # Don't edit it manually."
 # Constants are copy+pasted directly from the WebAssembly spec located at:
 # https://www.w3.org/TR/wasm-core-1/#a6-index-of-types
-from .wasm_setup import *
+from collections import OrderedDict
+from dataclasses import dataclass
+import copy
+import ctypes
+from ctypes import c_bool as Bool
+import operator
+
+# This is the only way to get the base class for ctypes (_CData) which is
+# technically private.
+DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
+
+# Used for classifying things into "modules"
+class _Namespace: pass
 '''
 
 WASM_SUBROUTINE_INTRO = r'''

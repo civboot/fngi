@@ -1,8 +1,8 @@
-from wasm_constants import *
+from .wasm_constants import *
 
 class UnreachableError(Exception): pass
 
-def _raiseUunreachable(*args):
+def _raiseUnreachable(*args):
     raise UnreachableError()
 
 def NI(*args):
@@ -27,7 +27,14 @@ def _loadValue(ty: DataTy):
 
 def _storeValue(ty: DataTy):
     def impl(env, args):
-        value = env.ds.pop(I32)
+        value = env.ds.pop(ty)
+        ptr = _loadStorePtr(env.ds, args)
+        env.memory.set(ptr, value)
+    return impl
+
+def _storeTrunc(ty: DataTy, trunc):
+    def impl(env, args):
+        value = trunc(env.ds.pop(ty))
         ptr = _loadStorePtr(env.ds, args)
         env.memory.set(ptr, value)
     return impl
@@ -95,26 +102,26 @@ def rotl(ty, a, n):
     else: return rotr(width, a, -n)
 
 wasmSubroutines = {
-  Wunreachable: _raiseUnreachable(),
+  Wunreachable: _raiseUnreachable,
   Wnop: lambda e,a: None,
-  # Wblock: NI(),
-  # Wloop: NI(),
-  # Wif: NI(),
-  # Welse: NI(),
-  # Wend: NI(),
-  # Wbr: NI(),
-  # Wbr_if: NI(),
-  # Wbr_table: NI(),
-  # Wreturn: NI(),
-  # Wcall: NI(),
-  # Wcall_indirect: NI(),
-  Wdrop: NI(),
+  # Wblock: NI,
+  # Wloop: NI,
+  # Wif: NI,
+  # Welse: NI,
+  # Wend: NI,
+  # Wbr: NI,
+  # Wbr_if: NI,
+  # Wbr_table: NI,
+  # Wreturn: NI,
+  # Wcall: NI,
+  # Wcall_indirect: NI,
+  Wdrop: NI,
   Wselect: _select,
-  Wlocal.get: NI(),
-  Wlocal.set: NI(),
-  Wlocal.tee: NI(),
-  Wglobal.get: NI(),
-  Wglobal.set: NI(),
+  Wlocal.get: NI,
+  Wlocal.set: NI,
+  Wlocal.tee: NI,
+  Wglobal.get: NI,
+  Wglobal.set: NI,
   Wi32.load: _loadValue(I32),
   Wi64.load: _loadValue(I64),
   Wf32.load: _loadValue(F32),
@@ -133,11 +140,11 @@ wasmSubroutines = {
   Wi64.store: _storeValue(I64),
   Wf32.store: _storeValue(F32),
   Wf64.store: _storeValue(F64),
-  Wi32.store8: _storeValue(_1bytes),
-  Wi32.store16: _storeValue(_2bytes),
-  Wi64.store8: _storeValue(_1bytes),
-  Wi64.store16: _storeValue(_2bytes),
-  Wi64.store32: _storeValue(_4bytes),
+  Wi32.store8: _storeTrunc(I32, _1bytes),
+  Wi32.store16: _storeTrunc(I32, _2bytes),
+  Wi64.store8: _storeTrunc(I64, _1bytes),
+  Wi64.store16: _storeTrunc(I64, _2bytes),
+  Wi64.store32: _storeTrunc(I64, _4bytes),
   Wmemory.size: lambda e,a: len(env.memory.data) // 0x10000,
   Wmemory.grow: lambda e,a: env.heap.grow(a[0] * 0x10000),
   Wi32.const: lambda e,a: e.ds.push(I32(a[0])),
@@ -182,10 +189,10 @@ wasmSubroutines = {
   Wi32.ctz: _doUnary(NI, NI),
   Wi32.popcnt: _doBinary(NI, NI),
   Wi32.add: _doBinary(I32, operator.add),
-  Wi32.sub: _doBinary(I32, operator.add),
-  Wi32.mul: _doBinary(I32, operator.add),
-  Wi32.div_s: _doBinary(I32, operator.div),
-  Wi32.div_u: _doBinary(I32, operator.div),
+  Wi32.sub: _doBinary(I32, operator.sub),
+  Wi32.mul: _doBinary(I32, operator.mul),
+  Wi32.div_s: _doBinary(I32, operator.floordiv),
+  Wi32.div_u: _doBinary(I32, operator.floordiv),
   Wi32.rem_s: _doBinary(I32, operator.mod),
   Wi32.rem_u: _doBinary(I32, operator.mod),
   Wi32.and_: _doBinary(I32, _bitand),
