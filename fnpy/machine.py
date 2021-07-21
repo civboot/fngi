@@ -6,7 +6,7 @@
 # memory inside it. This allows us to define and execute functions.
 
 from pdb import set_trace as dbg
-from .wasm_constants import *
+from .wasm_constants import w
 from .wasm import wasmSubroutines
 from .types import Env, ENV
 from ctypes import sizeof
