@@ -19,10 +19,30 @@ def parseWasm(wasmPath):
     return module
 
 
-def runTest(wasmPath, expected=None, expectedTy=None):
+def runTest(wasmPath, inp, out):
     wasm = parseWasm(wasmPath)
     e = ENV.copyForTest()
 
+
+#   {"type": "f64", "value": "18442240474082181119"}
+def _convertJsonValue(json):
+    jty, jval = json['type'], json['value']
+    val = int(jval) if jty.startsWith('i') else float(jval)
+    return tyMap[jty](val)
+
+
+# {
+#   "type": "assert_return", "line": 1057,
+#   "action": {"type": "invoke", "field": "f", "args": []},
+#   "expected": [{"type": "f64", "value": "18442240474082181119"}]}, 
+def _assertReturnInOut(json) -> Tuple[List[any], List[any]]
+    """Get the inputs/outputs of an assert return."""
+    assert json['type'] == 'assert_return'
+    jaction = json['action']
+    assert jaction['type'] == 'invoke'
+    assert jaction['field'] == 'f'
+    inp = [_convertJsonValue(j) for j in jaction['args']]
+    out = [_convertJsonValue(j) for j in json['expected']]
 
 def runTests(wasmDir):
     errors = []
@@ -35,16 +55,10 @@ def runTests(wasmDir):
         if testTy not in {'module', 'assert_return'}:
             continue
         wasmPath = os.path.join(wasmDir, test['filename'])
-        expected, expectedTy = None, None
+        inp, out = [], []
         if testTy == 'assert_return':
-            action = test['action']
-            assert action['type'] == 'invoke'
-            assert action['args'] == [], "TODO"
-            actionExpected = action['expected']
-            assert len(actionExpected) == 1, "TODO"
-            expectedTy = tyMap[actionExpected[0]['type']]
-            expectedValue = float(actionExpected[0]['value'])
-        runTest(wasmPath, expected, expectedTy)
+            inp, out = _assertReturnInOut(test)
+        runTest(wasmPath, inp, out)
 
 
 def testParse():
