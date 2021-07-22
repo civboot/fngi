@@ -282,6 +282,7 @@ class Stack(MManBase):
         self.memory = memory
         self.m = mstack
         self.total_size = mstack.end - mstack.start
+        self.trackTy = [] # True if size is 8, else False
 
     def checkRange(self, offset, size, useSp=None, requireSize=False):
         if not useSp: useSp = self.m.sp
@@ -310,6 +311,7 @@ class Stack(MManBase):
         self.checkRange(0, size, self.m.sp - size)
         self.m.sp -= size
         self.memory.set(self.m.sp, value)
+        self.trackTy.append(size == 8)
 
     # Get / Pop
 
@@ -322,7 +324,10 @@ class Stack(MManBase):
     def pop(self, ty: DataTy) -> DataTy:
         size = sizeof(ty)
         self.checkRange(0, size)
+        if size == 8 and not self.trackTy[-1]:
+            raise IndexError("Trying to pop wrong size from stack.")
         out = self.memory.getCopy(self.m.sp, ty)
+        self.trackTy.pop()
         self.m.sp += size
         return out
 

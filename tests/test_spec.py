@@ -2,6 +2,8 @@ import json
 import os
 from .wadze import parse_module, parse_code
 from fnpy.machine import w, Env, ENV, run
+from typing import List, Tuple
+from fnpy.wasm import *
 
 SUITE = 'tools/wasm_testsuite_unpacked'
 
@@ -35,7 +37,7 @@ def _convertJsonValue(json):
 #   "type": "assert_return", "line": 1057,
 #   "action": {"type": "invoke", "field": "f", "args": []},
 #   "expected": [{"type": "f64", "value": "18442240474082181119"}]}, 
-def _assertReturnInOut(json) -> Tuple[List[any], List[any]]
+def _assertReturnInOut(json) -> Tuple[List[any], List[any]]:
     """Get the inputs/outputs of an assert return."""
     assert json['type'] == 'assert_return'
     jaction = json['action']
