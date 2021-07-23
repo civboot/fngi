@@ -47,17 +47,38 @@ def runTest(wasmPath, inp, expected):
 
 
 
-#   {"type": "f64", "value": "18442240474082181119"}
+# From https://github.com/WebAssembly/wabt/blob/main/docs/wast2json.md:
+# All numeric value are stored as strings, since JSON numbers are not
+# guaranteed to be precise enough to store all Wasm values. Values are always
+# written as decimal numbers. For example, the following const has the type
+# "i32" and the value 34.
+#
+# ("type": "i32", "value": "34"}
+# 
+# For floats, the numbers are written as the decimal encoding of the binary
+# representation of the number. For example, the following const has the type
+# "f32" and the value 1.0. The value is 1065353216 because that is equivalent
+# to hexadecimal 0x3f800000, which is the binary representation of 1.0 as a
+# 32-bit float.
+#
+# ("type": "f32", "value": "1065353216"}
 def _convertJsonValue(json):
-    jty, jval = json['type'], json['value']
-    val = int(jval) if jty.startswith('i') else float(jval)
-    return tyMap[jty](val)
+    jty, jval = json['type'], int(json['value'])
+    if jty.startswith('i'):
+        val = tyMap[jty](jval)
+    elif jty == 'f32':
+        jvalBytes = bytes(U32(jval))
+        val = F32.from_buffer_copy(jvalBytes)
+    elif jty == 'f64':
+        jvalBytes = bytes(U64(jval))
+        val = F64.from_buffer_copy(jvalBytes)
+    else: assert False, 'unknown ' + jty
+    return val
 
 
-# {
-#   "type": "assert_return", "line": 1057,
+# { "type": "assert_return", "line": 1057,
 #   "action": {"type": "invoke", "field": "f", "args": []},
-#   "expected": [{"type": "f64", "value": "18442240474082181119"}]}, 
+#   "expected": [{"type": "f64", "value": "18442240474082181119"}]},
 def _assertReturnInOut(json) -> Tuple[List[any], List[any]]:
     """Get the inputs/outputs of an assert return."""
     assert json['type'] == 'assert_return'
