@@ -35,11 +35,13 @@ def runTest(wasmPath, inp, out):
         wCode.append([wasmCode[wiStr]] + args)
     runWasm(e, wCode)
 
+    # TODO: assert out
+
 
 #   {"type": "f64", "value": "18442240474082181119"}
 def _convertJsonValue(json):
     jty, jval = json['type'], json['value']
-    val = int(jval) if jty.startsWith('i') else float(jval)
+    val = int(jval) if jty.startswith('i') else float(jval)
     return tyMap[jty](val)
 
 
@@ -55,6 +57,7 @@ def _assertReturnInOut(json) -> Tuple[List[any], List[any]]:
     assert jaction['field'] == 'f'
     inp = [_convertJsonValue(j) for j in jaction['args']]
     out = [_convertJsonValue(j) for j in json['expected']]
+    return inp, out
 
 def runTests(wasmDir):
     errors = []
@@ -62,16 +65,46 @@ def runTests(wasmDir):
     dirName = os.path.split(wasmDir)[1]
     jsonFile = os.path.join(wasmDir, dirName + '.json')
     with open(jsonFile) as f: j = json.load(f)
+
+    # Note: assert_return does NOT have the module info in it.
+    # {"type": "module", "line": 440, "filename": "const.178.wasm"}
+    # {"type": "assert_return", "line": 441, "action": {... }, "expected": [...]}
+    modulePath = None
+    ranAssertions = False
     for test in j['commands']:
         testTy = test['type']
-        if testTy not in {'module', 'assert_return'}:
-            continue
-        wasmPath = os.path.join(wasmDir, test['filename'])
-        inp, out = [], []
-        if testTy == 'assert_return':
+        if testTy == 'module':
+            previousModulePath = modulePath
+            modulePath = os.path.join(wasmDir, test['filename'])
+
+            # If we already ran assertions on the prevoius module path don't
+            # run the code.
+            if not previousModulePath or ranAssertions: continue
+
+            try:
+                runTest(previousModulePath, [], [])
+                passed += 1
+            except Exception as e:
+                errors.append(f'{previousModulePath}: {e}')
+
+        elif testTy == 'assert_return':
+            ranAssertions = True
             inp, out = _assertReturnInOut(test)
-        runTest(wasmPath, inp, out)
+
+            try:
+                runTest(modulePath, inp, out)
+                passed += 1
+            except Exception as e:
+                errors.append(f'{modulePath}: {e}')
+
+        elif testTy in {'assert_malformed'}: pass
+        else: errors.append(f'{modulePath}: Unkown testTy {testTy}')
+
+    assert [] == errors, f"Num failed={len(errors)} passed={passed}"
 
 
 def testConst0():
     runTest('tools/wasm_testsuite_unpacked/const/const.0.wasm', [], [])
+
+def testConstAll():
+    runTests('tools/wasm_testsuite_unpacked/const')
