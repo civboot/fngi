@@ -9,6 +9,7 @@ from pdb import set_trace as dbg
 from .wasm_constants import *
 from .wasm import wasmSubroutines
 from .types import Env, ENV
+from typing import List
 from ctypes import sizeof
 
 STACK_TYPES = {U32, I32, U64, I64, F32, F64}
@@ -37,11 +38,10 @@ def formatArgs(args):
     return "Args: " + ' '.join(out)
 
 
-def run(env: Env, code):
+def run(env: Env, code: List[any]):
     ds = env.ds
-    lenCode = len(code)
     index = 0
-    while index < lenCode:
+    while index < len(code):
         instr = code[index]
         brLevel = None
         # wi stands for "webassembly instr"
