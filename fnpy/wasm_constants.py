@@ -39,6 +39,9 @@ w.f32 = _Namespace()
 w.f64 = _Namespace()
 w.memory = _Namespace()
 w.ref = _Namespace()
+w.data = _Namespace()
+w.table = _Namespace()
+w.elem = _Namespace()
 
 # A.6 Index of Types
 w.types.i32 = 0x7f

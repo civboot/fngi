@@ -147,7 +147,6 @@ def test_const_all():
 
 # TODO: requires adding functions and parameters to the module
 # TODO: requires adding missing opcodes to wadze
-def _test_i32_all():
+def test_i32_all():
     wasm = parseWasm('tools/wasm_testsuite_unpacked/i32/i32.0.wasm')
-    assert False
     # runTests('tools/wasm_testsuite_unpacked/i32')

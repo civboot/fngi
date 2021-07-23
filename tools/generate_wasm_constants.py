@@ -386,7 +386,7 @@ if __name__ == '__main__':
         f.write(f"from ctypes import c_{ctype} as {fnty}\n")
     f.write('\n')
 
-    for ns in ('types', 'local', 'global_', 'i32', 'i64', 'f32', 'f64', 'memory', 'ref'):
+    for ns in ('types', 'local', 'global_', 'i32', 'i64', 'f32', 'f64', 'memory', 'ref', 'data', 'table', 'elem'):
         f.write(f'w.{ns} = _Namespace()\n')
 
     def keywordReplace(s):
