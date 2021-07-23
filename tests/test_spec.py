@@ -36,14 +36,14 @@ def runTest(wasmPath, inp, expected):
     runWasm(e, wCode)
 
     result = []
-    while len(e.ds): result.append(e.ds.drop())
+    expectedCopy = expected[:]
 
-    expectedTy = [type(v) for v in expected]
-    resultTy = [type(v) for v in result]
-    expected = [v.value for v in expected]
-    result = [v.value for v in result]
-    assert expected == result
-    assert expectedTy == resultTy
+    while len(e.ds):
+        ty = type(expectedCopy.pop())
+        result.append(e.ds.popv(ty))
+
+    expectedValues = [v.value for v in expected]
+    assert expectedValues == result
 
 
 
@@ -104,6 +104,7 @@ def runTests(wasmDir):
                 runTest(modulePath, inp, out)
                 passed += 1
             except Exception as e:
+                raise
                 errors.append(f'{modulePath}: {e}')
 
         elif testTy in {'assert_malformed'}: pass
