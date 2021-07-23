@@ -38,7 +38,7 @@ def formatArgs(args):
     return "Args: " + ' '.join(out)
 
 
-def run(env: Env, code: List[any]):
+def runWasm(env: Env, code: List[any]):
     ds = env.ds
     index = 0
     while index < len(code):
@@ -58,14 +58,14 @@ def run(env: Env, code: List[any]):
         elif wi == w.br_if and ds.popv(U32):
             brLevel = args[0]
         elif wi == w.block:
-            brLevel = run(env, args[0])
+            brLevel = runWasm(env, args[0])
             if brLevel == 0:
                 # br has been handled by getting here
                 brLevel = None
             elif brLevel > 0: return brLevel - 1
         elif wi == w.loop:
             while True:
-                brLevel = run(env, args[0])
+                brLevel = runWasm(env, args[0])
                 if brLevel is None: break # ended block w/out br
                 if brLevel > 0: return brLevel - 1
                 # else loop again
@@ -78,7 +78,7 @@ def run(env: Env, code: List[any]):
 
 def testRunSimple():
     env = ENV.copyForTest()
-    run(env, [
+    runWasm(env, [
         (w.i32.const, 10),
         (w.i32.const, 11),
         w.i32.add,
@@ -90,7 +90,7 @@ def testRunSimple():
 def testRunLoop():
     env = ENV.copyForTest()
     vPtr = env.heap.grow(4)
-    run(env, [
+    runWasm(env, [
         # @v = 0;
         (w.i32.const, vPtr),
         (w.i32.const, 0),

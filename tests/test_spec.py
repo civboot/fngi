@@ -1,7 +1,7 @@
 import json
 import os
 from .wadze import parse_module, parse_code
-from fnpy.machine import w, Env, ENV, run
+from fnpy.machine import w, Env, ENV, runWasm
 from typing import List, Tuple
 from fnpy.wasm import *
 
@@ -24,6 +24,16 @@ def parseWasm(wasmPath):
 def runTest(wasmPath, inp, out):
     wasm = parseWasm(wasmPath)
     e = ENV.copyForTest()
+    for value in inp: e.ds.push(value)
+
+    if len(wasm['code']) == 0: raise ValueError('no code')
+    assert len(wasm['code']) == 1, "not implemented"
+    wasmStrCode = wasm['code'][0]
+    wCode = []
+    for strInstr in wasmStrCode.instructions:
+        wiStr, *args = strInstr
+        wCode.append([wasmCode[wiStr]] + args)
+    runWasm(e, wCode)
 
 
 #   {"type": "f64", "value": "18442240474082181119"}
@@ -63,6 +73,5 @@ def runTests(wasmDir):
         runTest(wasmPath, inp, out)
 
 
-def testParse():
-    wasm = parseWasm('tools/wasm_testsuite_unpacked/const/const.0.wasm')
-    assert False
+def testConst0():
+    runTest('tools/wasm_testsuite_unpacked/const/const.0.wasm', [], [])

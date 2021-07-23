@@ -64,7 +64,7 @@ def _doBinCnv(ty, operation, preConvTy):
 
 def _memsize(env, _args):
     pages = len(env.memory.data) // 0x10000
-    env.dataStack.push(I32(pages))
+    env.ds.push(I32(pages))
 
 # TODO: this is only for little endian
 def _1bytes(v): return U8(bytes(v)[:1])
@@ -113,8 +113,8 @@ wasmSubroutines = {
   # w.return_: NI,
   # w.call: NI,
   # w.call_indirect: NI,
-  w.drop: lambda e,a: e.dataStack.drop(),
-  w.select: lambda e,a: e.dataStack.select(),
+  w.drop: lambda e,a: e.ds.drop(),
+  w.select: lambda e,a: e.ds.select(),
   w.local.get: NI,
   w.local.set: NI,
   w.local.tee: NI,
