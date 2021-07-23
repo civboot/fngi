@@ -281,8 +281,8 @@ class Stack(MManBase):
     def __init__(self, memory: Memory, mstack: MStack):
         self.memory = memory
         self.m = mstack
-        self.total_size = mstack.end - mstack.start
-        self.trackTy = [] # True if size is 8, else False
+        self.totalSize = mstack.end - mstack.start
+        self.trackSize = [] # True if size is 8, else False
 
     def checkRange(self, offset, size, useSp=None, requireSize=False):
         if not useSp: useSp = self.m.sp
@@ -311,7 +311,7 @@ class Stack(MManBase):
         self.checkRange(0, size, self.m.sp - size)
         self.m.sp -= size
         self.memory.set(self.m.sp, value)
-        self.trackTy.append(size == 8)
+        self.trackSize.append(size == 8)
 
     # Get / Pop
 
@@ -324,15 +324,37 @@ class Stack(MManBase):
     def pop(self, ty: DataTy) -> DataTy:
         size = sizeof(ty)
         self.checkRange(0, size)
-        if size == 8 and not self.trackTy[-1]:
+        if size == 8 and not self.trackSize[-1]:
             raise IndexError("Trying to pop wrong size from stack.")
         out = self.memory.getCopy(self.m.sp, ty)
-        self.trackTy.pop()
+        self.trackSize.pop()
         self.m.sp += size
         return out
 
     def popv(self, ty: DataTy) -> any:
         return self.pop(ty).value
+
+    def drop(self) -> DataTy:
+        """Drop a value of either 4 or 8 bytes (depending on what is next).
+
+        This returns the value so it can be more easily used with select
+        """
+        ty = I64 if self.trackSize[-1] else I32
+        self.checkRange(0, sizeof(ty))
+        return self.pop(ty)
+
+    def select(self):
+        """Select a value based on the top of the stack {check; v2; v1}
+        if check do v1 eldo v2
+        Yes, wasm is as confusing as possible.
+        """
+        if len(self.trackSize) < 3: raise IndexError("select requires len >= 3")
+        if self.trackSize[-2] != self.trackSize[-3]: raise IndexError(
+            f"select trackSize could change ty size: {self.trackSize[-3:-1]}")
+        check = self.drop()
+        v2 = self.drop()
+        v1 = self.drop()
+        self.push(v1 if check else v2)
 
     def debugStr(self):
         return 'Stack: {}'.format(
@@ -342,7 +364,7 @@ class Stack(MManBase):
         return self.m.end - self.m.sp
 
     def __repr__(self):
-        return "STACK<{}/{}>".format(len(self), self.total_size)
+        return "STACK<{}/{}>".format(len(self), self.totalSize)
 
 
 #########################################

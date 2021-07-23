@@ -62,12 +62,6 @@ def _doBinCnv(ty, operation, preConvTy):
         ds.push(ty(operation(left, right)))
     return impl
 
-def _select(e, a):
-    question = e.ds.popv()
-    v1 = e.ds.popv()
-    v2 = e.ds.popv()
-    e.ds.push(v1 if question else v2, U32)
-
 # TODO: this is only for little endian
 def _1bytes(v): return U8(bytes(v)[:1])
 def _2bytes(v): return U16(bytes(v)[:2])
@@ -115,8 +109,8 @@ wasmSubroutines = {
   # w.return_: NI,
   # w.call: NI,
   # w.call_indirect: NI,
-  w.drop: NI,
-  w.select: _select,
+  w.drop: lambda e,a: e.dataStack.drop(),
+  w.select: lambda e,a: e.dataStack.select(),
   w.local.get: NI,
   w.local.set: NI,
   w.local.tee: NI,

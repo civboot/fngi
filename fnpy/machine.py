@@ -51,7 +51,7 @@ def run(env: Env, code):
         else:
             wi, *args = instr
         print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
-        subroutine = wasmSubroutines.get(wi, None)
+        subroutine = wasmSubroutines.get(wi)
         if subroutine: subroutine(env, args)
 
         elif wi == w.br: brLevel = args[0]
