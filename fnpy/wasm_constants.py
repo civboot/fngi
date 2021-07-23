@@ -38,9 +38,9 @@ w.i64 = _Namespace()
 w.f32 = _Namespace()
 w.f64 = _Namespace()
 w.memory = _Namespace()
+w.ref = _Namespace()
 
 # A.6 Index of Types
-w.types.idx = 0x10ad
 w.types.i32 = 0x7f
 w.types.i64 = 0x7e
 w.types.f32 = 0x7d
@@ -222,6 +222,32 @@ w.i32.reinterpret_f32 = 0xbc
 w.i64.reinterpret_f64 = 0xbd
 w.f32.reinterpret_i32 = 0xbe
 w.f64.reinterpret_i64 = 0xbf
+w.i32.extend8_s = 0xc0
+w.i32.extend16_s = 0xc1
+w.i64.extend8_s = 0xc2
+w.i64.extend16_s = 0xc3
+w.i64.extend32_s = 0xc4
+w.ref.null = 0xd0
+w.ref.is_null = 0xd1
+w.ref.func = 0xd2
+w.i32.trunc_sat_f32_s = (0xfc, 0x0)
+w.i32.trunc_sat_f32_u = (0xfc, 0x1)
+w.i32.trunc_sat_f64_s = (0xfc, 0x2)
+w.i32.trunc_sat_f64_u = (0xfc, 0x3)
+w.i64.trunc_sat_f32_s = (0xfc, 0x4)
+w.i64.trunc_sat_f32_u = (0xfc, 0x5)
+w.i64.trunc_sat_f64_s = (0xfc, 0x6)
+w.i64.trunc_sat_f64_u = (0xfc, 0x7)
+w.memory.init = (0xfc, 0x8)
+w.data.drop = (0xfc, 0x9)
+w.memory.copy = (0xfc, 0xa)
+w.memory.fill = (0xfc, 0xb)
+w.table.init = (0xfc, 0xc)
+w.elem.drop = (0xfc, 0xd)
+w.table.copy = (0xfc, 0xe)
+w.table.grow = (0xfc, 0xf)
+w.table.size = (0xfc, 0x10)
+w.table.fill = (0xfc, 0x11)
 
 # Name Lookup Dict (for testing)
 wasmName = {
@@ -397,6 +423,32 @@ wasmName = {
   w.i64.reinterpret_f64: 'i64.reinterpret_f64',
   w.f32.reinterpret_i32: 'f32.reinterpret_i32',
   w.f64.reinterpret_i64: 'f64.reinterpret_i64',
+  w.i32.extend8_s: 'i32.extend8_s',
+  w.i32.extend16_s: 'i32.extend16_s',
+  w.i64.extend8_s: 'i64.extend8_s',
+  w.i64.extend16_s: 'i64.extend16_s',
+  w.i64.extend32_s: 'i64.extend32_s',
+  w.ref.null: 'ref.null',
+  w.ref.is_null: 'ref.is_null',
+  w.ref.func: 'ref.func',
+  w.i32.trunc_sat_f32_s: 'i32.trunc_sat_f32_s',
+  w.i32.trunc_sat_f32_u: 'i32.trunc_sat_f32_u',
+  w.i32.trunc_sat_f64_s: 'i32.trunc_sat_f64_s',
+  w.i32.trunc_sat_f64_u: 'i32.trunc_sat_f64_u',
+  w.i64.trunc_sat_f32_s: 'i64.trunc_sat_f32_s',
+  w.i64.trunc_sat_f32_u: 'i64.trunc_sat_f32_u',
+  w.i64.trunc_sat_f64_s: 'i64.trunc_sat_f64_s',
+  w.i64.trunc_sat_f64_u: 'i64.trunc_sat_f64_u',
+  w.memory.init: 'memory.init',
+  w.data.drop: 'data.drop',
+  w.memory.copy: 'memory.copy',
+  w.memory.fill: 'memory.fill',
+  w.table.init: 'table.init',
+  w.elem.drop: 'elem.drop',
+  w.table.copy: 'table.copy',
+  w.table.grow: 'table.grow',
+  w.table.size: 'table.size',
+  w.table.fill: 'table.fill',
 }
 
 # Code Lookup Dict (for testing)
@@ -573,4 +625,30 @@ wasmCode = {
   'i64.reinterpret_f64': w.i64.reinterpret_f64,
   'f32.reinterpret_i32': w.f32.reinterpret_i32,
   'f64.reinterpret_i64': w.f64.reinterpret_i64,
+  'i32.extend8_s': w.i32.extend8_s,
+  'i32.extend16_s': w.i32.extend16_s,
+  'i64.extend8_s': w.i64.extend8_s,
+  'i64.extend16_s': w.i64.extend16_s,
+  'i64.extend32_s': w.i64.extend32_s,
+  'ref.null': w.ref.null,
+  'ref.is_null': w.ref.is_null,
+  'ref.func': w.ref.func,
+  'i32.trunc_sat_f32_s': w.i32.trunc_sat_f32_s,
+  'i32.trunc_sat_f32_u': w.i32.trunc_sat_f32_u,
+  'i32.trunc_sat_f64_s': w.i32.trunc_sat_f64_s,
+  'i32.trunc_sat_f64_u': w.i32.trunc_sat_f64_u,
+  'i64.trunc_sat_f32_s': w.i64.trunc_sat_f32_s,
+  'i64.trunc_sat_f32_u': w.i64.trunc_sat_f32_u,
+  'i64.trunc_sat_f64_s': w.i64.trunc_sat_f64_s,
+  'i64.trunc_sat_f64_u': w.i64.trunc_sat_f64_u,
+  'memory.init': w.memory.init,
+  'data.drop': w.data.drop,
+  'memory.copy': w.memory.copy,
+  'memory.fill': w.memory.fill,
+  'table.init': w.table.init,
+  'elem.drop': w.elem.drop,
+  'table.copy': w.table.copy,
+  'table.grow': w.table.grow,
+  'table.size': w.table.size,
+  'table.fill': w.table.fill,
 }

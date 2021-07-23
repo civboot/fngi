@@ -226,24 +226,24 @@ i64.extend32_s	0xC4	[i64]→[i64]	validation	execution, operator
 ref.null t	0xD0	[]→[t]	validation	execution
 ref.is_null	0xD1	[t]→[i32]	validation	execution
 ref.func x	0xD2	[]→[funcref]	validation	execution
-0xFB i32.trunc_sat_f32_s	0xFC	0x00	[f32]→[i32]	validation execution, operator
-i32.trunc_sat_f32_u	0xFC	0x01	[f32]→[i32]	validation execution, operator
-i32.trunc_sat_f64_s	0xFC	0x02	[f64]→[i32]	validation execution, operator
-i32.trunc_sat_f64_u	0xFC	0x03	[f64]→[i32]	validation execution, operator
-i64.trunc_sat_f32_s	0xFC	0x04	[f32]→[i64]	validation execution, operator
-i64.trunc_sat_f32_u	0xFC	0x05	[f32]→[i64]	validation execution, operator
-i64.trunc_sat_f64_s	0xFC	0x06	[f64]→[i64]	validation execution, operator
-i64.trunc_sat_f64_u	0xFC	0x07	[f64]→[i64]	validation execution, operator
-memory.init x	0xFC	0x08	[i32	i32 i32]→[] validation execution
-data.drop x	0xFC	0x09	[]→[]	validation execution
-memory.copy	0xFC	0x0A	[i32	i32 i32]→[] validation execution
-memory.fill	0xFC	0x0B	[i32	i32 i32]→[] validation execution
-table.init x y	0xFC	0x0C	[i32	i32 i32]→[] validation execution
-elem.drop x	0xFC	0x0D	[]→[]	validation execution
-table.copy x y	0xFC	0x0E	[i32	i32 i32]→[] validation execution 
-table.grow x	0xFC	0x0F	[t	i32]→[] validation execution 
-table.size x	0xFC	0x10	[]→[i32]	validation execution
-table.fill x	0xFC	0x11	[i32	t i32]→[] validation execution
+i32.trunc_sat_f32_s	0xFC 0x00	[f32]→[i32]	validation execution, operator
+i32.trunc_sat_f32_u	0xFC 0x01	[f32]→[i32]	validation execution, operator
+i32.trunc_sat_f64_s	0xFC 0x02	[f64]→[i32]	validation execution, operator
+i32.trunc_sat_f64_u	0xFC 0x03	[f64]→[i32]	validation execution, operator
+i64.trunc_sat_f32_s	0xFC 0x04	[f32]→[i64]	validation execution, operator
+i64.trunc_sat_f32_u	0xFC 0x05	[f32]→[i64]	validation execution, operator
+i64.trunc_sat_f64_s	0xFC 0x06	[f64]→[i64]	validation execution, operator
+i64.trunc_sat_f64_u	0xFC 0x07	[f64]→[i64]	validation execution, operator
+memory.init x	0xFC 0x08	[i32	i32 i32]→[] validation execution
+data.drop x	0xFC 0x09	[]→[]	validation execution
+memory.copy	0xFC 0x0A	[i32	i32 i32]→[] validation execution
+memory.fill	0xFC 0x0B	[i32	i32 i32]→[] validation execution
+table.init x y	0xFC 0x0C	[i32	i32 i32]→[] validation execution
+elem.drop x	0xFC 0x0D	[]→[]	validation execution
+table.copy x y	0xFC 0x0E	[i32	i32 i32]→[] validation execution 
+table.grow x	0xFC 0x0F	[t	i32]→[] validation execution 
+table.size x	0xFC 0x10	[]→[i32]	validation execution
+table.fill x	0xFC 0x11	[i32	t i32]→[] validation execution
 '''
 
 def parseIndex(index: str, getName):
@@ -257,16 +257,17 @@ def parseIndex(index: str, getName):
         row = line.split('\t')
         if len(row) <= 1: continue
         name = getName(row)
+        if not name or name == '(reserved)': continue
+
         valueStr = row[binaryIndex]
         if valueStr == '(none)': continue
-
-        if valueStr == '(positive number as s32 or u32)':
-            valueStr = '0x10ad' # leetspeak for "LOAD", "10" looks like "lO"
-        else:
-            valueStr = valueStr.split()[0]
-        value = int(valueStr, 16)
-        if not name or name == '(reserved)': continue
+        if valueStr == '(positive number as s32 or u32)': continue
         assert name not in out
+        valueStrList = valueStr.split()
+        if len(valueStrList) > 1 and valueStrList[1].startswith('0x'):
+            value = tuple(int(vs, 16) for vs in valueStrList)
+        else:
+            value = int(valueStrList[0], 16)
         out[name] = value
 
     return out
@@ -321,52 +322,6 @@ LOAD_VAL_TEMPLATE = 'lambda e,a: _loadValue(e, a, {ty})'.format
 STORE_KEY_TEMPLATE = '{ns}.store{post}'.format
 STORE_VAL_TEMPLATE = 'lambda e,a: _storeValue(e, a, {ty})'.format
 
-BINARY_FLOAT = [
-    'add', 'sub', 'mul', 'div',
-    'eq', 'ne', 'lt', 'gt', 'le', 'ge',
-]
-
-
-BINARY_INT = [
-    'add', 'sub', 'mul', 'div_s', 'div_u',
-    'rem_s', 'rem_u',
-    'and_', 'or_', 'xor',
-    'shl', 'shr_s', 'shr_u',
-    'rotl', 'rotr',
-    'eq', 'ne',
-    'lt_s', 'lt_u',
-    'gt_s', 'gt_u',
-    'le_s', 'le_u',
-    'ge_s', 'ge_u',
-]
-
-INSTR_INT = [
-  'eqz',
-  'clz',
-  'ctz',
-]
-
-INSTR_FLOAT = [
-  'nearest',
-  'sqrt',
-  'convert_i32_s',
-  'convert_i32_u',
-  'convert_i64_s',
-  'convert_i64_u',
-]
-
-INSTR_SPECIAL = [ # only one
-  'f32.demote_f64',
-  'i32.wrap_i64',
-  'f64.promote_f32',
-  'i64.extend_i32_s',
-  'i64.extend_i32_u',
-  'i32.reinterpret_f32',
-  'i64.reinterpret_f64',
-  'f32.reinterpret_i32',
-  'f64.reinterpret_i64',
-]
-
 
 def _subLoadStore(subs, ns, ty):
     subs[LOAD_KEY_TEMPLATE(ns=ns, post='')] = LOAD_VAL_TEMPLATE(ty=ty)
@@ -412,6 +367,12 @@ nativeIntTys = ['I32', 'I64']
 nativeFloatTys = ['F32', 'F64']
 nativeTys = nativeIntTys + nativeFloatTys
 
+def _valueRepr(value):
+    if isinstance(value, int):
+        return hex(value)
+    else:
+        return '(' + hex(value[0]) + ', ' + hex(value[1]) + ')'
+
 if __name__ == '__main__':
     import sys
     fpath = 'fnpy/wasm_constants.py'
@@ -425,7 +386,7 @@ if __name__ == '__main__':
         f.write(f"from ctypes import c_{ctype} as {fnty}\n")
     f.write('\n')
 
-    for ns in ('types', 'local', 'global_', 'i32', 'i64', 'f32', 'f64', 'memory'):
+    for ns in ('types', 'local', 'global_', 'i32', 'i64', 'f32', 'f64', 'memory', 'ref'):
         f.write(f'w.{ns} = _Namespace()\n')
 
     def keywordReplace(s):
@@ -438,7 +399,7 @@ if __name__ == '__main__':
         return '.'.join(out)
 
     writeKeyVal = lambda item: f.write(
-        f"{keywordReplace('w.' + item[0])} = {hex(item[1])}\n")
+        f"{keywordReplace('w.' + item[0])} = {_valueRepr(item[1])}\n")
 
     f.write("\n# A.6 Index of Types\n")
     for key, value in wasmTypes.items():
