@@ -62,6 +62,10 @@ def _doBinCnv(ty, operation, preConvTy):
         ds.push(ty(operation(left, right)))
     return impl
 
+def _memsize(env, _args):
+    pages = len(env.memory.data) // 0x10000
+    env.dataStack.push(I32(pages))
+
 # TODO: this is only for little endian
 def _1bytes(v): return U8(bytes(v)[:1])
 def _2bytes(v): return U16(bytes(v)[:2])
@@ -139,7 +143,7 @@ wasmSubroutines = {
   w.i64.store8: _storeTrunc(I64, _1bytes),
   w.i64.store16: _storeTrunc(I64, _2bytes),
   w.i64.store32: _storeTrunc(I64, _4bytes),
-  w.memory.size: lambda e,a: len(env.memory.data) // 0x10000,
+  w.memory.size: _memsize,
   w.memory.grow: lambda e,a: env.heap.grow(a[0] * 0x10000),
   w.i32.const: lambda e,a: e.ds.push(I32(a[0])),
   w.i64.const: lambda e,a: e.ds.push(I64(a[0])),
