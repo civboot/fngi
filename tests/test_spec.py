@@ -21,7 +21,7 @@ def parseWasm(wasmPath):
     return module
 
 
-def runTest(wasmPath, inp, out):
+def runTest(wasmPath, inp, expected):
     wasm = parseWasm(wasmPath)
     e = ENV.copyForTest()
     for value in inp: e.ds.push(value)
@@ -35,7 +35,16 @@ def runTest(wasmPath, inp, out):
         wCode.append([wasmCode[wiStr]] + args)
     runWasm(e, wCode)
 
-    # TODO: assert out
+    result = []
+    while len(e.ds): result.append(e.ds.drop())
+
+    expectedTy = [type(v) for v in expected]
+    resultTy = [type(v) for v in result]
+    expected = [v.value for v in expected]
+    result = [v.value for v in result]
+    assert expected == result
+    assert expectedTy == resultTy
+
 
 
 #   {"type": "f64", "value": "18442240474082181119"}
