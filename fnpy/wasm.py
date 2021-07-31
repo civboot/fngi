@@ -27,7 +27,7 @@ class WasmFn(Fn):
             code: any):
         super().__init__(name, inputs, outputs)
         self.locals = locals_
-        self._code = code
+        self.code = code
 
         self.trueLocals = inputs + locals_
         for l in self.trueLocals: assert type(l) in {I32, I64, F32, F64}

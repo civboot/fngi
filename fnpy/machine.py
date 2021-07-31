@@ -79,6 +79,19 @@ def runWasm(env: Env, code: List[any]):
         print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
         subroutine = wasmSubroutines.get(wi)
         if subroutine: subroutine(env, args)
+        if wi == w.call:
+            fnIndex = ds.popv(U32)
+            fn = env.fns[fnIndex]
+            fnInit(env, fn)
+            if isinstance(fn, WasmFn): runWasm(env, fn.code)
+            else: 
+                raise NotImplementedError(
+                    "pop appropraite values and pass them in, call, handle return values")
+                # fn.call(env, fn)
+            fnTeardown(env, fn)
+
+        # elif wi == w.call_indirect:
+        #     TODO
 
         elif wi == w.br: brLevel = args[0]
         elif wi == w.br_if and ds.popv(U32):
