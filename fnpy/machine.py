@@ -8,7 +8,7 @@
 from pdb import set_trace as dbg
 from .wasm_constants import *
 from .wasm import wasmSubroutines
-from .types import Env, ENV
+from .env import Env, ENV
 from typing import List
 from ctypes import sizeof
 

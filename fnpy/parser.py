@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import List
 from typing import Dict
 
-from .types import Env
+from .env import Env
 
 MISSING_SEMICOLON_ERR = "Expected ';'"
 

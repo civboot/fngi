@@ -9,7 +9,7 @@
 # which provides c-like (and therefore fngi-like) datatypes for us to use.
 
 # (c-style) types and how to allocate them.
-from . import types
+from . import env
 
 # The parser
 from . import parser

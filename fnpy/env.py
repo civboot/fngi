@@ -1,6 +1,7 @@
-# The defined types and how to allocate them.
+# The fnpy environment such as stack, memory, native functions, etc.
 
-import pdb
+from pdb import set_trace as dbg
+
 import abc
 import sys
 import struct
