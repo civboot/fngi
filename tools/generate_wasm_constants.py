@@ -307,6 +307,7 @@ class _Namespace: pass
 w = _Namespace()
 
 from ctypes import c_bool as Bool
+from ctypes import c_uint32 as Ptr
 '''
 
 WASM_SUBROUTINE_INTRO = r'''

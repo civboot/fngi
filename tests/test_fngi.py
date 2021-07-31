@@ -9,7 +9,7 @@ from fnpy.env import BLOCK_SIZE, BLOCKS_TOTAL
 from fnpy.env import BLOCK_FREE, BLOCK_USED
 from fnpy.env import BLOCK_FREE, BLOCK_USED, BLOCK_OOB
 from fnpy.env import ARENA_PO2_MIN, BLOCK_PO2
-from fnpy.env import Ptr, U8, I8, U16, I16, U32, I32
+from fnpy.wasm import Ptr, U8, I8, U16, I16, U32, I32
 from fnpy.env import ENV
 from fnpy.env import getPo2
 from ctypes import sizeof

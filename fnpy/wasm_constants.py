@@ -7,6 +7,9 @@ from dataclasses import dataclass
 import copy
 import ctypes
 import operator
+import sys
+
+BIG_ENDIAN = sys.byteorder != 'little'
 
 # This is the only way to get the base class for ctypes (_CData) which is
 # technically private.
@@ -19,6 +22,7 @@ class _Namespace: pass
 w = _Namespace()
 
 from ctypes import c_bool as Bool
+from ctypes import c_uint32 as Ptr
 from ctypes import c_uint8 as U8
 from ctypes import c_uint16 as U16
 from ctypes import c_uint32 as U32

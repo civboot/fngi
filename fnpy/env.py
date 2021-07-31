@@ -19,6 +19,8 @@ from typing import Tuple
 from typing import Dict
 from typing import Union
 
+from .wasm import *
+
 BIG_ENDIAN = sys.byteorder != 'little'
 
 # Most of our code is going to have some basic tests inline.  Tests can be run
@@ -64,22 +66,6 @@ def fieldOffset(ty: DataTy, field: str):
 
 def fieldSize(ty: DataTy, field: str):
     return getattr(getDataTy(cls), field).size
-
-
-
-# DataTy is the base class of all types that can be represented in memory
-
-Ptr = ctypes.c_uint32 # fngi uses 32 bits for its pointers.
-Bool = ctypes.c_bool
-U8 = ctypes.c_uint8
-U16 = ctypes.c_uint16
-U32 = ctypes.c_uint32
-U64 = ctypes.c_uint64
-
-I8 = ctypes.c_int8
-I16 = ctypes.c_int16
-I32 = ctypes.c_int32
-I64 = ctypes.c_int64
 
 
 class Fn(object):
