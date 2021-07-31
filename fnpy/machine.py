@@ -6,10 +6,8 @@
 # memory inside it. This allows us to define and execute functions.
 
 from pdb import set_trace as dbg
-from .wasm_constants import *
-from .wasm import wasmSubroutines
+from .wasm import *
 from .env import Env, ENV
-from typing import List
 from ctypes import sizeof
 
 STACK_TYPES = {U32, I32, U64, I64, F32, F64}
@@ -37,6 +35,34 @@ def formatArgs(args):
         else: out.append("???")
     return "Args: " + ' '.join(out)
 
+def localGet(env: Env, fn: Fn, index: int) -> DataTy:
+    """Used to get a local value index."""
+    return env.ds.get(fn.offsets[index], self.trueLocals[index])
+
+def localSet(env: Env, fn: Fn, index: int, value: DataTy):
+    """Used to set a local value index."""
+    assert sizeof(value) == sizeof(fn.trueLocals[index])
+    env.ds.set(fn.offsets[index], value)
+
+def fnInit(env: Env, fn: Fn):
+    """Before executing a fn's code:
+    - The locals space (which includes inputs) must be reserved on the return
+      stack.
+    - The inputs must be stored in the correct locals indexes from the data
+      stack.
+    """
+    rs = env.returnStack
+    ds = env.ds
+    rs.grow(fn.trueLocals)
+    for i, ty in enumerate(fn.inputs):
+        value = ds.pop(ty)
+        localSet(env, fn, i, value)
+
+def fnTeardown(env: Env, fn: Fn):
+    """After a function has finished executing:
+    - The locals space must be un-reserved.
+    """
+    env.returnStack.shrink(fn.trueLocals)
 
 def runWasm(env: Env, code: List[any]):
     ds = env.ds

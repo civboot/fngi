@@ -11,13 +11,6 @@ import inspect
 
 from ctypes import sizeof
 
-from typing import Any
-from typing import ByteString
-from typing import Callable
-from typing import List
-from typing import Tuple
-from typing import Dict
-from typing import Union
 
 from .wasm import *
 
@@ -62,23 +55,6 @@ def fieldOffset(ty: DataTy, field: str):
 
 def fieldSize(ty: DataTy, field: str):
     return getattr(getDataTy(cls), field).size
-
-
-class Fn(object):
-    """The base Fn type.
-
-    New function types are created by instantiating a subclass of Fn.
-    """
-    def __init__(self,
-            name: str,
-            inputs: DataTy,
-            outputs: DataTy,
-            code: any):
-        self._name, self.inputs, self.outputs = name, inputs, outputs
-        self._code = code
-
-    def name(self):
-        return self._name
 
 
 class _Ref(object):
@@ -337,6 +313,27 @@ class Stack(MManBase):
         v2 = self.drop()
         v1 = self.drop()
         self.push(v1 if check else v2)
+
+    def grow(self, tys: List[DataTy]):
+        """Grow by the types, leaving data uninizilized.
+
+        The tys must have index 0 be the top of the stack, index -1 the bottom.
+        """
+        size = sum(map(sizeof, tys))
+        self.checkRange(0, size, useSp=self.sp - size, requireSize=False)
+        for i in reversed(range(len(tys))):
+            self.trackSize.append(sizeof(tys[i]) == 8)
+        self.sp -= size
+
+    def shrink(self, tys: List[DataTy]):
+        """Shrink by the types, asserting correct sizes."""
+        size = sum(map(sizeof, tys))
+        self.checkRange(0, size, requireSize=False)
+        for i in range(tys):
+            if (sizeof(tys[i]) == 8) != self.trackSize[i]:
+                raise ValueError(f"{tys[i]} does not have correct size")
+        del self.trackSize[-len(tys):]
+        self.sp += size
 
     def debugStr(self):
         return 'Stack: {}'.format(
@@ -896,7 +893,7 @@ ENV = Env(
     ba=BLOCK_ALLOCATOR,
     arena=ARENA,
     returnStack=RETURN_STACK,
-    fns={},
+    fns=[],
     tys={},
     refs={},
 )

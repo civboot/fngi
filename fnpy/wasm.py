@@ -1,4 +1,53 @@
+from typing import Any
+from typing import ByteString
+from typing import Callable
+from typing import List
+from typing import Tuple
+from typing import Dict
+from typing import Union
+from typing import List
+
 from .wasm_constants import *
+
+class Fn(object):
+    def __init__(self, name: str, inputs: any, outputs: any):
+        self._name, self.inputs, self.outputs = name, inputs, outputs
+
+    def name(self):
+        return self._name
+
+
+class WasmFn(Fn):
+    """A webassembly function."""
+    def __init__(self,
+            name: str,
+            inputs: List[DataTy],
+            outputs: List[DataTy],
+            locals_: List[DataTy],
+            code: any):
+        super().__init__(name, inputs, outputs)
+        self.locals = locals_
+        self._code = code
+
+        self.trueLocals = inputs + locals_
+        for l in self.trueLocals: assert type(l) in {I32, I64, F32, F64}
+
+        self.offsets = _calcOffsets(self.trueLocals)
+        self.rstackSize = sum(map(sizeof, self.trueLocals))
+
+    @staticmethod
+    def _caclOffsets(trueLocals):
+        """Returns an array that converts an index to a memory offset for local
+        variables.
+
+        See: self.offsets
+        """
+        offsets = []
+        offset = 0
+        for l in trueLocals:
+            offsets.append(offset)
+            offset += sizeof(l)
+
 
 class UnreachableError(Exception): pass
 
