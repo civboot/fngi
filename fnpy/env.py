@@ -21,7 +21,6 @@ from typing import Union
 
 from .wasm import *
 
-BIG_ENDIAN = sys.byteorder != 'little'
 
 # Most of our code is going to have some basic tests inline.  Tests can be run
 # by installing pytest and running it.
@@ -58,9 +57,6 @@ def testNeedAlign():
 # language, whether that be RISC/CISC registers in assembly or stack-based
 # assembly like wasm or an underlying Forth language/cpu.
 
-# This is the only way to get ctypes._CData which is technically private.
-DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
-
 def fieldOffset(ty: DataTy, field: str):
     return getattr(getDataTy(ty), field).offset
 
@@ -73,18 +69,17 @@ class Fn(object):
 
     New function types are created by instantiating a subclass of Fn.
     """
-    def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnPtr: int):
+    def __init__(self,
+            name: str,
+            inputs: DataTy,
+            outputs: DataTy,
+            code: any):
         self._name, self.inputs, self.outputs = name, inputs, outputs
-        self._fnPtr = fnPtr
+        self._code = code
 
     def name(self):
         return self._name
 
-    def fnPtr(self):
-        return self._fnPtr
-
-    def u32(self) -> Ptr:
-        return Ptr(self.fnPtr())
 
 class _Ref(object):
     """For defining Ty before defining Ref."""
@@ -845,7 +840,7 @@ class Env(object):
             ba: BlockAllocator,
             arena: Arena,
             returnStack: Stack,
-            fnPtrLookup: Dict[int, Fn],
+            fns: List[Fn],
             tys: Dict[str, Ty],
             refs: Dict[Ty, Ref],
             ):
@@ -856,7 +851,7 @@ class Env(object):
         self.ba = ba
         self.arena = arena
         self.returnStack = returnStack
-        self.fnPtrLookup = fnPtrLookup
+        self.fns = fns
 
         self.tys = tys
         self.refs = refs
@@ -884,7 +879,7 @@ class Env(object):
             ba=ba,
             arena=arena,
             returnStack=returnStack,
-            fnPtrLookup=copy.deepcopy(self.fnPtrLookup),
+            fns=copy.deepcopy(self.fns),
             tys=copy.deepcopy(self.tys),
             refs=copy.deepcopy(self.refs))
 
@@ -901,7 +896,7 @@ ENV = Env(
     ba=BLOCK_ALLOCATOR,
     arena=ARENA,
     returnStack=RETURN_STACK,
-    fnPtrLookup={},
+    fns={},
     tys={},
     refs={},
 )
@@ -946,12 +941,6 @@ def testEnvCopy():
     _testMemoryLayout(env)
 
 
-def registerFn(fn: Fn):
-    ENV.tys[fn.name()] = fn
-    ENV.fnPtrLookup[fn.fnPtr()] = fn
-    return fn
-
-
 ENV.tys.update({
     "U8": U8, "U16": U16, "U32": U32, "U64": U64,
     "I8": I8, "I16": I16, "I32": I32, "I64": I64,
@@ -972,304 +961,3 @@ RefI32 = createNativeRef(I32)
 RefU32 = createNativeRef(U32)
 RefI64 = createNativeRef(I64)
 RefU64 = createNativeRef(U64)
-
-
-##############################################################################
-# Core function types and the fngi callLoop
-#
-# The call loop is what runs a fngi program (for stage0, later stages may
-# compile to wasm or native bytecode). Experienced programmers may notice the
-# similarities to the execution model of Forth, which is intentional, because
-# fngi will eventually be implemented in Forth. This (python) implementation is
-# for prototyping and to provide a reference/learning manual for the stage0
-# fngi language. It will be kept up-to-date with the stage0 forth compiler.
-#
-# For the execution model, there are two types of Fn (function), NativeFn which
-# are implemented in python (and have a reference function pointer) and UserFn
-# which are simply an array of function pointers inside of the ENV.memory.
-# callLoop takes care of how to execute each kind of Fn.
-#
-# Although functions have types (i.e. inputs/outputs), the types are only
-# checked at compile time. At execution time, functions pop values off of the
-# env.ds for their parameters and push values on the env.ds for their
-# results. They also may use the return stack for storing local variables and
-# input/output of values.
-
-class NativeFn(Fn):
-    """A native function.
-
-    Aka a function implemented in python which modifies the env.ds.
-    """
-    def __init__(
-            self,
-            name: str,
-            inputs: DataTy,
-            outputs: DataTy,
-            call: Callable[[Env], None],
-            fnPtr: int):
-
-        super().__init__(name, inputs, outputs, fnPtr)
-        self._call = call
-
-    def call(self, env: Env):
-        self._call(env)
-
-    def __repr__(self):
-        return "{}{}->{}".format(self.name(), self.inputs, self.outputs)
-
-
-class UserFn(Fn):
-    """A user-created function defined in fngi source code.
-
-    Functions are compiled to the ENV.callSpace and therefore have an index.
-    """
-    def __init__(self, name: str, inputs: DataTy, outputs: DataTy, fnPtr: int):
-        super().__init__(name, inputs, outputs, fnPtr)
-
-
-def callLoop(env: Env):
-    """Yup, this is the entire call loop."""
-    while env.running:
-        fnPtr = env.memory.get(env.ep, Ptr).value
-        fn = env.fnPtrLookup[fnPtr]
-        if isinstance(fn, NativeFn):
-            # If native, run the function
-            env.ep += 4
-            fn.call(env)
-        else:
-            # If not native, store the next index on the call stack
-            env.returnStack.pushValue(u32, env.ep + 1)
-            # and "run" the function by changing the FN_INDEX to be it
-            env.ep = fnPtr
-
-# We want a way to define native fn's in as few lines as possible. We will use
-# decorators and other python tricks extensively to avoid boilerplate.
-
-def nativeFn(inputs: List[Ty], outputs: List[Ty], name=None, createRef=True):
-    """Takes some types and a python defined function and converts to an
-    instantiated NativeFn.
-    """
-    # Stack values must be pushed in reverse order (right to left)
-    outputsPushTys = list(reversed(outputs))
-
-    def wrapper(pyDef):
-        nonlocal name
-        if name is None:
-            name = pyDef.__name__
-
-        def callDef(env):
-            nonlocal name # available when debugging
-            # pop stack items from left to right
-            args = [env.ds.pop(ty).value for ty in inputs]
-            # call the function with them in that order
-            outStack = pyDef(env, *args)
-            outStack = [] if outStack is None else outStack
-            # reverse the output stack because that is the correct order for
-            # pushing to the stack
-            outStack.reverse()
-            assert len(outStack) == len(outputs)
-            # push outputs to the data stack
-            for out, ty in zip(outStack, outputsPushTys):
-                env.ds.push(ty(out))
-
-        fnPtr = ENV.codeHeap.grow(4)
-        nativeFnInstance = NativeFn(name, inputs, outputs, callDef, fnPtr)
-
-        # Handle registration
-        registerFn(nativeFnInstance)
-        if createRef:
-            createNativeRef(nativeFnInstance)
-
-        return nativeFnInstance
-    return wrapper
-
-
-@nativeFn([], [])
-def quit(env):
-    """Stop running the interpreter."""
-    env.running = False
-
-
-@nativeFn([U32, U32], [U32])
-def addU32(env, a: int, b:int):
-    return [a + b]
-
-
-@nativeFn([], [U32])
-def literalU32(env):
-    """Creates a literal using the next 4 bytes."""
-    out = env.memory.get(env.ep, U32).value
-    env.ep += 4
-    return [out]
-
-
-def testCallLoop_addLiterals():
-    """Write and test an ultra-basic fngi "function" that just adds two
-    literals and quits.
-    """
-    env = ENV.copyForTest()
-    env.memory.setArray(
-        env.heap.m.heap,
-        [
-            literalU32.u32(), U32(22),
-            literalU32.u32(), U32(20),
-            addU32.u32(), quit.u32(),
-        ])
-    callLoop(env)
-    result = env.ds.pop(U32).value
-    assert 42 == result
-
-# Now that we have a basic execution engine, let's flush out some of the language.
-#
-# Stage0 Fngi has only 4 core constructs:
-# - native data types like U32, Ptr, and Ref
-# - user-defined data types (structs and enums) which are composed of native
-#   data types.
-# - native and user-defined functions. In stage0 these can only push/pop native values
-#   from the stack and define local variables.
-# - native and user-defined macros which for stage0 call only popLexeme and
-#   pushLexeme
-#
-# When calling a function, the compiler must insert the following. fnStackSize is known
-# at compile time.
-#
-#   subStack(fnStackSize)
-#   call fnPtr
-#   addStack(fnStackSize)These are known 
-
-@nativeFn([], [], name="return", createRef=False)
-def ret(env):
-    env.ep = env.returnStack.pop(Ptr)
-
-def compare(a, b):
-    """
-    returns < 0 iff a < b
-    returs  = 0 iff a == b
-    returns > 0 iff a > b
-    """
-    if a < b:
-        return -1
-    elif a > b:
-        return 1
-    else:
-        return 0
-
-# We will be writing core pieces of the language. Fns we already have:
-# - call a native or user defined function (see callLoop) and return from it.
-# - put literal values on the stack.
-#
-# Fns we will be defining here:
-# - add to the return sp and fetch/update from an offset of the rsp
-# - add/subtract/multiply/divmod U32/I32
-# - fetch/update U8/U32/I32
-# - compare U8/I32/U32
-# - branch to a different part of a fn
-#
-# We can write (and test) many programs using only these types, so those will
-# be what we focus on. We will define the other types in a separate file for
-# the reader's reference.
-
-@nativeFn([I32], [])
-def addRsp(env, offset):
-    env.returnStack.sp += offset
-
-@nativeFn([I32], [U8])
-def fetchRspOffsetU8(env, offset):
-    return [env.returnStack.get(offset, U8)]
-
-@nativeFn([I32, U8], [])
-def updateRspOffsetU8(env):
-    env.returnStack.set(env.ds.pop(I32), env.ds.pop(U8))
-
-# U8 Native Functions
-
-@nativeFn([RefU8], [U8])
-def fetchU8(env, ptr):
-    return [envb.heap.get(ptr, U8)]
-
-@nativeFn([RefU8, U8], [])
-def updateU8(env, ptr, value):
-    env.heap.set(ptr, U8(value))
-
-@nativeFn([U8, U8], [U8])
-def addU8(env, a, b):
-    return [a + b]
-
-@nativeFn([U8, U8], [U8])
-def subU8(env, a, b):
-    return [a - b]
-
-@nativeFn([U8, U8], [U32])
-def mulU8(env, a, b):
-    return [a * b]
-
-@nativeFn([U8, U8], [I32])
-def compareU8(env, a, b):
-    """a b -> compare."""
-    return [compare(a, b)]
-
-# U32 Native Functions
-
-@nativeFn([RefU32], [U32])
-def fetchU32(env, ptr):
-    return [envb.heap.get(ptr, U32)]
-
-@nativeFn([RefU32, U32], [])
-def updateU32(env, ptr, value):
-    env.heap.set(ptr, U32(value))
-
-@nativeFn([U32, U32], [U32])
-def addU32(env, a, b):
-    return [a + b]
-
-@nativeFn([U32, U32], [U32])
-def subU32(env, a, b):
-    return [a - b]
-
-@nativeFn([U32, U32], [U64])
-def mulU32(env, a, b):
-    return [a * b]
-
-@nativeFn([U32, U32], [U32, U32])
-def divmodU32(env, a, b):
-    """a b -> quotent remainder"""
-    return [a / b, a % b]
-
-@nativeFn([U32, U32], [I32])
-def compareU32(env, a, b):
-    """a b -> compare."""
-    return [compare(a, b)]
-
-# I32 Native Functions
-
-@nativeFn([RefI32], [I32])
-def fetchI32(env, ptr):
-    return [envb.heap.get(ptr, I32)]
-
-@nativeFn([RefI32, I32], [])
-def updateI32(env, ptr, value):
-    env.heap.set(ptr, I32(value))
-
-@nativeFn([I32, I32], [I32])
-def addI32(env, a, b):
-    return [a + b]
-
-@nativeFn([I32, I32], [I32])
-def subI32(env, a, b):
-    return [a - b]
-
-@nativeFn([I32, I32], [I64])
-def mulI32(env, a, b):
-    return [a * b]
-
-@nativeFn([I32, I32], [I32, I32])
-def divmodI32(env, a, b):
-    """a b -> quotent remainder"""
-    return [a / b, a % b]
-
-@nativeFn([I32, I32], [I32])
-def compareI32(env, a, b):
-    """a b -> compare."""
-    return [compare(a, b)]
-
-
