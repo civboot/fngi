@@ -832,11 +832,11 @@ class Env(object):
             self,
             memory: Memory,
             ds: Stack,
+            returnStack: Stack,
             heap: Heap,
             codeHeap: Heap,
             ba: BlockAllocator,
             arena: Arena,
-            returnStack: Stack,
             fns: List[Fn],
             tys: Dict[str, Ty],
             refs: Dict[Ty, Ref],
@@ -871,11 +871,11 @@ class Env(object):
         out = Env(
             memory=m,
             ds=ds,
+            returnStack=returnStack,
             heap=heap,
             codeHeap=codeHeap,
             ba=ba,
             arena=arena,
-            returnStack=returnStack,
             fns=copy.deepcopy(self.fns),
             tys=copy.deepcopy(self.tys),
             refs=copy.deepcopy(self.refs))
@@ -885,14 +885,41 @@ class Env(object):
         return out
 
 
+def createWasmEnv(memoryPages=1) -> Env:
+    """Create a clean wasm environment for testing wasm."""
+    memSize = memoryPages * WASM_PAGE
+    mem = Memory(memSize)
+    # Unlike fngi, we use a comparibly large data stack.
+    dataStack = Stack(
+        Memory(WASM_PAGE),
+        MStack.new(4, WASM_PAGE)
+    )
+    # Unlike fngi, the return stack must be a separate memory region because
+    # some tests will have specific pointers within main memory.
+    # Note: the returnStack is used for inputs and locals, which in wasm
+    # cannot traditionally have pointers to them.
+    returnStack = Stack(
+        Memory(WASM_PAGE),
+        MStack.new(4, WASM_PAGE)
+    )
+
+    return Env(
+        memory=mem,
+        ds=dataStack,
+        returnStack=returnStack,
+        heap=None, codeHeap=None, ba=None, arena=None,
+        fns=[],
+        tys=None, refs=None,
+    )
+
 ENV = Env(
     memory=MEMORY,
     ds=DATA_STACK,
+    returnStack=RETURN_STACK,
     heap=HEAP,
     codeHeap=CODE_HEAP,
     ba=BLOCK_ALLOCATOR,
     arena=ARENA,
-    returnStack=RETURN_STACK,
     fns=[],
     tys={},
     refs={},

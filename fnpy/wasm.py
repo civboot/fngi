@@ -9,6 +9,8 @@ from typing import List
 
 from .wasm_constants import *
 
+WASM_PAGE = 0x10000 # 2^16 bytes
+
 class Fn(object):
     def __init__(self, name: str, inputs: any, outputs: any):
         self._name, self.inputs, self.outputs = name, inputs, outputs
@@ -193,7 +195,7 @@ wasmSubroutines = {
   w.i64.store16: _storeTrunc(I64, _2bytes),
   w.i64.store32: _storeTrunc(I64, _4bytes),
   w.memory.size: _memsize,
-  w.memory.grow: lambda e,a: env.heap.grow(a[0] * 0x10000),
+  w.memory.grow: lambda e,a: env.heap.grow(a[0] * WASM_PAGE),
   w.i32.const: lambda e,a: e.ds.push(I32(a[0])),
   w.i64.const: lambda e,a: e.ds.push(I64(a[0])),
   w.f32.const: lambda e,a: e.ds.push(F32(a[0])),

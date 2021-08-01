@@ -7,13 +7,13 @@ using fnpy.machine.runWasm.
 import json
 import os
 from .wadze import parse_module, parse_code
-from fnpy.machine import w, Env, ENV, runWasm
-from typing import List, Tuple
+from fnpy.env import Env, createWasmEnv
+from fnpy.machine import runWasm
 from fnpy.wasm import *
 
 SUITE = 'tools/wasm_testsuite_unpacked'
 
-tyMap = {
+strTys = {
     'f32': F32,
     'f64': F64,
     'i32': I32,
@@ -29,7 +29,6 @@ def parseWasm(wasmPath):
 
 def runTest(wasmPath, inp, expected):
     wasm = parseWasm(wasmPath)
-    e = ENV.copyForTest()
     for value in inp: e.ds.push(value)
 
     if len(wasm['code']) == 0: raise ValueError('no code')
@@ -66,12 +65,12 @@ def runTest(wasmPath, inp, expected):
 # "f32" and the value 1.0. The value is 1065353216 because that is equivalent
 # to hexadecimal 0x3f800000, which is the binary representation of 1.0 as a
 # 32-bit float.
-#
+
 # ("type": "f32", "value": "1065353216"}
 def _convertJsonValue(json):
     jty, jval = json['type'], int(json['value'])
     if jty.startswith('i'):
-        val = tyMap[jty](jval)
+        val = strTys[jty](jval)
     elif jty == 'f32':
         jvalBytes = bytes(U32(jval))
         val = F32.from_buffer_copy(jvalBytes)
@@ -95,6 +94,53 @@ def _assertReturnInOut(json) -> Tuple[List[any], List[any]]:
     out = [_convertJsonValue(j) for j in json['expected']]
     return inp, out
 
+
+def convertJsonTys(stys: List[str]) -> List[DataTy]:
+    """Convert a list of str tys to a list of DataTys."""
+    return [strTys[t] for t in stys]
+
+
+def convertJsonCode(jsonInstructions: List[Tuple[any]]) -> List[Tuple(any)]:
+    fcode = [] # fngi's wasm repr
+    for strInstr in jsonInstructions:
+        wiStr, *args = strInstr
+        fcode.append([wasmCode[wiStr]] + args)
+    return fcode
+
+
+def compileModule(wasmPath: str) -> Env:
+    """Compile a web assembly module into an Env instance."""
+    wasm = parseWasm(wasmPath)
+
+    # The inputs/outputs are in the "type" (aka function type) block.
+    # There are typically not many of these.
+    inputs = [convertJsonTys(fty.params) for fty in wasm['type']]
+    outputs = [convertJsonTys(fty.returns) for fty in wasm['type']]
+
+    # Locals and code are in the code block
+    locals_ = [convertJsonTys(code.locals) for code in wasm['code']]
+    code = [convertJsonCode(code.instructions) for code in wasm['code']]
+
+    fnNames = {exportFn.ref: exportFn.name for exportFn in wasm['export']}
+
+    # Clear whatever functions exist in the environment.
+    # we are going to replace them.
+    env = createWasmEnv()
+    for index, tyIndex in enumerate(wasm['func']):
+        fnName = fnNames.get(index)
+        wasmFn = WasmFn(
+            name=fnNames.get(index),
+            inputs=inputs[tyIndex],
+            outputs=outputs[tyIndex],
+            locals_=locals_[index],
+            code=code[index],
+        )
+        env.fns.append(wasmFn)
+
+    return env
+
+
+
 def runTests(wasmDir):
     errors = []
     passed = 0
@@ -107,21 +153,15 @@ def runTests(wasmDir):
     # {"type": "assert_return", "line": 441, "action": {... }, "expected": [...]}
     modulePath = None
     ranAssertions = False
+    env = None
     for test in j['commands']:
         testTy = test['type']
         if testTy == 'module':
-            previousModulePath = modulePath
+            # Modules are used to setup a set of future test runs.
+            # We must get a new env and "compile" the module so that
+            # the assert_return/etc stanzas can be executed.
             modulePath = os.path.join(wasmDir, test['filename'])
-
-            # If we already ran assertions on the prevoius module path don't
-            # run the code.
-            if not previousModulePath or ranAssertions: continue
-
-            try:
-                runTest(previousModulePath, [], [])
-                passed += 1
-            except Exception as e:
-                errors.append(f'{previousModulePath}: {e}')
+            env = compileModule(e, modulePath)
 
         elif testTy == 'assert_return':
             ranAssertions = True
@@ -139,14 +179,17 @@ def runTests(wasmDir):
     assert [] == errors, f"Num failed={len(errors)} passed={passed}"
 
 
-def testConst0():
-    runTest('tools/wasm_testsuite_unpacked/const/const.0.wasm', [], [])
-
-def test_const_all():
-    runTests('tools/wasm_testsuite_unpacked/const')
+# def test_const_all():
+#     runTests('tools/wasm_testsuite_unpacked/const')
 
 # TODO: requires adding functions and parameters to the module
 # TODO: requires adding missing opcodes to wadze
 def test_i32_all():
-    wasm = parseWasm('tools/wasm_testsuite_unpacked/i32/i32.0.wasm')
+    testDir = 'tools/wasm_testsuite_unpacked/i32/'
+    with open(testDir + 'i32.json') as f: jdict = json.load(f)
+    env = ENV.copyForTest()
+    module = compileModule(env, testDir + jdict['commands'][0]['filename'])
+    assert False
+
+    module = parseWasm('tools/wasm_testsuite_unpacked/i32/i32.0.wasm')
     # runTests('tools/wasm_testsuite_unpacked/i32')
