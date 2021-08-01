@@ -80,8 +80,7 @@ def runWasm(env: Env, code: List[any]):
         subroutine = wasmSubroutines.get(wi)
         if subroutine: subroutine(env, args)
         if wi == w.call:
-            fnIndex = ds.popv(U32)
-            fn = env.fns[fnIndex]
+            fn = env.fns[args[0]]
             fnInit(env, fn)
             if isinstance(fn, WasmFn): runWasm(env, fn.code)
             else: 
