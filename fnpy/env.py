@@ -849,13 +849,23 @@ class Env(object):
         self.arena = arena
         self.returnStack = returnStack
         self.fns = fns
+        self.fnIndexes = None
 
         self.tys = tys
         self.refs = refs
 
+        self.executingFn = None
         self.running = False
         self.rbp = 0 # rstack base ptr
         self.ep = 0 # execution pointer
+
+    def indexFns(self):
+        fnIndexes = {}
+        for index, fn in enumerate(self.fns):
+            if fn.name is None: continue
+            if fn.name in fnIndexes: raise KeyError(f"Multiple fns named {fn.name}")
+            fnIndexes[fn.name()] = index
+        self.fnIndexes = fnIndexes
 
     def copyForTest(self):
         """Copy the env for the test. Sets ep=heap.heap and running=True."""

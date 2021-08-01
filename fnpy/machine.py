@@ -35,15 +35,6 @@ def formatArgs(args):
         else: out.append("???")
     return "Args: " + ' '.join(out)
 
-def localGet(env: Env, fn: Fn, index: int) -> DataTy:
-    """Used to get a local value index."""
-    return env.ds.get(fn.offsets[index], self.trueLocals[index])
-
-def localSet(env: Env, fn: Fn, index: int, value: DataTy):
-    """Used to set a local value index."""
-    assert sizeof(value) == sizeof(fn.trueLocals[index])
-    env.ds.set(fn.offsets[index], value)
-
 def fnInit(env: Env, fn: Fn):
     """Before executing a fn's code:
     - The locals space (which includes inputs) must be reserved on the return
@@ -56,7 +47,7 @@ def fnInit(env: Env, fn: Fn):
     rs.grow(fn.trueLocals)
     for i, ty in enumerate(fn.inputs):
         value = ds.pop(ty)
-        localSet(env, fn, i, value)
+        fn.lset(env, i, value)
 
 def fnTeardown(env: Env, fn: Fn):
     """After a function has finished executing:
@@ -81,6 +72,8 @@ def runWasm(env: Env, code: List[any]):
         if subroutine: subroutine(env, args)
         if wi == w.call:
             fn = env.fns[args[0]]
+            prevExecuting = env.executingFn
+            env.executingFn = fn
             fnInit(env, fn)
             if isinstance(fn, WasmFn): runWasm(env, fn.code)
             else: 
@@ -88,6 +81,7 @@ def runWasm(env: Env, code: List[any]):
                     "pop appropraite values and pass them in, call, handle return values")
                 # fn.call(env, fn)
             fnTeardown(env, fn)
+            env.executingFn = prevExecuting
 
         # elif wi == w.call_indirect:
         #     TODO

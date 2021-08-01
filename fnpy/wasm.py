@@ -8,6 +8,7 @@ from typing import Union
 from typing import List
 
 from .wasm_constants import *
+from ctypes import sizeof
 
 WASM_PAGE = 0x10000 # 2^16 bytes
 
@@ -32,13 +33,13 @@ class WasmFn(Fn):
         self.code = code
 
         self.trueLocals = inputs + locals_
-        for l in self.trueLocals: assert type(l) in {I32, I64, F32, F64}
+        for l in self.trueLocals: assert l in {I32, I64, F32, F64}
 
-        self.offsets = _calcOffsets(self.trueLocals)
+        self.offsets = self._calcOffsets(self.trueLocals)
         self.rstackSize = sum(map(sizeof, self.trueLocals))
 
     @staticmethod
-    def _caclOffsets(trueLocals):
+    def _calcOffsets(trueLocals):
         """Returns an array that converts an index to a memory offset for local
         variables.
 
@@ -50,6 +51,26 @@ class WasmFn(Fn):
             offsets.append(offset)
             offset += sizeof(l)
 
+    def lget(self, env: "Env", index: int) -> DataTy:
+        """Used to get a local value index."""
+        return env.ds.get(self.offsets[index], self.trueLocals[index])
+
+    def lset(self, env: "Env", index: int, value: DataTy):
+        """Used to set a local value index."""
+        assert sizeof(value) == sizeof(self.trueLocals[index])
+        env.ds.set(self.offsets[index], value)
+
+def _localGet(env, args):
+    return env.executingFn.lget(env, args[0])
+
+def _localSet(env, args):
+    value = env.ds.drop()
+    env.executingFn.lset(env, args[0], value)
+
+def _localTee(env, args):
+    value = env.ds.drop()
+    env.ds.push(value)
+    env.executingFn.lset(env, args[0], value)
 
 class UnreachableError(Exception): pass
 
@@ -166,9 +187,9 @@ wasmSubroutines = {
   # w.call_indirect: NI,
   w.drop: lambda e,a: e.ds.drop(),
   w.select: lambda e,a: e.ds.select(),
-  w.local.get: NI,
-  w.local.set: NI,
-  w.local.tee: NI,
+  w.local.get: _localGet,
+  w.local.set: _localSet,
+  w.local.tee: _localTee,
   w.global_.get: NI,
   w.global_.set: NI,
   w.i32.load: _loadValue(I32),
