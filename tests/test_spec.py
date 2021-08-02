@@ -46,9 +46,10 @@ def runTest(testIndex, env, action, inp, expected):
         ty = expectedTys.pop()
         result.append(env.ds.popv(ty))
     assert expectedValues == result, (
-        f"\nindex: {testIndex}  inputs: {inp}"
-        + f"  expected: {expected}"
-        + f"  {fn.debugStr()}"
+        f"\nindex: {testIndex}  name: {fn.debugStr()}"
+        + f"\ninputs: {inp}"
+        + f"\nexpected: {expectedValues}"
+        + f"\nresult: {result}"
     )
 
 
@@ -167,7 +168,7 @@ def runTests(wasmDir):
                 passed += 1
             except Exception as e:
                 # raise # TODO: remove
-                errors.append(f'{modulePath}: {e}')
+                errors.append(f'ACTION: {action}\nERROR: {e}\nMODULE: {modulePath}')
 
         elif testTy in {'assert_malformed'}: pass
         elif testTy in {'assert_invalid'}: pass

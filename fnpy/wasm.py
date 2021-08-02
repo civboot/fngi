@@ -1,3 +1,6 @@
+"""
+Reference: https://github.com/sunfishcode/wasm-reference-manual/blob/master/WebAssembly.md
+"""
 from typing import Any
 from typing import ByteString
 from typing import Callable
@@ -6,9 +9,10 @@ from typing import Tuple
 from typing import Dict
 from typing import Union
 from typing import List
+import math
+from ctypes import sizeof
 
 from .wasm_constants import *
-from ctypes import sizeof
 
 WASM_PAGE = 0x10000 # 2^16 bytes
 
@@ -72,6 +76,15 @@ class WasmFn(Fn):
             + "\nCode:\n" + '\n'.join(map(instrStr, self.code))
         )
 
+def div_s(left, right):
+    """The div_s instruction returns the signed quotient of its operands,
+    interpreted as signed. The quotient is silently rounded to the nearest
+    integer toward zero.
+    """
+    result = left / right
+    if result > 0: return math.floor(result)
+    return math.ceil(result)
+
 def _localGet(env, args):
     return env.executingFn.lget(env, args[0])
 
@@ -125,33 +138,30 @@ def _storeTrunc(ty: DataTy, trunc):
 
 def _doUnary(ty: DataTy, operation):
     def impl(env, args):
-        v = ds.popv(ty)
-        ds.push(ty(operation(v)))
+        v = env.ds.popv(ty)
+        env.ds.push(ty(operation(v)))
     return impl
 
 def _doBinary(ty: DataTy, operation):
     def impl(env, args):
-        ds = env.ds
-        right = ds.popv(ty)
-        left = ds.popv(ty)
-        ds.push(ty(operation(left, right)))
+        right = env.ds.popv(ty)
+        left = env.ds.popv(ty)
+        env.ds.push(ty(operation(left, right)))
     return impl
 
 def _doBinCnv(ty, operation, preConvTy):
     """Do binary with pre-conversion"""
     def impl(env, args):
-        ds = env.ds
-        right = preConvTy(ds.popv(ty))
-        left = preConvTy(ds.popv(ty))
-        ds.push(ty(operation(left, right)))
+        right = preConvTy(env.ds.popv(ty))
+        left = preConvTy(env.ds.popv(ty))
+        env.ds.push(ty(operation(left.value, right.value)))
     return impl
 
 def _doBinMultiTy(leftTy, rightTy, outTy, operation):
     def impl(env, args):
-        ds = env.ds
-        right = ds.popv(rightTy)
-        left = ds.popv(leftTy)
-        ds.push(outTy(operation(left, right)))
+        right = env.ds.popv(rightTy)
+        left = env.ds.popv(leftTy)
+        env.ds.push(outTy(operation(left, right)))
     return impl
 
 
@@ -285,7 +295,7 @@ wasmSubroutines = {
   w.i32.add: _doBinary(I32, operator.add),
   w.i32.sub: _doBinary(I32, operator.sub),
   w.i32.mul: _doBinary(I32, operator.mul),
-  w.i32.div_s: _doBinary(I32, operator.floordiv),
+  w.i32.div_s: _doBinary(I32, div_s),
   w.i32.div_u: _doBinary(U32, operator.floordiv),
   w.i32.rem_s: _doBinary(I32, operator.mod),
   w.i32.rem_u: _doBinary(U32, operator.mod),
