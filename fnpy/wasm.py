@@ -1,6 +1,8 @@
 """
 Reference: https://github.com/sunfishcode/wasm-reference-manual/blob/master/WebAssembly.md
 """
+from pdb import set_trace as dbg
+
 from typing import Any
 from typing import ByteString
 from typing import Callable
@@ -15,6 +17,13 @@ from ctypes import sizeof
 from .wasm_constants import *
 
 WASM_PAGE = 0x10000 # 2^16 bytes
+
+class WasmError(Exception):
+    @classmethod
+    def raise_(cls): raise cls()
+
+class UnreachableError(WasmError): pass
+class Trap(WasmError): pass
 
 class Fn(object):
     def __init__(self, name: str, inputs: any, outputs: any):
@@ -77,13 +86,40 @@ class WasmFn(Fn):
         )
 
 def div_s(left, right):
-    """The div_s instruction returns the signed quotient of its operands,
+    """
+    The div_s instruction returns the signed quotient of its operands,
     interpreted as signed. The quotient is silently rounded to the nearest
     integer toward zero.
     """
     result = left / right
     if result > 0: return math.floor(result)
     return math.ceil(result)
+
+def rem_s(left, right):
+    """
+    The rem_s instruction returns the signed remainder from a division of its
+    operand values interpreted as signed, with the result having the same sign
+    as the first operand (the dividend).
+    """
+    if right == 0: raise Trap()
+    sign = -1 if left < 0 else 1
+    return sign * (abs(left) % abs(right))
+
+def shrI32(left, right):
+    return left >> (right % 32)
+
+def shlI32(left, right):
+    right = right % 32
+    sign = -1 if left < 0 else 1
+    return sign * (abs(left) << right)
+
+def shr_sI32(left, right):
+    right = right % 32
+    out = abs(left) >> right
+    if left < 0:
+        if out == 0: return -1
+        return -1 * out
+    return out
 
 def _localGet(env, args):
     return env.executingFn.lget(env, args[0])
@@ -96,11 +132,6 @@ def _localTee(env, args):
     value = env.ds.drop()
     env.ds.push(value)
     env.executingFn.lset(env, args[0], value)
-
-class UnreachableError(Exception): pass
-
-def _raiseUnreachable(*args):
-    raise UnreachableError()
 
 def NI(*args):
     raise NotImplementedError()
@@ -206,7 +237,7 @@ def _rotrlImpl(ty):
     return (rotr, rotl)
 
 wasmSubroutines = {
-  w.unreachable: _raiseUnreachable,
+  w.unreachable: UnreachableError.raise_,
   w.nop: lambda e,a: None,
   # w.block: NI,
   # w.loop: NI,
@@ -297,16 +328,16 @@ wasmSubroutines = {
   w.i32.mul: _doBinary(I32, operator.mul),
   w.i32.div_s: _doBinary(I32, div_s),
   w.i32.div_u: _doBinary(U32, operator.floordiv),
-  w.i32.rem_s: _doBinary(I32, operator.mod),
+  w.i32.rem_s: _doBinary(I32, rem_s),
   w.i32.rem_u: _doBinary(U32, operator.mod),
   w.i32.and_: _doBinary(I32, _bitand),
   w.i32.or_: _doBinary(I32, _bitor),
   w.i32.xor: _doBinary(I32, _bitxor),
-  w.i32.shl: _doBinary(I32, operator.lshift),
-  w.i32.shr_s: _doBinary(I32, operator.rshift),
-  w.i32.shr_u: _doBinary(U32, operator.rshift),
-  w.i32.rotl: _doBinMultiTy(U32, I32, U32, _rotrlImpl(U32)[1]),
-  w.i32.rotr: _doBinMultiTy(U32, I32, U32, _rotrlImpl(U32)[0]),
+  w.i32.shl: _doBinary(I32, shlI32),
+  w.i32.shr_s: _doBinary(I32, shr_sI32),
+  w.i32.shr_u: _doBinary(U32, shrI32),
+  w.i32.rotl: _doBinMultiTy(U32, U32, U32, _rotrlImpl(U32)[1]),
+  w.i32.rotr: _doBinMultiTy(U32, U32, U32, _rotrlImpl(U32)[0]),
   w.i64.clz: _doUnary(NI, NI),
   w.i64.ctz: _doUnary(NI, NI),
   w.i64.popcnt: _doBinary(NI, NI),

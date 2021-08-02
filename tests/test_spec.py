@@ -7,6 +7,7 @@ using fnpy.machine.runWasm.
 from pdb import set_trace as dbg
 
 import json
+from pprint import pprint as pp
 import os
 from .wadze import parse_module, parse_code
 from fnpy.env import Env, createWasmEnv
@@ -32,6 +33,10 @@ def parseWasm(wasmPath):
 def runTest(testIndex, env, action, inp, expected):
     assert action['type'] == 'invoke'
     fname = action['field'] # function name to call
+    print(
+        f"\n\n##### TEST {testIndex} {fname}"
+        f"\n    inp={inp}"
+        f"\n    expected={expected}")
     fn = env.fns[env.fnIndexes[fname]]
     for value in inp: env.ds.push(value)
     env.executingFn = fn
@@ -46,7 +51,7 @@ def runTest(testIndex, env, action, inp, expected):
         ty = expectedTys.pop()
         result.append(env.ds.popv(ty))
     assert expectedValues == result, (
-        f"\nindex: {testIndex}  name: {fn.debugStr()}"
+        f"\nindex: {testIndex}"
         + f"\ninputs: {inp}"
         + f"\nexpected: {expectedValues}"
         + f"\nresult: {result}"
@@ -166,9 +171,13 @@ def runTests(wasmDir):
             try:
                 runTest(testIndex, env, action, inp, expected)
                 passed += 1
+                print("PASSED")
             except Exception as e:
                 # raise # TODO: remove
-                errors.append(f'ACTION: {action}\nERROR: {e}\nMODULE: {modulePath}')
+                errMsg = f'ACTION: {action}\nERROR: {e}\nMODULE: {modulePath}'
+                print("FAILED:", errMsg)
+                errors.append(errMsg)
+
 
         elif testTy in {'assert_malformed'}: pass
         elif testTy in {'assert_invalid'}: pass
@@ -176,7 +185,7 @@ def runTests(wasmDir):
             pass # TODO: implement traps
         else: errors.append(f'{modulePath}: Unkown testTy {testTy}')
 
-    assert [] == errors, f"Num failed={len(errors)} passed={passed}"
+    assert 0 == len(errors), f"Note: passed={passed}"
 
 
 # def test_const_all():
