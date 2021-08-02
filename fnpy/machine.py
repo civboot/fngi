@@ -68,7 +68,7 @@ def runWasm(env: Env, code: List[any]):
         else:
             wi, *args = instr
         print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
-        subroutine = wasmSubroutines.get(wi)
+        subroutine = wasmSubroutines[wi]
         if subroutine: subroutine(env, args)
         if wi == w.call:
             fn = env.fns[args[0]]
