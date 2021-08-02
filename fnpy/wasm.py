@@ -195,21 +195,12 @@ def _doBinary(ty: DataTy, operation):
         env.ds.push(ty(operation(left, right)))
     return impl
 
-def _doBinCnv(ty, operation, preConvTy):
-    """Do binary with pre-conversion"""
-    def impl(env, args):
-        right = preConvTy(env.ds.popv(ty))
-        left = preConvTy(env.ds.popv(ty))
-        env.ds.push(ty(operation(left.value, right.value)))
-    return impl
-
 def _doBinMultiTy(leftTy, rightTy, outTy, operation):
     def impl(env, args):
         right = env.ds.popv(rightTy)
         left = env.ds.popv(leftTy)
         env.ds.push(outTy(operation(left, right)))
     return impl
-
 
 def _memsize(env, _args):
     pages = len(env.memory.data) // 0x10000
@@ -307,24 +298,24 @@ wasmSubroutines = {
   w.i32.eq: _doBinary(I32, operator.eq),
   w.i32.ne: _doBinary(I32, operator.ne),
   w.i32.lt_s: _doBinary(I32, operator.lt),
-  w.i32.lt_u: _doBinCnv(I32, operator.lt, U32),
+  w.i32.lt_u: _doBinMultiTy(U32, U32, I32, operator.lt),
   w.i32.gt_s: _doBinary(I32, operator.gt),
-  w.i32.gt_u: _doBinCnv(I32, operator.gt, U32),
+  w.i32.gt_u: _doBinMultiTy(U32, U32, I32, operator.gt),
   w.i32.le_s: _doBinary(I32, operator.le),
-  w.i32.le_u: _doBinCnv(I32, operator.le, U32),
+  w.i32.le_u: _doBinMultiTy(U32, U32, I32, operator.le),
   w.i32.ge_s: _doBinary(I32, operator.ge),
-  w.i32.ge_u: _doBinCnv(I32, operator.ge, U32),
+  w.i32.ge_u: _doBinMultiTy(U32, U32, I32, operator.ge),
   w.i64.eqz: _doUnary(I64, operator.not_),
   w.i64.eq: _doBinary(I64, operator.eq),
   w.i64.ne: _doBinary(I64, operator.ne),
   w.i64.lt_s: _doBinary(I64, operator.lt),
-  w.i64.lt_u: _doBinCnv(I64, operator.lt, U64),
+  w.i64.lt_u: _doBinMultiTy(U32, U32, I32, operator.lt),
   w.i64.gt_s: _doBinary(I64, operator.gt),
-  w.i64.gt_u: _doBinCnv(I64, operator.gt, U64),
+  w.i64.gt_u: _doBinMultiTy(U32, U32, I32, operator.gt),
   w.i64.le_s: _doBinary(I64, operator.le),
-  w.i64.le_u: _doBinCnv(I64, operator.le, U64),
+  w.i64.le_u: _doBinMultiTy(U32, U32, I32, operator.le),
   w.i64.ge_s: _doBinary(I64, operator.ge),
-  w.i64.ge_u: _doBinCnv(I64, operator.ge, U64),
+  w.i64.ge_u: _doBinMultiTy(U32, U32, I32, operator.ge),
   w.f32.eq: _doBinary(F32, operator.eq),
   w.f32.ne: _doBinary(F32, operator.ne),
   w.f32.lt: _doBinary(F32, operator.lt),
