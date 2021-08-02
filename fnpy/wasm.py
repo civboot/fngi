@@ -19,6 +19,11 @@ class Fn(object):
     def name(self):
         return self._name
 
+def instrStr(instr):
+    if isinstance(instr, int):
+        intr = (instr,)
+    instr = (wasmName[instr[0]],) + tuple(instr[1:])
+    return str(instr)
 
 class WasmFn(Fn):
     """A webassembly function."""
@@ -50,6 +55,7 @@ class WasmFn(Fn):
         for l in trueLocals:
             offsets.append(offset)
             offset += sizeof(l)
+        return offsets
 
     def lget(self, env: "Env", index: int) -> DataTy:
         """Used to get a local value index."""
@@ -59,6 +65,12 @@ class WasmFn(Fn):
         """Used to set a local value index."""
         assert sizeof(value) == sizeof(self.trueLocals[index])
         env.ds.set(self.offsets[index], value)
+
+    def debugStr(self):
+        return (
+            f"name: {self.name()}"
+            + "\nCode:\n" + '\n'.join(map(instrStr, self.code))
+        )
 
 def _localGet(env, args):
     return env.executingFn.lget(env, args[0])
@@ -134,6 +146,15 @@ def _doBinCnv(ty, operation, preConvTy):
         ds.push(ty(operation(left, right)))
     return impl
 
+def _doBinMultiTy(leftTy, rightTy, outTy, operation):
+    def impl(env, args):
+        ds = env.ds
+        right = ds.popv(rightTy)
+        left = ds.popv(leftTy)
+        ds.push(outTy(operation(left, right)))
+    return impl
+
+
 def _memsize(env, _args):
     pages = len(env.memory.data) // 0x10000
     env.ds.push(I32(pages))
@@ -148,28 +169,31 @@ def _bitor(l, r): return l | r
 def _bitxor(l,r): return l ^ r
 def _inverse(l): return ~l
 
-def rotr(ty, a, n):
-    "Rotate a, n times to the right"
+def _rotrlImpl(ty):
     width = sizeof(ty)
-    if n > 0:
-        mask = (1 << width) - 1
-        a, n = a & mask, n % width
-        return ((a >> n)    # top moved down
-                | ((a & ((1 << n) - 1))   # Bottom masked...
-                   << (width - n)))  # ... then moved up
-    elif n == 0: return a
-    else: return rotl(ty, a, -n)
- 
-def rotl(ty, a, n):
-    "Rotate a, n times to the left"
-    width = sizeof(ty)
-    if n > 0:
-        mask = (1 << width) - 1
-        a, n = a & mask, n % width
-        return (((a << n) & mask)      # bottom shifted up and masked
-                | (a >> (width - n)))  # Top moved down
-    elif n == 0: return a
-    else: return rotr(width, a, -n)
+
+    def rotr(a, n):
+        "Rotate a, n times to the right"
+        if n > 0:
+            mask = (1 << width) - 1
+            a, n = a & mask, n % width
+            return ((a >> n)    # top moved down
+                    | ((a & ((1 << n) - 1))   # Bottom masked...
+                       << (width - n)))  # ... then moved up
+        elif n == 0: return a
+        else: return _rotl(a, -n)
+
+    def rotl(a, n):
+        "Rotate a, n times to the left"
+        if n > 0:
+            mask = (1 << width) - 1
+            a, n = a & mask, n % width
+            return (((a << n) & mask)      # bottom shifted up and masked
+                    | (a >> (width - n)))  # Top moved down
+        elif n == 0: return a
+        else: return _rotr(a, -n)
+
+    return (rotr, rotl)
 
 wasmSubroutines = {
   w.unreachable: _raiseUnreachable,
@@ -262,17 +286,17 @@ wasmSubroutines = {
   w.i32.sub: _doBinary(I32, operator.sub),
   w.i32.mul: _doBinary(I32, operator.mul),
   w.i32.div_s: _doBinary(I32, operator.floordiv),
-  w.i32.div_u: _doBinary(I32, operator.floordiv),
+  w.i32.div_u: _doBinary(U32, operator.floordiv),
   w.i32.rem_s: _doBinary(I32, operator.mod),
-  w.i32.rem_u: _doBinary(I32, operator.mod),
+  w.i32.rem_u: _doBinary(U32, operator.mod),
   w.i32.and_: _doBinary(I32, _bitand),
   w.i32.or_: _doBinary(I32, _bitor),
   w.i32.xor: _doBinary(I32, _bitxor),
   w.i32.shl: _doBinary(I32, operator.lshift),
   w.i32.shr_s: _doBinary(I32, operator.rshift),
-  w.i32.shr_u: _doBinary(I32, operator.rshift),
-  w.i32.rotl: _doBinary(I32, rotl),
-  w.i32.rotr: _doBinary(I32, rotr),
+  w.i32.shr_u: _doBinary(U32, operator.rshift),
+  w.i32.rotl: _doBinMultiTy(U32, I32, U32, _rotrlImpl(U32)[1]),
+  w.i32.rotr: _doBinMultiTy(U32, I32, U32, _rotrlImpl(U32)[0]),
   w.i64.clz: _doUnary(NI, NI),
   w.i64.ctz: _doUnary(NI, NI),
   w.i64.popcnt: _doBinary(NI, NI),
