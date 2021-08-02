@@ -242,6 +242,10 @@ class Stack(MManBase):
         self.totalSize = mstack.end - mstack.start
         self.trackSize = [] # True if size is 8, else False
 
+    def clearMemory(self):
+        self.m.sp = self.m.end
+        self.trackSize = []
+
     def checkRange(self, offset, size, useSp=None, requireSize=False):
         if not useSp: useSp = self.m.sp
         ptr = useSp + offset
@@ -894,6 +898,10 @@ class Env(object):
         out.ep = self.heap.m.heap
         return out
 
+    def clearMemory(self):
+        self.memory.data[:] = ctypes.create_string_buffer(len(self.memory.data))
+        self.ds.clearMemory()
+        if self.returnStack: self.returnStack.clearMemory()
 
 def createWasmEnv(memoryPages=1) -> Env:
     """Create a clean wasm environment for testing wasm."""

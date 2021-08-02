@@ -225,31 +225,33 @@ def _bitor(l, r): return l | r
 def _bitxor(l,r): return l ^ r
 def _inverse(l): return ~l
 
-def _rotrlImpl(ty):
-    width = sizeof(ty)
 
-    def rotr(a, n):
-        "Rotate a, n times to the right"
-        if n > 0:
-            mask = (1 << width) - 1
-            a, n = a & mask, n % width
-            return ((a >> n)    # top moved down
-                    | ((a & ((1 << n) - 1))   # Bottom masked...
-                       << (width - n)))  # ... then moved up
-        elif n == 0: return a
-        else: return _rotl(a, -n)
+def rotl(width, a, n):
+    "Rotate a, n times to the left"
+    if n > 0:
+        mask = (1 << width) - 1
+        a, n = a & mask, n % width
+        return (((a << n) & mask)      # bottom shifted up and masked
+                | (a >> (width - n)))  # Top moved down
+    elif n == 0: return a
+    else: return rotr(width, a, -n)
 
-    def rotl(a, n):
-        "Rotate a, n times to the left"
-        if n > 0:
-            mask = (1 << width) - 1
-            a, n = a & mask, n % width
-            return (((a << n) & mask)      # bottom shifted up and masked
-                    | (a >> (width - n)))  # Top moved down
-        elif n == 0: return a
-        else: return _rotr(a, -n)
+def rotr(width, a, n):
+    "Rotate a, n times to the right"
+    if n > 0:
+        mask = (1 << width) - 1
+        a, n = a & mask, n % width
+        return ((a >> n)    # top moved down
+                | ((a & ((1 << n) - 1))   # Bottom masked...
+                   << (width - n)))  # ... then moved up
+    elif n == 0: return a
+    else: return rotl(width, a, -n)
 
-    return (rotr, rotl)
+def rotlI32(a, n):
+    return rotl(32, a, n)
+
+def rotrI32(a, n):
+    return rotr(32, a, n)
 
 wasmSubroutines = {
   w.unreachable: UnreachableError.raise_,
@@ -337,7 +339,7 @@ wasmSubroutines = {
   w.f64.ge: _doBinary(F64, operator.ge),
   w.i32.clz: _doUnary(U32, clzU32),
   w.i32.ctz: _doUnary(U32, cntzU32),
-  w.i32.popcnt: _doBinary(NI, NI),
+  w.i32.popcnt: NI,
   w.i32.add: _doBinary(I32, operator.add),
   w.i32.sub: _doBinary(I32, operator.sub),
   w.i32.mul: _doBinary(I32, operator.mul),
@@ -351,77 +353,77 @@ wasmSubroutines = {
   w.i32.shl: _doBinary(I32, shlI32),
   w.i32.shr_s: _doBinary(I32, shr_sI32),
   w.i32.shr_u: _doBinary(U32, shrI32),
-  w.i32.rotl: _doBinMultiTy(U32, I32, U32, _rotrlImpl(U32)[1]),
-  w.i32.rotr: _doBinMultiTy(U32, I32, U32, _rotrlImpl(U32)[0]),
+  w.i32.rotl: _doBinMultiTy(U32, U32, I32, rotlI32),
+  w.i32.rotr: _doBinMultiTy(U32, U32, I32, rotrI32),
   w.i64.clz: _doUnary(NI, NI),
   w.i64.ctz: _doUnary(NI, NI),
-  w.i64.popcnt: _doBinary(NI, NI),
-  w.i64.add: _doBinary(NI, NI),
-  w.i64.sub: _doBinary(NI, NI),
-  w.i64.mul: _doBinary(NI, NI),
-  w.i64.div_s: _doBinary(NI, NI),
-  w.i64.div_u: _doBinary(NI, NI),
-  w.i64.rem_s: _doBinary(NI, NI),
-  w.i64.rem_u: _doBinary(NI, NI),
-  w.i64.and_: _doBinary(NI, NI),
-  w.i64.or_: _doBinary(NI, NI),
-  w.i64.xor: _doBinary(NI, NI),
-  w.i64.shl: _doBinary(NI, NI),
-  w.i64.shr_s: _doBinary(NI, NI),
-  w.i64.shr_u: _doBinary(NI, NI),
-  w.i64.rotl: _doBinary(NI, NI),
-  w.i64.rotr: _doBinary(NI, NI),
-  w.f32.abs: _doBinary(NI, NI),
-  w.f32.neg: _doBinary(NI, NI),
-  w.f32.ceil: _doBinary(NI, NI),
-  w.f32.floor: _doBinary(NI, NI),
-  w.f32.trunc: _doBinary(NI, NI),
-  w.f32.nearest: _doBinary(NI, NI),
-  w.f32.sqrt: _doBinary(NI, NI),
-  w.f32.add: _doBinary(NI, NI),
-  w.f32.sub: _doBinary(NI, NI),
-  w.f32.mul: _doBinary(NI, NI),
-  w.f32.div: _doBinary(NI, NI),
-  w.f32.min: _doBinary(NI, NI),
-  w.f32.max: _doBinary(NI, NI),
-  w.f32.copysign: _doBinary(NI, NI),
-  w.f64.abs: _doBinary(NI, NI),
-  w.f64.neg: _doBinary(NI, NI),
-  w.f64.ceil: _doBinary(NI, NI),
-  w.f64.floor: _doBinary(NI, NI),
-  w.f64.trunc: _doBinary(NI, NI),
-  w.f64.nearest: _doBinary(NI, NI),
-  w.f64.sqrt: _doBinary(NI, NI),
-  w.f64.add: _doBinary(NI, NI),
-  w.f64.sub: _doBinary(NI, NI),
-  w.f64.mul: _doBinary(NI, NI),
-  w.f64.div: _doBinary(NI, NI),
-  w.f64.min: _doBinary(NI, NI),
-  w.f64.max: _doBinary(NI, NI),
-  w.f64.copysign: _doBinary(NI, NI),
-  w.i32.wrap_i64: _doBinary(NI, NI),
-  w.i32.trunc_f32_s: _doBinary(NI, NI),
-  w.i32.trunc_f32_u: _doBinary(NI, NI),
-  w.i32.trunc_f64_s: _doBinary(NI, NI),
-  w.i32.trunc_f64_u: _doBinary(NI, NI),
-  w.i64.extend_i32_s: _doBinary(NI, NI),
-  w.i64.extend_i32_u: _doBinary(NI, NI),
-  w.i64.trunc_f32_s: _doBinary(NI, NI),
-  w.i64.trunc_f32_u: _doBinary(NI, NI),
-  w.i64.trunc_f64_s: _doBinary(NI, NI),
-  w.i64.trunc_f64_u: _doBinary(NI, NI),
-  w.f32.convert_i32_s: _doBinary(NI, NI),
-  w.f32.convert_i32_u: _doBinary(NI, NI),
-  w.f32.convert_i64_s: _doBinary(NI, NI),
-  w.f32.convert_i64_u: _doBinary(NI, NI),
-  w.f32.demote_f64: _doBinary(NI, NI),
-  w.f64.convert_i32_s: _doBinary(NI, NI),
-  w.f64.convert_i32_u: _doBinary(NI, NI),
-  w.f64.convert_i64_s: _doBinary(NI, NI),
-  w.f64.convert_i64_u: _doBinary(NI, NI),
-  w.f64.promote_f32: _doBinary(NI, NI),
-  w.i32.reinterpret_f32: _doBinary(NI, NI),
-  w.i64.reinterpret_f64: _doBinary(NI, NI),
-  w.f32.reinterpret_i32: _doBinary(NI, NI),
-  w.f64.reinterpret_i64: _doBinary(NI, NI),
+  w.i64.popcnt: NI,
+  w.i64.add: NI,
+  w.i64.sub: NI,
+  w.i64.mul: NI,
+  w.i64.div_s: NI,
+  w.i64.div_u: NI,
+  w.i64.rem_s: NI,
+  w.i64.rem_u: NI,
+  w.i64.and_: NI,
+  w.i64.or_: NI,
+  w.i64.xor: NI,
+  w.i64.shl: NI,
+  w.i64.shr_s: NI,
+  w.i64.shr_u: NI,
+  w.i64.rotl: NI,
+  w.i64.rotr: NI,
+  w.f32.abs: NI,
+  w.f32.neg: NI,
+  w.f32.ceil: NI,
+  w.f32.floor: NI,
+  w.f32.trunc: NI,
+  w.f32.nearest: NI,
+  w.f32.sqrt: NI,
+  w.f32.add: NI,
+  w.f32.sub: NI,
+  w.f32.mul: NI,
+  w.f32.div: NI,
+  w.f32.min: NI,
+  w.f32.max: NI,
+  w.f32.copysign: NI,
+  w.f64.abs: NI,
+  w.f64.neg: NI,
+  w.f64.ceil: NI,
+  w.f64.floor: NI,
+  w.f64.trunc: NI,
+  w.f64.nearest: NI,
+  w.f64.sqrt: NI,
+  w.f64.add: NI,
+  w.f64.sub: NI,
+  w.f64.mul: NI,
+  w.f64.div: NI,
+  w.f64.min: NI,
+  w.f64.max: NI,
+  w.f64.copysign: NI,
+  w.i32.wrap_i64: NI,
+  w.i32.trunc_f32_s: NI,
+  w.i32.trunc_f32_u: NI,
+  w.i32.trunc_f64_s: NI,
+  w.i32.trunc_f64_u: NI,
+  w.i64.extend_i32_s: NI,
+  w.i64.extend_i32_u: NI,
+  w.i64.trunc_f32_s: NI,
+  w.i64.trunc_f32_u: NI,
+  w.i64.trunc_f64_s: NI,
+  w.i64.trunc_f64_u: NI,
+  w.f32.convert_i32_s: NI,
+  w.f32.convert_i32_u: NI,
+  w.f32.convert_i64_s: NI,
+  w.f32.convert_i64_u: NI,
+  w.f32.demote_f64: NI,
+  w.f64.convert_i32_s: NI,
+  w.f64.convert_i32_u: NI,
+  w.f64.convert_i64_s: NI,
+  w.f64.convert_i64_u: NI,
+  w.f64.promote_f32: NI,
+  w.i32.reinterpret_f32: NI,
+  w.i64.reinterpret_f64: NI,
+  w.f32.reinterpret_i32: NI,
+  w.f64.reinterpret_i64: NI,
 }

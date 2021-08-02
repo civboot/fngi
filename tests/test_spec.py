@@ -173,11 +173,15 @@ def runTests(wasmDir):
                 passed += 1
                 print("PASSED")
             except Exception as e:
+                if not (
+                    isinstance(e, AssertionError)
+                    or isinstance(e, NotImplementedError)):
+                    raise # TODO remove
                 # raise # TODO: remove
                 errMsg = f'ACTION: {action}\nERROR: {e}\nMODULE: {modulePath}'
                 print("FAILED:", errMsg)
                 errors.append(errMsg)
-
+            env.clearMemory()
 
         elif testTy in {'assert_malformed'}: pass
         elif testTy in {'assert_invalid'}: pass
