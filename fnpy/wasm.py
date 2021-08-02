@@ -113,8 +113,8 @@ def shlI32(left, right):
     sign = -1 if left < 0 else 1
     return sign * (abs(left) << right)
 
-def _clzU32Str(vStr):
-    return 32 - (len(vStr) - 2)
+def popcnt(v):
+    return bin(v).count('1')
 
 def clzU32(v):  # hacky impl
     if v == 0: return 32
@@ -339,7 +339,7 @@ wasmSubroutines = {
   w.f64.ge: _doBinary(F64, operator.ge),
   w.i32.clz: _doUnary(U32, clzU32),
   w.i32.ctz: _doUnary(U32, cntzU32),
-  w.i32.popcnt: NI,
+  w.i32.popcnt: _doUnary(U32, popcnt),
   w.i32.add: _doBinary(I32, operator.add),
   w.i32.sub: _doBinary(I32, operator.sub),
   w.i32.mul: _doBinary(I32, operator.mul),
