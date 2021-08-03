@@ -11,9 +11,68 @@ import inspect
 
 from ctypes import sizeof
 
-
 from .wasm import *
 
+# Compute the index into a list for a stack representation
+def _si(i): return -i - 1
+
+class PyStack(list):
+    """
+    A pure python stack. It's really just a list where the indexes are
+    reversed. This means:
+    - pushing puts the value at s[0], moving the other values up.
+    - popping gets the value at s[0] and removes it.
+    - printing shows the stack in the correct order.
+    """
+    def __init__(self, data=None):
+        if data: data = reversed(data)
+        super().__init__(data)
+
+    def __repr__(self):
+        return f"Stk{list(reversed(self))}"
+
+    def _getslice(self, sl):
+        assert not sl.step, "not supported"
+        # reverse sl and make them negative
+        start = None if sl.start is None else _si(sl.start)
+        stop = None if sl.stop is None else _si(sl.stop)
+        return slice(start, stop, -1)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return super().__getitem__(self._getslice(index))
+        else:
+            return super().__getitem__(_si(index))
+
+    def __delitem__(self, index):
+        return super().__delitem__(_si(index))
+
+    def __setitem__(self, index, value):
+        if isinstance(index, slice):
+            return super().__setitem__(self._getslice(index), value)
+        else:
+            return super().__setitem__(_si(index), value)
+
+    def insert(self, index, value):
+        return super().insert(_si(index), value)
+
+    def push(self, value):
+        return super().append(value)
+
+    def assertEq(self, expectedList):
+        assert expectedList == list(reversed(self))
+
+def testPyStack():
+    s = PyStack(range(10))
+    assert 0 == s.pop()
+    s.push(0)
+    assert 0 == s[0]
+    assert 2 == s[2]
+    assert 9 == s[-1]
+    assert [0,1,2] == s[:3]
+    assert [3,4] == s[3:5]
+    del s[3]
+    s.assertEq([0,1,2,4,5,6,7,8,9])
 
 # Most of our code is going to have some basic tests inline.  Tests can be run
 # by installing pytest and running it.
@@ -240,11 +299,11 @@ class Stack(MManBase):
         self.memory = memory
         self.m = mstack
         self.totalSize = mstack.end - mstack.start
-        self.trackSize = [] # True if size is 8, else False
+        self.tys = [] # List of tys on the stack. Last value is "top" of the stack.
 
     def clearMemory(self):
         self.m.sp = self.m.end
-        self.trackSize = []
+        self.tys = []
 
     def checkRange(self, offset, size, useSp=None, requireSize=False):
         if not useSp: useSp = self.m.sp
@@ -264,16 +323,20 @@ class Stack(MManBase):
 
     # Set / Push
     def set(self, offset: int, value: DataTy):
-        """Set a value at an offset from the sp."""
+        """Set a value at an offset from the sp.
+
+        Note: this does NOT check that the type matches.
+        """
         self.checkRange(offset, sizeof(value), requireSize=False)
         self.memory.set(self.m.sp + offset, value)
 
     def push(self, value: DataTy):
+        assert isinstance(value, DataTy)
         size = sizeof(value)
         self.checkRange(0, size, self.m.sp - size)
         self.m.sp -= size
         self.memory.set(self.m.sp, value)
-        self.trackSize.append(size == 8)
+        self.tys.append(type(value))
 
     # Get / Pop
 
@@ -284,12 +347,13 @@ class Stack(MManBase):
         return self.memory.get(self.m.sp + offset, ty)
 
     def pop(self, ty: DataTy) -> DataTy:
+        assert issubclass(ty, DataTy)
         size = sizeof(ty)
         self.checkRange(0, size)
         if size == 8 and not self.trackSize[-1]:
             raise IndexError("Trying to pop wrong size from stack.")
         out = self.memory.getCopy(self.m.sp, ty)
-        self.trackSize.pop()
+        self.tys.pop()
         self.m.sp += size
         return out
 
@@ -301,7 +365,7 @@ class Stack(MManBase):
 
         This returns the value so it can be more easily used with select
         """
-        ty = I64 if self.trackSize[-1] else I32
+        ty = self.trackSize[-1]
         self.checkRange(0, sizeof(ty))
         return self.pop(ty)
 
@@ -311,12 +375,13 @@ class Stack(MManBase):
         Yes, wasm is as confusing as possible.
         """
         if len(self.trackSize) < 3: raise IndexError("select requires len >= 3")
-        if self.trackSize[-2] != self.trackSize[-3]: raise IndexError(
-            f"select trackSize could change ty size: {self.trackSize[-3:-1]}")
+        if sizeof(self.trackSize[-2]) != sizeof(self.trackSize[-3]):
+            raise IndexError(
+                f"select trackSize could change ty size: {self.trackSize[-3:-1]}")
         check = self.drop()
         v2 = self.drop()
         v1 = self.drop()
-        self.push(v1 if check else v2)
+        self.push(v1 if check.value else v2)
 
     def grow(self, tys: List[DataTy]):
         """Grow by the types, leaving data uninizilized.
@@ -325,8 +390,7 @@ class Stack(MManBase):
         """
         size = sum(map(sizeof, tys))
         self.checkRange(0, size, useSp=self.sp - size, requireSize=False)
-        for i in reversed(range(len(tys))):
-            self.trackSize.append(sizeof(tys[i]) == 8)
+        self.trackSize.extend(reversed(tys))
         self.sp -= size
 
     def shrink(self, tys: List[DataTy]):
@@ -334,8 +398,8 @@ class Stack(MManBase):
         size = sum(map(sizeof, tys))
         self.checkRange(0, size, requireSize=False)
         for i in range(tys):
-            if (sizeof(tys[i]) == 8) != self.trackSize[i]:
-                raise ValueError(f"{tys[i]} does not have correct size")
+            if sizeof(tys[i]) != sizeof(self.tys[i]):
+                raise ValueError(f"size {tys[i]} != {self.tys[i]}")
         del self.trackSize[-len(tys):]
         self.sp += size
 
