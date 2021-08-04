@@ -2,7 +2,7 @@
 import unittest
 import random
 from fnpy.env import BIG_ENDIAN
-from fnpy.env import Memory, Heap, Stack, BlockAllocator
+from fnpy.env import Memory, Heap, FngiStack, BlockAllocator
 from fnpy.env import MHeap, MStack, MBlockAllocator as Mba
 from fnpy.env import MEMORY_SIZE, BLOCKS_ALLOCATOR_SIZE
 from fnpy.env import BLOCK_SIZE, BLOCKS_TOTAL
@@ -21,7 +21,7 @@ MEM_LOOPS = int(1e3)
 class TestStack(unittest.TestCase):
     def newStack(self):
         size = 16
-        return Stack(Memory(size), MStack.new(0, size))
+        return FngiStack(Memory(size), MStack.new(0, size))
 
     def testPushPopI32(self):
         s = self.newStack()

@@ -290,7 +290,7 @@ class MStack(ctypes.Structure):
         return cls(start, end, end)
 
 
-class Stack(MManBase):
+class FngiStack(MManBase):
     """Stack implementation, used for the data stack and the return stack.
 
     Stacks grow down, and typically are kept on alignment.
@@ -851,7 +851,7 @@ RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 # write debugging tools in python and use them on our Forth implementation.
 
 # Data stack kept in separate memory region
-DATA_STACK = Stack(
+DATA_STACK = FngiStack(
     Memory(DATA_STACK_SIZE + 4),
     MStack.new(4, DATA_STACK_SIZE))
 
@@ -878,12 +878,12 @@ ARENA = Arena( # global arena
         po2Roots=MArenaPo2Roots(*[0 for _ in range(8)]))))
 
 RETURN_STACK_MEM_END = RETURN_STACK_MEM + RETURN_STACK_SIZE
-RETURN_STACK = Stack(
+RETURN_STACK = FngiStack(
     MEMORY,
     HEAP.push(MStack.new(RETURN_STACK_MEM, RETURN_STACK_MEM_END)))
 
 # Data stack kept in separate memory region
-DATA_STACK = Stack(
+DATA_STACK = FngiStack(
     Memory(DATA_STACK_SIZE),
     MStack.new(0, DATA_STACK_SIZE))
 
@@ -899,8 +899,8 @@ class Env(object):
     def __init__(
             self,
             memory: Memory,
-            ds: Stack,
-            returnStack: Stack,
+            ds: FngiStack,
+            returnStack: FngiStack,
             heap: Heap,
             codeHeap: Heap,
             ba: BlockAllocator,
@@ -972,7 +972,7 @@ def createWasmEnv(memoryPages=1) -> Env:
     memSize = memoryPages * WASM_PAGE
     mem = Memory(memSize)
     # Unlike fngi, we use a comparibly large data stack.
-    dataStack = Stack(
+    dataStack = FngiStack(
         Memory(WASM_PAGE),
         MStack.new(4, WASM_PAGE)
     )
@@ -980,7 +980,7 @@ def createWasmEnv(memoryPages=1) -> Env:
     # some tests will have specific pointers within main memory.
     # Note: the returnStack is used for inputs and locals, which in wasm
     # cannot traditionally have pointers to them.
-    returnStack = Stack(
+    returnStack = FngiStack(
         Memory(WASM_PAGE),
         MStack.new(4, WASM_PAGE)
     )
