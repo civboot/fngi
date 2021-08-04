@@ -16,7 +16,7 @@ from .wasm import *
 # Compute the index into a list for a stack representation
 def _si(i): return -i - 1
 
-class PyStack(list):
+class Stack(list):
     """
     A pure python stack. It's really just a list where the indexes are
     reversed. This means:
@@ -62,8 +62,8 @@ class PyStack(list):
     def assertEq(self, expectedList):
         assert expectedList == list(reversed(self))
 
-def testPyStack():
-    s = PyStack(range(10))
+def testStack():
+    s = Stack(range(10))
     assert 0 == s.pop()
     s.push(0)
     assert 0 == s[0]
