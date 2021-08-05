@@ -394,8 +394,8 @@ class FngiStack(MManBase):
     def getWasmLocal(self, localIndex):
         """Get the webassembly local variable."""
         st = self.trackSize[-1]
-        offset = st.wasmLocalOffset(localIndex)
-        ty = st.wasmTrueLocals.tys[localIndex]
+        ty = st['wasmTrueLocals'].tys[localIndex]
+        offset = st.offset(['wasmTrueLocals', localIndex])
         return self.get(offset, ty)
 
 

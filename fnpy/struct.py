@@ -78,11 +78,12 @@ class StructTy:
 
         For use with nested structs.
         """
+        key = _prepareKey(key)
         st = self
         field = None
         try:
-            for k in key.split('.'):
-                field = st.fields[self._prepareKey(k)]
+            for k in key:
+                field = st.fields[k]
                 st = field.ty
         except KeyError as e:
             raise KeyError(f"{key}: {e}")
@@ -93,11 +94,12 @@ class StructTy:
 
         The offset is calculated with respect to self (the "base" struct).
         """
+        key = _prepareKey(key)
         st = self
         offset = 0
         try:
-            for k in key.split('.'):
-                field = st.fields[self._prepareKey(k)]
+            for k in key:
+                field = st.fields[k]
                 offset += field.offset
                 st = field.ty
         except KeyError as e:
@@ -110,13 +112,19 @@ class StructTy:
     def __getitem__(self, item):
         return self.fields[item]
 
-    @staticmethod
-    def _prepareKey(key):
-        key = key.strip()
-        try: key = int(key)
-        except ValueError: pass
-        return key
 
+def _prepareSubKey(k):
+    k = k.strip()
+    try: k = int(k)
+    except ValueError: pass
+    return k
+
+def _prepareKey(key):
+    if isinstance(key, str):
+        key = key.split('.')
+    elif isinstance(key, int):
+        key = [key]
+    return list(map(_prepareSubKey, key))
 
 
 def testStruct():
