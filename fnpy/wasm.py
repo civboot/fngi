@@ -137,7 +137,8 @@ def shr_sI32(left, right):
     return out
 
 def _localGet(env, args):
-    return env.returnStack.getWasmLocal(args[0])
+    value = env.returnStack.getWasmLocal(args[0])
+    env.ds.push(value)
 
 def _localSet(env, args):
     value = env.ds.drop()

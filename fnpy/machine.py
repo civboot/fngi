@@ -53,7 +53,8 @@ def fnInit(env: Env, fn: Fn):
     )
 
     rs.grow(fnSt)
-    for i, ty in enumerate(fn.inputs):
+    for i in reversed(range(len(fn.inputs))):
+        ty = fn.inputs[i]
         value = ds.pop(ty)
         rs.setWasmLocal(i, value)
 

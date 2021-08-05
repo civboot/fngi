@@ -30,7 +30,13 @@ class Stack(list):
         super().__init__(data)
 
     def __repr__(self):
-        return f"Stk{list(reversed(self))}"
+        return f"Stk{list(self)}"
+
+    def __iter__(self):
+        return super().__reversed__()
+
+    def __reversed__(self):
+        return super().__iter__()
 
     def _getslice(self, sl):
         assert not sl.step, "not supported"
@@ -67,7 +73,7 @@ class Stack(list):
         return super().append(value)
 
     def assertEq(self, expectedList):
-        assert expectedList == list(reversed(self))
+        assert expectedList == list(self)
 
 def testStack():
     s = Stack(range(10))
