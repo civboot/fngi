@@ -53,32 +53,6 @@ class WasmFn(Fn):
         self.trueLocals = inputs + locals_
         for l in self.trueLocals: assert l in {I32, I64, F32, F64}
 
-        self.offsets = self._calcOffsets(self.trueLocals)
-        self.rstackSize = sum(map(sizeof, self.trueLocals))
-
-    @staticmethod
-    def _calcOffsets(trueLocals):
-        """Returns an array that converts an index to a memory offset for local
-        variables.
-
-        See: self.offsets
-        """
-        offsets = []
-        offset = 0
-        for l in trueLocals:
-            offsets.append(offset)
-            offset += sizeof(l)
-        return offsets
-
-    def lget(self, env: "Env", index: int) -> DataTy:
-        """Used to get a local value index."""
-        return env.ds.get(self.offsets[index], self.trueLocals[index])
-
-    def lset(self, env: "Env", index: int, value: DataTy):
-        """Used to set a local value index."""
-        assert sizeof(value) == sizeof(self.trueLocals[index])
-        env.ds.set(self.offsets[index], value)
-
     def debugStr(self):
         return (
             f"name: {self.name()}"
