@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from .wasm import *
+import inspect
 
 @dataclass
 class RefTy:
     ty: 'Ty'
 
 def fsizeof(ty: 'Ty'):
-    if isinstance(ty, DataTy):
+    if isinstance(ty, DataTy) or (
+            inspect.isclass(ty) and issubclass(ty, DataTy)):
         return sizeof(ty)
     elif isinstance(ty, StructTy):
         return ty.size
@@ -47,13 +49,13 @@ def assertAllStkTypes(tys):
         assert ty in {I32, I64, F32, F64}
 
 
-class StructTy(Ty):
+class StructTy:
     """Create a struct data type from core types."""
 
     def __init__(self, fields: List[Tuple[str, DataTy]], isStk=False):
         self.isStk = isStk
-        self.names = list(map(fields, operator.itemgetter(0)))
-        self.tys = list(map(fields, operator.itemgetter(1)))
+        self.names = list(map(operator.itemgetter(0), fields))
+        self.tys = list(map(operator.itemgetter(1), fields))
         self.offsets, self.size = calcOffsetsAndSize(self.tys)
         self.fields = {}
         for i in range(len(self.names)):
@@ -73,26 +75,53 @@ class StructTy(Ty):
         For use with nested structs.
         """
         st = self
+        field = None
         try:
             for k in key.split('.'):
-                st = st.fields[k]
+                field = st.fields[k]
+                st = field.ty
         except KeyError as e:
             raise KeyError(f"{key}: {e}")
-        return st
+        return field
 
     def offset(self, key: str):
         st = self
         offset = 0
         try:
             for k in key.split('.'):
-                st = st.fields[k]
-                offset += st.offset
+                field = st.fields[k]
+                offset += field.offset
+                st = field.ty
         except KeyError as e:
             raise KeyError(f"{key}: {e}")
         return offset
 
     def ty(self, key: str):
         return self.field(key).ty
+
+    def __getitem__(self, item):
+        return self.fields[item]
+
+def testStruct():
+    a = StructTy([
+        ('a1', U32),
+        ('a2', U8),
+        ('a3', U16),
+        ('a4', U64),
+    ])
+    assert 0 == a['a1'].offset
+    assert 4 == a['a2'].offset
+    assert 6 == a['a3'].offset
+    assert 8 == a['a4'].offset
+
+    b = StructTy([
+        ('u8', U8),
+        ('a', a),
+    ])
+    assert 0 == b['u8'].offset
+    assert 4 == b['a'].offset
+    assert 4 == b.offset('a.a1')
+    assert 8 == b.offset('a.a2')
 
 
 class FnStructTy(StructTy):
@@ -107,10 +136,10 @@ class FnStructTy(StructTy):
     def __init__(
             self,
             wasmTrueLocals: List[DataTy],
-            inp: Struct,
-            ret: Ref,
-            locals_: Struct):
-        wasmTrueLocals = Struct(
+            inp: StructTy,
+            ret: RefTy,
+            locals_: StructTy):
+        wasmTrueLocals = StructTy(
             fields=[(None, ty) for ty in wasmTrueLocals],
             isStk=True)
         fields = [

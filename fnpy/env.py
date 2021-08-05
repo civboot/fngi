@@ -12,7 +12,7 @@ import inspect
 from ctypes import sizeof
 
 from .wasm import *
-from .struct import Struct
+from .struct import Ty, RefTy, FnStructTy
 
 # Compute the index into a list for a stack representation
 def _si(i): return -i - 1
@@ -25,7 +25,7 @@ class Stack(list):
     - popping gets the value at s[0] and removes it.
     - printing shows the stack in the correct order.
     """
-    def __init__(self, data=None):
+    def __init__(self, data=()):
         if data: data = reversed(data)
         super().__init__(data)
 
@@ -123,7 +123,7 @@ def getDataTy(v: Any) -> DataTy:
     elif inspect.isclass(v):
         if issubclass(v, DataTy):
             return v
-        elif issubclass(v, Ref):
+        elif issubclass(v, RefTy):
             return Ptr
     else:
         raise TypeError("Not representable in memory: {}".format(v))
@@ -291,7 +291,7 @@ class FngiStack(MManBase):
 
     def clearMemory(self):
         self.m.sp = self.m.end
-        self.tys = []
+        self.tys = Stack()
 
     def checkRange(self, offset, size, useSp=None, requireSize=False):
         if not useSp: useSp = self.m.sp
@@ -397,8 +397,6 @@ class FngiStack(MManBase):
         offset = st.wasmLocalOffset(localIndex)
         ty = st.wasmTrueLocals.tys[localIndex]
         return self.get(offset, ty)
-
-    def setWasmLocal(self, 
 
 
     def debugStr(self):
@@ -905,7 +903,7 @@ class Env(object):
             arena: Arena,
             fns: List[Fn],
             tys: Dict[str, Ty],
-            refs: Dict[Ty, Ref],
+            refs: Dict[Ty, RefTy],
             ):
         self.memory = memory
         self.ds = ds
@@ -1051,8 +1049,8 @@ ENV.tys.update({
     "Ptr": Ptr})
 
 
-def createNativeRef(ty: Ty) -> Ref:
-    refTy = Ref(ty)
+def createNativeRef(ty: Ty) -> RefTy:
+    refTy = RefTy(ty)
     ENV.refs[ty] = refTy
     return refTy
 
