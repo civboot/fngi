@@ -7,6 +7,7 @@
 
 from pdb import set_trace as dbg
 from .wasm import *
+from .struct import Void, FnStructTy
 from .env import Env, ENV
 from ctypes import sizeof
 
@@ -44,10 +45,17 @@ def fnInit(env: Env, fn: Fn):
     """
     rs = env.returnStack
     ds = env.ds
-    rs.grow(fn.trueLocals)
+    fnSt = FnStructTy(
+        wasmTrueLocals=fn.trueLocals,
+        inp=Void,
+        ret=Void,
+        locals_=Void,
+    )
+
+    rs.grow(fnSt)
     for i, ty in enumerate(fn.inputs):
         value = ds.pop(ty)
-        fn.lset(env, i, value)
+        rs.setWasmLocal(i, value)
 
 def fnTeardown(env: Env, fn: Fn):
     """After a function has finished executing:

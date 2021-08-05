@@ -137,16 +137,16 @@ def shr_sI32(left, right):
     return out
 
 def _localGet(env, args):
-    return env.executingFn.lget(env, args[0])
+    return env.returnStack.getWasmLocal(args[0])
 
 def _localSet(env, args):
     value = env.ds.drop()
-    env.executingFn.lset(env, args[0], value)
+    env.returnStack.setWasmLocal(args[0], value)
 
 def _localTee(env, args):
     value = env.ds.drop()
     env.ds.push(value)
-    env.executingFn.lset(env, args[0], value)
+    env.returnStack.setWasmLocal(args[0], value)
 
 def NI(*args):
     raise NotImplementedError()

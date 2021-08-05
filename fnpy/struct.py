@@ -20,7 +20,7 @@ def fsizeof(ty: 'Ty'):
 def alignField(offset: int, ty: "Ty"):
     """Calculate correct offset for dataTy."""
     size = fsizeof(ty)
-    if size == 0: raise TypeError(f"Zero sized type: {ty}")
+    if size == 0: return offset
     alignment = min(4, size)
     if alignment == 3: alignment = 4
 
@@ -114,6 +114,7 @@ class StructTy:
 
 
 def _prepareSubKey(k):
+    if isinstance(k, int): return k
     k = k.strip()
     try: k = int(k)
     except ValueError: pass
@@ -189,6 +190,9 @@ def testStruct():
     assert C_B.u8.offset == b['u8'].offset
     assert C_B.a.offset == b['a'].offset
     assert C_B.u32.offset == b['u32'].offset
+
+
+Void = StructTy([])
 
 
 class FnStructTy(StructTy):

@@ -11,7 +11,7 @@ from pprint import pprint as pp
 import os
 from .wadze import parse_module, parse_code
 from fnpy.env import Env, createWasmEnv
-from fnpy.machine import runWasm
+from fnpy.machine import fnInit, runWasm
 from fnpy.wasm import *
 
 SUITE = 'tools/wasm_testsuite_unpacked'
@@ -39,9 +39,8 @@ def runTest(testIndex, env, action, inp, expected):
         f"\n    expected={expected}")
     fn = env.fns[env.fnIndexes[fname]]
     for value in inp: env.ds.push(value)
-    env.executingFn = fn
+    fnInit(env, fn)
     runWasm(env, fn.code)
-    env.executingFn = None
 
     result = []
     expectedTys = [type(v) for v in expected]

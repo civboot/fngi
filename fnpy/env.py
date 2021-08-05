@@ -40,19 +40,25 @@ class Stack(list):
         return slice(start, stop, -1)
 
     def __getitem__(self, index):
-        if isinstance(index, slice):
-            return super().__getitem__(self._getslice(index))
-        else:
-            return super().__getitem__(_si(index))
+        try:
+            if isinstance(index, slice):
+                return super().__getitem__(self._getslice(index))
+            else:
+                return super().__getitem__(_si(index))
+        except IndexError as e:
+            raise IndexError(str(e))
 
     def __delitem__(self, index):
         return super().__delitem__(_si(index))
 
     def __setitem__(self, index, value):
-        if isinstance(index, slice):
-            return super().__setitem__(self._getslice(index), value)
-        else:
-            return super().__setitem__(_si(index), value)
+        try:
+            if isinstance(index, slice):
+                return super().__setitem__(self._getslice(index), value)
+            else:
+                return super().__setitem__(_si(index), value)
+        except IndexError as e:
+            raise IndexError(str(e))
 
     def insert(self, index, value):
         return super().insert(_si(index), value)
@@ -338,7 +344,7 @@ class FngiStack(MManBase):
         assert issubclass(ty, DataTy)
         size = sizeof(ty)
         self.checkRange(0, size)
-        if size == 8 and not self.trackSize[-1]:
+        if size == 8 and not self.tys[0]:
             raise IndexError("Trying to pop wrong size from stack.")
         out = self.memory.getCopy(self.m.sp, ty)
         self.tys.pop()
@@ -353,7 +359,7 @@ class FngiStack(MManBase):
 
         This returns the value so it can be more easily used with select
         """
-        ty = self.trackSize[-1]
+        ty = self.tys[0]
         self.checkRange(0, sizeof(ty))
         return self.pop(ty)
 
@@ -362,10 +368,10 @@ class FngiStack(MManBase):
         if check do v1 eldo v2
         Yes, wasm is as confusing as possible.
         """
-        if len(self.trackSize) < 3: raise IndexError("select requires len >= 3")
-        if sizeof(self.trackSize[-2]) != sizeof(self.trackSize[-3]):
+        if len(self.tys) < 3: raise IndexError("select requires len >= 3")
+        if sizeof(self.tys[1]) != sizeof(self.tys[2]):
             raise IndexError(
-                f"select trackSize could change ty size: {self.trackSize[-3:-1]}")
+                f"select tys could change ty size: {self.tys[:3]}")
         check = self.drop()
         v2 = self.drop()
         v1 = self.drop()
@@ -378,26 +384,35 @@ class FngiStack(MManBase):
         """
         assert isinstance(st, FnStructTy)
         size = st.size + needAlign(st.size)
-        self.checkRange(0, size, useSp=self.sp - size, requireSize=False)
-        self.trackSize.append(st)
-        self.sp -= size
-        return self.sp
+        self.checkRange(0, size, useSp=self.m.sp - size, requireSize=False)
+        self.tys.append(st)
+        self.m.sp -= size
+        return self.m.sp
 
     def shrink(self, st: FnStructTy):
         """Shrink by the struct."""
         size = st.size + needAlign(st.size)
         self.checkRange(0, size, requireSize=False)
-        assert self.trackSize[-1] is st
-        self.trackSize.pop()
-        self.sp += size
+        assert self.tys[0] is st
+        self.tys.pop()
+        self.m.sp += size
 
-    def getWasmLocal(self, localIndex):
-        """Get the webassembly local variable."""
-        st = self.trackSize[-1]
-        ty = st['wasmTrueLocals'].tys[localIndex]
-        offset = st.offset(['wasmTrueLocals', localIndex])
-        return self.get(offset, ty)
+    def getWasmLocal(self, localIndex) -> DataTy:
+        """Get the webassembly local variable.
+        This assumes that the last type on the stack is a FnStructTy.
+        """
+        ty = self.tys[0].ty(['wasmTrueLocals', localIndex])
+        return self.get(self._wasmLocalOffset(localIndex), ty)
 
+    def setWasmLocal(self, localIndex, value: DataTy):
+        """Set the webassembly local variable.
+        This assumes that the last type on the stack is a FnStructTy.
+        """
+        return self.set(self._wasmLocalOffset(localIndex), value)
+
+    def _wasmLocalOffset(self, localIndex):
+        st = self.tys[0]
+        return st.offset(['wasmTrueLocals', localIndex])
 
     def debugStr(self):
         return 'Stack: {}'.format(
