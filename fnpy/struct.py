@@ -4,7 +4,7 @@ import inspect
 
 @dataclass
 class RefTy:
-    ty: 'Ty'
+    ty: Union['Ty', Fn]
 
 def fsizeof(ty: 'Ty'):
     if isinstance(ty, DataTy) or (
@@ -17,10 +17,10 @@ def fsizeof(ty: 'Ty'):
     else:
         raise ValueError(f"Has no size: {ty}")
 
-def alignField(offset: int, ty: DataTy):
+def alignField(offset: int, ty: "Ty"):
     """Calculate correct offset for dataTy."""
     size = fsizeof(ty)
-    if size == 0: raise TypeError("Zero sized type: " + str(ty))
+    if size == 0: raise TypeError(f"Zero sized type: {ty}")
     alignment = min(4, size)
     if alignment == 3: alignment = 4
 
@@ -28,7 +28,7 @@ def alignField(offset: int, ty: DataTy):
     if mod == 0: return offset
     return offset + (alignment - mod)
 
-def calcOffsetsAndSize(fields: List[DataTy]):
+def calcOffsetsAndSize(fields: List["Ty"]):
     offset = 0
     offsets = []
     for ty in fields:
@@ -40,14 +40,13 @@ def calcOffsetsAndSize(fields: List[DataTy]):
 @dataclass
 class Field:
     name: str
-    ty: DataTy
+    ty: "Ty"
     index: int
     offset: int
 
 def assertAllStkTypes(tys):
     for ty in tys:
         assert ty in {I32, I64, F32, F64}
-
 
 class StructTy:
     """Create a struct data type from core types."""
@@ -85,6 +84,10 @@ class StructTy:
         return field
 
     def offset(self, key: str):
+        """Return the offset of a field given a '.' separated key.
+
+        The offset is calculated with respect to self (the "base" struct).
+        """
         st = self
         offset = 0
         try:
@@ -103,25 +106,68 @@ class StructTy:
         return self.fields[item]
 
 def testStruct():
-    a = StructTy([
+    aFields = [
         ('a1', U32),
         ('a2', U8),
         ('a3', U16),
-        ('a4', U64),
-    ])
+        ('a4', U16),
+        ('a5', U64),
+        ('a6', U8),
+    ]
+    a = StructTy(aFields)
     assert 0 == a['a1'].offset
     assert 4 == a['a2'].offset
     assert 6 == a['a3'].offset
     assert 8 == a['a4'].offset
+    assert 12 == a['a5'].offset
+    assert 20 == a['a6'].offset
+    assert 21 == a.size
 
-    b = StructTy([
+    bFields = [
         ('u8', U8),
         ('a', a),
-    ])
+        ('u32', U32),
+    ]
+
+    b = StructTy(bFields)
     assert 0 == b['u8'].offset
     assert 4 == b['a'].offset
     assert 4 == b.offset('a.a1')
     assert 8 == b.offset('a.a2')
+    assert 28 == b['u32'].offset
+    assert 32 == b.size
+
+    class C_A(ctypes.Structure):
+        _fields_ = [
+            ('a1', U32),
+            ('a2', U8),
+            ('a3', U16),
+            ('a4', U16),
+            # Note: a5 must be split into two U32's. Python's ctypes is running
+            # in 64bit mode which has a maxalign of 8 bytes
+            ('a5', U32),
+            ('a5_', U32),
+            ('a6', U8),
+        ]
+
+    assert C_A.a1.offset == a['a1'].offset
+    assert C_A.a2.offset == a['a2'].offset
+    assert C_A.a3.offset == a['a3'].offset
+    assert C_A.a4.offset == a['a4'].offset
+    assert C_A.a5.offset == a['a5'].offset
+    assert C_A.a6.offset == a['a6'].offset
+
+    class C_B(ctypes.Structure):
+        _fields_ = [
+            ('u8', U8),
+            ('a', C_A),
+            ('u32', U32),
+        ]
+
+    assert C_B.u8.offset == b['u8'].offset
+    assert C_B.a.offset == b['a'].offset
+    assert C_B.u32.offset == b['u32'].offset
+
 
 
 class FnStructTy(StructTy):
@@ -164,5 +210,6 @@ class FnStructTy(StructTy):
 
     @property
     def locals(self): return self.fields['locals']
+
 
 Ty = Union[DataTy, StructTy, RefTy]
