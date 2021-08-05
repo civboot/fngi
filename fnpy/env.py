@@ -12,6 +12,7 @@ import inspect
 from ctypes import sizeof
 
 from .wasm import *
+from .struct import Struct
 
 # Compute the index into a list for a stack representation
 def _si(i): return -i - 1
@@ -114,19 +115,6 @@ def fieldOffset(ty: DataTy, field: str):
 
 def fieldSize(ty: DataTy, field: str):
     return getattr(getDataTy(cls), field).size
-
-
-class _Ref(object):
-    """For defining Ty before defining Ref."""
-
-
-# All (stage0) fngi types must be either a DataTy, Fn or Ref
-Ty = Union[DataTy, Fn, _Ref]
-
-
-class Ref(_Ref):
-    def __init__(self, ty: Ty):
-        self.ty = ty
 
 
 def getDataTy(v: Any) -> DataTy:
@@ -299,7 +287,7 @@ class FngiStack(MManBase):
         self.memory = memory
         self.m = mstack
         self.totalSize = mstack.end - mstack.start
-        self.tys = [] # List of tys on the stack. Last value is "top" of the stack.
+        self.tys = Stack() # Keep track of the tys on the stack.
 
     def clearMemory(self):
         self.m.sp = self.m.end
@@ -336,7 +324,7 @@ class FngiStack(MManBase):
         self.checkRange(0, size, self.m.sp - size)
         self.m.sp -= size
         self.memory.set(self.m.sp, value)
-        self.tys.append(type(value))
+        self.tys.push(type(value))
 
     # Get / Pop
 
@@ -383,25 +371,35 @@ class FngiStack(MManBase):
         v1 = self.drop()
         self.push(v1 if check.value else v2)
 
-    def grow(self, tys: List[DataTy]):
-        """Grow by the types, leaving data uninizilized.
+    def grow(self, st: FnStructTy):
+        """Grow by the struct, not setting any values.
 
-        The tys must have index 0 be the top of the stack, index -1 the bottom.
+        Returns the current stack pointer, which is the start of the struct.
         """
-        size = sum(map(sizeof, tys))
+        assert isinstance(st, FnStructTy)
+        size = st.size + needAlign(st.size)
         self.checkRange(0, size, useSp=self.sp - size, requireSize=False)
-        self.trackSize.extend(reversed(tys))
+        self.trackSize.append(st)
         self.sp -= size
+        return self.sp
 
-    def shrink(self, tys: List[DataTy]):
-        """Shrink by the types, asserting correct sizes."""
-        size = sum(map(sizeof, tys))
+    def shrink(self, st: FnStructTy):
+        """Shrink by the struct."""
+        size = st.size + needAlign(st.size)
         self.checkRange(0, size, requireSize=False)
-        for i in range(tys):
-            if sizeof(tys[i]) != sizeof(self.tys[i]):
-                raise ValueError(f"size {tys[i]} != {self.tys[i]}")
-        del self.trackSize[-len(tys):]
+        assert self.trackSize[-1] is st
+        self.trackSize.pop()
         self.sp += size
+
+    def getWasmLocal(self, localIndex):
+        """Get the webassembly local variable."""
+        st = self.trackSize[-1]
+        offset = st.wasmLocalOffset(localIndex)
+        ty = st.wasmTrueLocals.tys[localIndex]
+        return self.get(offset, ty)
+
+    def setWasmLocal(self, 
+
 
     def debugStr(self):
         return 'Stack: {}'.format(
