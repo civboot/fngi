@@ -59,12 +59,17 @@ class StructTy:
         self.fields = {}
         for i in range(len(self.names)):
             name = self.names[i]
-            self.fields[name] = Field(
+            field = Field(
                 name=name,
                 ty=self.tys[i],
                 index=i,
                 offset=self.offsets[i],
             )
+            key = name
+            if key is None:
+                assert isStk
+                key = i
+            self.fields[key] = field
 
         if isStk: assertAllStkTypes(self.tys)
 
@@ -77,7 +82,7 @@ class StructTy:
         field = None
         try:
             for k in key.split('.'):
-                field = st.fields[k]
+                field = st.fields[self._prepareKey(k)]
                 st = field.ty
         except KeyError as e:
             raise KeyError(f"{key}: {e}")
@@ -92,7 +97,7 @@ class StructTy:
         offset = 0
         try:
             for k in key.split('.'):
-                field = st.fields[k]
+                field = st.fields[self._prepareKey(k)]
                 offset += field.offset
                 st = field.ty
         except KeyError as e:
@@ -104,6 +109,15 @@ class StructTy:
 
     def __getitem__(self, item):
         return self.fields[item]
+
+    @staticmethod
+    def _prepareKey(key):
+        key = key.strip()
+        try: key = int(key)
+        except ValueError: pass
+        return key
+
+
 
 def testStruct():
     aFields = [
@@ -169,7 +183,6 @@ def testStruct():
     assert C_B.u32.offset == b['u32'].offset
 
 
-
 class FnStructTy(StructTy):
     """A struct specifically for keeping track of function data. Has fields:
     - wasmTrueLocals: the wasm inputs+locals which are accessed by index.
@@ -195,21 +208,5 @@ class FnStructTy(StructTy):
             ('locals', locals_),
         ]
         return super().__init__(fields)
-
-    def wasmLocalOffset(self, index):
-        return self.wasmTrueLocals.offset + self.wasmTrueLocals.offsets[index]
-
-    @property
-    def wasmTrueLocals(self): return self.fields['wasmTrueLocals']
-
-    @property
-    def inp(self): return self.fields['inp']
-
-    @property
-    def ret(self): return self.fields['ret']
-
-    @property
-    def locals(self): return self.fields['locals']
-
 
 Ty = Union[DataTy, StructTy, RefTy]
