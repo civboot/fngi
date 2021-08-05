@@ -81,8 +81,6 @@ def runWasm(env: Env, code: List[any]):
         if subroutine: subroutine(env, args)
         if wi == w.call:
             fn = env.fns[args[0]]
-            prevExecuting = env.executingFn
-            env.executingFn = fn
             fnInit(env, fn)
             if isinstance(fn, WasmFn): runWasm(env, fn.code)
             else: 
@@ -90,7 +88,6 @@ def runWasm(env: Env, code: List[any]):
                     "pop appropraite values and pass them in, call, handle return values")
                 # fn.call(env, fn)
             fnTeardown(env, fn)
-            env.executingFn = prevExecuting
 
         # elif wi == w.call_indirect:
         #     TODO

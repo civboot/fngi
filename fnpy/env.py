@@ -939,7 +939,6 @@ class Env(object):
         self.tys = tys
         self.refs = refs
 
-        self.executingFn = None
         self.running = False
         self.rbp = 0 # rstack base ptr
         self.ep = 0 # execution pointer
