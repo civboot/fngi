@@ -224,9 +224,11 @@ class FnStructTy(StructTy):
             # Note: The wasm types MUST go first in this order
             ('wasmInp', wasmInp),
             ('wasmLocal', wasmLocal),
-            ('inp', inp),
+
+            # The order here could be changed if needed.
             ('ret', ret),
-            ('locals_', locals_),
+            ('inp', inp),
+            ('locals', locals_),
         ])
 
     def getWasmLocalOffset(self, index: int):
