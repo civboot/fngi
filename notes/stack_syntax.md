@@ -5,11 +5,9 @@ A function foo that accepts two U32's `a` and `b` and outputs a single `Bool`
 might look like this
 
 ```
-fn foo{[U32] a, [U32] b} -> [Bool] (
-  if equalU32(0, a) then
-    false
-  else
-    equalU32(a, b)
+fn foo: stk[U32; U32] -> stk[Bool] do (
+  if a == 0 do false
+  else a == b
 )
 ```
 
@@ -17,33 +15,21 @@ We represent stacks the same way the stack is represented in memory. Stacks
 grow down, therefore the left-most value is at the "top" of the stack (it will
 be popped first).
 
-`{<first_stack_item>, <second_stack_item>, ...}`
+`{<top_stack_item>, <second_stack_item>, ...}`
 
 So one way to call foo with `a=1` and `b=2` would be:
 ```
 push! 2; // b
 push! 1; // a
-foo();
+foo$ ();
 ```
 
 Another way would be:
 ```
-foo{1, 2};
+foo$ stk!{1, 2};
 ```
 
-Finally a third would be:
-```
-push2!{1, 2};
-foo();
-```
-
-Notice that the second and third look like a reverse of the first. This is
-because the compiler will automatically handle reversing the inputs for you.
-In fact, if all of the computations inside the stack expression are calls to
-const functions (i.e. they do not affect global state) then the compiler does
-this with zero overhead (it actually reverses the AST nodes).
-
-> If the expressions are not constant, then reversing the nodes could cause
-> unexpected behavior. Therefore instead of reversing the nodes it computes
-> them in the order written, then inserts a `reverse2!()` call before calling
-> the function.
+Notice that the second is the reverse of the first. This is because the
+compiler will automatically handle reversing the expression inputs for you.
+This only works if they are consts -- if they are not, there is a compiler error
+and you MUST use the first method.
