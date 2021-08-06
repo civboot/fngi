@@ -21,7 +21,7 @@ So one way to call foo with `a=1` and `b=2` would be:
 ```
 push! 2; // b
 push! 1; // a
-foo$ ();
+foo$();
 ```
 
 Another way would be:

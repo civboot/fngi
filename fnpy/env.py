@@ -245,12 +245,18 @@ class MHeap(ctypes.Structure):
     def new(cls, start, end):
         return cls(start, end, heap=start)
 
+@dataclass
+class GlobalVar:
+    name: str
+    ty: "Ty"
+    ptr: int
 
 class Heap(MManBase):
     """The heap grows up."""
     def __init__(self, memory, mheap):
         self.memory = memory
         self.m = mheap
+        self.globals = {}
 
     def checkRange(self, ptr, size):
         if ptr < self.m.start or ptr + size >= self.m.end:
@@ -275,6 +281,20 @@ class Heap(MManBase):
         ptr = self.grow(sizeof(value), align)
         self.memory.set(ptr, value)
         return self.memory.get(ptr, getDataTy(value))
+
+    def pushGlobal(self, value: "Ty", name: str, align=True):
+        ty = type(value)
+        ptr = self.push(value)
+        self.globals[name] = GlobalVar(name=name, ty=ty, ptr=ptr)
+
+    def getGlobal(self, name: str):
+        gl = self.globals[name]
+        return self.memory.get(gl.ptr, gl.ty)
+
+    def setGlobal(self, name: str, value: "Ty"):
+        gl = self.globals[name]
+        if type(value) != gl.ty: raise TypeError(f"{name}: {type(value)} != {gl.ty}")
+        self.memory.set(gl.ptr, value)
 
 
 class MStack(ctypes.Structure):
