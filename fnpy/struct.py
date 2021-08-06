@@ -4,7 +4,7 @@ import inspect
 
 @dataclass
 class RefTy:
-    ty: Union['Ty', Fn]
+    ty: Union['Ty', 'Fn']
 
 def fsizeof(ty: 'Ty'):
     if isinstance(ty, DataTy) or (
@@ -46,7 +46,7 @@ class Field:
 
 def assertAllStkTypes(tys):
     for ty in tys:
-        assert ty in {I32, I64, F32, F64}
+        assert fsizeof(ty) in {4, 8}, ty
 
 class StructTy:
     """Create a struct data type from core types."""
@@ -56,7 +56,8 @@ class StructTy:
         self.names = list(map(operator.itemgetter(0), fields))
         self.tys = list(map(operator.itemgetter(1), fields))
         self.offsets, self.size = calcOffsetsAndSize(self.tys)
-        self.fields = {}
+        self.fields = []
+        self.fieldMap = {}
         for i in range(len(self.names)):
             name = self.names[i]
             field = Field(
@@ -65,11 +66,11 @@ class StructTy:
                 index=i,
                 offset=self.offsets[i],
             )
-            key = name
-            if key is None:
+            self.fields.append(field)
+            if name is None:
                 assert isStk
-                key = i
-            self.fields[key] = field
+                continue
+            self.fieldMap[name] = field
 
         if isStk: assertAllStkTypes(self.tys)
 
@@ -78,12 +79,11 @@ class StructTy:
 
         For use with nested structs.
         """
-        key = _prepareKey(key)
         st = self
         field = None
         try:
-            for k in key:
-                field = st.fields[k]
+            for k in key.split('.'):
+                field = _getField(st, k)
                 st = field.ty
         except KeyError as e:
             raise KeyError(f"{key}: {e}")
@@ -94,12 +94,11 @@ class StructTy:
 
         The offset is calculated with respect to self (the "base" struct).
         """
-        key = _prepareKey(key)
         st = self
         offset = 0
         try:
-            for k in key:
-                field = st.fields[k]
+            for k in key.split('.'):
+                field = _getField(st, k)
                 offset += field.offset
                 st = field.ty
         except KeyError as e:
@@ -109,8 +108,11 @@ class StructTy:
     def ty(self, key: str):
         return self.field(key).ty
 
-    def __getitem__(self, item):
-        return self.fields[item]
+    def __len__(self):
+        return len(self.offsets)
+
+    def __getitem__(self, item: str):
+        return self.field(item)
 
 
 def _prepareSubKey(k):
@@ -120,12 +122,13 @@ def _prepareSubKey(k):
     except ValueError: pass
     return k
 
-def _prepareKey(key):
-    if isinstance(key, str):
-        key = key.split('.')
-    elif isinstance(key, int):
-        key = [key]
-    return list(map(_prepareSubKey, key))
+def _getField(struct, k: Union[int, str]):
+    k = k.strip()
+    try:
+        k = int(k)
+        return struct.fields[k]
+    except ValueError: pass
+    return struct.fieldMap[k]
 
 
 def testStruct():
@@ -196,29 +199,65 @@ Void = StructTy([])
 
 
 class FnStructTy(StructTy):
-    """A struct specifically for keeping track of function data. Has fields:
-    - wasmTrueLocals: the wasm inputs+locals which are accessed by index.
-    - inp: (non stk) input type to the fn.
-    - &ret: (non stk) return type from the fn.
-    - locals: (non wasm) local variables in the function.
-
-    All of the above types are themselves structs.
+    """The structure that is pushed/popped from the return stack
+    when a function is called that holds the function's inputs,
+    outputs and local values.
     """
     def __init__(
             self,
-            wasmTrueLocals: List[DataTy],
+            wasmInp: StructTy,
+            wasmLocal: StructTy,
+            # Note: wasmRet does not affect size, only for fn calls and type
+            # checking
+            wasmRet: StructTy,
             inp: StructTy,
-            ret: RefTy,
+            ret: StructTy,
             locals_: StructTy):
-        wasmTrueLocals = StructTy(
-            fields=[(None, ty) for ty in wasmTrueLocals],
-            isStk=True)
-        fields = [
-            ('wasmTrueLocals', wasmTrueLocals),
+        self.wasmInp = wasmInp
+        self.wasmLocal = wasmLocal
+        self.wasmRet = wasmRet
+
+        if not (ret is Void or type(ret) is RefTy):
+            raise TypeError(f'ret {ret}')
+
+        super().__init__([
+            # Note: The wasm types MUST go first in this order
+            ('wasmInp', wasmInp),
+            ('wasmLocal', wasmLocal),
             ('inp', inp),
             ('ret', ret),
-            ('locals', locals_),
-        ]
-        return super().__init__(fields)
+            ('locals_', locals_),
+        ])
+
+    def getWasmLocalOffset(self, index: int):
+        wasmInpLen = len(self.wasmInp)
+        if index < wasmInpLen:
+            return self.wasmInp.offsets[index]
+        return self.wasmInp.size + self.wasmLocal.offsets[index - wasmInpLen]
+
+    def getWasmLocalTy(self, index: int):
+        wasmInpLen = len(self.wasmInp)
+        if index < wasmInpLen:
+            return self.wasmInp.tys[index]
+        return self.wasmLocal.tys[index - wasmInpLen]
+
+
+class Fn(object):
+    def __init__(self, name: str, struct: FnStructTy):
+        self.name, self.struct = name, struct
+
+
+class WasmFn(Fn):
+    """A webassembly function."""
+    def __init__(self, name: str, struct: FnStructTy, code: any):
+        super().__init__(name, struct)
+        self.code = code
+
+    def debugStr(self):
+        return (
+            f"name: {self.name()}"
+            + "\nCode:\n" + '\n'.join(map(instrStr, self.code))
+        )
+
 
 Ty = Union[DataTy, StructTy, RefTy]

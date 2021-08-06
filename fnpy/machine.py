@@ -7,7 +7,7 @@
 
 from pdb import set_trace as dbg
 from .wasm import *
-from .struct import Void, FnStructTy
+from .struct import Void, FnStructTy, Fn, WasmFn
 from .env import Env, ENV
 from ctypes import sizeof
 
@@ -45,16 +45,12 @@ def fnInit(env: Env, fn: Fn):
     """
     rs = env.returnStack
     ds = env.ds
-    fnSt = FnStructTy(
-        wasmTrueLocals=fn.trueLocals,
-        inp=Void,
-        ret=Void,
-        locals_=Void,
-    )
+    fnSt = fn.struct
 
-    rs.grow(fnSt)
-    for i in reversed(range(len(fn.inputs))):
-        ty = fn.inputs[i]
+    if fnSt.size: rs.grow(fnSt)
+    wasmInp = fnSt.fieldMap['wasmInp'].ty.tys
+    for i in reversed(range(len(wasmInp))):
+        ty = wasmInp[i]
         value = ds.pop(ty)
         rs.setWasmLocal(i, value)
 
@@ -62,20 +58,14 @@ def fnTeardown(env: Env, fn: Fn):
     """After a function has finished executing:
     - The locals space must be un-reserved.
     """
-    env.returnStack.shrink(fn.trueLocals)
+    if fn.struct.size: env.returnStack.shrink(fn.struct)
 
 def runWasm(env: Env, code: List[any]):
     ds = env.ds
     index = 0
     while index < len(code):
-        instr = code[index]
         brLevel = None
-        # wi stands for "webassembly instr"
-        if isinstance(instr, int):
-            wi = instr
-            args = ()
-        else:
-            wi, *args = instr
+        wi, args = wasmInstr(code[index])
         print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
         subroutine = wasmSubroutines[wi]
         if subroutine: subroutine(env, args)

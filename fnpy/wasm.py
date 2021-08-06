@@ -18,6 +18,17 @@ from .wasm_constants import *
 
 WASM_PAGE = 0x10000 # 2^16 bytes
 
+def wasmInstr(instr: any) -> Tuple[int, Tuple]:
+    """For ergonomic reasons a wasm instr can be
+    sepcified as either just an integer like w.i32.add
+    or as a tuple like (w.call, 32)
+
+    This breaks out either of the above into wi, args
+    """
+    if isinstance(instr, int): wi, args = instr, ()
+    else: wi, *args = instr
+    return wi, args
+
 class WasmError(Exception):
     @classmethod
     def raise_(cls): raise cls()
@@ -25,39 +36,11 @@ class WasmError(Exception):
 class UnreachableError(WasmError): pass
 class Trap(WasmError): pass
 
-class Fn(object):
-    def __init__(self, name: str, inputs: any, outputs: any):
-        self._name, self.inputs, self.outputs = name, inputs, outputs
-
-    def name(self):
-        return self._name
-
 def instrStr(instr):
     if isinstance(instr, int):
         intr = (instr,)
     instr = (wasmName[instr[0]],) + tuple(instr[1:])
     return str(instr)
-
-class WasmFn(Fn):
-    """A webassembly function."""
-    def __init__(self,
-            name: str,
-            inputs: List[DataTy],
-            outputs: List[DataTy],
-            locals_: List[DataTy],
-            code: any):
-        super().__init__(name, inputs, outputs)
-        self.locals = locals_
-        self.code = code
-
-        self.trueLocals = inputs + locals_
-        for l in self.trueLocals: assert l in {I32, I64, F32, F64}
-
-    def debugStr(self):
-        return (
-            f"name: {self.name()}"
-            + "\nCode:\n" + '\n'.join(map(instrStr, self.code))
-        )
 
 def div_s(left, right):
     """
@@ -122,6 +105,14 @@ def _localTee(env, args):
     value = env.ds.drop()
     env.ds.push(value)
     env.returnStack.setWasmLocal(args[0], value)
+
+def _globalGet(env, args):
+    value = env.heap.getGlobal(args[0])
+    env.ds.push(value)
+
+def _globalSet(env, args):
+    value = env.ds.drop()
+    env.heap.setGlobal(args[0], value)
 
 def NI(*args):
     raise NotImplementedError()
@@ -234,15 +225,15 @@ wasmSubroutines = {
   w.br_table: None,
   w.return_: None,
   w.call: None,
-  w.call_indirect: None,
+  w.call_indirect: NI,
 
   w.drop: lambda e,a: e.ds.drop(),
   w.select: lambda e,a: e.ds.select(),
   w.local.get: _localGet,
   w.local.set: _localSet,
   w.local.tee: _localTee,
-  w.global_.get: NI,
-  w.global_.set: NI,
+  w.global_.get: _globalGet,
+  w.global_.set: _globalSet,
   w.i32.load: _loadValue(I32),
   w.i64.load: _loadValue(I64),
   w.f32.load: _loadValue(F32),
