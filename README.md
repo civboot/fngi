@@ -3,7 +3,7 @@
 > **NOTICE:** in development and currently unusable
 
 If we want to build an entirely understandable tech stack (as part of
-civboot.org or bootstrappable.org) we need a lanugage which can be
+civboot.org or bootstrappable.org) we need a language which can be
 implemented easily, has excellent expressiveness and readability, and can
 modify itself one expression at a time. The language has to be able to
 unroll from simple beginnings (implemented in a hex editor or Forth) to be
@@ -26,28 +26,28 @@ if-statements are expressions that can return a value. See
 
 Fngi is a strongly typed language that can be run dynamically at compile time.
 Along with the powerful macro system, large parts of the fngi language are
-written in fngi without the need for a binary bootstraping executeable. TODO:
+written in fngi without the need for a binary bootstraping executable. TODO:
 add document with more info.
 
 Fngi targets a C-like runtime without a system allocator. It has C-like
 structs, Rust-like traits/interfaces and Rust-like enums. It has C-like memory
-management with a few different standards for it's API (no global allocator
+management with a few different standards for its API (no global allocator
 except heap grow/shrink, arena/GC/application-specific allocators encouraged).
 It is designed to seamlessly compile directly into wasm or to a physical or
 virtual machine.
 
-Fngi has two parallel implementations, python and Forth. Along with allowing
-faster prototyping in python, it allows for a robust [Test
+Fngi has two parallel implementations, Python and Forth. Along with allowing
+faster prototyping in Python, it allows for a robust [Test
 Strategy](notes/test_strategy.md) to exist with minimal effort.
 
 # Hacking
 
-When opening a PR to submit code to this repository you must ascent to submit
-your code under the license listed in this project. You must put this ascent
+When opening a PR to submit code to this repository you must assent to submit
+your code under the license listed in this project. You must put this assent
 in your commit message. This is only required for your first commit:
 
 ```
-I <author> ascent to license this contribution under the dual licenses of
+I <author> assent to license this contribution under the dual licenses of
 the UNLICENSE or MIT license listed in the `UNLICENSE` and `README.md` files of
 this repository.
 ```
