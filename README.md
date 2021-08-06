@@ -14,7 +14,7 @@ That language is Fngi, a language inspired primarily by FORTH, C and Rust. It
 is designed to be able to be bootstrapped from Forth ([Why
 Forth?](notes/why_forth.md)) with relatively minimal code and the intent of
 being fully self-hosting on memory constrained systems with less than 2MiB of
-total memory (and hopefully less).
+total memory (and hopefully less, the real target is more like 32KiB).
 
 Fngi targets a somewhat familiar C-like syntax, except it values consistency
 and understandability above all-else. This means that parens `()` are always an
@@ -38,7 +38,13 @@ virtual machine.
 
 Fngi has two parallel implementations, Python and Forth. Along with allowing
 faster prototyping in Python, it allows for a robust [Test
-Strategy](notes/test_strategy.md) to exist with minimal effort.
+Strategy](notes/test_strategy.md) to exist with minimal effort. It is hoped
+that fngi will be implementeable in less than 10,000 lines of well-documented
+forth code, and less than 80,000 lines of additional fngi code. Even less is
+better, but fngi is not an attempt to create a language in as few lines as
+possible. See lisp or forth for that kind of effort. In short, it should be
+comparible in complexity to [tcc](https://bellard.org/tcc/) but hopefully
+a more useable and extensible language than C.
 
 # Hacking
 
