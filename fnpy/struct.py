@@ -48,6 +48,11 @@ def assertAllStkTypes(tys):
     for ty in tys:
         assert fsizeof(ty) in {4, 8}, ty
 
+def assertNoStks(tys):
+    for ty in tys:
+        if isinstance(ty, StructTy) and ty.isStk:
+            raise TypeError("Cannot have isStk structs inside structs.")
+
 class StructTy:
     """Create a struct data type from core types."""
 
@@ -68,11 +73,11 @@ class StructTy:
             )
             self.fields.append(field)
             if name is None:
-                assert isStk
                 continue
             self.fieldMap[name] = field
 
         if isStk: assertAllStkTypes(self.tys)
+        else: assertNoStks(self.tys)
 
     def field(self, key: str):
         """Return the field given a '.' separated key.

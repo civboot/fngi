@@ -138,9 +138,9 @@ def compileModule(wasmPath: str) -> Env:
         fnName = fnNames.get(index)
 
         st = FnStructTy(
-            wasmInp=StructTy(inps[tyIndex], isStk=True),
-            wasmLocal=StructTy(locals_[index], isStk=True),
-            wasmRet=StructTy(rets[tyIndex], isStk=True),
+            wasmInp=StructTy(inps[tyIndex]),
+            wasmLocal=StructTy(locals_[index]),
+            wasmRet=StructTy(rets[tyIndex]),
             inp=Void, ret=Void, locals_=Void,
         )
 
@@ -154,9 +154,12 @@ def compileModule(wasmPath: str) -> Env:
     env.indexFns()
     return env
 
+@dataclass
+class _TestConfig:
+    requireClearMem = False
 
 
-def runTests(wasmDir):
+def runTests(wasmDir, testConfig: _TestConfig = _TestConfig()):
     errors = []
     passed = 0
     notSupported = 0
@@ -185,21 +188,25 @@ def runTests(wasmDir):
 
             try:
                 runTest(testIndex, env, action, inp, expected)
+                assert len(env.ds.tys) == 0, "Data still on the data stack."
+                assert len(env.returnStack.tys) == 0, "Data still on the return stack."
                 passed += 1
                 print("PASSED")
             except NotSupported as e:
                 print("NOT_SUPPORTED:", e)
                 notSupported += 1
-            except Exception as e:
-                if not (
-                    isinstance(e, AssertionError)
-                    or isinstance(e, NotImplementedError)):
-                    raise
-                raise # TODO: remove
+                assert len(env.ds.tys) == 0
+                assert len(env.returnStack.tys) == 0
+            except AssertionError as e:
                 errMsg = f'ACTION: {action}\nERROR: {e}\nMODULE: {modulePath}'
                 print("FAILED:", errMsg)
                 errors.append(errMsg)
-            env.clearMemory()
+                # clear memory unless it will happen anyway
+                if not testConfig.requireClearMem:
+                    env.clearMemory()
+
+            if testConfig.requireClearMem:
+                env.clearMemory()
 
         elif testTy in {'assert_malformed'}: pass
         elif testTy in {'assert_invalid'}: pass
