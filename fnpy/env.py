@@ -984,20 +984,29 @@ class Env(object):
         self.ds.clearMemory()
         if self.returnStack: self.returnStack.clearMemory()
 
-def createTestEnv(memSize=4096) -> Env:
-    """Create a clean minimal environment for testing."""
-    mem = Memory(memSize)
+def createEnv(
+        memSize=4096,
+        rstackSize=2048,
+    ) -> Env:
+    """Create an Env."""
     dataStack = FngiStack(
         Memory(DATA_STACK_SIZE + 4),
         MStack.new(4, DATA_STACK_SIZE)
     )
-    returnStack = FngiStack(mem, 2048)
+
+    rstackStart = memSize - rstackSize
+
+    mem = Memory(memSize)
+    heap = Heap(mem, MHeap.new(4, rstackStart))
+    heap.m = heap.push(heap.m) # Updates the values automatically when they change.
+    returnStack = FngiStack(mem, heap.push(MStack.new(rstackStart, memSize)))
 
     return Env(
         memory=mem,
         ds=dataStack,
         returnStack=returnStack,
-        heap=None, codeHeap=None, ba=None, arena=None,
+        heap=heap,
+        codeHeap=None, ba=None, arena=None,
         fns=[],
         tys=None, refs=None,
     )
