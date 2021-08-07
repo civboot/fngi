@@ -21,12 +21,6 @@ def assertTyEq(v1: DataTy, v2: DataTy):
     assert type(v1) == type(v2)
     assert v1.value == v2.value
 
-def needAlign(size: int) -> int:
-    """Return padding bytes needed to align a value of size."""
-    if size % 4 == 0:
-        return 0
-    return 4 - (size % 4)
-
 def formatArgs(args):
     out = []
     for a in args:

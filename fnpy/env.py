@@ -341,7 +341,7 @@ class FngiStack(MManBase):
     def checkRange(self, offset, size, useSp=None, requireSize=False):
         if not useSp: useSp = self.m.sp
         ptr = useSp + offset
-        assert useSp % 4 == 0
+        assert useSp % USIZE == 0
         if not (useSp <= ptr < self.m.end):
             raise IndexError(
                 f"offset={offset} (ptr={hex(ptr)}) does not fit"
@@ -351,8 +351,8 @@ class FngiStack(MManBase):
                 f"sp={hex(useSp)} is not between"
                 + f" [{hex(self.m.start)}, {hex(self.m.end)}")
 
-        if requireSize and size != 4 and size != 8:
-            raise ValueError("size must be 4 or 8 to push onto stack")
+        if requireSize and size != USIZE and size != USiZE * 2:
+            raise ValueError("size must be usize or 2*usize or 8 to push onto stack")
 
     # Set / Push
     def set(self, offset: int, value: DataTy):
@@ -393,15 +393,6 @@ class FngiStack(MManBase):
     def popv(self, ty: DataTy) -> any:
         return self.pop(ty).value
 
-    def drop(self) -> DataTy:
-        """Drop a value of either 4 or 8 bytes (depending on what is next).
-
-        This returns the value so it can be more easily used with select
-        """
-        ty = self.tys[0]
-        self.checkRange(0, sizeof(ty))
-        return self.pop(ty)
-
     def grow(self, st: FnStructTy):
         """Grow by the struct, not setting any values.
 
@@ -424,7 +415,7 @@ class FngiStack(MManBase):
 
     def debugStr(self):
         return 'Stack: {}'.format(
-            ' '.join(hex(self.get(i, I32).value) for i in range(0, len(self), 4)))
+            ' '.join(hex(self.get(i, USize).value) for i in range(0, len(self), USIZE)))
 
     def __len__(self):
         return self.m.end - self.m.sp
@@ -947,11 +938,11 @@ def createEnv(
     ) -> Env:
     """Create an Env."""
     dataStack = FngiStack(
-        Memory(DATA_STACK_SIZE + 4),
-        MStack.new(4, DATA_STACK_SIZE)
+        Memory(DATA_STACK_SIZE + USIZE),
+        MStack.new(USIZE, DATA_STACK_SIZE)
     )
 
-    # CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
+    # CODE_HEAP_MEM = USIZE + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
     # BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
     # BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
     # REAL_HEAP_START = HEAP.m.heap
@@ -959,7 +950,7 @@ def createEnv(
     rstackStart = memSize - rstackSize
 
     mem = Memory(memSize)
-    heap = Heap(mem, MHeap.new(4, rstackStart))
+    heap = Heap(mem, MHeap.new(USIZE, rstackStart))
     heap.m = heap.push(heap.m) # Updates the values automatically when they change.
     returnStack = FngiStack(mem, heap.push(MStack.new(rstackStart, memSize)))
 
