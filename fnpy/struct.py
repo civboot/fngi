@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from .wasm import *
+from .imports import *
 import inspect
 
 @dataclass
@@ -210,61 +210,23 @@ class FnStructTy(StructTy):
     """
     def __init__(
             self,
-            wasmInp: StructTy,
-            wasmLocal: StructTy,
-            # Note: wasmRet does not affect size, only for fn calls and type
-            # checking
-            wasmRet: StructTy,
             inp: StructTy,
             ret: StructTy,
             locals_: StructTy):
-        self.wasmInp = wasmInp
-        self.wasmLocal = wasmLocal
-        self.wasmRet = wasmRet
 
         if not (ret is Void or type(ret) is RefTy):
             raise TypeError(f'ret {ret}')
 
         super().__init__([
-            # Note: The wasm types MUST go first in this order
-            ('wasmInp', wasmInp),
-            ('wasmLocal', wasmLocal),
-
-            # The order here could be changed if needed.
             ('ret', ret),
             ('inp', inp),
             ('locals', locals_),
         ])
 
-    def getWasmLocalOffset(self, index: int):
-        wasmInpLen = len(self.wasmInp)
-        if index < wasmInpLen:
-            return self.wasmInp.offsets[index]
-        return self.wasmInp.size + self.wasmLocal.offsets[index - wasmInpLen]
-
-    def getWasmLocalTy(self, index: int):
-        wasmInpLen = len(self.wasmInp)
-        if index < wasmInpLen:
-            return self.wasmInp.tys[index]
-        return self.wasmLocal.tys[index - wasmInpLen]
-
 
 class Fn(object):
     def __init__(self, name: str, struct: FnStructTy):
         self.name, self.struct = name, struct
-
-
-class WasmFn(Fn):
-    """A webassembly function."""
-    def __init__(self, name: str, struct: FnStructTy, code: any):
-        super().__init__(name, struct)
-        self.code = code
-
-    def debugStr(self):
-        return (
-            f"name: {self.name()}"
-            + "\nCode:\n" + '\n'.join(map(instrStr, self.code))
-        )
 
 
 Ty = Union[DataTy, StructTy, RefTy]

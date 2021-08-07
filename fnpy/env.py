@@ -1,7 +1,5 @@
 # The fnpy environment such as stack, memory, native functions, etc.
 
-from pdb import set_trace as dbg
-
 import abc
 import sys
 import struct
@@ -11,7 +9,7 @@ import inspect
 
 from ctypes import sizeof
 
-from .wasm import *
+from .imports import *
 from .struct import Ty, RefTy, FnStructTy, Fn, fsizeof
 
 # Compute the index into a list for a stack representation
@@ -120,7 +118,7 @@ def testNeedAlign():
 #
 # The goal with this is to more closely resemble real assembly or a lower-level
 # language, whether that be RISC/CISC registers in assembly or stack-based
-# assembly like wasm or an underlying Forth language/cpu.
+# assembly.
 
 def fieldOffset(ty: DataTy, field: str):
     return getattr(getDataTy(ty), field).offset
@@ -156,7 +154,7 @@ def getDataTy(v: Any) -> DataTy:
 
 KiB = 2**10
 MiB = 2**20
-DATA_STACK_SIZE = 8 * sizeof(Ptr)
+DATA_STACK_SIZE = 256
 CODE_HEAP_SIZE = 32 * KiB
 BLOCKS_ALLOCATOR_SIZE = (5 * MiB) // 2
 EXTRA_HEAP_SIZE = 1 * MiB
@@ -403,20 +401,6 @@ class FngiStack(MManBase):
         self.checkRange(0, sizeof(ty))
         return self.pop(ty)
 
-    def select(self):
-        """Select a value based on the top of the stack {check; v2; v1}
-        if check do v1 eldo v2
-        Yes, wasm is as confusing as possible.
-        """
-        if len(self.tys) < 3: raise IndexError("select requires len >= 3")
-        if sizeof(self.tys[1]) != sizeof(self.tys[2]):
-            raise IndexError(
-                f"select tys could change ty size: {self.tys[:3]}")
-        check = self.drop()
-        v2 = self.drop()
-        v1 = self.drop()
-        self.push(v1 if check.value else v2)
-
     def grow(self, st: FnStructTy):
         """Grow by the struct, not setting any values.
 
@@ -436,23 +420,6 @@ class FngiStack(MManBase):
         assert self.tys[0] is st
         self.tys.pop()
         self.m.sp += size
-
-    def getWasmLocal(self, localIndex) -> DataTy:
-        """Get the webassembly local variable.
-        This assumes that the last type on the stack is a FnStructTy.
-        """
-        st = self.tys[0]
-        offset = st.getWasmLocalOffset(localIndex)
-        ty = st.getWasmLocalTy(localIndex)
-        return self.get(offset, ty)
-
-    def setWasmLocal(self, localIndex, value: DataTy):
-        """Set the webassembly local variable.
-        This assumes that the last type on the stack is a FnStructTy.
-        """
-        st = self.tys[0]
-        offset = st.getWasmLocalOffset(localIndex)
-        return self.set(offset, value)
 
     def debugStr(self):
         return 'Stack: {}'.format(
@@ -1017,23 +984,14 @@ class Env(object):
         self.ds.clearMemory()
         if self.returnStack: self.returnStack.clearMemory()
 
-def createWasmEnv(memoryPages=1) -> Env:
-    """Create a clean wasm environment for testing wasm."""
-    memSize = memoryPages * WASM_PAGE
+def createTestEnv(memSize=4096) -> Env:
+    """Create a clean minimal environment for testing."""
     mem = Memory(memSize)
-    # Unlike fngi, we use a comparibly large data stack.
     dataStack = FngiStack(
-        Memory(WASM_PAGE),
-        MStack.new(4, WASM_PAGE)
+        Memory(DATA_STACK_SIZE + 4),
+        MStack.new(4, DATA_STACK_SIZE)
     )
-    # Unlike fngi, the return stack must be a separate memory region because
-    # some tests will have specific pointers within main memory.
-    # Note: the returnStack is used for inputs and locals, which in wasm
-    # cannot traditionally have pointers to them.
-    returnStack = FngiStack(
-        Memory(WASM_PAGE),
-        MStack.new(4, WASM_PAGE)
-    )
+    returnStack = FngiStack(mem, 2048)
 
     return Env(
         memory=mem,

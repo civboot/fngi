@@ -5,9 +5,8 @@
 # In it we define a Machine that interacts with our Env class, specifically the
 # memory inside it. This allows us to define and execute functions.
 
-from pdb import set_trace as dbg
-from .wasm import *
-from .struct import Void, FnStructTy, Fn, WasmFn
+from .imports import *
+from .struct import Void, FnStructTy, Fn
 from .env import Env, ENV
 from ctypes import sizeof
 
@@ -48,11 +47,11 @@ def fnInit(env: Env, fn: Fn):
     fnSt = fn.struct
 
     if fnSt.size: rs.grow(fnSt)
-    wasmInp = fnSt.fieldMap['wasmInp'].ty.tys
-    for i in reversed(range(len(wasmInp))):
-        ty = wasmInp[i]
-        value = ds.pop(ty)
-        rs.setWasmLocal(i, value)
+    # wasmInp = fnSt.fieldMap['wasmInp'].ty.tys
+    # for i in reversed(range(len(wasmInp))):
+    #     ty = wasmInp[i]
+    #     value = ds.pop(ty)
+    #     rs.setWasmLocal(i, value)
 
 def fnTeardown(env: Env, fn: Fn):
     """After a function has finished executing:
@@ -60,85 +59,45 @@ def fnTeardown(env: Env, fn: Fn):
     """
     if fn.struct.size: env.returnStack.shrink(fn.struct)
 
-def runWasm(env: Env, code: List[any]):
-    ds = env.ds
-    index = 0
-    while index < len(code):
-        brLevel = None
-        wi, args = wasmInstr(code[index])
-        print("\nSTART ", wasmName[wi], formatArgs(args), '', ds.debugStr())
-        subroutine = wasmSubroutines[wi]
-        if subroutine: subroutine(env, args)
-        if wi == w.call:
-            fn = env.fns[args[0]]
-            fnInit(env, fn)
-            if isinstance(fn, WasmFn): runWasm(env, fn.code)
-            else: 
-                raise NotImplementedError(
-                    "pop appropraite values and pass them in, call, handle return values")
-                # fn.call(env, fn)
-            fnTeardown(env, fn)
-
-        # elif wi == w.call_indirect:
-        #     TODO
-
-        elif wi == w.br: brLevel = args[0]
-        elif wi == w.br_if and ds.popv(U32):
-            brLevel = args[0]
-        elif wi == w.block:
-            brLevel = runWasm(env, args[0])
-            if brLevel == 0:
-                # br has been handled by getting here
-                brLevel = None
-            elif brLevel > 0: return brLevel - 1
-        elif wi == w.loop:
-            while True:
-                brLevel = runWasm(env, args[0])
-                if brLevel is None: break # ended block w/out br
-                if brLevel > 0: return brLevel - 1
-                # else loop again
-
-        print("END   ", wasmName[wi], ds.debugStr())
-
-        if brLevel is not None: return brLevel
-        index += 1
+def run(env: Env, code: List[any]):
+    pass
 
 
-def testRunSimple():
-    env = ENV.copyForTest()
-    runWasm(env, [
-        (w.i32.const, 10),
-        (w.i32.const, 11),
-        w.i32.add,
-        (w.i32.const, 2),
-        w.i32.mul,
-    ])
-    assert 42 == env.ds.popv(I32)
-
-def testRunLoop():
-    env = ENV.copyForTest()
-    vPtr = env.heap.grow(4)
-    runWasm(env, [
-        # @v = 0;
-        (w.i32.const, vPtr),
-        (w.i32.const, 0),
-        w.i32.store,
-        # while True:
-        #  out += 1
-        #  if 10 > out: continue
-        (w.loop, [
-            (w.i32.const, vPtr),
-            (w.i32.const, vPtr),
-            w.i32.load,
-            (w.i32.const, 1), w.i32.add,
-            w.i32.store,
-            (w.i32.const, vPtr), w.i32.load,
-            (w.i32.const, 10),
-            w.i32.lt_s,
-            (w.br_if, 0), # continue if true
-        ]),
-        (w.i32.const, vPtr),
-        w.i32.load,
-    ])
-    result = env.ds.popv(I32)
-    assert 10 == result
+# def testRunSimple():
+#     env = ENV.copyForTest()
+#     runWasm(env, [
+#         (w.i32.const, 10),
+#         (w.i32.const, 11),
+#         w.i32.add,
+#         (w.i32.const, 2),
+#         w.i32.mul,
+#     ])
+#     assert 42 == env.ds.popv(I32)
+# 
+# def testRunLoop():
+#     env = ENV.copyForTest()
+#     vPtr = env.heap.grow(4)
+#     runWasm(env, [
+#         # @v = 0;
+#         (w.i32.const, vPtr),
+#         (w.i32.const, 0),
+#         w.i32.store,
+#         # while True:
+#         #  out += 1
+#         #  if 10 > out: continue
+#         (w.loop, [
+#             (w.i32.const, vPtr),
+#             (w.i32.const, vPtr),
+#             w.i32.load,
+#             (w.i32.const, 1), w.i32.add,
+#             w.i32.store,
+#             (w.i32.const, vPtr), w.i32.load,
+#             (w.i32.const, 10),
+#             w.i32.lt_s,
+#             (w.br_if, 0), # continue if true
+#         ]),
+#         (w.i32.const, vPtr),
+#         w.i32.load,
+#     ])
+#     result = env.ds.popv(I32)
+#     assert 10 == result
