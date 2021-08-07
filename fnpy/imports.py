@@ -25,7 +25,6 @@ BIG_ENDIAN = sys.byteorder != 'little'
 DataTy = ctypes.c_uint8.__bases__[0].__bases__[0]
 
 from ctypes import c_bool as Bool
-from ctypes import c_uint32 as Ptr
 from ctypes import c_uint8 as U8
 from ctypes import c_uint16 as U16
 from ctypes import c_uint32 as U32

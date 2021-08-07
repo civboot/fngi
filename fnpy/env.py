@@ -10,6 +10,7 @@ import inspect
 from ctypes import sizeof
 
 from .imports import *
+from .uxn import *
 from .struct import Ty, RefTy, FnStructTy, Fn, fsizeof
 
 # Compute the index into a list for a stack representation
