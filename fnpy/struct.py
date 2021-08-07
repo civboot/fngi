@@ -21,8 +21,9 @@ def alignField(offset: int, ty: "Ty"):
     """Calculate correct offset for dataTy."""
     size = fsizeof(ty)
     if size == 0: return offset
-    alignment = min(4, size)
-    if alignment == 3: alignment = 4
+    alignment = min(USIZE, size)
+    if USIZE >= 4 and alignment == 3: alignment = 4
+    elif USIZE == 8 and 5 <= alignment <= 7: alignment = 8
 
     mod = offset % alignment
     if mod == 0: return offset
@@ -46,7 +47,7 @@ class Field:
 
 def assertAllStkTypes(tys):
     for ty in tys:
-        assert fsizeof(ty) in {4, 8}, ty
+        assert fsizeof(ty) in {USIZE, 2 * USIZE}, ty
 
 def assertNoStks(tys):
     for ty in tys:

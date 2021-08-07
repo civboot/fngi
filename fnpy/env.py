@@ -91,14 +91,14 @@ def testStack():
 
 def needAlign(size: int) -> int:
     """Return padding bytes needed to align a value of size."""
-    if size % 4 == 0:
+    if size % USIZE == 0:
         return 0
-    return 4 - (size % 4)
+    return USIZE - (size % USIZE)
 
 def testNeedAlign():
     assert 0 == needAlign(0)
-    assert 3 == needAlign(1)
-    assert 2 == needAlign(2)
+    assert 1 == needAlign(1)
+    assert 0 == needAlign(2)
     assert 1 == needAlign(3)
     assert 0 == needAlign(4)
 

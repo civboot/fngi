@@ -36,11 +36,6 @@ from ctypes import c_int64 as I64
 from ctypes import c_float as F32
 from ctypes import c_double as F64
 
-# Name Lookup Dict (for testing)
-uxnName = {
-}
-
-
-# Code Lookup Dict (for testing)
-uxnCode = {
-}
+USIZE = 2 # 2 byte ptr width
+USize = U16
+Ptr = U16
