@@ -16,6 +16,10 @@ from ctypes import sizeof
 
 from .wasm_constants import *
 
+I32_MAX = 2147483647
+I32_MIN = -2147483648
+
+
 WASM_PAGE = 0x10000 # 2^16 bytes
 
 def wasmInstr(instr: any) -> Tuple[int, Tuple]:
@@ -48,7 +52,12 @@ def div_s(left, right):
     interpreted as signed. The quotient is silently rounded to the nearest
     integer toward zero.
     """
-    result = left / right
+    try:
+        result = left / right
+    except ZeroDivisionError as e:
+        raise Trap("zero division")
+    if result > I32_MAX:
+        raise Trap("div_s result too large")
     if result > 0: return math.floor(result)
     return math.ceil(result)
 
@@ -158,14 +167,22 @@ def _doBinary(ty: DataTy, operation):
     def impl(env, args):
         right = env.ds.popv(ty)
         left = env.ds.popv(ty)
-        env.ds.push(ty(operation(left, right)))
+        try:
+            value = operation(left, right)
+        except ZeroDivisionError as e:
+            raise Trap(str(e))
+        env.ds.push(ty(value))
     return impl
 
 def _doBinMultiTy(leftTy, rightTy, outTy, operation):
     def impl(env, args):
         right = env.ds.popv(rightTy)
         left = env.ds.popv(leftTy)
-        env.ds.push(outTy(operation(left, right)))
+        try:
+            value = operation(left, right)
+        except ZeroDivisionError as e:
+            raise Trap(str(e))
+        env.ds.push(outTy(value))
     return impl
 
 def _memsize(env, _args):

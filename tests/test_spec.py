@@ -34,7 +34,7 @@ def parseWasm(wasmPath):
     return module
 
 
-def runTest(testIndex, env, action, inp, expected):
+def runTest(testIndex, testTy, env, action, inp, expected):
     assert action['type'] == 'invoke'
     fname = action['field'] # function name to call
     print(
@@ -48,7 +48,13 @@ def runTest(testIndex, env, action, inp, expected):
 
     for value in inp: env.ds.push(value)
     fnInit(env, fn)
-    runWasm(env, fn.code)
+    try:
+        runWasm(env, fn.code)
+        assert testTy != 'assert_trap'
+    except Trap as e:
+        assert testTy == 'assert_trap', e
+        env.clearMemory()
+        return
     fnTeardown(env, fn)
 
     result = []
@@ -82,7 +88,7 @@ def runTest(testIndex, env, action, inp, expected):
 
 # ("type": "f32", "value": "1065353216"}
 def _convertJsonValue(json):
-    jty, jval = json['type'], int(json['value'])
+    jty, jval = json['type'], int(json.get('value', 0))
     if jty.startswith('i'):
         val = strTys[jty](jval)
     elif jty == 'f32':
@@ -181,13 +187,13 @@ def runTests(wasmDir, testConfig: _TestConfig = _TestConfig()):
             modulePath = os.path.join(wasmDir, test['filename'])
             env = compileModule(modulePath)
 
-        elif testTy == 'assert_return':
+        elif testTy in ('assert_return', 'assert_trap'):
             action = test['action']
             inp = [_convertJsonValue(j) for j in action['args']]
             expected = [_convertJsonValue(j) for j in test['expected']]
 
             try:
-                runTest(testIndex, env, action, inp, expected)
+                runTest(testIndex, testTy, env, action, inp, expected)
                 assert len(env.ds.tys) == 0, "Data still on the data stack."
                 assert len(env.returnStack.tys) == 0, "Data still on the return stack."
                 passed += 1
@@ -198,7 +204,7 @@ def runTests(wasmDir, testConfig: _TestConfig = _TestConfig()):
                 assert len(env.ds.tys) == 0
                 assert len(env.returnStack.tys) == 0
             except AssertionError as e:
-                errMsg = f'ACTION: {action}\nERROR: {e}\nMODULE: {modulePath}'
+                errMsg = f'ACTION: {testTy}  {action}\nERROR: {e}\nMODULE: {modulePath}'
                 print("FAILED:", errMsg)
                 errors.append(errMsg)
                 # clear memory unless it will happen anyway
@@ -210,8 +216,6 @@ def runTests(wasmDir, testConfig: _TestConfig = _TestConfig()):
 
         elif testTy in {'assert_malformed'}: pass
         elif testTy in {'assert_invalid'}: pass
-        elif testTy in {'assert_trap'}:
-            pass # TODO: implement traps
         else: errors.append(f'{modulePath}: Unkown testTy {testTy}')
 
     noteMsg = f"Note: failed={len(errors)}  passed={passed}  notSupported={notSupported}"
