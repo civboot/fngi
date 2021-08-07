@@ -2,8 +2,9 @@
 from .imports import *
 from enum import Enum, auto as enumAuto
 
-Ptr = U16
+USIZE = 2 # 2 byte ptr width
 USize = U16
+Ptr = U16
 
 UXN_OPTIONS = (
 # The below block copied directly from uxn.c
