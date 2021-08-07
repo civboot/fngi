@@ -852,12 +852,6 @@ MEMORY = Memory(MEMORY_SIZE)
 MEMORY.data[0:4] = b'\xA0\xDE\xFE\xC7' # address 0 is "A DEFECT"
 
 HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
-CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
-BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
-BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
-REAL_HEAP_START = HEAP.m.heap
-RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
-
 
 # Now that we have the _space_ for all of our memory regions, we need to
 # actually keep the mutations to them synced within the main memory block.
@@ -868,44 +862,6 @@ RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
 # For example, we can write tests that compile a fngi program using both python
 # and forth compilers and assert they are identical. Also, this means we can
 # write debugging tools in python and use them on our Forth implementation.
-
-# Data stack kept in separate memory region
-DATA_STACK = FngiStack(
-    Memory(DATA_STACK_SIZE + 4),
-    MStack.new(4, DATA_STACK_SIZE))
-
-# Reserve a space for the HEAP.m data inside of MEMORY that automatically
-# mutates when HEAP.m is mutated. Do the same for all other values.
-HEAP.m = HEAP.push(HEAP.m)
-CODE_HEAP = Heap(
-    MEMORY,
-    HEAP.push(MHeap.new(
-        CODE_HEAP_MEM, CODE_HEAP_MEM + CODE_HEAP_SIZE)))
-
-BLOCK_ALLOCATOR = BlockAllocator(
-    MEMORY,
-    HEAP.push(MBlockAllocator(0, BLOCK_INDEXES_MEM, BLOCK_ALLOCATOR_MEM)))
-
-ARENA = Arena( # global arena
-    None,
-    MEMORY,
-    BLOCK_ALLOCATOR,
-    HEAP.push(MArena(
-        baPtr=MEMORY.getPtrTo(BLOCK_ALLOCATOR.m),
-        blockRootIndex=BLOCK_USED,
-        _align=0,
-        po2Roots=MArenaPo2Roots(*[0 for _ in range(8)]))))
-
-RETURN_STACK_MEM_END = RETURN_STACK_MEM + RETURN_STACK_SIZE
-RETURN_STACK = FngiStack(
-    MEMORY,
-    HEAP.push(MStack.new(RETURN_STACK_MEM, RETURN_STACK_MEM_END)))
-
-# Data stack kept in separate memory region
-DATA_STACK = FngiStack(
-    Memory(DATA_STACK_SIZE),
-    MStack.new(0, DATA_STACK_SIZE))
-
 
 class Env(object):
     """Contains all the mutable state for a fngi compiler and interpreter to run.
@@ -995,6 +951,11 @@ def createEnv(
         MStack.new(4, DATA_STACK_SIZE)
     )
 
+    # CODE_HEAP_MEM = 4 + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
+    # BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
+    # BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
+    # REAL_HEAP_START = HEAP.m.heap
+    # RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
     rstackStart = memSize - rstackSize
 
     mem = Memory(memSize)
@@ -1009,21 +970,10 @@ def createEnv(
         heap=heap,
         codeHeap=None, ba=None, arena=None,
         fns=[],
-        tys=None, refs=None,
+        tys={}, refs={},
     )
 
-ENV = Env(
-    memory=MEMORY,
-    ds=DATA_STACK,
-    returnStack=RETURN_STACK,
-    heap=HEAP,
-    codeHeap=CODE_HEAP,
-    ba=BLOCK_ALLOCATOR,
-    arena=ARENA,
-    fns=[],
-    tys={},
-    refs={},
-)
+ENV = createEnv()
 
 def testMemoryLayout():
     _testMemoryLayout(ENV)
