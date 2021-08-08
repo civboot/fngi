@@ -17,23 +17,29 @@ def fsizeof(ty: 'Ty'):
     else:
         raise ValueError(f"Has no size: {ty}")
 
-def alignField(offset: int, ty: "Ty"):
-    """Calculate correct offset for dataTy."""
-    size = fsizeof(ty)
-    if size == 0: return offset
-    alignment = min(USIZE, size)
-    if USIZE >= 4 and alignment == 3: alignment = 4
-    elif USIZE == 8 and 5 <= alignment <= 7: alignment = 8
+def alignment(size):
+    """Return the required alignment for a variable of size."""
+    if size > 2: return 2
+    return size
 
-    mod = offset % alignment
-    if mod == 0: return offset
-    return offset + (alignment - mod)
+def needAlign(ptr, size):
+    """Return how much alignment needs to be added to the ptr."""
+    if size == 0: return 0
+    amnt = alignment(size)
+    mod = ptr % amnt
+    if mod: return USIZE - mod
+    return 0
+
+def alignTy(ptr: int, ty: "Ty"):
+    """Calculate correct ptr for dataTy."""
+    size = fsizeof(ty)
+    return ptr + needAlign(ptr, size)
 
 def calcOffsetsAndSize(fields: List["Ty"]):
     offset = 0
     offsets = []
     for ty in fields:
-        offset = alignField(offset, ty)
+        offset = alignTy(offset, ty)
         offsets.append(offset)
         offset += fsizeof(ty)
     return offsets, offset

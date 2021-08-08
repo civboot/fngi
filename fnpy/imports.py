@@ -39,3 +39,4 @@ from ctypes import c_double as F64
 USIZE = 2 # 2 byte ptr width
 USize = U16
 Ptr = U16
+IdxTy = U16 # type index

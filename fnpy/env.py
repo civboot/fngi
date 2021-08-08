@@ -153,26 +153,28 @@ def getDataTy(v: Any) -> DataTy:
 # The other data regions (returnStack, heap, allocators, etc) are all slices of the
 # global memory region (ENV.heap.memory).
 
-KiB = 2**10
-MiB = 2**20
-DATA_STACK_SIZE = 256
-CODE_HEAP_SIZE = 32 * KiB
-BLOCKS_ALLOCATOR_SIZE = (5 * MiB) // 2
-EXTRA_HEAP_SIZE = 1 * MiB
-RETURN_STACK_SIZE = MiB // 2 # 1/2 MiB return stack
-
 # 4KiB is the size of a "block" of memory, the maximum amount that
-# can be allocatd without growing a heap.
+# can be allocatd without growing the heap.
 BLOCK_PO2 = 12
 BLOCK_SIZE = 2**BLOCK_PO2
+
+KiB = 2**10
+MiB = 2**20
+NATIVE_STACK_SIZE = 256
+CODE_HEAP_SIZE = 8 * KiB
+BLOCKS_ALLOCATOR_SIZE = 10 * BLOCK_SIZE # 40 KiB
+# 14k is left for heap
+
 BLOCKS_TOTAL = BLOCKS_ALLOCATOR_SIZE // BLOCK_SIZE
-BLOCKS_INDEXES_SIZE = BLOCKS_TOTAL * sizeof(U16)
-BlocksArray = U16 * BLOCKS_TOTAL # How array types are created in ctypes
+BlockIdx = U16 # TODO: make U8
+BlocksArray = BlockIdx * BLOCKS_TOTAL # arr[BLOCKS_TOTAL BlockIdx]
+BLOCKS_INDEXES_SIZE = BLOCKS_TOTAL * sizeof(BlockIdx)
 
 
 class Memory(object):
     def __init__(self, size):
         self.data = ctypes.create_string_buffer(size)
+        self.data[0:2] = b'\xDE\xAD' # address 0 is "0xDEAD"
 
     def getPtrTo(self, value: DataTy) -> int:
         """Get the index of the value within self.data.
@@ -310,6 +312,46 @@ class Heap(MManBase):
         self.memory.set(gl.ptr, value)
 
 
+class NativeStack(object):
+    """A native stack can only push/pop native values (1 or 2 bytes).
+
+    It asserts in-bounds and alignment and nothing else. It has no mapping
+    directly to memory.
+    """
+    def __init__(self):
+        self.data = ctypes.create_string_buffer(256)
+        self.sp = len(self.data)
+
+    def checkSize(self, expected, actual):
+        if expected != actual: raise ValueError(f"size is unexpected")
+        if needAlign(self.sp, expected): raise ValueError(f"not aligned {self.sp}")
+
+    def checkBoundsPush(self, size):
+        if self.sp - size < 0: raise IndexError(f"{self.sp} push {size}")
+
+    def checkBoundsPop(self, size):
+        if self.sp + size > len(self.data) + 1:
+            raise IndexError(f"{self.sp} pop {size}")
+
+    def push8(self, value: Ty):
+        size = fsizeof(value)
+        self.checkSize(1, size)
+        self.checkBoundsPush(size)
+        self.sp -= 1
+        self.data[self.sp] = value
+
+    def pop8(self, value: Ty):
+        size = fsizeof(value)
+        self.checkSize(1, size)
+        self.checkBoundsPop(size)
+        out = self.data[self.sp]
+        self.sp += 1
+        return out
+
+
+
+
+
 class MStack(ctypes.Structure):
     """A stack as represented in memory."""
     _fields_ = [
@@ -321,6 +363,8 @@ class MStack(ctypes.Structure):
     @classmethod
     def new(cls, start, end):
         return cls(start, end, end)
+
+
 
 
 class FngiStack(MManBase):
@@ -833,14 +877,8 @@ class Arena(object):
 # EXTRA_HEAP: some extra heap space to put global variables and data such as
 #   the global allocators, user-defined globals, compiler state, etc.
 # RETURN_STACK: the return stack
-MEMORY_SIZE = (
-    CODE_HEAP_SIZE
-    + BLOCKS_ALLOCATOR_SIZE
-    + EXTRA_HEAP_SIZE
-    + RETURN_STACK_SIZE)
 
 MEMORY = Memory(MEMORY_SIZE)
-MEMORY.data[0:4] = b'\xA0\xDE\xFE\xC7' # address 0 is "A DEFECT"
 
 HEAP = Heap(MEMORY, MHeap.new(0, MEMORY_SIZE - RETURN_STACK_SIZE))
 
@@ -932,25 +970,25 @@ class Env(object):
         self.ds.clearMemory()
         if self.returnStack: self.returnStack.clearMemory()
 
+def _createNativeStack():
+    return FngiStack(
+        Memory(NATIVE_STACK_SIZE + USIZE),
+        MStack.new(USIZE, NATIVE_STACK_SIZE)
+    )
+
 def createEnv(
         memSize=4096,
         rstackSize=2048,
     ) -> Env:
     """Create an Env."""
-    dataStack = FngiStack(
-        Memory(DATA_STACK_SIZE + USIZE),
-        MStack.new(USIZE, DATA_STACK_SIZE)
-    )
-
-    # CODE_HEAP_MEM = USIZE + HEAP.grow(CODE_HEAP_SIZE) # not ptr=0
-    # BLOCK_ALLOCATOR_MEM = HEAP.grow(BLOCKS_ALLOCATOR_SIZE)
-    # BLOCK_INDEXES_MEM = HEAP.grow(BLOCKS_INDEXES_SIZE)
-    # REAL_HEAP_START = HEAP.m.heap
-    # RETURN_STACK_MEM = REAL_HEAP_START + EXTRA_HEAP_SIZE
-    rstackStart = memSize - rstackSize
+    ds = _createNativeStack()
+    rs = _createNativeStack()
 
     mem = Memory(memSize)
-    heap = Heap(mem, MHeap.new(USIZE, rstackStart))
+
+    heap = Heap(mem, MHeap.new(USIZE, len(mem)))
+
+
     heap.m = heap.push(heap.m) # Updates the values automatically when they change.
     returnStack = FngiStack(mem, heap.push(MStack.new(rstackStart, memSize)))
 
