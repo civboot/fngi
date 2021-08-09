@@ -90,31 +90,23 @@ more general-purpose CPU. For demonstration, `#4200 U32 RET SRSE ADD` will:
 - Return, which not only continues executing from the previous function but
   also updates the working stack pointer and the sector pointer.
 
-fu32's byte layout is as follows:
-
-- I: 16 bit immediate value
-- S: 2 bit size mode
-- J: 3 bit jump mode
-- M: 4 bit memory access mode
-- X: 1 bit unused
-- O: 6 bit operation
+fu32's byte layout is as follows. X is unused"
 
 ```
-                      Jump
-  Immediate      Size |   Mem    Op
+                    3Jump
+  16Immediate   2Size   | 4Mem   6Operation
   IIIIIIIIIIIIIIII SS JJJ MMMM X OOOOOO
 ```
+
 
 ### Immediate
 The immediate value is a 16 bit value which is part of the instruction. It can
 be interpreted either signed or unsigned depending on the operation.
 
-Large immediate values can be loaded in a single instruction using the
-appropriate mem mode.
-
 ### Size
-The size affects the type of opcode performed. It does not affect how memory is
-accessed.
+The size affects the type of opcode performed. For instance ADD8 will add two 8bit numbers,
+ADD16 will add two 16bit numbers. Certain components of operations, like
+addresses, are unnaffected by size.
 
 - 0: 8bit
 - 1: 16bit
@@ -123,9 +115,9 @@ accessed.
 
 ### Mem
 Definitions:
-- F(SE+IM) means "fetch SE+IM" aka "fetch sector + immediate" aka use the value
-  at the immediate address in the specified sector. S(...) means "store" at
-  that address.
+- FT(SE+IM) means "fetch SE+IM" aka "fetch sector + immediate" aka use the
+  value at the immediate address in the specified sector. ST(...) means "store"
+  at that address.
 - Top means the top value used in the operation
 - Second means the second value used in the operation (may not be used).
 - WS0 means top of working stack, WS1 means second value.
@@ -170,9 +162,6 @@ The following Jump modes are possible:
 - x05: CNW: Call an address without a working stack update. Does not require
   memory read.
 
-(future extensions):
-- x06: JWB: Jump to WS if Bool(store)
-
 Some constraints:
 - NOJ has no constraints.
 - All others besides RET must have mem.Store=WS
@@ -187,8 +176,7 @@ Some constraints:
 
 Operations modify what will be Stored. If Store is WS the result will
 be pushed to the stack, if the store is `S(SP+IM)` then the result will
-instead go to the immediate offset of the stack pointer. Jmp operations
-may also consume what is Store -- it doesn't matter to the op.
+instead go to the immediate offset of the stack pointer.
 
 Unary: only top is used or consumed for these.
 - `IDN`: identity, simply store Top. This can be a NOOP if Top=WS
