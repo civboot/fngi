@@ -55,9 +55,9 @@ registers:
 U8, U16 and U32 are used to specify the bit-width regardless of whether
 they are signed or unsigned (the operation determines signedness).
 
-SPtr means a "sector pointer", aka a 16bit pointer. APtr is an "absolute
+CPtr means a "half pointer", aka a 16bit pointer. APtr is an "absolute
 pointer" aka a 32bit pointer. Typically only immediate (compile-time) pointers
-are SPtr's, so just Ptr also means APtr.
+are SPtr's, so Ptr also means APtr.
 
 On 16bit systems, an SPtr and APtr must have the same size of 16bits and the
 sector is always "0".
