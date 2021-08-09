@@ -40,3 +40,6 @@ USIZE = 2 # 2 byte ptr width
 USize = U16
 Ptr = U16
 IdxTy = U16 # type index
+
+MASK_8 = 0xFFFF
+MASK_16 = 0xFFFFFFFF

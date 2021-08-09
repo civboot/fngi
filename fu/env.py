@@ -24,10 +24,31 @@ class FuEnv(object):
     @property
     def lp(self): return self.ls.m.sp  # Locals Ptr
 
-def _returnZero(_): return 0
+    def pushr(self, addr: APtr, wsUpdate: int):
+        addrR = CPtr(addr.value & MASK_16)
+        cp = CPtr(addr.value >> 16)
+        u = U16(wsUpdate)
+
+        self.rs.push(addrR)
+        self.rsSc.push(cp)
+        self.rsWU.push(u)
+
+    def popr(self) -> Tuple[CPtr, CPtr, int]:
+        # Make sure the data is all there.
+        addrR = self.rs.fetch(0, CPtr)
+        cp = self.rsSc.fetch(0, CPtr)
+        u = self.rsWU.fetch(0, U16)
+
+        # Update the stacks.
+        self.rs.pop(CPtr); self.rsSc.pop(CPtr); self.rsWU.pop(U16)
+
+        return (addrR, cp, u.value)
+
+
+def _returnZero(): return 0
 
 def createRegStk(size):
-    return Stk(MStk(size), Mem(size, minPtr=0), getStart=_returnZero)
+    return Stk(MStk.new(size), Mem(size, minPtr=0), getStart=_returnZero)
 
 def createEnv(
         memSize=4096,
@@ -52,3 +73,14 @@ def createEnv(
 
 def testEnv():
     env = createEnv()
+    env.ws.push(I32(0x00442211))
+    env.ws.push(U8(42))
+    assert 42 == env.ws.popv(U8)
+    assert 0x00442211 == env.ws.popv(I32)
+
+    env.pushr(APtr(0x10023004), 0x10)
+    addrR, cp, u = env.popr()
+    assert 0x1002 == cp.value
+    assert 0x3004 == addrR.value
+    assert 0x10 == u
+

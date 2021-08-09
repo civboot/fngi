@@ -37,6 +37,9 @@ from ctypes import c_int64 as I64
 from ctypes import c_float as F32
 from ctypes import c_double as F64
 
+MASK_8 = 0xFFFF
+MASK_16 = 0xFFFFFFFF
+
 class Trap(Exception): pass
 
 # Absolute Pointers

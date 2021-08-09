@@ -47,6 +47,8 @@ class Mem(object):
         if needAlign(ptr, size):
             raise AlignmentError(f"{ptr} misaligned to {size}")
 
+    def __len__(self): return len(self.data)
+
 
 def testMem():
     mem = Mem(0x1000)
