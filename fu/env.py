@@ -1,6 +1,7 @@
 from .imports import *
 from .mem import Mem
-from .stack import Stk
+from .stack import Stk, MStk
+from .heap import Heap, MHeap
 
 KiB = 2**10
 WS_SIZE = 1 * KiB
@@ -14,10 +15,11 @@ class FuEnv(object):
     rsWU: Stk # parallel Ws Update tracker for rs
 
     mem: Mem
+    heap: Heap
     ls: Stk
 
-    cp: int  # seCtor Ptr
-    ep: int  # Execution Ptr
+    cp: int = 0  # seCtor Ptr
+    ep: int = None  # Execution Ptr
 
     @property
     def lp(self): return self.ls.m.sp  # Locals Ptr
@@ -31,24 +33,22 @@ def createEnv(
         memSize=4096,
         wsSize=WS_SIZE,
         rsSize=RS_SIZE,
-    ) -> Env:
+    ) -> FuEnv:
     """Create an Env."""
     ws = createRegStk(wsSize)
     rs = createRegStk(rsSize)
     rsSc = createRegStk(rsSize)
     rsWU = createRegStk(rsSize)
 
-    mem = Memory(memSize)
-    heap = Heap(mem, MHeap.new(memSize), None)
+    mem = Mem(memSize)
+    heap = Heap(MHeap.new(memSize), mem, None)
     ls = Stk(MStk(memSize), mem, getStart=heap.getHeap)
     heap.getEnd = ls.getSp
 
-    return Env(
-        memory=mem,
-        ds=dataStack,
-        returnStack=returnStack,
-        heap=heap,
-        codeHeap=None, ba=None, arena=None,
-        fns=[],
-        tys={}, refs={},
+    return FuEnv(
+        ws=ws, rs=rs, rsSc=rsSc, rsWU=rsWU,
+        mem=mem, heap=heap, ls=ls,
     )
+
+def testEnv():
+    env = createEnv()

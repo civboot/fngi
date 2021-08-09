@@ -106,7 +106,6 @@ class Stk(object):
     def __init__(self, mstk: MStk, mem: Mem, getStart=None):
         self.m = mstk
         self.mem = mem
-        self.totalSize = mstack.end - mstack.start
         self.tys = Stack()
         self.getStart = getStart  # heap grows up, modifying the start.
 
@@ -114,7 +113,7 @@ class Stk(object):
 
     def load(self, offset: int, ty: Primitive):
         size = ctypes.sizeof(ty)
-        _check(self.m, self.start(), self.sp, offset, size)
+        _check(self.m, self.getStart(), self.sp, offset, size)
         return self.mem.load(sp, ty)
 
     def loadv(self, offset: int, ty: Primitive):
@@ -122,13 +121,13 @@ class Stk(object):
 
     def store(self, offset: int, value: Primitive):
         size = ctypes.sizeof(ty)
-        _check(self.m, self.start(), self.sp, offset, size)
+        _check(self.m, self.getStart(), self.sp, offset, size)
         self.mem.store(offset, value)
 
     def pop(self, ty: Primitive):
         size = ctypes.sizeof(ty)
         sp = self.sp + size
-        _check(self.m, self.start(), sp, 0, size, ty, self.tys)
+        _check(self.m, self.getStart(), sp, 0, size, ty, self.tys)
         out = self.mem.load(sp, ty)
         self.sp = sp
         return out
@@ -136,21 +135,21 @@ class Stk(object):
     def push(self, value: Primitive):
         size = ctypes.sizeof(value)
         sp = self.sp - size
-        _check(self.m, self.start(), sp, 0, size, type(value), self.tys)
+        _check(self.m, self.getStart(), sp, 0, size, type(value), self.tys)
         self.mem.store(sp, value)
         self.sp = sp
 
     def shrink(self, st: Ty):
         size = st.size + needAlign(st)
         sp = self.sp + size
-        _check(self.m, self.start(), sp, 0, size, st, self.tys)
+        _check(self.m, self.getStart(), sp, 0, size, st, self.tys)
         self.sp = sp
         return sp
 
     def grow(self, st: Ty):
         size = st.size + needAlign(st)
         sp = self.sp - size
-        _check(self.m, self.start(), sp, 0, size, st, self.tys)
+        _check(self.m, self.getStart(), sp, 0, size, st, self.tys)
         self.sp = sp
         return sp
 

@@ -22,14 +22,14 @@ def _check(m: MHeap, end, heap, size):
         raise OutOfBoundsError(f"{hex(heap)} < {hex(m.start)}")
 
 
-class Heap(MManBase):
+class Heap(object):
     """The heap grows up and you can manually shrink it."""
     def __init__(self, mheap: MHeap, mem: Mem, getEnd):
         self.m = mheap
-        self.mem = memory
+        self.mem = mem
         self.getEnd = getEnd # stack pointer grows down, modifying the end.
 
-    @propert
+    @property
     def getHeap(self): # used in locals stack implementation
         return self.m.heap
 
@@ -46,7 +46,7 @@ class Heap(MManBase):
         self.m.heap = heap
         return heap
 
-    def push(self, value: DataTy, align=True) -> DataTy:
-        """Push a DataTy then return it's mutable reference inside memory"""
+    def push(self, value: Primitive, align=True) -> Primitive:
+        """Push a Primitive then return it's mutable reference inside memory"""
         ptr = self.grow(ctypes.sizeof(value), align)
         return self.memory.storeFetch(ptr, value)
