@@ -13,6 +13,7 @@ import math
 
 from collections import OrderedDict
 from dataclasses import dataclass
+from enum import Enum, auto as enumVal
 import copy
 import ctypes
 import operator
@@ -49,4 +50,9 @@ Ptr = APtr
 CSz = U16
 CSIZE = ctypes.sizeof(CSz)
 CPtr = CSz
+
+class BetterEnum(Enum):
+    @classmethod
+    def fromStr(cls, name): return getattr(cls, name)
+
 

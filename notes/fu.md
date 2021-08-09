@@ -95,12 +95,12 @@ The registers are:
   implementing extra stacks).
 - A 1010 reserved
 - B 1011 reserved
-- C 1100 EP: the execution pointer register. Writing to this traps.
+- C 1100 EP: the execution pointer register. Writing to will trap.
 - D 1101 AP: the alocator pointer register. This should point to the "global"
   allocator currently being used. The API for such an allocator will be
   implementation specific.
 - E 1110 CP: the CPctor ptr.
-- F 1111 LP: the Locals ptr register.
+- F 1111 LP: the Locals ptr register. Writing to will trap.
 
 > Note that implementors don't have to actually store these in hardware
 > registers: they can just as easily go in non-accessible memory.
