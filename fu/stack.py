@@ -9,8 +9,6 @@ class StkPrimitiveError(ValueError): pass
 # Compute the index into a list for a stack representation
 def _si(i): return -i - 1
 
-
-
 class Stack(list):
     """
     A pure python stack. It's really just a list where the indexes are
@@ -95,11 +93,14 @@ class MStk(ctypes.Structure):
     def new(cls, start, end):
         return cls(start, end, end)
 
-def _checkRange(m, sp, offset, size):
+def _check(m, sp, offset, size, ty=None, tys=None):
     if sp + offset >= m.end:
         raise StkUnderflowError(f"{hex(sp)}+{hex(offset)} >= {hex(m.end)}")
     if sp < m.start:
         raise StkUnderflowError(f"{hex(sp)} < {hex(m.start)}")
+    if ty and ctypes.sizeof(ty) != ctypes.sizeof(tys[0]):
+        raise TypeError(f"{ty} != {tys[0]}")
+
 
 class Stk(object):
     """A fu stack."""
@@ -111,7 +112,7 @@ class Stk(object):
 
     def load(self, offset: int, ty: Primitive):
         size = ctypes.sizeof(ty)
-        _checkRange(self.m, self.sp, offset, size)
+        _check(self.m, self.sp, offset, size)
         return self.mem.load(sp, ty)
 
     def loadv(self, offset: int, ty: Primitive):
@@ -119,13 +120,13 @@ class Stk(object):
 
     def store(self, offset: int, value: Primitive):
         size = ctypes.sizeof(ty)
-        _checkRange(self.m, self.sp, offset, size)
+        _check(self.m, self.sp, offset, size)
         self.mem.store(offset, value)
 
     def pop(self, ty: Primitive):
         size = ctypes.sizeof(ty)
         sp = self.sp + size
-        _checkRange(self.m, sp, 0, size)
+        _check(self.m, sp, 0, size, ty, self.tys)
         out = self.mem.load(sp, ty)
         self.sp = sp
         return out
@@ -133,29 +134,38 @@ class Stk(object):
     def push(self, value: Primitive):
         size = ctypes.sizeof(value)
         sp = self.sp - size
-        _checkRange(self.m, sp, 0, size)
+        _check(self.m, sp, 0, size, type(value), self.tys)
         self.mem.store(sp, value)
         self.sp = sp
 
     def shrink(self, st: Ty):
         size = st.size + needAlign(st)
         sp = self.sp + size
-        _checkRange(self.m, sp, 0, size)
+        _check(self.m, sp, 0, size, st, self.tys)
         self.sp = sp
         return sp
 
     def grow(self, st: Ty):
         size = st.size + needAlign(st)
         sp = self.sp - size
-        _checkRange(self.m, sp, 0, size)
+        _check(self.m, sp, 0, size, st, self.tys)
         self.sp = sp
         return sp
 
-    def dbgStr(self):
-        return 'Stack: {}'.format(
-            ' '.join(hex(self.get(i, USize).value) for i in range(0, len(self), USIZE)))
+    def __len__(self):
+        return self.m.end - self.m.sp
+
+    def __str__(self):
+        return f'Stk[used={len(self)} total={self.totalSize}]'
+
+    def __repr__(self):
+        offset = 0
+        values = []
+        for ty in self.tys:
+            values.append(hex(self.fetchv(offset, ty)))
+            offset += ctypes.sizeof(ty)
+        return f'Stk{values}'
 
     def clearMemory(self):
         self.m.sp = self.m.end
         self.tys = Stack()
-
