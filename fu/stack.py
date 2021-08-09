@@ -93,10 +93,10 @@ class MStk(ctypes.Structure):
         return cls(end, end)
 
 def _check(m, start, sp, offset, size, ty=None, tys=None):
-    if sp + offset + size >= m.end:
+    if sp + offset + size > m.end:
         raise StkUnderflowError(f"{hex(sp)}+{hex(offset)}+{hex(size)} >= {hex(m.end)}")
-    if sp < m.start:
-        raise StkUnderflowError(f"{hex(sp)} < {hex(m.start)}")
+    if sp < start:
+        raise StkUnderflowError(f"{hex(sp)} < {hex(start)}")
     if ty and ctypes.sizeof(ty) != ctypes.sizeof(tys[0]):
         raise TypeError(f"{ty} != {tys[0]}")
 
@@ -111,46 +111,49 @@ class Stk(object):
 
     def getSp(self): return self.m.sp  # used in env.heap implementation
 
-    def load(self, offset: int, ty: Primitive):
+    def fetch(self, offset: int, ty: Primitive):
         size = ctypes.sizeof(ty)
-        _check(self.m, self.getStart(), self.sp, offset, size)
-        return self.mem.load(sp, ty)
+        _check(self.m, self.getStart(), self.m.sp, offset, size)
+        return self.mem.fetch(self.m.sp + offset, ty)
 
-    def loadv(self, offset: int, ty: Primitive):
-        return self.load(offset, ty).value
+    def fetchv(self, offset: int, ty: Primitive):
+        return self.fetch(offset, ty).value
 
     def store(self, offset: int, value: Primitive):
         size = ctypes.sizeof(ty)
-        _check(self.m, self.getStart(), self.sp, offset, size)
+        _check(self.m, self.getStart(), self.m.sp, offset, size)
         self.mem.store(offset, value)
 
     def pop(self, ty: Primitive):
         size = ctypes.sizeof(ty)
-        sp = self.sp + size
-        _check(self.m, self.getStart(), sp, 0, size, ty, self.tys)
-        out = self.mem.load(sp, ty)
-        self.sp = sp
+        _check(self.m, self.getStart(), self.m.sp, 0, size, ty, self.tys)
+        out = self.mem.fetch(self.m.sp, ty)
+        self.m.sp += size
+        self.tys.pop()
         return out
+
+    def popv(self, ty: Primitive): return self.pop(ty).value
 
     def push(self, value: Primitive):
         size = ctypes.sizeof(value)
-        sp = self.sp - size
-        _check(self.m, self.getStart(), sp, 0, size, type(value), self.tys)
+        sp = self.m.sp - size
+        _check(self.m, self.getStart(), sp, 0, size)
         self.mem.store(sp, value)
-        self.sp = sp
+        self.m.sp = sp
+        self.tys.push(type(value))
 
     def shrink(self, st: Ty):
         size = st.size + needAlign(st)
-        sp = self.sp + size
+        sp = self.m.sp + size
         _check(self.m, self.getStart(), sp, 0, size, st, self.tys)
-        self.sp = sp
+        self.m.sp = sp
         return sp
 
     def grow(self, st: Ty):
         size = st.size + needAlign(st)
-        sp = self.sp - size
+        sp = self.m.sp - size
         _check(self.m, self.getStart(), sp, 0, size, st, self.tys)
-        self.sp = sp
+        self.m.sp = sp
         return sp
 
     def __len__(self):
@@ -167,3 +170,20 @@ class Stk(object):
     def clearMemory(self):
         self.m.sp = self.m.end
         self.tys = Stack()
+
+
+def testStk():
+    size = 0x100
+    mem = Mem(size)
+    stk = Stk(MStk.new(size), mem, getStart=lambda: 1)
+
+    try: stk.pop(U8); assert False
+    except StkUnderflowError: pass
+
+    stk.push(U8(3))
+    stk.tys.assertEq([U8])
+
+    assert 3 == stk.fetchv(0, U8)
+    assert 3 == stk.popv(U8)
+
+
