@@ -105,7 +105,7 @@ The registers are:
 > Note that implementors don't have to actually store these in hardware
 > registers: they can just as easily go in non-accessible memory.
 
-By pulling the offset from the immediate, it is possible to get a SP+offset in
+By pulling the offset from the immediate, it is possible to get a LP+offset in
 a single fu16 instruction. This dramatically reduces the execution time
 of calling functions, where you frequently want to pass pointers to the local
 stack.
@@ -181,10 +181,10 @@ Definitions:
 ```
 x bin Name    Top       Second  Store     Description
 --------------------------------------------------------------
-0 000 SRLP    WS0       WS1     ST(SP+IM) StoRe Locals Pointer
+0 000 SRLP    WS0       WS1     ST(LP+IM) StoRe Locals Pointer
 1 001 SRCP    WS0       WS1     ST(CP+IM) StoRe to seCtor Ptr offset
 2 010 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
-3 011 FTLP    FT(SP+IM) WS0     WS        FeTch Locals Pointer
+3 011 FTLP    FT(LP+IM) WS0     WS        FeTch Locals Pointer
 4 100 FTCP    FT(CP+IM) WS0     WS        FeTch from seCtor Ptr offset
 5 101 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
 6 110 IMWS    IM        WS0     WS        IMmediate Working Stack
@@ -235,7 +235,7 @@ Some constraints on jump modes:
 *Special Operations*:
 
 Operations modify what will be Stored. If Store is WS the result will
-be pushed to the stack, if the store is `S(SP+IM)` then the result will
+be pushed to the stack, if the store is `S(LP+IM)` then the result will
 instead go to the immediate offset of the stack pointer.
 
 Store operations ignore `size` to pull the addr as a `Ptr` size. They
@@ -328,10 +328,10 @@ depends on endianness (see Alignment section for details).
 ### Mem
 Below is the fu16 description and what it instead does in fu8.
 
-- SRLP: Store WS0 at `SP+IM`
+- SRLP: Store WS0 at `LP+IM`
 - SRCP: Store WS0 at `CP+IM`
 - SROI: causes trap in fu8
-- FTLP: Fetch value at `SP+IM` onto WS
+- FTLP: Fetch value at `LP+IM` onto WS
 - FTCP: Fetch value at `CP+IM` onto WS
 - FTOI: causes trap in fu8
 - IMWS: push IMM onto WS
