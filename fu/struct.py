@@ -2,14 +2,23 @@ from dataclasses import dataclass
 from .imports import *
 import inspect
 
-def fsizeof(ty: 'Ty'):
-    if isinstance(ty, Primitive) or (
-            inspect.isclass(ty) and issubclass(ty, Primitive)):
-        return sizeof(ty)
-    elif isinstance(ty, Struct):
-        return ty.size
-    else:
-        raise ValueError(f"Has no size: {ty}")
+def tyOf(v: any) -> "Ty":
+    """Return the "type". If a primitive, this will be a class object. If a
+    struct, it will be a Struct instance.""" 
+    if inspect.isclass(v) and issubclass(v, Primitive):
+            return v
+    elif isinstance(v, Primitive):
+        return v.__class__
+    elif isinstance(v, Struct):
+        return v
+    raise TypeError("Not a Ty: {}".format(v))
+
+def sizeof(v: 'Ty'):
+    if isinstance(v, Struct): return v.size
+    if (isinstance(v, Primitive)
+          or inspect.isclass(v) and issubclass(v, Primitive)):
+        return ctypes.sizeof(v)
+    raise TypeError("Not a Ty: {}".format(v))
 
 def alignment(size):
     """Return the required alignment for a variable of size."""
@@ -24,9 +33,16 @@ def needAlign(ptr, size):
     if mod: return amnt - mod
     return 0
 
+def testNeedAlign():
+    assert 0 == needAlign(0, 4)
+    assert 1 == needAlign(3, 4)
+    assert 2 == needAlign(2, 4)
+    assert 3 == needAlign(1, 4)
+    assert 0 == needAlign(0, 4)
+
 def alignTy(ptr: int, ty: "Ty"):
     """Calculate correct ptr for dataTy."""
-    size = fsizeof(ty)
+    size = sizeof(ty)
     return ptr + needAlign(ptr, size)
 
 def calcOffsetsAndSize(fields: List["Ty"]):
@@ -35,7 +51,7 @@ def calcOffsetsAndSize(fields: List["Ty"]):
     for ty in fields:
         offset = alignTy(offset, ty)
         offsets.append(offset)
-        offset += fsizeof(ty)
+        offset += sizeof(ty)
     return offsets, offset
 
 @dataclass
@@ -47,17 +63,34 @@ class Field:
 
 def assertAllStkTypes(tys):
     for ty in tys:
-        assert fsizeof(ty) in {USIZE, 2 * USIZE}, ty
+        assert sizeof(ty) in {USIZE, 2 * USIZE}, ty
 
 def assertNoStks(tys):
     for ty in tys:
         if isinstance(ty, Struct) and ty.isStk:
             raise TypeError("Cannot have isStk structs inside structs.")
 
+def _structToPrimitive(struct):
+    """Allow struct types which are the correct size to go on the stack/etc.
+    """
+    if struct.size > 4 or struct.size == 3: return None
+    newFields = []
+    for (name, ty) in zip(struct.names, struct.fields):
+        if isinstance(ty, Struct):
+            ty = ty.primitive
+        else: assert issubclass(ty, Primitive)
+        newFields.append((name, ty))
+    return type(struct.name, (ctypes.Structure,), {'_fields_': newFields})
+
+
+# Global registry to get the Struct associated with a primitive.
+PRIMITIVE_TO_STRUCT = {}
+
 class Struct:
     """Create a struct data type from core types."""
 
-    def __init__(self, fields: List[Tuple[str, Primitive]], isStk=False):
+    def __init__(self, name: str, fields: List[Tuple[str, "Ty"]], isStk=False):
+        self.name = name
         self.isStk = isStk
         self.names = list(map(operator.itemgetter(0), fields))
         self.tys = list(map(operator.itemgetter(1), fields))
@@ -76,9 +109,12 @@ class Struct:
             if name is None:
                 continue
             self.fieldMap[name] = field
-
         if isStk: assertAllStkTypes(self.tys)
         else: assertNoStks(self.tys)
+
+        self.primitive = _structToPrimitive(self)
+        if self.primitive:
+            PRIMITIVE_TO_STRUCT[self.primitive] = self
 
     def field(self, key: str):
         """Return the field given a '.' separated key.
@@ -145,7 +181,7 @@ def testStruct():
         ('a5', U64),
         ('a6', U8),
     ]
-    a = Struct(aFields)
+    a = Struct("A", aFields)
     assert 0 == a['a1'].offset
     assert 4 == a['a2'].offset
     assert 6 == a['a3'].offset
@@ -160,7 +196,7 @@ def testStruct():
         ('u32', U32),
     ]
 
-    b = Struct(bFields)
+    b = Struct("B", bFields)
     assert 0 == b['u8'].offset
     assert 4 == b['a'].offset
     assert 4 == b.offset('a.a1')
@@ -200,7 +236,8 @@ def testStruct():
     assert C_B.u32.offset == b['u32'].offset
 
 
-Void = Struct([])
+
+Void = Struct("Void", [])
 
 class Ref(Struct):
     def __init__(self, ty, primitiveTy):
@@ -210,8 +247,6 @@ class Ref(Struct):
     @property
     def ptr(self):
         return self['ptr']
-
-
 
 
 class FnStruct(Struct):
@@ -247,4 +282,3 @@ class Fn(object):
         self.stackInp, self.stackRet = stackInp, stackRet
 
 Ty = Union[Primitive, Struct, Ref]
-

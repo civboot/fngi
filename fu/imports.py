@@ -24,7 +24,6 @@ BIG_ENDIAN = sys.byteorder != 'little'
 # technically private.
 Primitive = ctypes.c_uint8.__bases__[0].__bases__[0]
 
-from ctypes import sizeof
 from ctypes import c_bool as Bool
 from ctypes import c_uint8 as U8
 from ctypes import c_uint16 as U16
@@ -39,12 +38,13 @@ from ctypes import c_double as F64
 
 # Absolute Pointers
 ASz = U32  # usize
-ASIZE = sizeof(ASz)
+ASIZE = ctypes.sizeof(ASz)
 APtr = ASz  # Absolute pointer
 Ptr = APtr
 
 
 # seCtor pointers
 CSz = U16
+CSIZE = ctypes.sizeof(CSz)
 CPtr = CSz
 

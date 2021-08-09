@@ -14,80 +14,11 @@ from .uxn import *
 from .struct import Ty, RefTy, FnStructTy, Fn, fsizeof
 
 
-# Most of our code is going to have some basic tests inline.  Tests can be run
-# by installing pytest and running it.
 
-def needAlign(size: int) -> int:
-    """Return padding bytes needed to align a value of size."""
-    if size % USIZE == 0:
-        return 0
-    return USIZE - (size % USIZE)
-
-def testNeedAlign():
-    assert 0 == needAlign(0)
-    assert 1 == needAlign(1)
-    assert 0 == needAlign(2)
-    assert 1 == needAlign(3)
-    assert 0 == needAlign(4)
-
-# Types in the compiler are represented by a class. We sometimes use
-# uninstantiated classes to represent types, mostly because for
-# structs that is the only way python permits using ctypes.Structure subclasses.
-# For other types we typically use instantiated classes.
-#
-# Types are registered with the global ENV.tys dictionary for lookup during
-# compilation. For the stage0 fngi compiler we are building here, there are no
-# namespaces or modules for us to worry about.
-#
-# There are two ways to pass data in/out of functions: as data stack values
-# or as a structure. We will get into this more later, but the difference
-# between these is that data stack values are passed direcly on the
-# Env.ds (what most Native functions use) whereas struct values
-# are done entirely on env.returnStack (i.e. where local variables are stored).
-#
-# The goal with this is to more closely resemble real assembly or a lower-level
-# language, whether that be RISC/CISC registers in assembly or stack-based
-# assembly.
-
-def fieldOffset(ty: DataTy, field: str):
-    return getattr(getDataTy(ty), field).offset
-
-def fieldSize(ty: DataTy, field: str):
-    return getattr(getDataTy(cls), field).size
-
-
-def getDataTy(v: Any) -> DataTy:
-    if isinstance(v, DataTy):
-        return v.__class__
-    elif inspect.isclass(v):
-        if issubclass(v, DataTy):
-            return v
-        elif issubclass(v, RefTy):
-            return Ptr
-    else:
-        raise TypeError("Not representable in memory: {}".format(v))
-
-
-# We will define more types later. But first let's define how our data is
-# stored.
-#
-# Most data in fngi is passed in either the ds or is a pointer into
-# global memory.
-#
-# The ds is NOT within global memory, and therefore cannot have a
-# pointer into it. This is because on some platforms it is stored in registers
-# (or a register stack) instead of memory.
-#
-# The other data regions (returnStack, heap, allocators, etc) are all slices of the
-# global memory region (ENV.heap.memory).
-
-# 4KiB is the size of a "block" of memory, the maximum amount that
-# can be allocatd without growing the heap.
 BLOCK_PO2 = 12
 BLOCK_SIZE = 2**BLOCK_PO2
 
 KiB = 2**10
-MiB = 2**20
 NATIVE_STACK_SIZE = 256
 CODE_HEAP_SIZE = 8 * KiB
 BLOCKS_ALLOCATOR_SIZE = 10 * BLOCK_SIZE # 40 KiB
@@ -99,53 +30,6 @@ BlocksArray = BlockIdx * BLOCKS_TOTAL # arr[BLOCKS_TOTAL BlockIdx]
 BLOCKS_INDEXES_SIZE = BLOCKS_TOTAL * sizeof(BlockIdx)
 
 
-class Memory(object):
-    def __init__(self, size):
-        self.data = ctypes.create_string_buffer(size)
-        self.data[0:2] = b'\xDE\xAD' # address 0 is "0xDEAD"
-
-    def getPtrTo(self, value: DataTy) -> int:
-        """Get the index of the value within self.data.
-
-        The definition of Ptr is this index."""
-        return ctypes.addressof(value) - ctypes.addressof(self.data)
-
-    def get(self, ptr: int, ty: DataTy, copy=False):
-        ty = getDataTy(ty)
-        self.checkRange(ptr + sizeof(ty))
-        return ty.from_buffer(self.data, ptr)
-
-    def getCopy(self, ptr: int, ty: DataTy):
-        ty = getDataTy(ty)
-        self.checkRange(ptr + sizeof(ty))
-        return ty.from_buffer_copy(self.data, ptr)
-
-    def set(self, ptr, value: DataTy):
-        size = sizeof(value)
-        self.checkRange(ptr, size)
-        self.data[ptr:ptr + size] = bytes(value)
-
-    def setGet(self, ptr, value: DataTy):
-        self.set(ptr, value)
-        self.get(ptr, value.__class__)
-
-    def getArray(self, ptr: int, ty: DataTy, length: int):
-        arrayTy = ty * length
-        return self.get(ptr, arrayTy)
-
-    def setArray(self, ptr: int, values: List[DataTy]):
-        if len(values) == 0:
-            return
-
-        ty = getDataTy(values[0])
-        arrayTy = ty * len(values)
-        arrayValue = arrayTy(*values)
-        self.set(ptr, arrayValue)
-
-    def checkRange(self, ptr: int, size: int = 0):
-        if ptr <= 0 or (ptr + size) > len(self.data):
-            raise IndexError("ptr={} memorySize={}".format(
-                ptr, len(self.data)))
 
 
 class MManBase(object):
@@ -280,17 +164,6 @@ class NativeStack(object):
 
 
 
-class MStack(ctypes.Structure):
-    """A stack as represented in memory."""
-    _fields_ = [
-        ('start', Ptr), # the start of stack's memory
-        ('end', Ptr),   # the end of stack's memory
-        ('sp', Ptr),  # the stack pointer
-    ]
-
-    @classmethod
-    def new(cls, start, end):
-        return cls(start, end, end)
 
 
 
