@@ -41,8 +41,8 @@ def createEnv(
     rsWU = createRegStk(rsSize)
 
     mem = Mem(memSize)
-    heap = Heap(MHeap.new(memSize), mem, None)
-    ls = Stk(MStk(memSize), mem, getStart=heap.getHeap)
+    heap = Heap(MHeap.new(1), mem, None)
+    ls = Stk(MStk.new(memSize), mem, getStart=heap.getHeap)
     heap.getEnd = ls.getSp
 
     return FuEnv(
