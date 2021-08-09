@@ -52,7 +52,7 @@ class Heap(object):
     def push(self, value: Primitive, align=True) -> Primitive:
         """Push a Primitive then return it's mutable reference inside memory"""
         ptr = self.grow(ctypes.sizeof(value), align)
-        return self.memory.storeFetch(ptr, value)
+        return self.mem.storeFetch(ptr, value)
 
 
 def testHeap():

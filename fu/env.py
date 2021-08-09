@@ -4,19 +4,20 @@ from .stack import Stk, MStk
 from .heap import Heap, MHeap
 
 KiB = 2**10
+TEST_MEM_SIZE = 4 * KiB
 WS_SIZE = 1 * KiB
 RS_SIZE = 256
 
 @dataclass
 class FuEnv(object):
-    ws: Stk
-    rs: Stk
+    ws: Stk  # working stack
+    rs: Stk  # return stack
     rsSc: Stk # parallel sector tracker for rs
     rsWU: Stk # parallel Ws Update tracker for rs
 
     mem: Mem
     heap: Heap
-    ls: Stk
+    ls: Stk # local stack
 
     cp: int = 0  # seCtor Ptr
     ep: int = None  # Execution Ptr
@@ -51,7 +52,7 @@ def createRegStk(size):
     return Stk(MStk.new(size), Mem(size, minPtr=0), getStart=_returnZero)
 
 def createEnv(
-        memSize=4096,
+        memSize=TEST_MEM_SIZE,
         wsSize=WS_SIZE,
         rsSize=RS_SIZE,
     ) -> FuEnv:
@@ -84,3 +85,14 @@ def testEnv():
     assert 0x3004 == addrR.value
     assert 0x10 == u
 
+    lp = env.lp
+    assert lp == TEST_MEM_SIZE
+
+    env.ls.push(U32(42))
+    assert lp - 4 == env.lp
+
+    env.heap.push(U32(42))
+    assert env.heap.m.heap == 8
+
+    assert env.lp == env.heap.getEnd()
+    assert env.ls.getStart() == env.heap.m.heap
