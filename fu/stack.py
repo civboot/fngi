@@ -84,18 +84,17 @@ def testStack():
 class MStk(ctypes.Structure):
     """A fu stack as represented in memory."""
     _fields_ = [
-        ('start', APtr), # the start of stack's memory
         ('end', APtr),   # the end of stack's memory
         ('sp', APtr),  # the stack pointer
     ]
 
     @classmethod
-    def new(cls, start, end):
-        return cls(start, end, end)
+    def new(cls, end):
+        return cls(end, end)
 
-def _check(m, sp, offset, size, ty=None, tys=None):
-    if sp + offset >= m.end:
-        raise StkUnderflowError(f"{hex(sp)}+{hex(offset)} >= {hex(m.end)}")
+def _check(m, start, sp, offset, size, ty=None, tys=None):
+    if sp + offset + size >= m.end:
+        raise StkUnderflowError(f"{hex(sp)}+{hex(offset)}+{hex(size)} >= {hex(m.end)}")
     if sp < m.start:
         raise StkUnderflowError(f"{hex(sp)} < {hex(m.start)}")
     if ty and ctypes.sizeof(ty) != ctypes.sizeof(tys[0]):
@@ -104,15 +103,18 @@ def _check(m, sp, offset, size, ty=None, tys=None):
 
 class Stk(object):
     """A fu stack."""
-    def __init__(self, mstk: MStk, mem: Mem):
+    def __init__(self, mstk: MStk, mem: Mem, getStart=None):
         self.m = mstk
         self.mem = mem
         self.totalSize = mstack.end - mstack.start
         self.tys = Stack()
+        self.getStart = getStart  # heap grows up, modifying the start.
+
+    def getSp(self): return self.m.sp  # used in env.heap implementation
 
     def load(self, offset: int, ty: Primitive):
         size = ctypes.sizeof(ty)
-        _check(self.m, self.sp, offset, size)
+        _check(self.m, self.start(), self.sp, offset, size)
         return self.mem.load(sp, ty)
 
     def loadv(self, offset: int, ty: Primitive):
@@ -120,13 +122,13 @@ class Stk(object):
 
     def store(self, offset: int, value: Primitive):
         size = ctypes.sizeof(ty)
-        _check(self.m, self.sp, offset, size)
+        _check(self.m, self.start(), self.sp, offset, size)
         self.mem.store(offset, value)
 
     def pop(self, ty: Primitive):
         size = ctypes.sizeof(ty)
         sp = self.sp + size
-        _check(self.m, sp, 0, size, ty, self.tys)
+        _check(self.m, self.start(), sp, 0, size, ty, self.tys)
         out = self.mem.load(sp, ty)
         self.sp = sp
         return out
@@ -134,29 +136,26 @@ class Stk(object):
     def push(self, value: Primitive):
         size = ctypes.sizeof(value)
         sp = self.sp - size
-        _check(self.m, sp, 0, size, type(value), self.tys)
+        _check(self.m, self.start(), sp, 0, size, type(value), self.tys)
         self.mem.store(sp, value)
         self.sp = sp
 
     def shrink(self, st: Ty):
         size = st.size + needAlign(st)
         sp = self.sp + size
-        _check(self.m, sp, 0, size, st, self.tys)
+        _check(self.m, self.start(), sp, 0, size, st, self.tys)
         self.sp = sp
         return sp
 
     def grow(self, st: Ty):
         size = st.size + needAlign(st)
         sp = self.sp - size
-        _check(self.m, sp, 0, size, st, self.tys)
+        _check(self.m, self.start(), sp, 0, size, st, self.tys)
         self.sp = sp
         return sp
 
     def __len__(self):
         return self.m.end - self.m.sp
-
-    def __str__(self):
-        return f'Stk[used={len(self)} total={self.totalSize}]'
 
     def __repr__(self):
         offset = 0

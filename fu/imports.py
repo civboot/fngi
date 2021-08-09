@@ -36,6 +36,8 @@ from ctypes import c_int64 as I64
 from ctypes import c_float as F32
 from ctypes import c_double as F64
 
+class Trap(Exception): pass
+
 # Absolute Pointers
 ASz = U32  # usize
 ASIZE = ctypes.sizeof(ASz)

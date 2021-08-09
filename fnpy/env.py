@@ -18,8 +18,6 @@ from .struct import Ty, RefTy, FnStructTy, Fn, fsizeof
 BLOCK_PO2 = 12
 BLOCK_SIZE = 2**BLOCK_PO2
 
-KiB = 2**10
-NATIVE_STACK_SIZE = 256
 CODE_HEAP_SIZE = 8 * KiB
 BLOCKS_ALLOCATOR_SIZE = 10 * BLOCK_SIZE # 40 KiB
 # 14k is left for heap
