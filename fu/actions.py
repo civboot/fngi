@@ -1,7 +1,9 @@
 from .imports import *
 from .env import FuEnv, createEnv
-from .stack import Ty
+from .stack import Ty, StkUnderflowError
 from .instr import Instr, MemM, JumpM, Op
+
+class ExitFuError(RuntimeError): pass
 
 def _notImplemented(env: FuEnv, instr: Instr, ty: Ty, imm: Primitive):
     raise NotImplementedError(f'{instr}')
@@ -79,7 +81,12 @@ def _CNW(env, instr, ty, imm):
 # - shrink WS by grown amount
 # - jump to address
 def _RET(env, instr, ty, imm):
-    aPtr, wsGrow = env.popr()
+    try:
+        aPtr, wsGrow = env.popr()
+    except StkUnderflowError:
+        env.setEp(None)
+        raise ExitFuError()
+
     env.ws.shrink(wsGrow)
     env.setEp(aPtr)
 

@@ -2,7 +2,7 @@ from .imports import *
 from .env import FuEnv, createEnv
 from .stack import Ty
 from .instr import Instr, MemM, JumpM, Op
-from .actions import INSTR_ACTIONS
+from .actions import INSTR_ACTIONS, ReturnLastError
 
 def sizeBitsToTy(bits: int):
     """
@@ -53,12 +53,17 @@ def unpackFu8(env: EnvFu, instr: int):
 
 
 def runFu8(env: FuEnv):
-
     while True:
         instrEp = env.ep
+
         instr = env.mem.fetchv(APtr(instrEp), U8)
         env.setEp(ep + INSTR_WIDTH)
         newEp, instr, ty, imm = unpackFu8(env, instr)
         if ep != newEp: env.setEp(newEp)
 
-        INSTR_ACTIONS[instr](env, instr, ty, imm)
+        try: INSTR_ACTIONS[instr](env, instr, ty, imm)
+        except ExitFuError: return
+
+
+def testRunFu8():
+    pass
