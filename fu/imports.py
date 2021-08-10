@@ -56,6 +56,9 @@ CPtr = CSz
 
 class BetterEnum(Enum):
     @classmethod
-    def fromStr(cls, name): return getattr(cls, name)
+    def fromStr(cls, name):
+        out = getattr(cls, name)
+        if not isinstance(out, cls): raise KeyError(name)
+        return out
 
 

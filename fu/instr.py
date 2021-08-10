@@ -65,3 +65,5 @@ def testInstrAPI():
 
     assert Op.DRP == Op(0x05)
     assert Op.DRP == Op.fromStr("DRP")
+
+    assert isinstance(Op.DRP, Op)
