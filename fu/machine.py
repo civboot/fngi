@@ -2,7 +2,7 @@ from .imports import *
 from .env import FuEnv, createEnv
 from .stack import Ty
 from .instr import Instr, MemM, JumpM, Op
-from .actions import INSTR_ACTIONS, ReturnLastError
+from .actions import INSTR_ACTIONS, ExitFuError
 
 def sizeBitsToTy(bits: int):
     """
@@ -20,7 +20,7 @@ def getImm(env, instr, ep, ty=U16):
     imm = env.mem.fetch(APtr(ep), ty)
     return ep + ctypes.sizeof(ty), imm
 
-def unpackFu8(env: EnvFu, instr: int):
+def unpackFu8(env: FuEnv, instr: int):
     ep = env.ep
     imm = None
 
