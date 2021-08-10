@@ -95,29 +95,32 @@ Required devices and ports include:
 - `0x000 stdin`
 - `0x001 stdout`
 - `0x002 stderr` may be the same as stdout on some systems.
-- `0x003 sleep` sleep for microseconds.
-- `0x004 syscall1` a 1-arg linux syscall, may not be supported.
-- `0x005 syscall2` a 2-arg linux syscall, may not be supported.
-- `0x006 syscall3` a 3-arg linux syscall, may not be supported.
-- `0x007 syscall4` a 4-arg linux syscall, may not be supported.
-- `0x008 syscall5` a 5-arg linux syscall, may not be supported.
-- `0x009-08F` reserved
-- `0x080-0FF iodevices` open/operate on file io devices, i.e.
-  files/sockets/etc. May not be supported.
+- `0x003-00F` reserved
+- `0x010 coresystem`
+  - 00 errno
+    - fetch: get errno
+    - store: set errno
+  - 01 clock operations:
+    - `fetch [] -> U32`: get microseconds clock
+    - `fetch U32 -> []`: store: enter sleep mode until clock is >=
+      microseconds.
+  - 02-ED reserved
+  - EE exit
+  - EF-FF reserved
 
-- `0x100 heap manager`: the heap memory manager.
+- `0x011 heap manager`: the heap memory manager.
   - Fetch port 0 `[] -> APtr`: returns the heap current heap ptr.
   - Store port 1 `U32 -> APtr`: grows heap after aligning it. Returns the
     aligned heap ptr.
   - Fetch port 2 `[] -> APtr`: returns the current minimum of the memory.
   - Fetch port 3 `[] -> APtr`: returns the current maximum of the memory.
-- `0x101 block memory manager`: the block memory manager. This may
+- `0x012 block memory manager`: the block memory manager. This may
   be defined by the system or can also be registered. The block manager
   must be able to allocate and free 4KiB blocks of data.
   - Store port 0 (APtr): set the current address of the block manager.
   - Fetch port 1 (APtr): get the current address of the block manager.
 
-- `0x102` a semi-efficient arena allocator of between `ASz*2` (min) and 4KiB (1 block) memory.
+- `0x013` a semi-efficient arena allocator of between `ASz*2` (min) and 4KiB (1 block) memory.
   - 00: get/set primary arena.
     - `load [] -> APtr` returns the current primary arena.
     - `store [arena: APtr] -> []` sets the current primary arena.
@@ -132,8 +135,18 @@ Required devices and ports include:
     - `store [arena: APtr; ptr: APtr; po2: U8]` deallocates the ptr from the specified arena.
   - 04 `load [arena: APtr] -> &Stats`: get pointer to live arena stats such as
     memory used/etc (to be defined).
+- `0x014-100`: reserved
 
-- `0x103-1FF`: reserved
+The following may not be supported on some/most systems:
+- `0x101 syscall1` a 1-arg linux syscall, may not be supported.
+- `0x102 syscall2` a 2-arg linux syscall, may not be supported.
+- `0x103 syscall3` a 3-arg linux syscall, may not be supported.
+- `0x104 syscall4` a 4-arg linux syscall, may not be supported.
+- `0x105 syscall5` a 5-arg linux syscall, may not be supported.
+- `0x106-08F` reserved
+- `0x190-1FF iodevices` open/operate on file io devices, i.e.
+  files/sockets/etc. May not be supported.
+
 - `0x200-3FF`: for arbitrary peripherals, especially for operating systems and
   micro-controllers. Typically this is devided up by:
   - 0x200-20F: SPI devices

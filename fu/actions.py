@@ -51,14 +51,15 @@ def _JIB(env, instr, ty, imm):
 # - pop ptr off of store, conert to APtr using CP if necessary.
 # - fetch 16bit growWs value at ptr.
 # - grow WS by growWs.
-# - push EP+INSTR_WIDTH onto RS, including current CP and amount WS grew.
+# - push EP onto RS, including current CP and amount WS grew.
 # - jump to ptr+2 (skipping WS size)
 def _CALL(env, instr, ty, imm):
-    aPtr = env.aPtr(env.ws.pop(ty))
+    ep = env.ep
 
+    aPtr = env.aPtr(env.ws.pop(ty))
     wsGrow = env.mem.fetchv(env.aPtr(aPtr), U16)
     env.ws.grow(wsGrow)
-    env.pushr(APtr(aPtr.value+INSTR_WIDTH), wsGrow)
+    env.pushr(APtr(ep), wsGrow)
     # note: skipping the U16 we read for stack growth.
     env.setEp(aPtr.value + ctypes.sizeof(U16))
 
@@ -82,6 +83,16 @@ def _RET(env, instr, ty, imm):
     env.ws.shrink(wsGrow)
     env.setEp(aPtr)
 
+
+##########################
+# Operations
+
+def _ADD(env, instr, ty, imm):
+    right = env.ws.popv(ty)
+    left = env.ws.popv(ty)
+    env.ws.push(ty(left + right))
+
+
 INSTR_ACTIONS = {
     # Mem
     MemM.SRLP: _SRLP,
@@ -100,6 +111,38 @@ INSTR_ACTIONS = {
     JumpM.CNW : _CNW,
     JumpM.RET : _RET,
     JumpM.NOJ: _noop,
+
+    # Operations
+    FT: _notImplemented,
+    SR: _notImplemented,
+    DVF: _notImplemented,
+    DVS: _notImplemented,
+    IDN: _notImplemented,
+
+    DRP: _notImplemented,
+    INV: _notImplemented,
+    NEG: _notImplemented,
+    EQZ: _notImplemented,
+    EQZ_NC: _notImplemented,
+
+    DRP2: _notImplemented,
+    OVR: _notImplemented,
+    ADD: _ADD,
+    SUB: _notImplemented,
+    MOD: _notImplemented,
+    MUL: _notImplemented,
+    DIV_U: _notImplemented,
+    DIV_S: _notImplemented,
+    OR: _notImplemented,
+    XOR: _notImplemented,
+    SHL: _notImplemented,
+    SHR: _notImplemented,
+    EQU: _notImplemented,
+    NEQ: _notImplemented,
+    GE_U: _notImplemented,
+    GE_S: _notImplemented,
+    LT_U: _notImplemented,
+    LT_S: _notImplemented,
 }
 
 def testActions():
