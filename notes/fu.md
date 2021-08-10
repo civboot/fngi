@@ -163,7 +163,7 @@ The registers are:
   used for implementation specific uses (like holding temporary values or
   implementing extra stacks).
 - A 1010 reserved
-- B 1011 reserved
+- B 1011 RS: return stack operations, fetch=pop store=push
 - C 1100 EP: the execution pointer register. Writing to will trap.
 - D 1101 AP: the alocator pointer register. This should point to the "global"
   allocator currently being used. The API for such an allocator will be
@@ -274,9 +274,11 @@ from the sector, U32 is an absolute jump.
 The following Jump modes are possible:
 - 0 000 JIB: Jump to Immediate if Bool(store)
 - 1 001 CALL: Call an address
-  - push EP onto RS, including current CP.
-  - fetch 16bit value at store, grow WS by that amount and push onto parallel RS
-  - jump to store+2 (skipping WS size)
+  - pop ptr off of store, conert to APtr using CP if necessary.
+  - fetch 16bit growWs value at ptr.
+  - grow WS by growWs.
+  - push `EP+INSTR_WIDTH` onto RS, including current CP and amount WS grew.
+  - jump to ptr+2 (skipping WS size)
 - 2 010 JST: Jump to STore. Consumes store.
 - 3 011 CNW: Call an address without a working stack update. Does not require
     memory read.
@@ -377,14 +379,10 @@ of fu8 is:
 
 Byte layout:
 ```
-11   | 11   | 1size | jump
-11   | size | X | mem
-size | operation
+11   | 0 | 2b size | 3b jump
+11   | 1 | 2b size | 3b mem
+size | 6b operation
 ```
-
-1size is a 1 bit size value and is one of:
-- 0: 32 bit
-- 1: 16 bit
 
 Like fu16, all immediates must be 16bit EXCEPT mem.IMWS with size=8, which can be
 an 8 bit immediate. 32bit immediates are still not allowed, as they would
@@ -409,12 +407,12 @@ Below is the fu16 description and what it instead does in fu8.
 ### Jump
 Unlike fu16, there are no restrictions on jump instructions in fu8
 
-- NOJ: is a noop in fu8
-- JST: jumps to WS
 - JIB: jumps to IMM if Bool(WS)
 - CALL: calls WS, updating LP appropriately
-- RET: returns
-- CNW: calls WS
+- JST: jumps to WS
+- CNW: calls WS without update to ws growth.
+- RET: return
+- NOJ: is a noop in fu8
 
 ### Operations
 fu8 operations are identical to fu16 ones, except they are always

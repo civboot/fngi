@@ -97,7 +97,10 @@ def _check(m, start, sp, offset, size, ty=None, tys=None):
         raise StkUnderflowError(f"{hex(sp)}+{hex(offset)}+{hex(size)} >= {hex(m.end)}")
     if sp < start:
         raise StkUnderflowError(f"{hex(sp)} < {hex(start)}")
-    if ty and ctypes.sizeof(ty) != ctypes.sizeof(tys[0]):
+
+    if ty and type(ty) == int and ty != tys[0]:
+        raise TypeError(f"{ty} != {tys[0]}")
+    elif ty and ctypes.sizeof(ty) != ctypes.sizeof(tys[0]):
         raise TypeError(f"{ty} != {tys[0]}")
 
 
@@ -142,17 +145,19 @@ class Stk(object):
         self.m.sp = sp
         self.tys.push(type(value))
 
-    def shrink(self, st: Ty):
-        size = st.size + needAlign(st)
+    def shrink(self, growSize: int):
         sp = self.m.sp + size
         _check(self.m, self.getStart(), sp, 0, size, st, self.tys)
+        assert not needAlign(growSize)
+        self.tys.pop()
         self.m.sp = sp
         return sp
 
-    def grow(self, st: Ty):
-        size = st.size + needAlign(st)
-        sp = self.m.sp - size
-        _check(self.m, self.getStart(), sp, 0, size, st, self.tys)
+    def grow(self, growSize: int):
+        sp = self.m.sp - growSize
+        _check(self.m, self.getStart(), sp, 0, size)
+        assert not needAlign(growSize)
+        self.tys.push(growSize)
         self.m.sp = sp
         return sp
 
@@ -163,7 +168,10 @@ class Stk(object):
         offset = 0
         values = []
         for ty in self.tys:
-            values.append(hex(self.fetchv(offset, ty)))
+            if isinstance(ty, int):
+                values.append(f"<{ty} growth>")
+            else:
+                values.append(hex(self.fetchv(offset, ty)))
             offset += ctypes.sizeof(ty)
         return f'Stk{values}'
 

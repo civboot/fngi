@@ -42,12 +42,21 @@ MASK_16 = 0xFFFFFFFF
 
 class Trap(Exception): pass
 
+INSTR_WIDTH = 2
+MAX_U16 = 2**16
+
 # Absolute Pointers
 ASz = U32  # usize
 ASIZE = ctypes.sizeof(ASz)
 APtr = ASz  # Absolute pointer
 Ptr = APtr
 
+def splitAPtr(aPtr: APtr) -> (int, int):
+    """Split an absolute pointer into section and CPtr"""
+    assert type(aPtr) == APtr
+    cp = CPtr(addr.value >> 16)
+    cPtr = CPtr(addr.value & MASK_16)
+    return cp, cPtr
 
 # seCtor pointers
 CSz = U16
@@ -60,5 +69,4 @@ class BetterEnum(Enum):
         out = getattr(cls, name)
         if not isinstance(out, cls): raise KeyError(name)
         return out
-
 

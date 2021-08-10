@@ -6,44 +6,57 @@ from .heap import Heap, MHeap
 KiB = 2**10
 TEST_MEM_SIZE = 4 * KiB
 WS_SIZE = 1 * KiB
-RS_SIZE = 256
+RS_SIZE = KiB // 2
+
+class EPOutOfBounds(IndexError): pass
 
 @dataclass
 class FuEnv(object):
     ws: Stk  # working stack
     rs: Stk  # return stack
-    rsSc: Stk # parallel sector tracker for rs
     rsWU: Stk # parallel Ws Update tracker for rs
 
     mem: Mem
     heap: Heap
     ls: Stk # local stack
 
-    cp: int = 0  # seCtor Ptr
     ep: int = None  # Execution Ptr
+
+    @property
+    def cp(self): return self.ep >> 16  # seCtor Ptr
 
     @property
     def lp(self): return self.ls.m.sp  # Locals Ptr
 
-    def pushr(self, addr: APtr, wsUpdate: int):
-        addrR = CPtr(addr.value & MASK_16)
-        cp = CPtr(addr.value >> 16)
-        u = U16(wsUpdate)
+    def aPtr(self, ptr: Primitive) -> APtr:
+        """Convert a ptr to an absolute pointer."""
+        ty = type(ptr)
+        if ty == APtr: return ptr
+        elif ty == CPtr: return APtr(self.cp + ptr.value)
+        else: raise TypeError(ptr)
 
-        self.rs.push(addrR)
-        self.rsSc.push(cp)
+    def pushr(self, aPtr: APtr, wsGrow: int):
+        assert type(aPtr) == APtr
+        u = U16(wsGrow)
+
+        self.rs.push(aPtr)
         self.rsWU.push(u)
 
     def popr(self) -> Tuple[CPtr, CPtr, int]:
+        # return cp, cPtr, wsGrow
         # Make sure the data is all there.
-        addrR = self.rs.fetch(0, CPtr)
-        cp = self.rsSc.fetch(0, CPtr)
-        u = self.rsWU.fetch(0, U16)
+        aPtr = self.rs.fetch(0, APtr)
+        wsGrow = self.rsWU.fetch(0, U16)
 
         # Update the stacks.
-        self.rs.pop(CPtr); self.rsSc.pop(CPtr); self.rsWU.pop(U16)
+        self.rs.pop(APtr); self.rsWU.pop(U16)
 
-        return (addrR, cp, u.value)
+        return (aPtr, wsGrow.value)
+
+    def setEp(self, newEp: int):
+        if not (1 <= newEp < len(self.mem)):
+            raise EPOutOfBounds("ep out of bounds")
+        self.ep = newEp
 
 
 def _returnZero(): return 0
@@ -59,7 +72,6 @@ def createEnv(
     """Create an Env."""
     ws = createRegStk(wsSize)
     rs = createRegStk(rsSize)
-    rsSc = createRegStk(rsSize)
     rsWU = createRegStk(rsSize)
 
     mem = Mem(memSize)
@@ -68,7 +80,7 @@ def createEnv(
     heap.getEnd = ls.getSp
 
     return FuEnv(
-        ws=ws, rs=rs, rsSc=rsSc, rsWU=rsWU,
+        ws=ws, rs=rs, rsWU=rsWU,
         mem=mem, heap=heap, ls=ls,
     )
 
@@ -80,9 +92,8 @@ def testEnv():
     assert 0x00442211 == env.ws.popv(I32)
 
     env.pushr(APtr(0x10023004), 0x10)
-    addrR, cp, u = env.popr()
-    assert 0x1002 == cp.value
-    assert 0x3004 == addrR.value
+    aPtr, u = env.popr()
+    assert 0x10023004 == aPtr.value
     assert 0x10 == u
 
     lp = env.lp
