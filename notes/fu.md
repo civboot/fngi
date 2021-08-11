@@ -18,6 +18,44 @@ However, uxn taught me several things:
 So, the fu virtual machine and bytecode is now born. Fortunately I've actually
 thought a lot about this from my experience thinking about the J1.
 
+## Some thoughts on future direction of fu (notes)
+
+- I'm missing indexed globals, functions and jumpBlocks. They are pretty much
+  required for code generation and combining
+
+- Fu8 is the "library" format. It is intended to be completely cross-platform
+  and aid in gluing multiple libraries together and even enable system linking
+  and machine asm generation.
+
+- I had thought you could easily convert the indexed operations into a more
+  "native" one, but you really can't... At least not with blobs having
+  pointers... Unless blobs have types? They totally can, but this is
+  non-trivial.
+  - If its going to be converted into native code, you're going to have to be
+    able to compile blobs that have references to other blobs... Or not allow
+    references inside of const blobs...
+
+- For the non-IMWS and nonLocal immeditates, the immediate can encode it's
+  index type in the high bits as import/module global/fn/jumpBlock. Leaves 13
+  bits for 8192 indexes. Then the operation ALWAYS gets converted to an APtr or
+  the specified ty by the machine.
+
+- 32 bit pointers can also refer to indexes. The 2 high bits being non-zero
+  specifies that the other high 12 bits are a moduleIdx, and the low 16 are a
+  typed index. Leaves 1GiB for other memory.
+  - For 16 bit systems there is only 1 Idx module space.
+
+- The binary has tables of tys, fns, globals, imports+blobs.
+  - Fns are a cstr name, followed by a ty (inp/out) followed by an sized U16
+    array of offsets for jumps to use, followed by the grow size, followed by
+    the code. The compiler slurps this up, keeps track of fn location and
+    offset array pointers for when local jumps happen.
+  - Globals are ordered by type with the locations of transitions specified.
+    They are accessed by indexs.
+  - Blobs are part of the globals index space. At their start is a sized array
+    of offsets for them by index. The whole thing gets copied directly into
+    memory.
+
 ## Stacks
 The following are considered "register stacks", meaning they can be updated
 simulationiously with memory read/writes or even with eachother.
