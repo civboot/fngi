@@ -1,19 +1,11 @@
 from .imports import *
+from .fu import *
 from .env import FuEnv, createEnv
 from .stack import Ty
 from .instr import Instr, MemM, JumpM, Op
 from .actions import INSTR_ACTIONS, ExitFuError
 
-def sizeBitsToTy(bits: int):
-    """
-    0: 32bit    1: 16bit
-    3: 8bit     4: undefined
-    """
-    if bits == 0: return U32
-    elif bits == 1: return U16
-    elif bits == 3: return U8
-    else: raise Trap(f"size {bits}")
-
+INSTR_WIDTH = 1
 
 def getImm(env, instr, ep, ty=U16):
     """Get the immediate associated with an ep."""

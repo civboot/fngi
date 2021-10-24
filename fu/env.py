@@ -22,6 +22,8 @@ class FuEnv(object):
 
     ep: int = None  # Execution Ptr
 
+    ptrTy = U16
+
     @property
     def cp(self): return self.ep >> 16  # seCtor Ptr
 
@@ -57,6 +59,29 @@ class FuEnv(object):
         if not (1 <= newEp < len(self.mem)):
             raise EPOutOfBounds("ep out of bounds")
         self.ep = newEp
+
+    def popImm(self):
+        """Pop an immediate value from the execution pointer."""
+        ep = self.ep
+        out = self.mem.fetchv(ep, U16)
+        self.setEp(ep + 2)
+        return out
+
+    def fetchCp(self, ptrOffset: int, ty: Primitive):
+        """Fetch from the sector pointer offset."""
+        return self.mem.fetchv(self.cp + ptrOffset, ty)
+
+    def storeCp(self, ptrOffset: int, value: Primitive):
+        """Fetch from the sector pointer offset."""
+        return self.mem.store(self.cp + ptrOffset, value)
+
+    def fetchLp(self, ptrOffset: int, ty: Primitive):
+        """Fetch from the sector pointer offset."""
+        return self.mem.fetchv(self.lp + ptrOffset, ty)
+
+    def storeLp(self, ptrOffset: int, value: Primitive):
+        """Fetch from the sector pointer offset."""
+        return self.mem.store(self.lp + ptrOffset, value)
 
 
 def _returnZero(): return 0

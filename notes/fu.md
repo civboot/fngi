@@ -176,17 +176,17 @@ Required devices and ports include:
 - `0x014-100`: reserved
 
 The following may not be supported on some/most systems:
-- `0x101 syscall1` a 1-arg linux syscall, may not be supported.
-- `0x102 syscall2` a 2-arg linux syscall, may not be supported.
-- `0x103 syscall3` a 3-arg linux syscall, may not be supported.
-- `0x104 syscall4` a 4-arg linux syscall, may not be supported.
-- `0x105 syscall5` a 5-arg linux syscall, may not be supported.
+- `0x101 syscall1` a 1-arg linux syscall
+- `0x102 syscall2` a 2-arg linux syscall
+- `0x103 syscall3` a 3-arg linux syscall
+- `0x104 syscall4` a 4-arg linux syscall
+- `0x105 syscall5` a 5-arg linux syscall
 - `0x106-08F` reserved
 - `0x190-1FF iodevices` open/operate on file io devices, i.e.
   files/sockets/etc. May not be supported.
 
 - `0x200-3FF`: for arbitrary peripherals, especially for operating systems and
-  micro-controllers. Typically this is devided up by:
+  micro-controllers. Typically this is divided up by:
   - 0x200-20F: SPI devices
   - 0x210-21F: I2C devices
   - 0x220-22F: UART devices
@@ -215,20 +215,15 @@ The registers are:
   implementing extra stacks).
 - A 1010 reserved
 - B 1011 RS: return stack operations, fetch=pop store=push
-- C 1100 EP: the execution pointer register. Writing to will trap.
+- C 1100 EP: the execution pointer register. Writing to it will trap.
 - D 1101 AP: the alocator pointer register. This should point to the "global"
   allocator currently being used. The API for such an allocator will be
   implementation specific.
-- E 1110 CP: the CPctor ptr.
-- F 1111 LP: the Locals ptr register. Writing to will trap.
+- E 1110 CP: the seCtorPtr.
+- F 1111 LP: the LocalsPtr register. Writing to will trap.
 
 > Note that implementors don't have to actually store these in hardware
 > registers: they can just as easily go in non-accessible memory.
-
-By pulling the offset from the immediate, it is possible to get a LP+offset in
-a single fu16 instruction. This dramatically reduces the execution time
-of calling functions, where you frequently want to pass pointers to the local
-stack.
 
 ## Memory Operations
 fu16 supports 16 bit memory access and function calls through the use
@@ -273,14 +268,14 @@ the instruction requires an IM. It can be interpreted either signed or unsigned
 depending on the operation.
 
 Only 16bit immediates are supported. 32bit constants can be pushed to the stack
-by LoaDing them from sector memory or pushing two 16bit constants. The former
-is typically more compact, while the later can be faster on memory-bottlenecked
-systems. Sector reads are typically preferred.
+by LoaDing them from sector memory or pushing two 16bit constants and using
+math to join them. The former is typically more compact, while the later can be
+faster on due to cache coherency.
 
 ### Size
 The size affects the type of opcode performed. For instance ADD8 will add two
 8bit numbers, ADD16 will add two 16bit numbers. Certain components of
-operations, like addresses, are unnaffected by size.
+operations, like addresses and device operations, are unnaffected by size.
 
 - 0: 32bit
 - 1: 16bit
@@ -288,7 +283,45 @@ operations, like addresses, are unnaffected by size.
 - 4: undefined
 
 ### Mem
-Definitions:
+
+All memory operations are in the table below. Keep reading for
+further information.
+
+```
+  bin Name    Top       Second  Store     Description
+--------------------------------------------------------------
+0 000 SRLP    WS0       WS1     ST(LP+IM) StoRe LocalsPtr
+1 001 SRCP    WS0       WS1     ST(CP+IM) StoRe to seCtorPtr offset
+2 010 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
+3 011 FTLP    FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
+4 100 FTCI    FT(CP+IM) WS0     WS        FeTch from seCtorPtr offset
+5 101 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
+6 110 IMWS    IM        WS0     WS        IMmediate Working Stack
+7 111 WS      WS0       WS1     WS        Working Stack
+```
+
+The Mem bits define how memory is used for the operation. There are 8
+possibilities, describing them in reverse order (simplest to most complex):
+- WS: WS means "Working Stack". All values are gotten from the WS and values
+  are pushed to the working stack.
+- IMWS: IM means "IMmediate". IMWS uses the 16bit immedaite value (after the
+  current operation) as the "top" value and the working stack as the "second".
+  It stores it's value on the working stack.
+- FTOI: means "FeTch Operate Immediate". It fetches the value at the address
+  on the working stack and operates on it using the immediate value.
+- FTCI: means "FeTch seCtor pointer Immediate". It fetches from immediate
+  with an offset of the sector pointer. It stores on the working stack.
+- FTLP: means "FeTch LocalsPtr". It uses the immediate as the offset to
+  fetch from the function locals. It stores on the working stack.
+- SROI: means "StoRe Operate Immediate". It uses the immediate value for
+  the operation and uses WS1 as the "second". It stores the value
+  at the address stored in WS0.
+- SRCP: means "StoRe seCtorPtr". It uses the WS for the operation but then
+  stores at the immediate value offset by the sector pointer.
+- SRLP: means "StoRe LocalsPtr". It uses the WS for the operation but
+  stores at the immediate value offset by the function locals.
+
+Cheatsheat for above table:
 - FT(CP+IM) means "fetch CP+IM" aka "fetch sector + immediate" aka use the
   value at the immediate address in the specified sector. ST(...) means "store"
   at that address.
@@ -298,22 +331,10 @@ Definitions:
 - Storing to the WS means pushing values to the top of the WS. Some operations
   may have also consumed 1 or more values from the WS.
 
-```
-x bin Name    Top       Second  Store     Description
---------------------------------------------------------------
-0 000 SRLP    WS0       WS1     ST(LP+IM) StoRe Locals Pointer
-1 001 SRCP    WS0       WS1     ST(CP+IM) StoRe to seCtor Ptr offset
-2 010 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
-3 011 FTLP    FT(LP+IM) WS0     WS        FeTch Locals Pointer
-4 100 FTCP    FT(CP+IM) WS0     WS        FeTch from seCtor Ptr offset
-5 101 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
-6 110 IMWS    IM        WS0     WS        IMmediate Working Stack
-7 111 WS      WS0       WS1     WS        Working Stack
-```
 
-### Jump
+### Jmp
 
-A Jump involves:
+A Jmp (Jump) involves:
 - Seting EP to the address
   - If the address is 16bit then EP = CP+address
   - If the address is 32bit then update CP to the new sector
@@ -325,7 +346,7 @@ from the sector, U32 is an absolute jump.
 The following Jump modes are possible:
 - 0 000 JIB: Jump to Immediate if Bool(store)
 - 1 001 CALL: Call an address
-  - pop ptr off of store, conert to APtr using CP if necessary.
+  - pop ptr off of store, convert to APtr using CP if necessary.
   - fetch 16bit growWs value at ptr.
   - grow WS by growWs.
   - push `EP+INSTR_WIDTH` onto RS, including current CP and amount WS grew.
@@ -363,7 +384,7 @@ instead go to the immediate offset of the stack pointer.
 Store operations ignore `size` to pull the addr as a `Ptr` size. They
 can not be used with CALL, as that requires a memory operation.
 - `00 000000 FT {addr: Ptr} -> value` load. 
-  - Can only be used with mem=WS
+  - Can only be used with mem of {WS}
 - `01 000001 SR {value; addr: Ptr}` store. Note that the address is Second,
   allowing for storing an IMM value with IMWS.
   - Can only be used with mem of {WS, IMWS}
@@ -381,10 +402,10 @@ Unary: only top is used or consumed for these.
 - `EQZ`: 1 if TOP=0, else 0
 - `EQZ_NC`: 1 if TOP=0, else 0. Do not consume Top.
 
-Binary operations are in syntax {r; l} (r i.e. right is at top of stack). This
+Binary operations are in syntax {l; r} (r i.e. right is at top of stack). This
 is so that when fngi-like languages compile them `a+b` gets compiled as
 `push$a; push$b; add[T]$()`:
-- `DRP2` drop 2. Consume both top and second and store neither
+- `DRP2` drop 2. Consume both top and second and store neither.
 - `OVR` do not consume top or second, store second
 - `ADD` `l+r`
 - `SUB` `l-r`
@@ -450,7 +471,7 @@ Below is the fu16 description and what it instead does in fu8.
 - SRCP: Store WS0 at `CP+IM`
 - SROI: causes trap in fu8
 - FTLP: Fetch value at `LP+IM` onto WS
-- FTCP: Fetch value at `CP+IM` onto WS
+- FTCI: Fetch value at `CP+IM` onto WS
 - FTOI: causes trap in fu8
 - IMWS: push IMM onto WS
 - WS: causes NOOP in fu8

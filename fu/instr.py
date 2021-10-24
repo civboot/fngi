@@ -2,12 +2,22 @@ from .imports import *
 
 class Instr(BetterEnum): pass
 
+def instrSizeTy(instrBits: int):
+    """
+    0: 32bit    1: 16bit
+    3: 8bit     4: undefined
+    """
+    if bits == 0: return U32
+    elif bits == 1: return U16
+    elif bits == 3: return U8
+    else: raise Trap(f"size {bits}")
+
 class MemM(Instr):  # Mem Mode
     SRLP = 0x0
     SRCP = 0x1
     SROI = 0x2
     FTLP = 0x3
-    FTCP = 0x4
+    FTCI = 0x4
     FTOI = 0x5
     IMWS = 0x6
     WS   = 0x7
