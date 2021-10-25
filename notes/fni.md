@@ -1,12 +1,13 @@
-# fun: a fu language
+# fni: a fu language
 
-Fun is a forth-like language that builds on fu directly.
+`fni` is a forth-like language that builds on fu directly and is intended to
+"morph" into fngi.
 
 **Right now this is just some rough notes**
 
 ## Syntax
 
-Fu's syntax is split into three groups:
+fni's syntax is split into three groups:
 - special characters: `~ ' . ( )`
 - alphanumeric characters (case sensitive): `0-9 a-b A-Z`
 - other symbols
@@ -26,15 +27,15 @@ may one of three types:
   compiled. When that word is completed the function is compiled.
 
 
-## Special character group:
+## Introduction to Syntax
 
 The first group is made up of special characters.
 
 - `~`: this is the "char" command. It compiles the next character as it's ASCII
-  (or UTF-8 if supported) code integer. For instance ~A is 65 since that is
-  it's ASCII binary value.  Also supports simple escapes like `~\n` (newline).
-  Note: `~ ` is a space.
-- `'`: toggles whether the next word is a PRE word.
+  byte value. For instance ~A is 65 since that is it's ASCII binary value.
+  Also supports simple escapes like `~\n` (newline).  Note: `~ ` is a space.
+- `'`: toggles the PRE status of the next word. For IMM words causes it's
+  execution to be delayed.
 - `.` is used for module lookups. It uses the typestack to find the next word
   in it's namespace. More details will be given later.
 
@@ -44,7 +45,7 @@ has to do with the PRE words, which there are many and you can use `'` to make a
 word PRE.
 
 Let's look at some examples. Like forth, the following pushes `1 2` on the stack and
-then calls `add` (which might add them)
+then calls `add` (which may add them)
 
 ```
 1 2 add
@@ -94,25 +95,25 @@ The result will be:
 1 2 3 '* '+
 ```
 
-The above is how you would have to normally write the above using
-reverse-polish notation. In the opinion of the author of fun, using parens is
-much easier and adds almost no complexity to the parser or compiler.
+The above is how you would have to normally write the commands in FORTH or
+similar reverse-polish notation languages. In the opinion of the author of fni,
+using parens is much easier and adds almost no complexity to the parser or
+compiler. In other words readability is massively increased with almost no
+increase in complexity.
 
 Using `'` and `(` you can also make more traditional function call. If you have
-a function point which takes `x, y` you might create it using:
+a fn `point` which takes `x` and `y` you might call it with:
 
 ```
 'point(3 (7 * 8))
 ```
 
-This sure beats how it would be done in reverse-polish:
+This is more readable than equivalent FORTH
 ```
-3 7 8 '* point
+3 7 8 * point
 ```
 
 ## Unstructured Notes
-
-
 
 
 Let's say locals offsets are: x:0 y:4 z:8
