@@ -50,6 +50,8 @@ def doMem(env: FuEnv, mem: int, sizeTy):
     if mem == FTCI.value: snd = env.popImm()
     else: snd = env.ws.popv(sizeTy)
 
+    return top, scnd, srPtr
+
 
 def runFu16Instr(env: FuEnv, instr: int):
     sizeTy = instrSizeTy(instrSize(instr))
