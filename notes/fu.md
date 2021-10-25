@@ -91,7 +91,7 @@ A single fu16 instruction can specify up to **three different operations that
 (might) all happen within a single clock cycle** on a suitably built machine.
 The approach is inspired by the [J1
 microprocessor](https://excamera.com/files/j1.pdf) with the desire to make a
-more general-purpose CPU. For demonstration, `00 RET SRCP ADD 4200` will:
+more general-purpose CPU. For demonstration, `1,RET,SRCP,ADD #4200` will:
 - Add two unsigned 32 bit (00) values on the stack
 - Store their value at the 16bit address 0x4200 offset by the CP (sector ptr).
 - Return, which not only continues executing from the previous function but
@@ -109,22 +109,27 @@ fu16's byte layout is as follows:
 Similary, the assembly syntax is:
 
 ```
-<size in bytes>,<jmp>,<mem>,<op>
+<size in bytes>,<mem>,<op>,<jmp>
 ```
 
 Each has defaults:
 - size in bytes: ptr size
 - jmp: NOJ
 - mem: WS
-- op: IDN / NOOP
+- op: IDN (NOOP)
 
 Other assembly syntax:
 - `:<name>` sets a name to a location.
-- `$<name>` gets a location.
+- `$<name>` gets the location of name.
 - `@N<name>` gets an n-byte value at name location and inserts it.
 - `"<ascii>` creates an ascii string until newline, there are no escapes.
 - `#NN` is an 8bit unsigned hex number, i.e. `#1F`
 - `#NNNN` is a 16bit unsigned hex number, i.e. `#001F`
+
+Example to add a byte to 42 and return
+```
+1,WSIM,ADD,RET #0042
+```
 
 ### Immediate
 The immediate value is a 16 bit value which must follow the instruction if
