@@ -114,10 +114,10 @@ in:
 ```
 
 Each has defaults:
-- size in bytes: APtr size
+- size in bytes: 0, aka APtr size
 - jmp: NOJ
 - mem: WS
-- op: IDN (NOOP)
+- op: NOP
 
 Other assembly syntax:
 - `/ line comment`
@@ -132,6 +132,8 @@ Other assembly syntax:
 - `%<hex>` creates a binary string until newline using two digit hex values,
   whitespace is ignored. i.e. `00 12 F3`
 - `>` ptr-align the current location.
+- `]` or an EOF character ends the assembly parsing. Used when embedding fu
+  assembly in other languages but still using the native assembler.
 
 Example to add a byte to 42 and return
 ```
@@ -297,8 +299,7 @@ for more details and clarifications.
 **Non-special operations**: these use size normally.
 
 Unary: only top is used or consumed for these.
-- `04 000100 IDN`: identity, simply store Top. This can be thought of as a
-  noop.
+- `04 000100 NOP`: no operation/identity. Simply store Top
 - `DRP`: drop Top by consuming it but not storing it
 - `INV`: inverse bitwise
 - `NEG`: two's compliment
@@ -412,7 +413,15 @@ or 1 if the system implements.
     - `store [arena: APtr; ptr: APtr; po2: U8]` deallocates the ptr from the specified arena.
   - 04 `load [arena: APtr] -> &Stats`: get pointer to live arena stats such as
     memory used/etc (to be defined).
-- `0x014-100`: reserved
+
+- `0x14`: native fu parser. This allows a high level language to emit fu
+  without implementing it's own assembler.
+  - 00: parse from the dvPort. Will parse and emit fua until encountering `]`.
+  - 01: get/set the dvPort to parse from.
+  - 02: get/set the current fu code pointer.
+  - 03: get/set the current fu dictionary pointer.
+
+- `0x015-100`: reserved
 
 The following may not be supported on some/most systems:
 - `0x101 syscall1` a 1-arg linux syscall

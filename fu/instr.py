@@ -37,7 +37,7 @@ class OpM(Instr):  # Operation
     SR  = 0x01
     DVF = 0x02
     DVS = 0x03
-    IDN = 0x04
+    NOP = 0x04
 
     DRP = enumVal()
     INV = enumVal()

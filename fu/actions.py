@@ -124,7 +124,7 @@ INSTR_ACTIONS = {
     Op.SR: _notImplemented,
     Op.DVF: _notImplemented,
     Op.DVS: _notImplemented,
-    Op.IDN: _notImplemented,
+    Op.NOP: _notImplemented,
 
     Op.DRP: _notImplemented,
     Op.INV: _notImplemented,
