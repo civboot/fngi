@@ -211,7 +211,8 @@ store the indexes and offsets and then compile them in reverse order (to
 visually match the type signature) as `setlocal` operations.
 
 ## Type stack
-TODO: explain `fn` and the type stack (advanced).
+TODO: explain `fn` and the compile-time type stack (advanced).
+
 
 ## Unstructured Notes
 **Ignore these, these are my unstructured notes**

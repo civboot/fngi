@@ -22,7 +22,7 @@ class MemM(Instr):  # Mem Mode
     IMWS = 0x6
     WS   = 0x7
 
-class JumpM(Instr):  # Jump Mode
+class JmpM(Instr):  # Jump Mode
     JIB       = 0x0
     CALL      = 0x1
     JST       = 0x2
@@ -32,7 +32,7 @@ class JumpM(Instr):  # Jump Mode
     RET       = 0x6
     NOJ       = 0x7
 
-class Op(Instr):  # Operation
+class OpM(Instr):  # Operation
     FT  = 0x00
     SR  = 0x01
     DVF = 0x02

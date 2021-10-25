@@ -354,7 +354,8 @@ The following Jump modes are possible:
 - 2 010 JST: Jump to STore. Consumes store.
 - 3 011 CNW: Call an address without a working stack update. Does not require
     memory read.
-- 4 100 reserved
+- 4 100 JTBL: consume StoRe and jump to the jump table which uses the IMM for
+  it's size.
 - 5 101 reserved
 - 6 110 RET: return
   - pop address and WS growth from RS.
@@ -367,32 +368,49 @@ Some constraints on jump modes:
 - All others must have mem.Store=WS so they can consume it.
   - TODO: It's possible they could consume Second in this case, more thought
     must be aplied.
-- JIB can ONLY be used with mem=WS as it requires the IMM for it's
-  offset (all mem operations besides WS use an IMM)
+- JIB and JTBL can ONLY be used with mem=WS as they require the IMM for their
+  offset/table-meta (all mem operations besides WS use an IMM)
 - CALL can ONLY be used with mem={WS, IMWS}. It also can't be used with
   operations FT or SR as it must perform a fetch (only one memory operation
   allowed).
 
-### Operations: 6 bits
+#### `JTBL` Jump Table Description
 
-*Special Operations*:
+The jump table must be layed out as follows:
+
+- Instr containing `JTBL`
+- `IM` 16bit value containing the size of the jump table.
+- array of 16 bit values containing the sectorPtr to jump to.
+  - index0 must contain the location that is jumped to if the store value is 1.
+    A value of 0 will begin execution immediately after the jmp table and the
+    final index is the "else/default" branch.
+
+
+### Operations: 6 bits
 
 Operations modify what will be Stored. If Store is WS the result will
 be pushed to the stack, if the store is `S(LP+IM)` then the result will
 instead go to the immediate offset of the stack pointer.
 
-Store operations ignore `size` to pull the addr as a `Ptr` size. They
-can not be used with CALL, as that requires a memory operation.
-- `00 000000 FT {addr: Ptr} -> value` load. 
-  - Can only be used with mem of {WS}
-- `01 000001 SR {value; addr: Ptr}` store. Note that the address is Second,
-  allowing for storing an IMM value with IMWS.
-  - Can only be used with mem of {WS, IMWS}
+**Special Operations**:
 
-Device operations ignore size for the DvPort, which is always U16 (See
-**Device Operations** for more details and clarifications).
+Special store operations ignore `size` or require size to be a specific value.
+
+Load/Store can not be used with CALL, as that requires a memory operation. They
+also will always pull a ptr for their ptr argument.
+- `00 000000 FT {addr: Ptr} -> value` load.
+  - Can only be used with mem of {WS} and size=ptrSize
+- `01 000001 SR {addr: Ptr, value}` store. Note that the address is Second,
+  allowing for storing an IMM value with IMWS.
+  - Can only be used with mem of {WS; IMWS}
+
+Device operations can only work with size=U16. They will update the stack
+differently per operation, ignoring the size bits. See **Device Operations**
+for more details and clarifications.
 - `02 000010 DVF` `{dvPort: U16}` DeviceIn, get the value at the dvPort
-- `03 000011 DVS` `{dvPort: U16; value}` send the value to the dvPort
+- `03 000011 DVS` `{...; dvPort: U16}` send the value to the dvPort.
+
+**Non-special operations**: these use size normally.
 
 Unary: only top is used or consumed for these.
 - `04 000100 IDN`: identity, simply store Top.
