@@ -134,6 +134,9 @@ def runFu16Instr(env: FuEnv, instr: int):
     if len(stk) > 2: env.ws.push(stk[2])
 
 
+def parseFu16Line(s: str):
+    pass
+
 def runFu16(env: FuEnv):
     while True:
         instrEp = env.ep

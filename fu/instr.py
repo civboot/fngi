@@ -4,12 +4,12 @@ class Instr(BetterEnum): pass
 
 def instrSizeTy(instrBits: int):
     """
-    0: 32bit    1: 16bit
-    3: 8bit     4: undefined
+    0: 8bit    1: 16bit
+    3: 32bit     4: undefined
     """
-    if bits == 0: return U32
+    if bits == 0: return U8
     elif bits == 1: return U16
-    elif bits == 3: return U8
+    elif bits == 3: return U32
     else: raise Trap(f"size {bits}")
 
 class MemM(Instr):  # Mem Mode
