@@ -51,9 +51,9 @@ def runFu16Instr(env: FuEnv, instr: int):
     if op == Op.SR and mem not in (WS, IMWS):
         raise TypeError("SR can only be used with WS,IMWS")
     if jmp not in (JmpM.NOJ, JmpM.RET):
-        if jmp in (JmpM.JIB, JmpM.JTBL) and mem != WS:
+        if jmp in (JmpM.JZ, JmpM.JTBL) and mem != WS:
             raise TypeError(
-                "JIB/JTBL require IMM for offset/table meta so mem cannot use it.")
+                "JZ/JTBL require IMM for offset/table meta so mem cannot use it.")
         elif mem.value <= SROI.value:
             raise TypeError("jumps require Mem.Store = WS")
 
@@ -112,7 +112,7 @@ def runFu16Instr(env: FuEnv, instr: int):
 
     if jmp == JmpM.NOJ:
         pass
-    elif jmp == JmpM.JIB:
+    elif jmp == JmpM.JZ:
         jmpLoc = env.popImm()
     elif jmp == JmpM.CALL:
         raise NotImplementedError("CALL")

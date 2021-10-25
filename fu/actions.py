@@ -45,8 +45,8 @@ def _IMWS(env, instr, ty, imm):
 ##########################
 # Jump Modes
 
-# JIB: jumps to IMM if Bool(WS)
-def _JIB(env, instr, ty, imm):
+# JZ: jumps to IMM if Bool(WS)
+def _JZ(env, instr, ty, imm):
     if env.ds.popv(ty): env.ep = env.cp + imm.value
 
 # CALL: Call an address
@@ -112,7 +112,7 @@ INSTR_ACTIONS = {
     MemM.WS  : _noop,
 
     # Jump
-    JumpM.JIB: _JIB,
+    JumpM.JZ: _JZ,
     JumpM.CALL: _CALL,
     JumpM.JST : _JST,
     JumpM.CNW : _CNW,

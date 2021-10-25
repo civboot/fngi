@@ -91,13 +91,13 @@ A single fu16 instruction can specify up to **three different operations that
 (might) all happen within a single clock cycle** on a suitably built machine.
 The approach is inspired by the [J1
 microprocessor](https://excamera.com/files/j1.pdf) with the desire to make a
-more general-purpose CPU. For demonstration, `1,RET,SRCP,ADD #4200` will:
-- Add two unsigned 32 bit (00) values on the stack
+more general-purpose CPU. For demonstration, `1,SRCP,ADD,RET #4200` will:
+- Add two unsigned 32 bit (4 byte) values on the stack
 - Store their value at the 16bit address 0x4200 offset by the CP (sector ptr).
 - Return, which not only continues executing from the previous function but
   also updates the working stack pointer and the sector pointer.
 
-fu16's byte layout is as follows:
+fu16's bit layout is as follows:
 
 ```
  |-- 10b Mode ----|- 6b Op -|
@@ -106,29 +106,44 @@ fu16's byte layout is as follows:
     SS JJJ XX MMM   OO OOOO
 ```
 
-Similary, the assembly syntax is:
+The assebmly syntax is similar to the mental model of the order things execute
+in:
 
 ```
 <size in bytes>,<mem>,<op>,<jmp>
 ```
 
 Each has defaults:
-- size in bytes: ptr size
+- size in bytes: APtr size
 - jmp: NOJ
 - mem: WS
 - op: IDN (NOOP)
 
 Other assembly syntax:
-- `:<name>` sets a name to a location.
-- `$<name>` gets the location of name.
-- `@N<name>` gets an n-byte value at name location and inserts it.
+- `/ line comment`
+- `#NN` inserts a 8bit unsigned hex number, i.e. `#1F`
+- `#NNNN` inserts a 16bit unsigned hex number, i.e. `#001F`
+- `#NNNN_NNNN` inserts a 32bit unsigned hex number, i.e. `#001F_4200`
+- `=<name>` store's name's current location. Can override old values.
+- `@N<name>` inserts name's location (n-byte value).
+- `!N<name>` sets an n-byte value at name's location equal to the current
+  location. Used for lookahead jumps and defining functions late.
 - `"<ascii>` creates an ascii string until newline, there are no escapes.
-- `#NN` is an 8bit unsigned hex number, i.e. `#1F`
-- `#NNNN` is a 16bit unsigned hex number, i.e. `#001F`
+- `%<hex>` creates a binary string until newline using two digit hex values,
+  whitespace is ignored. i.e. `00 12 F3`
+- `>` ptr-align the current location.
 
 Example to add a byte to 42 and return
 ```
-1,WSIM,ADD,RET #0042
+1,IMWS,ADD,RET   #0042
+```
+
+Example forward jump if zero.
+```
+// if top=0 will jump to where ifZero is set.
+,,,JZ =ifZero #0000
+// code if not zero
+!2ifZero
 ```
 
 ### Immediate
@@ -213,7 +228,7 @@ For all jumps, a jump of size=U8 will trap, U16 is interpreted as an offset
 from the sector, U32 is an absolute jump.
 
 The following Jump modes are possible:
-- 0 000 JIB: Jump to Immediate if Bool(store)
+- 0 000 JZ: Jump to Immediate if store=zero
 - 1 001 CALL: Call an address
   - pop ptr off of store, convert to APtr using CP if necessary.
   - fetch 16bit growWs value at ptr.
@@ -237,7 +252,7 @@ Some constraints on jump modes:
 - All others must have mem.Store=WS so they can consume it.
   - TODO: It's possible they could consume Second in this case, more thought
     must be aplied.
-- JIB and JTBL can ONLY be used with mem=WS as they require the IMM for their
+- JZ and JTBL can ONLY be used with mem=WS as they require the IMM for their
   offset/table-meta (all mem operations besides WS use an IMM)
 - CALL can ONLY be used with mem={WS, IMWS}. It also can't be used with
   operations FT or SR as it must perform a fetch (only one memory operation
@@ -491,7 +506,7 @@ Below is the fu16 description and what it instead does in fu8.
 ### Jump
 Unlike fu16, there are no restrictions on jump instructions in fu8
 
-- JIB: jumps to IMM if Bool(WS)
+- JZ: jumps to IMM if store=zero
 - CALL: calls WS, updating LP appropriately
 - JST: jumps to WS
 - CNW: calls WS without update to ws growth.

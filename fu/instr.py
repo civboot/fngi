@@ -23,7 +23,7 @@ class MemM(Instr):  # Mem Mode
     WS   = 0x7
 
 class JmpM(Instr):  # Jump Mode
-    JIB       = 0x0
+    JZ        = 0x0
     CALL      = 0x1
     JST       = 0x2
     CNW       = 0x3
