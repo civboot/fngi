@@ -118,8 +118,9 @@ void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
       *(mem+aptr) = (U8)value;
       break;
     case S_U16: 
+      printf("Storing U16: %x\n", (U16)value);
       assert(aptr % 2 == 0);
-      *(mem+aptr) = (U16)value;
+      *(((U16*) mem)+aptr) = (U16)value;
       break;
     case S_U32:
       assert(aptr % 4 == 0);
@@ -136,7 +137,7 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
       return (U32) *((U8*) (mem+aptr));
     case S_U16: 
       assert(aptr % 2 == 0);
-      return (U32) *((U16*) (mem+aptr));
+      return *(((U16*)mem)+aptr);
     case S_U32:
       assert(aptr % 4 == 0);
       return (U32) *((U32*) (mem+aptr));
@@ -145,10 +146,9 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
 }
 
 U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
-  printf("Stk push...\n");
   U8 szBytes = szBits_toBytes(sz);
+  printf("Stk push %x sz=%u...\n", value, szBytes);
   if(stk->sp < szBytes) { fail("stack overflow"); }
-  printf("push szBytes: %u\n", szBytes);
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
 }
@@ -486,19 +486,21 @@ U8 testHex() {
   testBuf = "#1001\0";
   testBufIdx = 0;
   assert(!compile(*testing_read, &env));
-  assert(Stk_pop(&env.ws, S_U16) == 0x1001);
+  U32 result = Stk_pop(&env.ws, S_U16);
+  printf("result: %x\n", result);
+  assert(result == 0x1001);
 
   return 0;
 }
 
-U8 tests() {
-  OP_CHECK(testHex(), "testHex");
+void tests() {
+  assert(!testHex());
 }
 
 int main() {
   printf("compiling fu...:\n");
 
 
-  assert(tests());
+  tests();
   return 0;
 }
