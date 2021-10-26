@@ -354,12 +354,13 @@ ErrCode linestr(read_t r, Env* env) {
   while(TRUE) {
     if (tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return 0;
-    if (tokenBuf[tokenLen] == '\n') {
+    char c = tokenBuf[tokenLen];
+
+    if (c == '\n') {
       tokenLen += 1;
       return shiftBuf();
     }
 
-    char c = tokenBuf[tokenLen];
     if(c == '\\') {
       tokenLen += 1;
       OP_ASSERT(tokenLen < tokenBufSize, "Hanging \\");
@@ -372,6 +373,7 @@ ErrCode linestr(read_t r, Env* env) {
     }
     env->mem[env->heap] = c;
     env->heap += 1;
+    tokenLen += 1;
   }
   return 0;
 }
@@ -477,6 +479,7 @@ int main() {
 
 // ********************************************
 // ** Tests
+#include <string.h>
 
 #define TEST_ENV \
   /*      MS      WS     RS     LS     DS */    \
@@ -536,7 +539,9 @@ ErrCode testLoc() {
 ErrCode testQuotes() {
   printf("## testQuotes...\n");
   TEST_ENV;
-  COMPILE("\"foo bar\" baz\n");
+  COMPILE("\"foo bar\" baz\\0\n\0");
+
+  assert(0 == strcmp(env.mem + heapStart, "foo bar\" baz\0"));
   return 0;
 }
 
