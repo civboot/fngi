@@ -148,14 +148,14 @@ U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
   printf("Stk push...\n");
   U8 szBytes = szBits_toBytes(sz);
   if(stk->sp < szBytes) { fail("stack overflow"); }
-  printf("szBytes: %u\n", szBytes);
+  printf("push szBytes: %u\n", szBytes);
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
 }
 
 U32 Stk_pop(Stk* stk, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
-  printf("szBytes: %u\n", szBytes);
+  printf("pop szBytes: %u\n", szBytes);
 
   if(stk->sp + szBytes > stk->size) { fail ("stack underflow"); }
   U32 out = fetch(stk->mem, stk->sp, sz);
@@ -478,14 +478,15 @@ U8 testHex() {
   printf("## testHex #01...\n");
 
   SMALL_ENV;
-  testBuf = "#10";
+  testBuf = "#10\0";
   assert(!compile(*testing_read, &env));
   assert(Stk_pop(&env.ws, S_U8) == 0x10);
 
-  printf("## testHex #F00F...\n");
-  testBuf = "#F00F";
+  printf("## testHex #1001...\n");
+  testBuf = "#1001\0";
+  testBufIdx = 0;
   assert(!compile(*testing_read, &env));
-  assert(Stk_pop(&env.ws, S_U8) == 0xF00F);
+  assert(Stk_pop(&env.ws, S_U16) == 0x1001);
 
   return 0;
 }
