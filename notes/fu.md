@@ -115,33 +115,61 @@ Each has defaults:
 - mem: WS
 - op: NOP
 
-Other assembly syntax:
+Assembly syntax:
 - `/ line comment`
-- `"<ascii>` creates an ascii string until newline, there are no escapes.
-- `#NN` inserts a 8bit unsigned hex number, i.e. `#1F`
-- `#NNNN` inserts a 16bit unsigned hex number, i.e. `#001F`
-- `#NNNN_NNNN` inserts a 32bit unsigned hex number, i.e. `#001F_4200`
-- `=<name>` store's name's current location. Can override old values.
-- `@N<name>` inserts name's location (n-byte value).
-- `!N<name>` sets an n-byte value at name's location equal to the current
-  location. Used for lookahead jumps and defining functions late.
-- `%<hex>` creates a binary string until newline using two digit hex values,
-  whitespace is ignored. i.e. `00 12 F3`
-- `>` ptr-align the current location.
-- `]` or an EOF character ends the assembly parsing. Used when embedding fu
+- `"ascii string` creates an ascii string until newline, there are no escapes.
+- `%<hex>` creates a binary string until newline using hex values. Whitespace
+  is ignored. i.e. `% 00 12 F3 FF23`
+- `#NN` pushes a 8bit unsigned hex number, i.e. `#1F`
+- `#NNNN` pushes a 16bit unsigned hex number, i.e. `#001F`
+- `#NNNN_NNNN` pushes a 32bit unsigned hex number, i.e. `#001F4200`
+- `&N` push the current location onto the stack. N=2 for CPtr, N=4 for APtr.
+- `=N<name>` pop a value of N bytes from the stack and store at name. If name
+  doesn't exist, add to dict.
+- `@N<name>` get value from name of size N bytes.
+- `>N` ptr-align the current location to N bytes.
+- `,N` pops N bytes from the stack and compiles them to current location,
+  updating current location.
+- `!AN` pop two values from the stack. A (second) is the address, N (top) is
+  the value. Store N at A.
+- alpha-numeric: read as bits of a a spore instruction, i.e. WS, FTOI, ADD, etc.
+  the "instr" U16 value will be updated with the appropriate mask and value.
+- `;` compiles the current 16bit instruction and clears it (sets to default values).
+- `)` or an EOF character ends the assembly parsing. Used when embedding fu
   assembly in other languages but still using the native assembler.
+- `~<name>` forgetful tilde. Forget all items in the dictionary until and
+  including `<name>`
+- `$N` pop N bytes from the stack and begin executing there until return.
 
 Example to add a byte to 42 and return
 ```
-1,IMWS,ADD,RET #0042
+S1 IMWS ADD RET; #0042 ,2
 ```
 
 Example forward jump if zero.
 ```
-// if top=0 will jump to where ifZero is set.
-,,,JZ =ifZero #0000
-// code if not zero
-!2ifZero
+// if top=0 will jump to where "if" label is set.
+JZ;       // jump-if-zero instruction
+&2        // push current location (2 bytes)
+=2 if     // store in if
+#0000 ,2  // push 0x0000 on stack and compile it (initial jump location)
+
+// ... code if not zero
+
+@2if      // get 2byte value at if
+~if       // forget label (for saving space in dict).
+&2        // get 2byte current location
+!22       // at address which was stored in if, store current location.
+```
+
+That looks like a lot, let's reduce it to what it would normally look like:
+```
+JZ;  &2 =2if  #0000,2
+
+// ... code if not zero ...
+
+// end-ifnz
+@2if ~if &2 !22
 ```
 
 ### Immediate

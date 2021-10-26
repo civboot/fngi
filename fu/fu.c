@@ -359,14 +359,17 @@ U8 tokenHex(Env* env) {
   OP_ASSERT(tokenCStr > 0, "hanging #");
   U32 v = 0;
   U8 i;
+  U8 tokenSize = 0;
   while(i < tokenCStr) {
     U8 c = tokenBuf[i];
+    if (c == '_') { i+= 1; continue; }
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
+    tokenSize += 1;
     i += 1;
   }
 
-  Stk_push(&env->ws, v, bytesToSz((tokenCStr>>1) + tokenCStr % 2));
+  Stk_push(&env->ws, v, bytesToSz((tokenSize>>1) + tokenSize % 2));
   shiftBuf();
 }
 
