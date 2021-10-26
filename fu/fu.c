@@ -241,19 +241,24 @@ typedef struct {
 TokenState* tokenState; // memory inside env.mem for access by program.
 
 #define tokenBufSize (tokenState->size)
-#define tokenLen (tokenState->len)
-#define tokenBuf (tokenState->buf)
+#define tokenLen tokenState->len
+#define tokenBuf tokenState->buf
 #define tokenGroup ((TokenGroup) tokenState->group)
+
+void dbgToken() {
+  printf("token: size=%u, len=%u\n", tokenBufSize, tokenLen);
+}
 
 #define IS_WHITESPC(C) (C<=' ')
 
-TokenGroup toTokenGroup(char c) {
+TokenGroup toTokenGroup(U8 c) {
+  printf("toTokenGroup: %u %c\n", c, c);
   if(c <= ' ') return T_WHITE;
-  if('0' <= c <= '9') return T_NUM;
-  if('a' <= c <= 'f') return T_HEX;
-  if('A' <= c <= 'F') return T_HEX;
-  if('g' <= c <= 'z') return T_ALPHA;
-  if('G' <= c <= 'Z') return T_ALPHA;
+  if('0' <= c && c <= '9') return T_NUM;
+  if('a' <= c && c <= 'f') return T_HEX;
+  if('A' <= c && c <= 'F') return T_HEX;
+  if('g' <= c && c <= 'z') return T_ALPHA;
+  if('G' <= c && c <= 'Z') return T_ALPHA;
   if(c == '~' || c == '\'' || c == '$' ||
      c == '.' || c ==  '(' || c == ')') {
     return T_SPECIAL;
@@ -270,6 +275,7 @@ void readAppend(read_t r) {
 
 // clear token buf and read bytes
 void readNew(read_t r) {
+  printf("readNew...");
     tokenLen = 0;
     tokenBufSize = 0;
     readAppend(r);
@@ -295,7 +301,7 @@ U8 shiftBuf() {
 // Scanns next token for use by either fu or fni
 U8 scan(read_t r) {
   while(TRUE) {
-    printf("scanning...\n");
+    printf("scanning..."); dbgToken();
     if(tokenLen >= tokenBufSize) {
       tokenLen = 0;
       readNew(r);
@@ -309,6 +315,8 @@ U8 scan(read_t r) {
     tokenLen += 1;
   }
   if(tokenBufSize < MAX_TOKEN) readAppend(r);
+  printf("scanning non-ws...\n");
+  dbgToken();
 
   tokenLen = 0;
   U8 c = tokenBuf[tokenLen];
@@ -317,6 +325,7 @@ U8 scan(read_t r) {
 
   while(tokenLen < tokenBufSize) {
     TokenGroup tg = toTokenGroup(c);
+    printf("tg=%u", tg);
     if (tg == tokenGroup) {}
     elif (tokenGroup == T_ALPHA && tg <= T_ALPHA) {}
     else break;
@@ -324,6 +333,7 @@ U8 scan(read_t r) {
     tokenLen += 1;
     c = tokenBuf[tokenLen];
   }
+  printf("... scan done."); dbgToken();
 }
 
 U8 tilNewline(read_t r) {
@@ -401,24 +411,29 @@ U8 compile(read_t r, Env* env) {
     printf("char: %u\n", c);
     if(c == '/') { OP_CHECK(tilNewline(r)); }
     elif (c == '"') { OP_CHECK(linestr(r, env)); }
-    elif (c == '#') { scan(r); OP_CHECK(tokenHex(env)); }
+    elif (c == '#') { shiftBuf(); scan(r); OP_CHECK(tokenHex(env)); }
   }
 }
 
 
 // ********************************************
 // ** Initialization
+#define TOKEN_LOC(mem) (mem + 4)
+
+#define HEAP_LOC  \
+  ( \
+    sizeof(TokenState) + TOKEN_BUF  \
+  )
+
 #define NEW_ENV(MS, WS, RS, LS, DS)       \
   U8 mem[MS];                             \
-  *mem = (U32) 0;                         \
-  tokenState = (TokenState*) (mem + 4);   \
+  tokenState = (TokenState*) TOKEN_LOC(mem); \
   U8 wsMem[WS];                           \
   U8 rsMem[RS];                           \
   Env env = {                             \
     .mem = mem,                           \
     .cp = 0,                              \
-    .heap =                               \
-      sizeof(TokenState) + TOKEN_BUF,     \
+    .heap = HEAP_LOC,                     \
     .ws = { .sp = WS, .mem = wsMem },     \
     .rs = { .sp = RS, .mem = rsMem },     \
     .ls = {                               \
