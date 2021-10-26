@@ -284,17 +284,17 @@ Special store operations ignore `size` or require size to be a specific value.
 
 Load/Store can not be used with CALL, as that requires a memory operation. They
 also will always pull a ptr for their ptr argument.
-- `01 FT {addr: Ptr} -> value` load.
+- `00 FT {addr: Ptr} -> value` fetch.
   - Can only be used with mem of {WS} and size=ptrSize
-- `02 SR {addr: Ptr, value}` store. Note that the address is Second,
+- `01 SR {addr: Ptr, value}` store. Note that the address is Second,
   allowing for storing an IMM value with IMWS.
   - Can only be used with mem of {WS; IMWS}
 
 Device operations can only work with size=U16. They will update the stack
 differently per operation, ignoring the size bits. See **Device Operations**
 for more details and clarifications.
-- `03 DVF` `{dvPort: U16}` DeviceIn, get the value at the dvPort
-- `04 DVS` `{...; dvPort: U16}` send the value to the dvPort.
+- `02 DVF` `{dvPort: U16}` DeviceIn, get the value at the dvPort
+- `03 DVS` `{...; dvPort: U16}` send the value to the dvPort.
 
 **Non-special operations**: these use size normally.
 
