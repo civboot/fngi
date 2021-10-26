@@ -529,8 +529,15 @@ U8 testLoc() {
   return 0;
 }
 
+U8 testQuotes() {
+  TEST_ENV;
+  COMPILE("\"foo bar\" baz\n");
+  return 0;
+}
+
 void tests() {
   assert(!testHex());
   assert(!testLoc());
+  assert(!testQuotes());
 }
 
