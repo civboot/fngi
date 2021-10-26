@@ -489,7 +489,6 @@ void tests() {
 int main() {
   printf("compiling fu...:\n");
 
-
   tests();
   return 0;
 }
