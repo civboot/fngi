@@ -21,11 +21,14 @@ typedef ASz APtr;
 typedef U16 CSz;
 typedef CSz CPtr;
 
+
 #define ASIZE sizeof(ASz)
 #define CSIZE sizeof(CSz)
 #define FALSE 0
 #define TRUE 1
 #define elif else if
+
+typedef U8 ErrCode;
 
 // Size
 typedef enum {
@@ -96,7 +99,7 @@ void fail(U8* cstr) {
   exit(1);
 }
 
-U8 szBits_toBytes(SzBits sz) {
+ErrCode szBits_toBytes(SzBits sz) {
   switch (sz) {
     case S_U8: return 1;
     case S_U16: return 2;
@@ -150,7 +153,7 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
   }
 }
 
-U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
+ErrCode Stk_push(Stk* stk, U32 value, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
@@ -186,32 +189,32 @@ void shift_op(OpData* out) {
 
 typedef U8 (*op_t)(OP_ARGS);
 
-U8 op_notimpl(OP_ARGS) {
+ErrCode op_notimpl(OP_ARGS) {
   fail("op not implemented");
 }
 
-U8 op_fetch(OP_ARGS) { out->v[0] = fetch(env->mem, out->v[0], out->sz); }
-U8 op_store(OP_ARGS) { store(env->mem, out->v[1], out->v[0], out->sz); out->len = 0; }
+ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(env->mem, out->v[0], out->sz); }
+ErrCode op_store(OP_ARGS) { store(env->mem, out->v[1], out->v[0], out->sz); out->len = 0; }
 // DVF
 // DVS
-U8 op_nop(OP_ARGS) {};
-U8 op_drp(OP_ARGS) { out->v[0] = out->v[1]; out->len -= 1; };
-U8 op_inv(OP_ARGS) { out->v[0] = ~out->v[0]; };
-U8 op_neg(OP_ARGS) {
+ErrCode op_nop(OP_ARGS) {};
+ErrCode op_drp(OP_ARGS) { out->v[0] = out->v[1]; out->len -= 1; };
+ErrCode op_inv(OP_ARGS) { out->v[0] = ~out->v[0]; };
+ErrCode op_neg(OP_ARGS) {
   switch (out->sz) {
     case S_U8: out->v[0] = (U32) (-(I8)out->v[0]); break;
     case S_U16: out->v[0] = (U32) (-(I16)out->v[0]); break;
     case S_U32: out->v[0] = (U32) (-(I32)out->v[0]); break;
   }
 }
-U8 op_eqz(OP_ARGS) { out->v[0] = out->v[0] == 0; }
-U8 op_eqz_nc(OP_ARGS) { shift_op(out); out->v[0] = out->v[1] == 0; }
-U8 op_drop2(OP_ARGS) { out->len = 0; }
-U8 op_ovr(OP_ARGS) { shift_op(out); out->v[0] = out->v[2]; }
-U8 op_add(OP_ARGS) { out->v[0] = out->v[1] + out->v[0]; out->len = 1; }
-U8 op_sub(OP_ARGS) { out->v[0] = out->v[1] - out->v[0]; out->len = 1; }
-U8 op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
-U8 op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
+ErrCode op_eqz(OP_ARGS) { out->v[0] = out->v[0] == 0; }
+ErrCode op_eqz_nc(OP_ARGS) { shift_op(out); out->v[0] = out->v[1] == 0; }
+ErrCode op_drop2(OP_ARGS) { out->len = 0; }
+ErrCode op_ovr(OP_ARGS) { shift_op(out); out->v[0] = out->v[2]; }
+ErrCode op_add(OP_ARGS) { out->v[0] = out->v[1] + out->v[0]; out->len = 1; }
+ErrCode op_sub(OP_ARGS) { out->v[0] = out->v[1] - out->v[0]; out->len = 1; }
+ErrCode op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
+ErrCode op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
 
 op_t ops[] = {
   // FT,          SR,           DVF,          DVS,
@@ -246,7 +249,7 @@ typedef struct {
   U8 buf[]; // size=TOKEN_BUF
 } TokenState;
 
-TokenState* tokenState; // memory inside env.mem for access by program.
+TokenState* tokenState = NULL; // memory inside env.mem for access by program.
 
 #define tokenBufSize (tokenState->size)
 #define tokenLen tokenState->len
@@ -287,7 +290,7 @@ void readNew(read_t r) {
   readAppend(r);
 }
 
-U8 shiftBuf() {
+ErrCode shiftBuf() {
   // Shift buffer left from end of token
   if(tokenLen == 0) return 0;
   U8 newStart = tokenLen;
@@ -303,7 +306,7 @@ U8 shiftBuf() {
 }
 
 // Scans next token.
-U8 scan(read_t r) {
+ErrCode scan(read_t r) {
 
   // Skip whitespace
   while(TRUE) {
@@ -337,7 +340,7 @@ U8 scan(read_t r) {
   return 0;
 }
 
-U8 tilNewline(read_t r) {
+ErrCode tilNewline(read_t r) {
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return 0;
@@ -347,7 +350,7 @@ U8 tilNewline(read_t r) {
   return 0;
 }
 
-U8 linestr(read_t r, Env* env) {
+ErrCode linestr(read_t r, Env* env) {
   while(TRUE) {
     if (tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return 0;
@@ -374,7 +377,7 @@ U8 linestr(read_t r, Env* env) {
 }
 
 // Taking a char that is known to be hex, return the hex value.
-U8 charToHex(U8 c) {
+ErrCode charToHex(U8 c) {
   c = c - '0';
   if(c <= 9) return c;
   c = c - ('A' - '0');
@@ -385,7 +388,7 @@ U8 charToHex(U8 c) {
 
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
-U8 tokenHex(Env* env) {
+ErrCode tokenHex(Env* env) {
   OP_ASSERT(tokenLen > 0, "hanging #");
   U32 v = 0;
   U8 i = 0;
@@ -405,7 +408,7 @@ U8 tokenHex(Env* env) {
   return 0;
 }
 
-U8 putLoc(read_t r, Env* env) {
+ErrCode putLoc(read_t r, Env* env) {
   OP_ASSERT(tokenLen == 1, "only one & allowed");
   if(tokenLen >= tokenBufSize) readAppend(r);
   U8 szBytes = charToHex(tokenBuf[tokenLen]);
@@ -416,7 +419,7 @@ U8 putLoc(read_t r, Env* env) {
   return 0;
 }
 
-U8 compile(read_t r, Env* env) {
+ErrCode compile(read_t r, Env* env) {
   while(TRUE) {
     scan(r);
     if(tokenLen == 0) return 0;
@@ -440,7 +443,7 @@ U8 compile(read_t r, Env* env) {
   )
 
 #define NEW_ENV(MS, WS, RS, LS, DS)       \
-  U8 mem[MS];                             \
+  U8 mem[MS] = {0};                       \
   tokenState = (TokenState*) TOKEN_LOC(mem); \
   U8 wsMem[WS];                           \
   U8 rsMem[RS];                           \
@@ -505,7 +508,7 @@ ssize_t testing_read(size_t nbyte) {
 #define POP(S)  Stk_pop(&env.ws, S)
 
 
-U8 testHex() {
+ErrCode testHex() {
   TEST_ENV;
 
   printf("## testHex #01...\n");
@@ -520,7 +523,8 @@ U8 testHex() {
   return 0;
 }
 
-U8 testLoc() {
+ErrCode testLoc() {
+  printf("## testLoc...\n");
   TEST_ENV;
   COMPILE("&4 &2");
   U16 result1 = POP(S_U16); U32 result2 = POP(S_U32);
@@ -529,7 +533,8 @@ U8 testLoc() {
   return 0;
 }
 
-U8 testQuotes() {
+ErrCode testQuotes() {
+  printf("## testQuotes...\n");
   TEST_ENV;
   COMPILE("\"foo bar\" baz\n");
   return 0;
