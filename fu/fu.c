@@ -118,7 +118,6 @@ void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
       *(mem+aptr) = (U8)value;
       break;
     case S_U16: 
-      printf("Storing U16: %x\n", (U16)value);
       assert(aptr % 2 == 0);
       *(((U16*) mem)+aptr) = (U16)value;
       break;
@@ -147,7 +146,6 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
 
 U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
-  printf("Stk push %x sz=%u...\n", value, szBytes);
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
@@ -155,7 +153,6 @@ U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
 
 U32 Stk_pop(Stk* stk, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
-  printf("pop szBytes: %u\n", szBytes);
 
   if(stk->sp + szBytes > stk->size) { fail ("stack underflow"); }
   U32 out = fetch(stk->mem, stk->sp, sz);
@@ -300,7 +297,6 @@ U8 shiftBuf() {
 
 // Scans next token.
 U8 scan(read_t r) {
-  printf("scan... "); dbgToken();
 
   // Skip whitespace
   while(TRUE) {
@@ -331,7 +327,6 @@ U8 scan(read_t r) {
     tokenLen += 1;
   }
 
-  printf("...scan done "); dbgToken();
   return 0;
 }
 
@@ -383,25 +378,20 @@ U8 charToHex(U8 c) {
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 U8 tokenHex(Env* env) {
-  printf("tokenHex... "); dbgToken();
   OP_ASSERT(tokenLen > 0, "hanging #");
   U32 v = 0;
   U8 i = 0;
   U8 tokenSize = 0;
   while(i < tokenLen) {
     U8 c = tokenBuf[i];
-    printf("token c: %c\n", c);
 
     if (c == '_') { i+= 1; continue; }
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
-    printf("token v: %x\n", v);
 
     tokenSize += 1;
     i += 1;
   }
-  printf("v: %x\n", v);
-
   Stk_push(&env->ws, v, bytesToSz((tokenSize>>1) + tokenSize % 2));
   shiftBuf();
   return 0;
@@ -482,13 +472,12 @@ U8 testHex() {
   assert(!compile(*testing_read, &env));
   assert(Stk_pop(&env.ws, S_U8) == 0x10);
 
-  printf("## testHex #1001...\n");
-  testBuf = "#1001\0";
+  printf("## testHex #10AF...\n");
+  testBuf = "#10AF\0";
   testBufIdx = 0;
   assert(!compile(*testing_read, &env));
   U32 result = Stk_pop(&env.ws, S_U16);
-  printf("result: %x\n", result);
-  assert(result == 0x1001);
+  assert(result == 0x10AF);
 
   return 0;
 }
