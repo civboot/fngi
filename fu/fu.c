@@ -483,7 +483,7 @@ U8 testHex() {
   assert(Stk_pop(&env.ws, S_U8) == 0x10);
 
   printf("## testHex #F00F...\n");
-  testBuf = "#01";
+  testBuf = "#F00F";
   assert(!compile(*testing_read, &env));
   assert(Stk_pop(&env.ws, S_U8) == 0xF00F);
 
