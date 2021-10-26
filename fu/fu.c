@@ -25,6 +25,7 @@ typedef CSz CPtr;
 #define CSIZE sizeof(CSz)
 #define FALSE 0
 #define TRUE 1
+#define elif else if
 
 // Size
 typedef enum {
@@ -102,6 +103,13 @@ U8 szBits_toBytes(SzBits sz) {
     case S_U32: return 4;
     default: fail("invalid Sz");
   }
+}
+
+SzBits bytesToSz(U8 bytes) {
+  if(bytes <= 1) return S_U8;
+  if(bytes <= 2) return S_U16;
+  if(bytes <= 4) return S_U32;
+  fail("invalid bytes");
 }
 
 void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
@@ -212,54 +220,167 @@ op_t ops[] = {
 };
 
 // ********************************************
-// ** Parser
+// ** Scanner
 
-#define PARSER_BUF_LEN 32
-typedef struct {
-  U8* src;
-  U32 i;
-  U32 srcLen;
-  U8 b[PARSER_BUF_LEN];
-  U8 bLen;
-} Parser;
+typedef enum {
+  T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
+} TokenGroup;
+
+#define MAX_TOKEN 32
+#define BUF 0x7E
+U8 tokenBufSize;
+U8 tokenCStr;
+U8 tokenBuf[BUF];
+TokenGroup tokenGroup;
 
 #define IS_WHITESPC(C) (C<=' ')
 
-void parser_skipWhitespace(Parser *p) {
-  while(p->i < p->srcLen) {
-    U8 c = p->src[p->i];
-    if(!IS_WHITESPC(c)) {
-      return;
+TokenGroup toTokenGroup(char c) {
+  if(c <= ' ') return T_WHITE;
+  if('0' <= c <= '9') return T_NUM;
+  if('a' <= c <= 'f') return T_HEX;
+  if('A' <= c <= 'F') return T_HEX;
+  if('g' <= c <= 'z') return T_ALPHA;
+  if('G' <= c <= 'Z') return T_ALPHA;
+  if(c == '~' || c == '\'' || c == '$' ||
+     c == '.' || c ==  '(' || c == ')') {
+    return T_SPECIAL;
+  }
+  return T_SYMBOL;
+}
+
+typedef ssize_t (*read_t)(size_t nbyte);
+
+// Read bytes incrementing tokenBufSize
+void readAppend(read_t r) {
+}
+
+// clear token buf and read bytes
+void readNew(read_t r) {
+    tokenCStr = 0;
+    tokenBufSize = 0;
+}
+
+
+
+
+U8 shiftBuf() {
+  // Shift buffer left from end of token
+  if(tokenCStr == 0) return 0;
+  U8 newStart = tokenCStr;
+  U8 i = 0;
+  while(tokenCStr < tokenBufSize) {
+    tokenBuf[i] = tokenBuf[tokenCStr];
+    i += 1;
+    tokenCStr += 1;
+  }
+  tokenBufSize = tokenBufSize - tokenCStr;
+  tokenCStr = 0;
+}
+
+// Scanns next token for use by either fu or fni
+U8 scan(read_t r) {
+  while(TRUE) {
+    if(tokenCStr >= tokenBufSize) {
+      tokenCStr = 0;
+      readNew(r);
     }
-    p->i += 1;
+    if (toTokenGroup(tokenBuf[tokenCStr]) != T_WHITE) {
+      shiftBuf();
+      break;
+    }
+  }
+  if(tokenBufSize < MAX_TOKEN) readAppend(r);
+
+  tokenCStr = 0;
+  U8 c = tokenBuf[tokenCStr];
+  tokenGroup = toTokenGroup(c);
+  if(tokenGroup <= T_ALPHA) tokenGroup = T_ALPHA;
+
+  while(tokenCStr < tokenBufSize) {
+    TokenGroup tg = toTokenGroup(c);
+    if (tg == tokenGroup) {}
+    elif (tokenGroup == T_ALPHA && tg <= T_ALPHA) {}
+    else break;
+    OP_ASSERT(tokenCStr < MAX_TOKEN, "token too large");
+    tokenCStr += 1;
+    c = tokenBuf[tokenCStr];
   }
 }
 
-U8 parser_insert(Parser* p, U8 c) {
-    OP_ASSERT(p->bLen < PARSER_BUF_LEN, "Parser buf overflow");
-    p->b[p->bLen] = c;
-    p->bLen += 1;
-    p->i += 1;
-}
-
-U8 parser_fillBuffer(Parser* p) {
-  while(p->i < p->srcLen) {
-    U8 c = p->src[p->i];
-    if(IS_WHITESPC(c)) { return 0; }
-    OP_CHECK(parser_insert(p, c));
+U8 tilNewline(read_t r) {
+  while(TRUE) {
+    if(tokenCStr >= tokenBufSize) {
+      readNew(r);
+    }
+    if (tokenBufSize == 0) return 0;
+    if (tokenBuf[tokenCStr] == '\n') return 0;
   }
 }
 
-U8 parser_nextComma(Parser* p) {
-  while(p->i < p->srcLen) {
-    U8 c = p->src[p->i];
-    OP_ASSERT(!IS_WHITESPC(c), "whitespace in instr");
-    OP_CHECK(parser_insert(p, c));
+U8 linestr(read_t r, Env* env) {
+  while(TRUE) {
+    if(tokenCStr >= tokenBufSize) readNew(r);
+    if (tokenBufSize == 0) return 0;
+    if (tokenBuf[tokenCStr] == '\n') {
+      tokenCStr += 1;
+      return shiftBuf();
+    }
+
+    char c = tokenBuf[tokenCStr];
+    if(c == '\\') {
+      tokenCStr += 1;
+      OP_ASSERT(tokenCStr < tokenBufSize, "Hanging \\");
+      c = tokenBuf[tokenCStr];
+      if(c == '\\') {} // leave as-is
+      elif(c == 'n') c = '\n';
+      elif(c == 't') c = '\t';
+      elif(c == '0') c = '\0';
+      else OP_ASSERT(FALSE, "invalid escaped char");
+    }
+    env->mem[env->heap] = c;
+    env->heap += 1;
   }
 }
 
-void fuParse(Env* env, Parser* p) {
+// Taking a char that is known to be hex, return the hex value.
+U8 charToHex(U8 c) {
+  c = c - '0';
+  if(c <= 9) return c;
+  c = c - ('A' - '0');
+  if(c <= 5) return c + 10;
+  c = c - ('a' - 'A');
+  return c + 10;
 }
+
+// Parse a hex token from the tokenCStr and shift it out.
+// The value is pushed to the ws.
+U8 tokenHex(Env* env) {
+  OP_ASSERT(tokenCStr > 0, "hanging #");
+  U32 v = 0;
+  U8 i;
+  while(i < tokenCStr) {
+    U8 c = tokenBuf[i];
+    OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
+    v = (v << 4) + charToHex(c);
+    i += 1;
+  }
+
+  Stk_push(&env->ws, v, bytesToSz((tokenCStr>>1) + tokenCStr % 2));
+  shiftBuf();
+}
+
+U8 compile(read_t r, Env* env) {
+  while(TRUE) {
+    scan(r);
+    if(tokenCStr == 0) return 0;
+    char c = tokenBuf[0];
+    if(c == '/') { OP_CHECK(tilNewline(r)); }
+    elif (c == '"') { OP_CHECK(linestr(r, env)); }
+    elif (c == '#') { scan(r); OP_CHECK(tokenHex(env)); }
+  }
+}
+
 
 // ********************************************
 // ** Initialization

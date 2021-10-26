@@ -106,12 +106,8 @@ fu16's bit layout is as follows:
     SS JJJ XX MMM   OO OOOO
 ```
 
-The assebmly syntax is similar to the mental model of the order things execute
-in:
+The assebmly syntax can put any command in any order, then uses `;` to compile them:
 
-```
-<size in bytes>,<mem>,<op>,<jmp>
-```
 
 Each has defaults:
 - size in bytes: 0, aka APtr size
@@ -121,6 +117,7 @@ Each has defaults:
 
 Other assembly syntax:
 - `/ line comment`
+- `"<ascii>` creates an ascii string until newline, there are no escapes.
 - `#NN` inserts a 8bit unsigned hex number, i.e. `#1F`
 - `#NNNN` inserts a 16bit unsigned hex number, i.e. `#001F`
 - `#NNNN_NNNN` inserts a 32bit unsigned hex number, i.e. `#001F_4200`
@@ -128,7 +125,6 @@ Other assembly syntax:
 - `@N<name>` inserts name's location (n-byte value).
 - `!N<name>` sets an n-byte value at name's location equal to the current
   location. Used for lookahead jumps and defining functions late.
-- `"<ascii>` creates an ascii string until newline, there are no escapes.
 - `%<hex>` creates a binary string until newline using two digit hex values,
   whitespace is ignored. i.e. `00 12 F3`
 - `>` ptr-align the current location.
@@ -137,7 +133,7 @@ Other assembly syntax:
 
 Example to add a byte to 42 and return
 ```
-1,IMWS,ADD,RET   #0042
+1,IMWS,ADD,RET #0042
 ```
 
 Example forward jump if zero.
