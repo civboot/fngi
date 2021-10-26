@@ -145,16 +145,19 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
 }
 
 U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
+  printf("Stk push...\n");
   U8 szBytes = szBits_toBytes(sz);
-  printf("szBytes: %u\n", szBytes);
   if(stk->sp < szBytes) { fail("stack overflow"); }
+  printf("szBytes: %u\n", szBytes);
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
 }
 
 U32 Stk_pop(Stk* stk, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
-  if(stk->sp + szBytes >= stk->size) { fail ("stack underflow"); }
+  printf("szBytes: %u\n", szBytes);
+
+  if(stk->sp + szBytes > stk->size) { fail ("stack underflow"); }
   U32 out = fetch(stk->mem, stk->sp, sz);
   stk->sp += szBytes;
   return out;
@@ -435,8 +438,8 @@ U8 compile(read_t r, Env* env) {
     .mem = mem,                           \
     .cp = 0,                              \
     .heap = HEAP_LOC,                     \
-    .ws = { .sp = WS, .mem = wsMem },     \
-    .rs = { .sp = RS, .mem = rsMem },     \
+    .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
+    .rs = { .size = RS, .sp = RS, .mem = rsMem },     \
     .ls = {                               \
       .sp = LS_SIZE,                      \
         .mem = mem+MS-LS                  \
@@ -472,14 +475,14 @@ ssize_t testing_read(size_t nbyte) {
 }
 
 U8 testHex() {
-  printf("## testHex... #01\n");
+  printf("## testHex #01...\n");
 
   SMALL_ENV;
   testBuf = "#10";
   assert(!compile(*testing_read, &env));
   assert(Stk_pop(&env.ws, S_U8) == 0x10);
 
-  printf("## testHex... #F00F\n");
+  printf("## testHex #F00F...\n");
   testBuf = "#01";
   assert(!compile(*testing_read, &env));
   assert(Stk_pop(&env.ws, S_U8) == 0xF00F);
