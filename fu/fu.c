@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <assert.h>
 
+// ********************************************
+// ** Core Types
 
 typedef uint8_t Bool;
 typedef uint8_t U8;
@@ -37,10 +39,10 @@ typedef enum {
 
 // Operation
 typedef enum {
-  FT,     SR,     DVF,    DVS,
-  NOP,    DRP,    INV,    NEG,
-  EQZ,    EQZ_NC, DRP2,   OVR,
-  ADD,    SUB,    MOD,
+  FT,           SR,           DVF,          DVS,
+  NOP,          DRP,          INV,          NEG,
+  EQZ,          EQZ_NC,       DRP2,         OVR,
+  ADD,          SUB,          MOD,          MUL,
 } Op;
 
 // 1MiB
@@ -52,40 +54,34 @@ typedef enum {
 typedef struct {
   U16 sp;
   U16 size;
-  U8 mem[];
+  U8* mem;
 } Stk;
 
 // Environment
 typedef struct {
-  APtr heap;          // heap
+  U8* mem;
   APtr cp;            // seCtion Pointer
   APtr lp;            // local stack pointer
 
   Stk ws;
-    U8 wsMem[WS_SIZE];
   Stk rs;
-    U8 rsMem[RS_SIZE];
-
-  U8 mem[MEM_SIZE];   // system memory
 } Env;
 
-#define macro NEW_ENV         \
-  Env env = {                 \
-    .heap = 0,                \
-    .cp = 0,                  \
-    .lp = MEM_SIZE,           \
-    .ws = { .sp = WS_SIZE },  \
-    .rs = { .sp = RS_SIZE },  \
-  }
+typedef struct {
+  U32 v[3];
+  SzBits sz;
+  U8 len;
+  Bool usesImm;
+} OpData;
 
+// ********************************************
+// ** Helpers
 
 void fail(U8* cstr) {
   printf(cstr);
   printf("\n");
   exit(1);
 }
-
-
 
 U8 szBits_toBytes(SzBits sz) {
   switch (sz) {
@@ -143,9 +139,63 @@ U32 Stk_pop(Stk* stk, SzBits sz) {
   return out;
 }
 
+// ********************************************
+// ** Operations
+
+#define OP_ARGS Env* env, OpData *out
+typedef void (*op_t)(OP_ARGS);
+
+void op_notimpl(OP_ARGS) {
+  fail("op not implemented");
+}
+
+void op_fetch(OP_ARGS) {
+  out->v[0] = fetch(env->mem, out->v[0], out->sz);
+}
+
+void op_store(OP_ARGS) {
+  store(env->mem, out->v[1], out->v[0], out->sz);
+  out->len = 0;
+}
+
+void op_nop(OP_ARGS) {};
+
+
+op_t ops[] = {
+  // FT,          SR,           DVF,          DVS,
+  op_fetch,       op_store,     op_notimpl,   op_notimpl,
+
+  // NOP,         DRP,          INV,          NEG,
+  op_nop,         op_notimpl,   op_notimpl,   op_notimpl,
+
+  // EQZ,        EQZ_NC,       DRP2,         OVR,
+  op_notimpl,    op_notimpl,   op_notimpl,   op_notimpl,
+
+  // ADD,          SUB,          MOD,
+  op_notimpl,    op_notimpl,   op_notimpl,   op_notimpl,
+};
+
+// ********************************************
+// ** Initialization and Main
+#define NEW_ENV(WSM, RSM, MEM)            \
+  {                                       \
+    .mem = MEM,                           \
+    .cp = 0,                              \
+    .lp = MEM_SIZE,                       \
+    .ws = { .sp = WS_SIZE, .mem = WSM },  \
+    .rs = { .sp = RS_SIZE, .mem = RSM },  \
+  }
+
+
 int main() {
+  U8 mem[MEM_SIZE];
+  U8 wsMem[WS_SIZE];
+  U8 rsMem[RS_SIZE];
+
   printf("Fu\n");
   printf("%i", SRCP);
+
+  Env env = NEW_ENV(mem, wsMem, rsMem);
 
   fail("bad");
   return 0;
