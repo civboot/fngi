@@ -487,7 +487,7 @@ void tests() {
 }
 
 int main() {
-  printf("compiling fu...:\n");
+  printf("compiling spore...:\n");
 
   tests();
   return 0;
