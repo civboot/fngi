@@ -112,6 +112,12 @@ SzBits bytesToSz(U8 bytes) {
   fail("invalid bytes");
 }
 
+APtr align(APtr aPtr, U8 szBytes) {
+  U8 mod = aPtr % szBytes;
+  if(mod == 0) return aPtr;
+  return mod + (szBytes - mod);
+}
+
 void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
   switch (sz) {
     case S_U8: 
@@ -146,7 +152,6 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
 
 U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
-  printf("Pushing %x sz=%u\n", value, szBytes);
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
@@ -404,7 +409,6 @@ U8 putLoc(read_t r, Env* env) {
   OP_ASSERT(tokenLen == 1, "only one & allowed");
   if(tokenLen >= tokenBufSize) readAppend(r);
   U8 szBytes = charToHex(tokenBuf[tokenLen]);
-  printf("sz=%u\n", szBytes);
   SzBits sz = bytesToSz(szBytes);
   tokenLen += 1;
   OP_ASSERT(sz == S_U16 || sz == S_U32, "& size invalid");
@@ -418,6 +422,7 @@ U8 compile(read_t r, Env* env) {
     if(tokenLen == 0) return 0;
     char c = tokenBuf[0];
     if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
+    elif (c == '"') { OP_CHECK(linestr(r, env), "compile.linestr"); }
     elif (c == '#') { scan(r); OP_CHECK(tokenHex(env), "compile.tokenHex"); }
     elif (c == '&') OP_CHECK(putLoc(r, env), "compile.putLoc");
   }
@@ -519,7 +524,6 @@ U8 testLoc() {
   TEST_ENV;
   COMPILE("&4 &2");
   U16 result1 = POP(S_U16); U32 result2 = POP(S_U32);
-  printf("result: {%x; %x}  heapStart=%x\n", result2, result1, heapStart);
   assert(result1 == (U16)heapStart);
   assert(result2 == heapStart);
   return 0;
