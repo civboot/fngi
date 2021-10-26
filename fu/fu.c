@@ -146,6 +146,7 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
 
 U8 Stk_push(Stk* stk, U32 value, SzBits sz) {
   U8 szBytes = szBits_toBytes(sz);
+  printf("szBytes: %u\n", szBytes);
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
@@ -173,8 +174,8 @@ void shift_op(OpData* out) {
 #define OP_ASSERT(COND, MSG) \
   if(!(COND)) { printf(MSG); printf("\n"); return 1; }
 
-#define OP_CHECK(COND) \
-  if(COND) { return 1; }
+#define OP_CHECK(COND, MSG) \
+  if(COND) { printf(MSG); printf("\n"); return 1; }
 
 typedef U8 (*op_t)(OP_ARGS);
 
@@ -252,7 +253,6 @@ void dbgToken() {
 #define IS_WHITESPC(C) (C<=' ')
 
 TokenGroup toTokenGroup(U8 c) {
-  printf("toTokenGroup: %u %c\n", c, c);
   if(c <= ' ') return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
   if('a' <= c && c <= 'f') return T_HEX;
@@ -275,14 +275,10 @@ void readAppend(read_t r) {
 
 // clear token buf and read bytes
 void readNew(read_t r) {
-  printf("readNew...");
-    tokenLen = 0;
-    tokenBufSize = 0;
-    readAppend(r);
+  tokenLen = 0;
+  tokenBufSize = 0;
+  readAppend(r);
 }
-
-
-
 
 U8 shiftBuf() {
   // Shift buffer left from end of token
@@ -294,18 +290,18 @@ U8 shiftBuf() {
     i += 1;
     tokenLen += 1;
   }
-  tokenBufSize = tokenBufSize - tokenLen;
+  tokenBufSize = tokenBufSize - newStart;
   tokenLen = 0;
+  return 0;
 }
 
-// Scanns next token for use by either fu or fni
+// Scans next token.
 U8 scan(read_t r) {
+  printf("scan... "); dbgToken();
+
+  // Skip whitespace
   while(TRUE) {
-    printf("scanning..."); dbgToken();
-    if(tokenLen >= tokenBufSize) {
-      tokenLen = 0;
-      readNew(r);
-    }
+    if(tokenLen >= tokenBufSize) readNew(r);
     if(tokenBufSize == 0) return 0;
 
     if (toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
@@ -315,40 +311,39 @@ U8 scan(read_t r) {
     tokenLen += 1;
   }
   if(tokenBufSize < MAX_TOKEN) readAppend(r);
-  printf("scanning non-ws...\n");
-  dbgToken();
 
   tokenLen = 0;
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
   if(tokenGroup <= T_ALPHA) tokenState->group = T_ALPHA;
 
+  // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
+    c = tokenBuf[tokenLen];
     TokenGroup tg = toTokenGroup(c);
-    printf("tg=%u", tg);
     if (tg == tokenGroup) {}
     elif (tokenGroup == T_ALPHA && tg <= T_ALPHA) {}
     else break;
     OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
     tokenLen += 1;
-    c = tokenBuf[tokenLen];
   }
-  printf("... scan done."); dbgToken();
+
+  printf("...scan done "); dbgToken();
+  return 0;
 }
 
 U8 tilNewline(read_t r) {
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) {
-      readNew(r);
-    }
+    if(tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return 0;
     if (tokenBuf[tokenLen] == '\n') return 0;
   }
+  return 0;
 }
 
 U8 linestr(read_t r, Env* env) {
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew(r);
+    if (tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return 0;
     if (tokenBuf[tokenLen] == '\n') {
       tokenLen += 1;
@@ -360,7 +355,7 @@ U8 linestr(read_t r, Env* env) {
       tokenLen += 1;
       OP_ASSERT(tokenLen < tokenBufSize, "Hanging \\");
       c = tokenBuf[tokenLen];
-      if(c == '\\') {} // leave as-is
+      if(c == '\\') {}
       elif(c == 'n') c = '\n';
       elif(c == 't') c = '\t';
       elif(c == '0') c = '\0';
@@ -369,6 +364,7 @@ U8 linestr(read_t r, Env* env) {
     env->mem[env->heap] = c;
     env->heap += 1;
   }
+  return 0;
 }
 
 // Taking a char that is known to be hex, return the hex value.
@@ -384,35 +380,40 @@ U8 charToHex(U8 c) {
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 U8 tokenHex(Env* env) {
-  printf("tokenHex...\n");
+  printf("tokenHex... "); dbgToken();
   OP_ASSERT(tokenLen > 0, "hanging #");
   U32 v = 0;
-  U8 i;
+  U8 i = 0;
   U8 tokenSize = 0;
   while(i < tokenLen) {
     U8 c = tokenBuf[i];
+    printf("token c: %c\n", c);
+
     if (c == '_') { i+= 1; continue; }
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
+    printf("token v: %x\n", v);
+
     tokenSize += 1;
     i += 1;
   }
+  printf("v: %x\n", v);
 
   Stk_push(&env->ws, v, bytesToSz((tokenSize>>1) + tokenSize % 2));
   shiftBuf();
+  return 0;
 }
 
 U8 compile(read_t r, Env* env) {
   while(TRUE) {
-    printf("compile...\n");
     scan(r);
     if(tokenLen == 0) return 0;
     char c = tokenBuf[0];
-    printf("char: %u\n", c);
-    if(c == '/') { OP_CHECK(tilNewline(r)); }
-    elif (c == '"') { OP_CHECK(linestr(r, env)); }
-    elif (c == '#') { shiftBuf(); scan(r); OP_CHECK(tokenHex(env)); }
+    if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
+    elif (c == '"') { OP_CHECK(linestr(r, env), "compile.linestr"); }
+    elif (c == '#') { scan(r); OP_CHECK(tokenHex(env), "compile.tokenHex"); }
   }
+  return 0;
 }
 
 
@@ -471,23 +472,29 @@ ssize_t testing_read(size_t nbyte) {
 }
 
 U8 testHex() {
-  printf("## testHex...\n");
+  printf("## testHex... #01\n");
+
   SMALL_ENV;
+  testBuf = "#10";
+  assert(!compile(*testing_read, &env));
+  assert(Stk_pop(&env.ws, S_U8) == 0x10);
+
+  printf("## testHex... #F00F\n");
   testBuf = "#01";
-  OP_CHECK(compile(*testing_read, &env));
-  assert(Stk_pop(&env.ws, S_U8) == 0x01);
+  assert(!compile(*testing_read, &env));
+  assert(Stk_pop(&env.ws, S_U8) == 0xF00F);
 
   return 0;
 }
 
 U8 tests() {
-  OP_CHECK(testHex());
+  OP_CHECK(testHex(), "testHex");
 }
 
 int main() {
   printf("compiling fu...:\n");
 
 
-  tests();
+  assert(tests());
   return 0;
 }
