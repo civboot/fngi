@@ -285,10 +285,13 @@ U8 scan(read_t r) {
       tokenCStr = 0;
       readNew(r);
     }
+    if(tokenBufSize == 0) return 0;
+
     if (toTokenGroup(tokenBuf[tokenCStr]) != T_WHITE) {
       shiftBuf();
       break;
     }
+    tokenCStr += 1;
   }
   if(tokenBufSize < MAX_TOKEN) readAppend(r);
 
@@ -356,6 +359,7 @@ U8 charToHex(U8 c) {
 // Parse a hex token from the tokenCStr and shift it out.
 // The value is pushed to the ws.
 U8 tokenHex(Env* env) {
+  printf("tokenHex...\n");
   OP_ASSERT(tokenCStr > 0, "hanging #");
   U32 v = 0;
   U8 i;
@@ -375,9 +379,11 @@ U8 tokenHex(Env* env) {
 
 U8 compile(read_t r, Env* env) {
   while(TRUE) {
+    printf("compile...\n");
     scan(r);
     if(tokenCStr == 0) return 0;
     char c = tokenBuf[0];
+    printf("char: %u\n", c);
     if(c == '/') { OP_CHECK(tilNewline(r)); }
     elif (c == '"') { OP_CHECK(linestr(r, env)); }
     elif (c == '#') { scan(r); OP_CHECK(tokenHex(env)); }
@@ -387,32 +393,62 @@ U8 compile(read_t r, Env* env) {
 
 // ********************************************
 // ** Initialization
-#define NEW_ENV                           \
-  U8 mem[MEM_SIZE];                       \
-  U8 wsMem[WS_SIZE];                      \
-  U8 rsMem[RS_SIZE];                      \
+#define NEW_ENV(MS, WS, RS, LS, DS)       \
+  U8 mem[MS];                             \
+  U8 wsMem[WS];                           \
+  U8 rsMem[RS];                           \
   Env env = {                             \
     .mem = mem,                           \
     .cp = 0,                              \
     .heap = 0,                            \
-    .ws = { .sp = WS_SIZE, .mem = wsMem },\
-    .rs = { .sp = RS_SIZE, .mem = rsMem },\
+    .ws = { .sp = WS, .mem = wsMem },     \
+    .rs = { .sp = RS, .mem = rsMem },     \
     .ls = {                               \
       .sp = LS_SIZE,                      \
-        .mem = mem+MEM_SIZE-LS_SIZE       \
+        .mem = mem+MS-LS                  \
     },                                    \
     .dict = {                             \
-      .sp = DICT_SIZE,                    \
-      .mem = mem+MEM_SIZE-LS_SIZE-DICT_SIZE, \
+      .sp = DS,                           \
+      .mem = mem+MS-LS-DS,                \
     },                                    \
   }
 
 
+#define SMALL_ENV \
+  /*      MS      WS     RS     LS     DS */  \
+  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200)
+
 // ********************************************
 // ** Tests
+U8* testBuf = NULL;
+U16 testBufIdx = 0;
 
+// read_t used for testing.
+ssize_t testing_read(size_t nbyte) {
+  size_t i = 0;
+  while (i < nbyte) {
+    U8 c = testBuf[testBufIdx];
+    if(c == 0) return i;
+    tokenBuf[tokenBufSize] = c;
+    tokenBufSize += 1;
+    testBufIdx += 1;
+    i += 1;
+  }
+  return i;
+}
 
-void tests() {
+U8 testHex() {
+  printf("## testHex...\n");
+  SMALL_ENV;
+  testBuf = "#01";
+  OP_CHECK(compile(*testing_read, &env));
+  assert(Stk_pop(&env.ws, S_U8) == 0x01);
+
+  return 0;
+}
+
+U8 tests() {
+  OP_CHECK(testHex());
 }
 
 int main() {
