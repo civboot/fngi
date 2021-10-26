@@ -117,9 +117,6 @@ Each has defaults:
 
 Assembly syntax:
 - `/ line comment`
-- `"ascii string` creates an ascii string until newline, there are no escapes.
-- `%<hex>` creates a binary string until newline using hex values. Whitespace
-  is ignored. i.e. `% 00 12 F3 FF23`
 - `#NN` pushes a 8bit unsigned hex number, i.e. `#1F`
 - `#NNNN` pushes a 16bit unsigned hex number, i.e. `#001F`
 - `#NNNN_NNNN` pushes a 32bit unsigned hex number, i.e. `#001F4200`

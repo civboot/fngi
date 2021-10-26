@@ -1,5 +1,91 @@
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <unistd.h>
 
-#include "spore.h"
+
+// ********************************************
+// ** Core Types
+
+typedef uint8_t Bool;
+typedef uint8_t U8;
+typedef uint16_t U16;
+typedef uint32_t U32;
+typedef int8_t I8;
+typedef int16_t I16;
+typedef int32_t I32;
+typedef uint32_t ASz;
+typedef ASz APtr;
+
+typedef U16 CSz;
+typedef CSz CPtr;
+
+#define ASIZE sizeof(ASz)
+#define CSIZE sizeof(CSz)
+#define FALSE 0
+#define TRUE 1
+#define elif else if
+
+// Size
+typedef enum {
+  S_U8,   S_U16,
+  S_U32,  S_UNDEF
+} SzBits;
+
+// Mem
+typedef enum {
+  SRLP,   SRCP,   SROI,   FTLP,
+  FTCI,   FTOI,   IMWS,   WS,
+} Mem;
+
+// Jmp
+typedef enum {
+  JZ,     CALL,   JST,    CNW,
+  JTBL,   _JR0,   RET,    NOJ,
+} Jmp;
+
+// Operation
+typedef enum {
+  FT,           SR,           DVF,          DVS,
+  NOP,          DRP,          INV,          NEG,
+  EQZ,          EQZ_NC,       DRP2,         OVR,
+  ADD,          SUB,          MOD,          MUL,
+} Op;
+
+// 1MiB
+#define MEM_SIZE 0x100000
+#define WS_SIZE  0x100
+#define RS_SIZE  0x100
+#define LS_SIZE  0x8000
+#define DICT_SIZE 0x1000
+
+// Generic stack.
+typedef struct {
+  U16 sp;
+  U16 size;
+  U8* mem;
+} Stk;
+
+// Environment
+typedef struct {
+  U8* mem;
+  APtr cp;            // seCtion Pointer
+  APtr lp;            // local stack pointer
+  APtr heap;
+
+  Stk ws;
+  Stk rs;
+  Stk ls;
+  Stk dict;
+} Env;
+
+typedef struct {
+  U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
+  SzBits sz;
+  U8 len;
+  Bool usesImm;
+} OpData;
 
 // ********************************************
 // ** Helpers
@@ -249,6 +335,7 @@ U8 tilNewline(read_t r) {
     if(tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return 0;
     if (tokenBuf[tokenLen] == '\n') return 0;
+    tokenLen += 1;
   }
   return 0;
 }
@@ -311,14 +398,25 @@ U8 tokenHex(Env* env) {
   return 0;
 }
 
+U8 putLoc(read_t r, Env* env) {
+  OP_ASSERT(tokenLen == 1, "only one & allowed");
+  if(tokenLen >= tokenBufSize) readAppend(r);
+  U8 szBytes = charToHex(tokenBuf[tokenLen]);
+  SzBits sz = bytesToSz(szBytes);
+  tokenLen += 1;
+  OP_ASSERT(sz == S_U16 || sz == S_U32, "& size invalid");
+  OP_CHECK(Stk_push(&env->ws, env->heap, sz), "putLoc.push");
+  env->heap += szBytes;
+}
+
 U8 compile(read_t r, Env* env) {
   while(TRUE) {
     scan(r);
     if(tokenLen == 0) return 0;
     char c = tokenBuf[0];
     if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
-    elif (c == '"') { OP_CHECK(linestr(r, env), "compile.linestr"); }
     elif (c == '#') { scan(r); OP_CHECK(tokenHex(env), "compile.tokenHex"); }
+    elif (c == '&') OP_CHECK(putLoc(r, env), "compile.putLoc");
   }
   return 0;
 }
@@ -355,12 +453,25 @@ U8 compile(read_t r, Env* env) {
   }
 
 
-#define SMALL_ENV \
-  /*      MS      WS     RS     LS     DS */  \
-  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200)
+// ********************************************
+// ** Main
+void tests();
+
+int main() {
+  printf("compiling spore...:\n");
+
+  tests();
+  return 0;
+}
 
 // ********************************************
 // ** Tests
+
+#define TEST_ENV \
+  /*      MS      WS     RS     LS     DS */    \
+  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200);  \
+  U32 heapStart = env.heap
+
 U8* testBuf = NULL;
 U16 testBufIdx = 0;
 
@@ -378,31 +489,35 @@ ssize_t testing_read(size_t nbyte) {
   return i;
 }
 
-U8 testHex() {
-  printf("## testHex #01...\n");
-
-  SMALL_ENV;
-  testBuf = "#10\0";
+#define COMPILE(S) \
+  testBuf = S; \
+  testBufIdx = 0; \
   assert(!compile(*testing_read, &env));
-  assert(Stk_pop(&env.ws, S_U8) == 0x10);
+
+#define POP(S)  Stk_pop(&env.ws, S)
+
+
+U8 testHex() {
+  TEST_ENV;
+
+  printf("## testHex #01...\n");
+  COMPILE("#10\0");
+  assert(POP(S_U8) == 0x10);
 
   printf("## testHex #10AF...\n");
-  testBuf = "#10AF\0";
-  testBufIdx = 0;
-  assert(!compile(*testing_read, &env));
-  U32 result = Stk_pop(&env.ws, S_U16);
+  COMPILE("/comment\n#10AF\0");
+  U32 result = POP(S_U16);
   assert(result == 0x10AF);
 
   return 0;
+}
+
+U8 testRef() {
+  TEST_ENV;
+  COMPILE("&4 &2");
 }
 
 void tests() {
   assert(!testHex());
 }
 
-int main() {
-  printf("compiling spore...:\n");
-
-  tests();
-  return 0;
-}
