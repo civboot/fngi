@@ -398,7 +398,7 @@ ErrCode executeInstr(U16 instr) {
 ErrCode execute(APtr ap) {
   while(TRUE) {
     assert(ap < *env.topMem);
-    U16 instr = mem[ap];
+    U16 instr = fetch(mem, ap, S_U16);
     executeInstr(instr);
   }
 }
@@ -584,7 +584,7 @@ ErrCode linestr(read_t r) {
       elif(c == '0') c = '\0';
       else OP_ASSERT(FALSE, "invalid escaped char");
     }
-    mem[*env.heap] = c;
+    store(mem, *env.heap, c, S_U8);
     *env.heap += 1;
     tokenLen += 1;
   }
