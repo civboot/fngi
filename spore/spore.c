@@ -727,7 +727,7 @@ void dbgToken() {
 
 // ********************************************
 // ** Initialization
-#define NEW_ENV(MS, WS, RS, LS, DS)       \
+#define NEW_ENV_BARE(MS, WS, RS, LS, DS)       \
   U8 localMem[MS] = {0};                       \
   U8 wsMem[WS];                           \
   U8 rsMem[RS];                           \
@@ -755,9 +755,9 @@ void dbgToken() {
   dict->heap = 0;                         \
   dict->end = DS;
 
-#define SMALL_ENV \
+#define SMALL_ENV_BARE \
   /*      MS      WS     RS     LS     DICT */    \
-  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200)
+  NEW_ENV_BARE(0x4000, 0x100, 0x100, 0x200, 0x200)
 
 
 // ********************************************
@@ -780,8 +780,8 @@ void dbgEnv() {
 }
 
 
-#define TEST_ENV \
-  SMALL_ENV; \
+#define TEST_ENV_BARE \
+  SMALL_ENV_BARE; \
   U32 heapStart = *env.heap
 
 U8* testBuf = NULL;
@@ -810,9 +810,8 @@ U16 testBufIdx = 0;
 
 
 /*test*/ void testHex() {
-  TEST_ENV;
+  printf("## testHex #01...\n"); TEST_ENV_BARE;
 
-  printf("## testHex #01...\n");
   COMPILE("#10\0");
   assert(POP(S_U8) == 0x10);
 
@@ -823,8 +822,7 @@ U16 testBufIdx = 0;
 }
 
 /*test*/ void testLoc() {
-  printf("## testLoc...\n");
-  TEST_ENV;
+  printf("## testLoc...\n"); TEST_ENV_BARE;
   COMPILE("&4 &2");
   U16 result1 = POP(S_U16); U32 result2 = POP(S_U32);
   assert(result1 == (U16)heapStart);
@@ -832,16 +830,14 @@ U16 testBufIdx = 0;
 }
 
 /*test*/ void testQuotes() {
-  printf("## testQuotes...\n");
-  TEST_ENV;
+  printf("## testQuotes...\n"); TEST_ENV_BARE;
   COMPILE("\"foo bar\" baz\\0\n\0");
 
   assert(0 == strcmp(mem + heapStart, "foo bar\" baz\0"));
 }
 
 /*test*/ void testDictDeps() {
-  TEST_ENV;
-  printf("## testDict... cstr\n");
+  printf("## testDict... cstr\n"); TEST_ENV_BARE;
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
 
@@ -871,7 +867,7 @@ U16 testBufIdx = 0;
 }
 
 /*test*/ void testDict() {
-  TEST_ENV; printf("## testDict\n");
+  printf("## testDict\n"); TEST_ENV_BARE;
 
   COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @4foo @2foo ");
   assert(0xF00 == Stk_pop(&env.ws, S_U16));   // 2foo
@@ -880,7 +876,7 @@ U16 testBufIdx = 0;
 }
 
 /*test*/ void testWriteHeap() { // test , and ;
-  TEST_ENV; printf("## testWriteHeap\n");
+  printf("## testWriteHeap\n"); TEST_ENV_BARE;
   COMPILE("#77770101,4 #0F00,2 ;");
   assert(0x77770101 == fetch(mem, heapStart, S_U32));
   assert(0x0F00 == fetch(mem, heapStart+4, S_U16));
