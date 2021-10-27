@@ -5,8 +5,6 @@
 #include <unistd.h>
 #include <string.h>
 
-
-
 // ********************************************
 // ** Core Types
 
@@ -23,14 +21,19 @@ typedef ASz APtr;
 typedef U16 CSz;
 typedef CSz CPtr;
 
-
 #define ASIZE sizeof(ASz)
 #define CSIZE sizeof(CSz)
-#define FALSE 0
-#define TRUE 1
-#define elif else if
 #define NULL16 0xFFFF
 #define OK 0
+
+#ifndef FALSE
+#define FALSE 0
+#define TRUE 1
+#endif
+
+#ifndef elif
+#define elif else if
+#endif
 
 typedef U8 ErrCode;
 
@@ -60,13 +63,6 @@ typedef enum {
   ADD,          SUB,          MOD,          MUL,
 } Op;
 
-// 1MiB
-#define MEM_SIZE 0x100000
-#define WS_SIZE  0x100
-#define RS_SIZE  0x100
-#define LS_SIZE  0x8000
-#define DICT_SIZE 0x1000
-
 // Generic stack.
 typedef struct {
   U16 sp;
@@ -88,15 +84,45 @@ typedef struct {
   Stk rs;
 } Env;
 
-Env env;
-U8* mem;
-
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
   SzBits sz;
   U8 len;
   Bool usesImm;
 } OpData;
+
+typedef struct {
+  U16 heap;  // heap offset
+  U16 end;   // end offset
+} Dict;
+
+typedef struct {
+  U8 len;
+  U8 s[];
+} Key;
+
+#define MAX_TOKEN 32
+#define TOKEN_BUF 0x7D
+
+typedef struct {
+  U8 group;
+  U8 len;   // length of token
+  U8 size;  // characters buffered
+  U8 buf[]; // size=TOKEN_BUF
+} TokenState;
+
+typedef enum {
+  T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
+} TokenGroup;
+
+typedef ssize_t (*read_t)(size_t nbyte);
+
+// ********************************************
+// ** Globals
+Env env;
+U8* mem = NULL;
+Dict* dict = NULL;
+TokenState* tokenState = NULL;
 
 // ********************************************
 // ** Helpers
@@ -247,16 +273,6 @@ op_t ops[] = {
 // ********************************************
 // ** Spore Dict
 // key/value map (not hashmap) wherey is a cstr and value is U32.
-typedef struct {
-  U16 heap;  // heap offset
-  U16 end;   // end offset
-} Dict;
-Dict* dict = NULL;
-
-typedef struct {
-  U8 len;
-  U8 s[];
-} Key;
 
 #define Dict_key(OFFSET)  ((Key*) (dict + sizeof(Dict) + OFFSET))
 // Given ptr to key, get pointer to the value.
@@ -317,25 +333,6 @@ void Dict_forget(U8 slen, U8* s) {
 
 // ********************************************
 // ** Scanner
-
-typedef enum {
-  T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
-} TokenGroup;
-
-#define MAX_TOKEN 32
-#define TOKEN_BUF 0x7D
-
-TokenGroup tokenGroup;
-
-typedef struct {
-  U8 group;
-  U8 len;   // length of token
-  U8 size;  // characters buffered
-  U8 buf[]; // size=TOKEN_BUF
-} TokenState;
-
-TokenState* tokenState = NULL;
-
 #define tokenBufSize (tokenState->size)
 #define tokenLen tokenState->len
 #define tokenBuf tokenState->buf
@@ -360,8 +357,6 @@ TokenGroup toTokenGroup(U8 c) {
   }
   return T_SYMBOL;
 }
-
-typedef ssize_t (*read_t)(size_t nbyte);
 
 // Read bytes incrementing tokenBufSize
 void readAppend(read_t r) {
