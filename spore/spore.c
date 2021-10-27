@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
+#include <string.h>
+
 
 
 // ********************************************
@@ -27,6 +29,8 @@ typedef CSz CPtr;
 #define FALSE 0
 #define TRUE 1
 #define elif else if
+#define NULL16 0xFFFF
+#define OK 0
 
 typedef U8 ErrCode;
 
@@ -115,10 +119,16 @@ SzBits bytesToSz(U8 bytes) {
   fail("invalid bytes");
 }
 
+void* alignSys(void* p, U8 szBytes) {
+  U8 mod = (size_t)p % szBytes;
+  if(mod == 0) return p;
+  return p + (szBytes - mod);
+}
+
 APtr align(APtr aPtr, U8 szBytes) {
   U8 mod = aPtr % szBytes;
   if(mod == 0) return aPtr;
-  return mod + (szBytes - mod);
+  return aPtr + (szBytes - mod);
 }
 
 void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
@@ -158,7 +168,7 @@ ErrCode Stk_push(Stk* stk, U32 value, SzBits sz) {
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
-  return 0;
+  return OK;
 }
 
 U32 Stk_pop(Stk* stk, SzBits sz) {
@@ -231,6 +241,77 @@ op_t ops[] = {
 };
 
 // ********************************************
+// ** Spore Dict
+// key/value map (not hashmap) wherey is a cstr and value is U32.
+typedef struct {
+  U16 heap;  // heap offset
+  U16 end;   // end offset
+} Dict;
+Dict* dict = NULL;
+
+typedef struct {
+  U8 len;
+  U8 s[];
+} Key;
+
+#define Dict_key(OFFSET)  ((Key*) (dict + sizeof(Dict) + OFFSET))
+// Given ptr to key, get pointer to the value.
+#define Key_vptr(KEY) ((U32*) alignSys(KEY + KEY->len + 1, 4));
+
+U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
+  if(slen0 != slen1) return FALSE;
+  for(U8 i = 0; i < slen0; i += 1) {
+    if(s0[i] != s1[i]) return FALSE;
+  }
+  return TRUE;
+}
+
+// find key offset from dict. Else return dict.heap
+U16 Dict_find(U8 slen, U8* s) {
+  Key* key = Dict_key(0);
+  U16 offset = 0;
+
+  while(offset < dict->heap) {
+    if(cstrEq(key->len, slen, key->s, s)) {
+      return offset;
+    }
+    U16 entrySz = align(key->len + 1 + 4, 4);
+    key += entrySz;
+    offset += entrySz;
+  }
+
+  assert(offset == dict->heap);
+  return offset;
+}
+
+U16 Dict_set(U8 slen, U8* s, U32 value) {
+  // Set a key to a value, returning the offset
+  U16 offset = Dict_find(slen, s);
+  Key* key = Dict_key(offset);
+  if(offset == dict->heap) {
+    // new key
+    key->len = slen;
+    memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
+    dict->heap += align(1 + slen + 4, 4);
+  }
+  U32* v = Key_vptr(key);
+  *v = value;
+  return offset;
+}
+
+ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
+  U16 offset = Dict_find(slen, s);
+  OP_ASSERT(offset != dict->heap, "key not found");
+  *out = *Key_vptr(Dict_key(offset));
+  return OK;
+}
+
+void Dict_forget(U8 slen, U8* s) {
+  dict->heap = Dict_find(slen, s);
+}
+
+
+// ********************************************
 // ** Scanner
 
 typedef enum {
@@ -292,7 +373,7 @@ void readNew(read_t r) {
 
 ErrCode shiftBuf() {
   // Shift buffer left from end of token
-  if(tokenLen == 0) return 0;
+  if(tokenLen == 0) return OK;
   U8 newStart = tokenLen;
   U8 i = 0;
   while(tokenLen < tokenBufSize) {
@@ -302,7 +383,7 @@ ErrCode shiftBuf() {
   }
   tokenBufSize = tokenBufSize - newStart;
   tokenLen = 0;
-  return 0;
+  return OK;
 }
 
 // Scans next token.
@@ -311,7 +392,7 @@ ErrCode scan(read_t r) {
   // Skip whitespace
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew(r);
-    if(tokenBufSize == 0) return 0;
+    if(tokenBufSize == 0) return OK;
 
     if (toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
       shiftBuf();
@@ -337,23 +418,23 @@ ErrCode scan(read_t r) {
     tokenLen += 1;
   }
 
-  return 0;
+  return OK;
 }
 
 ErrCode tilNewline(read_t r) {
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew(r);
-    if (tokenBufSize == 0) return 0;
-    if (tokenBuf[tokenLen] == '\n') return 0;
+    if (tokenBufSize == 0) return OK;
+    if (tokenBuf[tokenLen] == '\n') return OK;
     tokenLen += 1;
   }
-  return 0;
+  return OK;
 }
 
 ErrCode linestr(read_t r, Env* env) {
   while(TRUE) {
     if (tokenLen >= tokenBufSize) readNew(r);
-    if (tokenBufSize == 0) return 0;
+    if (tokenBufSize == 0) return OK;
     char c = tokenBuf[tokenLen];
 
     if (c == '\n') {
@@ -375,7 +456,7 @@ ErrCode linestr(read_t r, Env* env) {
     env->heap += 1;
     tokenLen += 1;
   }
-  return 0;
+  return OK;
 }
 
 // Taking a char that is known to be hex, return the hex value.
@@ -407,7 +488,7 @@ ErrCode tokenHex(Env* env) {
   }
   Stk_push(&env->ws, v, bytesToSz((tokenSize>>1) + tokenSize % 2));
   shiftBuf();
-  return 0;
+  return OK;
 }
 
 ErrCode putLoc(read_t r, Env* env) {
@@ -418,20 +499,20 @@ ErrCode putLoc(read_t r, Env* env) {
   tokenLen += 1;
   OP_ASSERT(sz == S_U16 || sz == S_U32, "& size invalid");
   OP_CHECK(Stk_push(&env->ws, env->heap, sz), "putLoc.push");
-  return 0;
+  return OK;
 }
 
 ErrCode compile(read_t r, Env* env) {
   while(TRUE) {
     scan(r);
-    if(tokenLen == 0) return 0;
+    if(tokenLen == 0) return OK;
     char c = tokenBuf[0];
     if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
     elif (c == '"') { OP_CHECK(linestr(r, env), "compile.linestr"); }
     elif (c == '#') { scan(r); OP_CHECK(tokenHex(env), "compile.tokenHex"); }
     elif (c == '&') OP_CHECK(putLoc(r, env), "compile.putLoc");
   }
-  return 0;
+  return OK;
 }
 
 
@@ -465,6 +546,10 @@ ErrCode compile(read_t r, Env* env) {
     },                                    \
   }
 
+#define SMALL_ENV \
+  /*      MS      WS     RS     LS     DICT */    \
+  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200)
+
 
 // ********************************************
 // ** Main
@@ -474,7 +559,7 @@ int main() {
   printf("compiling spore...:\n");
 
   tests();
-  return 0;
+  return OK;
 }
 
 // ********************************************
@@ -482,8 +567,7 @@ int main() {
 #include <string.h>
 
 #define TEST_ENV \
-  /*      MS      WS     RS     LS     DS */    \
-  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200);  \
+  SMALL_ENV; \
   U32 heapStart = env.heap
 
 U8* testBuf = NULL;
@@ -523,7 +607,7 @@ ErrCode testHex() {
   U32 result = POP(S_U16);
   assert(result == 0x10AF);
 
-  return 0;
+  return OK;
 }
 
 ErrCode testLoc() {
@@ -533,7 +617,7 @@ ErrCode testLoc() {
   U16 result1 = POP(S_U16); U32 result2 = POP(S_U32);
   assert(result1 == (U16)heapStart);
   assert(result2 == heapStart);
-  return 0;
+  return OK;
 }
 
 ErrCode testQuotes() {
@@ -542,12 +626,27 @@ ErrCode testQuotes() {
   COMPILE("\"foo bar\" baz\\0\n\0");
 
   assert(0 == strcmp(env.mem + heapStart, "foo bar\" baz\0"));
-  return 0;
+  return OK;
+}
+
+ErrCode testDict() {
+  printf("## testDict... cstr\n");
+  assert(cstrEq(1, 1, "a", "a"));
+  assert(!cstrEq(1, 1, "a", "b"));
+
+  assert(cstrEq(2, 2, "z0", "z0"));
+  assert(!cstrEq(2, 1, "aa", "a"));
+  assert(!cstrEq(2, 2, "aa", "ab"));
+
+  printf("## testDict... dict\n");
+  TEST_ENV;
+  return OK;
 }
 
 void tests() {
   assert(!testHex());
   assert(!testLoc());
   assert(!testQuotes());
+  assert(!testDict());
 }
 
