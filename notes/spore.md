@@ -44,15 +44,15 @@ Register stacks include:
   are popped from the stack for operations (if W is specified in Mem) and
   pushed to the stack as the result of operations.
 - `RS` 256 (2^8) bytes "Return Stack" for call/return with a variable
-  bit-length array for tracking sector (we'll get to this) as well as parallel
+  bit-length array for tracking module (we'll get to this) as well as parallel
   256 bytes for stack-size tracking.
 
 ## Registers
 The mem operation (see Binary layout) controls memory access. spore has very few
 registers:
 
-- `CP`: SeCtor Ptr register of variable bit-length denoting the memory sector of a
-  16 bit half-pointer.
+- `MP`: Module Ptr register of variable bit-length denoting the module block of
+  a 16 bit half-pointer.
 - `LP` locals pointer, addr-bit register is used for local values with the
   targeting language. It automatically decrements on CALL and increments on
   RET (covered later)
@@ -62,18 +62,18 @@ registers:
 U8, U16 and U32 are used to specify the bit-width regardless of whether
 they are signed or unsigned (the operation determines signedness).
 
-CPtr means a "half pointer", aka a 16bit pointer. APtr is an "absolute
+MPtr means a "half pointer", aka a 16bit pointer. APtr is an "absolute
 pointer" aka a 32bit pointer. Typically only immediate (compile-time) pointers
-are SPtr's, so Ptr also means APtr.
+are MPtr's, so Ptr also means APtr.
 
-On 16bit systems, an SPtr and APtr must have the same size of 16bits and the
-sector is always "0".
+On 16bit systems, an MPtr and APtr must have the same size of 16bits and the
+module block is always "0".
 
 ## Memory Operations
 spore16 supports 16 bit memory access and function calls through the use
-of the sector register (CP), which gets stored on the return stack (RS)
-alongside the addresses to return to. The sector gets updated anytime there is
-a jump or call into a 32 bit address, or a RET. All functions within a sector
+of the module register (MP), which gets stored on the return stack (RS)
+alongside the addresses to return to. The module gets updated anytime there is
+a jump or call into a 32 bit address, or a RET. All functions within a module
 can address memory and other local functions using 16 bit address space.
 
 When compiling for a 32bit spore machine it is important to separate the functions
@@ -91,11 +91,11 @@ A single spore16 instruction can specify up to **three different operations that
 (might) all happen within a single clock cycle** on a suitably built machine.
 The approach is inspired by the [J1
 microprocessor](https://excamera.com/files/j1.pdf) with the desire to make a
-more general-purpose CPU. For demonstration, `1,SRCP,ADD,RET #4200` will:
+more general-purpose CPU. For demonstration, `1,SRMP,ADD,RET #4200` will:
 - Add two unsigned 32 bit (4 byte) values on the stack
-- Store their value at the 16bit address 0x4200 offset by the CP (sector ptr).
+- Store their value at the 16bit address 0x4200 offset by the MP (module ptr).
 - Return, which not only continues executing from the previous function but
-  also updates the working stack pointer and the sector pointer.
+  also updates the working stack pointer and the module pointer.
 
 spore16's bit layout is as follows:
 
@@ -119,7 +119,7 @@ Assembly syntax:
 - `/ line comment`
 - `#NN / #NNNN / #NNNN_NNNN` pushes a 8/16/32 unsigned hex number, i.e. `#1F
   /``#001F`/ `#001F4200`
-- `&N` push heap value onto the stack. N=2 for CPtr, N=4 for APtr.
+- `&N` push heap value onto the stack. N=2 for MPtr, N=4 for APtr.
 - `=N<name>` pop a value of N bytes from the stack and store at name. If name
   doesn't exist, add to dict.
 - `@N<name>` get value from name of size N bytes.
@@ -173,7 +173,7 @@ the instruction requires an IM. It can be interpreted either signed or unsigned
 depending on the operation.
 
 Only 16bit immediates are supported. 32bit constants can be pushed to the stack
-by LoaDing them from sector memory or pushing two 16bit constants and using
+by LoaDing them from module memory or pushing two 16bit constants and using
 math to join them. The former is typically more compact, while the later can be
 faster on due to cache coherency.
 
@@ -197,10 +197,10 @@ further information.
   bin Name    Top       Second  Store     Description
 --------------------------------------------------------------
 0 000 SRLP    WS0       WS1     ST(LP+IM) StoRe LocalsPtr
-1 001 SRCP    WS0       WS1     ST(CP+IM) StoRe to seCtorPtr offset
+1 001 SRMP    WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
 2 010 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
 3 011 FTLP    FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
-4 100 FTCI    FT(CP+IM) WS0     WS        FeTch from seCtorPtr offset
+4 100 FTMI    FT(MP+IM) WS0     WS        FeTch from ModulePtr offset
 5 101 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
 6 110 IMWS    IM        WS0     WS        IMmediate Working Stack
 7 111 WS      WS0       WS1     WS        Working Stack
@@ -215,21 +215,21 @@ possibilities, describing them in reverse order (simplest to most complex):
   It stores it's value on the working stack.
 - FTOI: means "FeTch Operate Immediate". It fetches the value at the address
   on the working stack and operates on it using the immediate value.
-- FTCI: means "FeTch seCtor pointer Immediate". It fetches from immediate
-  with an offset of the sector pointer. It stores on the working stack.
+- FTMI: means "FeTch Module pointer Immediate". It fetches from immediate
+  with an offset of the module pointer. It stores on the working stack.
 - FTLP: means "FeTch LocalsPtr". It uses the immediate as the offset to
   fetch from the function locals. It stores on the working stack.
 - SROI: means "StoRe Operate Immediate". It uses the immediate value for
   the operation and uses WS1 as the "second". It stores the value
   at the address stored in WS0.
-- SRCP: means "StoRe seCtorPtr". It uses the WS for the operation but then
-  stores at the immediate value offset by the sector pointer.
+- SRMP: means "StoRe ModulePtr". It uses the WS for the operation but then
+  stores at the immediate value offset by the module pointer.
 - SRLP: means "StoRe LocalsPtr". It uses the WS for the operation but
   stores at the immediate value offset by the function locals.
 
 Cheatsheat for above table:
-- FT(CP+IM) means "fetch CP+IM" aka "fetch sector + immediate" aka use the
-  value at the immediate address in the specified sector. ST(...) means "store"
+- FT(MP+IM) means "fetch MP+IM" aka "fetch module + immediate" aka use the
+  value at the immediate address in the specified module. ST(...) means "store"
   at that address.
 - Top means the top value used in the operation.
 - Second means the second value used in the operation (may not be used).
@@ -242,20 +242,20 @@ Cheatsheat for above table:
 
 A Jmp (Jump) involves:
 - Seting EP to the address
-  - If the address is 16bit then EP = CP+address
-  - If the address is 32bit then update CP to the new sector
+  - If the address is 16bit then EP = MP+address
+  - If the address is 32bit then update MP to the new module
 - Execution continues at new EP
 
 For all jumps, a jump of size=U8 will trap, U16 is interpreted as an offset
-from the sector, U32 is an absolute jump.
+from the module, U32 is an absolute jump.
 
 The following Jump modes are possible:
 - 0 000 JZ: Jump to Immediate if store=zero
 - 1 001 CALL: Call an address
-  - pop ptr off of store, convert to APtr using CP if necessary.
+  - pop ptr off of store, convert to APtr using MP if necessary.
   - fetch 16bit growWs value at ptr.
   - grow WS by growWs.
-  - push `EP+INSTR_WIDTH` onto RS, including current CP and amount WS grew.
+  - push `EP+INSTR_WIDTH` onto RS, including current MP and amount WS grew.
   - jump to ptr+2 (skipping WS size)
 - 2 010 JST: Jump to STore. Consumes store.
 - 3 011 CNW: Call an address without a working stack update. Does not require
@@ -286,7 +286,7 @@ The jump table must be layed out as follows:
 
 - Instr containing `JTBL`
 - `IM` 16bit value containing the size of the jump table.
-- array of 16 bit values containing the sectorPtr to jump to.
+- array of 16 bit values containing the modulePtr to jump to.
   - index0 must contain the location that is jumped to if the store value is 1.
     A value of 0 will begin execution immediately after the jmp table and the
     final index is the "else/default" branch.
@@ -487,7 +487,7 @@ The registers are:
 - D 1101 AP: the alocator pointer register. This should point to the "global"
   allocator currently being used. The API for such an allocator will be
   implementation specific.
-- E 1110 CP: the seCtorPtr.
+- E 1110 MP: the ModulePtr.
 - F 1111 LP: the LocalsPtr register. Writing to will trap.
 
 > Note that implementors don't have to actually store these in hardware
@@ -524,10 +524,10 @@ depends on endianness (see Alignment section for details).
 Below is the spore16 description and what it instead does in spore8.
 
 - SRLP: Store WS0 at `LP+IM`
-- SRCP: Store WS0 at `CP+IM`
+- SRMP: Store WS0 at `MP+IM`
 - SROI: causes trap in spore8
 - FTLP: Fetch value at `LP+IM` onto WS
-- FTCI: Fetch value at `CP+IM` onto WS
+- FTMI: Fetch value at `MP+IM` onto WS
 - FTOI: causes trap in spore8
 - IMWS: push IMM onto WS
 - WS: causes NOOP in spore8
@@ -550,18 +550,18 @@ pulled from and stored to the WS.
 There is no alignment requirements on Imediate values following IMM
 instructions. For constants (on memory load), there is alignment requirements,
 but all values of the same type must be packed together in their respective
-sectors. The header of a binary spore8 file contains the big/little endianness setting
-for the binary.  It also contains offsets for all of the global values in each
-sector, which must be broken into data type sections. It looks like this (all
-numbers are hex, `//` means a comment).
+module blocks. The header of a binary spore8 file contains the big/little
+endianness setting for the binary.  It also contains offsets for all of the
+global values in each module, which must be broken into data type sections. It
+looks like this (all numbers are hex, `//` means a comment).
 
 ```
 // Constant Header Section
-0000 // sector number
+0000 // module number
 0100 // offset for beginning of 32bit values
 0200 // offset for end of 32bit values, beginning of 16bit values
 0332 // end of 16bit values
-0001 // next sector number
+0001 // next module number
 // ...
 ```
 

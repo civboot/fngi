@@ -72,7 +72,8 @@ typedef struct {
 
 // Environment
 typedef struct {
-  APtr cp;            // seCtion Pointer
+  APtr ep;  // execution pointer
+  APtr mp;  // Module Pointer
   APtr* heap;
   APtr* topHeap;
   APtr* topMem;
@@ -233,7 +234,7 @@ void shift_op(OpData* out) {
 #define OP_CHECK(COND, MSG) \
   if(COND) { printf(MSG); printf("\n"); return 1; }
 
-typedef U8 (*op_t)(OP_ARGS);
+typedef ErrCode (*op_t)(OP_ARGS);
 
 ErrCode op_notimpl(OP_ARGS) {
   fail("op not implemented");
@@ -275,6 +276,14 @@ op_t ops[] = {
   // ADD,        SUB,           MOD,          MUL,
   op_add,        op_notimpl,    op_notimpl,   op_notimpl,
 };
+
+ErrCode execute(APtr ap) {
+  while(TRUE) {
+    assert(ap < *env.topMem);
+    U16 instr = mem[ap];
+
+  }
+}
 
 // ********************************************
 // ** Spore Dict
@@ -607,7 +616,7 @@ ErrCode compile(read_t r) {
   U8 rsMem[RS];                           \
   mem = localMem; \
   env = (Env) {                           \
-    .cp = 0,                              \
+    .mp = 0,                              \
     .heap = (APtr*) (mem + 4),              \
     .topHeap = (APtr*) (mem + 8),           \
     .topMem = (APtr*) (mem + 12),           \
