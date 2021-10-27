@@ -73,7 +73,6 @@ typedef struct {
 // Environment
 typedef struct {
   APtr cp;            // seCtion Pointer
-  APtr lp;            // local stack pointer
   APtr* heap;
   APtr* topHeap;
   APtr* topMem;
@@ -274,9 +273,9 @@ op_t ops[] = {
 // ** Spore Dict
 // key/value map (not hashmap) wherey is a cstr and value is U32.
 
-#define Dict_key(OFFSET)  ((Key*) (dict + sizeof(Dict) + OFFSET))
+#define Dict_key(OFFSET)  ((Key*) (((U8*)dict) + sizeof(Dict) + OFFSET))
 // Given ptr to key, get pointer to the value.
-#define Key_vptr(KEY) ((U32*) alignSys(KEY + KEY->len + 1, 4));
+#define Key_vptr(KEY) ((U32*) alignSys(((U8*)KEY) + KEY->len + 1, 4));
 
 U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
   if(slen0 != slen1) return FALSE;
@@ -322,7 +321,8 @@ U16 Dict_set(U8 slen, U8* s, U32 value) {
 ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
   OP_ASSERT(offset != dict->heap, "key not found");
-  *out = *Key_vptr(Dict_key(offset));
+  Key* key = Dict_key(offset);
+  *out = *Key_vptr(key);
   return OK;
 }
 
@@ -536,11 +536,13 @@ ErrCode compile(read_t r) {
   *env.topMem = MS;                       \
   /* put Local Stack, Dict on topheap */  \
   *env.topHeap -= LS;                     \
-  env.ws.mem = mem + *env.topHeap;        \
+  env.ls.mem = mem + *env.topHeap;        \
   *env.topHeap -= sizeof(TokenState) + TOKEN_BUF; \
   tokenState = (TokenState*) (mem + *env.topHeap); \
   *env.topHeap -= DS;                      \
-  dict = (Dict*) (mem + *env.topHeap);
+  dict = (Dict*) (mem + *env.topHeap);    \
+  dict->heap = 0;                         \
+  dict->end = DS;
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
@@ -593,7 +595,6 @@ ssize_t testing_read(size_t nbyte) {
 
 ErrCode testHex() {
   TEST_ENV;
-  printf("... mem=%x heap=%x topHeap=%x ts=%x\n", mem, env.heap, env.topHeap, tokenState);
 
   printf("## testHex #01...\n");
   COMPILE("#10\0");
@@ -627,6 +628,7 @@ ErrCode testQuotes() {
 }
 
 ErrCode testDict() {
+  TEST_ENV;
   printf("## testDict... cstr\n");
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
@@ -636,7 +638,25 @@ ErrCode testDict() {
   assert(!cstrEq(2, 2, "aa", "ab"));
 
   printf("## testDict... dict\n");
-  TEST_ENV;
+  assert(0 == Dict_find(3, "foo"));
+
+  printf("### set...\n");
+  assert(0 == Dict_set(3, "foo", 0xF00));
+
+  printf("### get...\n");
+  U32 result;
+  assert(!Dict_get(&result, 3, "foo"));
+  assert(result == 0xF00);
+
+  assert(8 == Dict_set(5, "bazaa", 0xBA2AA));
+  assert(!Dict_get(&result, 5, "bazaa"));
+  assert(result == 0xBA2AA);
+
+  printf("### re-set...\n");
+  assert(0 == Dict_set(3, "foo", 0xF00F));
+  assert(!Dict_get(&result, 3, "foo"));
+  assert(result == 0xF00F);
+
   return OK;
 }
 
