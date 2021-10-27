@@ -79,12 +79,14 @@ typedef struct {
   U8* mem;
   APtr cp;            // seCtion Pointer
   APtr lp;            // local stack pointer
-  APtr heap;
+  APtr* heap;
+  APtr* topHeap;
+  APtr* topMem;
+  Stk ls;
 
+  // Separate from mem
   Stk ws;
   Stk rs;
-  Stk ls;
-  Stk dict;
 } Env;
 
 typedef struct {
@@ -393,7 +395,6 @@ ErrCode scan(read_t r) {
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew(r);
     if(tokenBufSize == 0) return OK;
-
     if (toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
       shiftBuf();
       break;
@@ -452,8 +453,8 @@ ErrCode linestr(read_t r, Env* env) {
       elif(c == '0') c = '\0';
       else OP_ASSERT(FALSE, "invalid escaped char");
     }
-    env->mem[env->heap] = c;
-    env->heap += 1;
+    env->mem[*env->heap] = c;
+    *env->heap += 1;
     tokenLen += 1;
   }
   return OK;
@@ -491,14 +492,14 @@ ErrCode tokenHex(Env* env) {
   return OK;
 }
 
-ErrCode putLoc(read_t r, Env* env) {
+ErrCode putLoc(read_t r, Env* env) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
   if(tokenLen >= tokenBufSize) readAppend(r);
   U8 szBytes = charToHex(tokenBuf[tokenLen]);
   SzBits sz = bytesToSz(szBytes);
   tokenLen += 1;
   OP_ASSERT(sz == S_U16 || sz == S_U32, "& size invalid");
-  OP_CHECK(Stk_push(&env->ws, env->heap, sz), "putLoc.push");
+  OP_CHECK(Stk_push(&env->ws, *env->heap, sz), "putLoc.push");
   return OK;
 }
 
@@ -518,33 +519,31 @@ ErrCode compile(read_t r, Env* env) {
 
 // ********************************************
 // ** Initialization
-#define TOKEN_LOC(mem) (mem + 4)
-
-#define HEAP_LOC  \
-  ( \
-    sizeof(TokenState) + TOKEN_BUF  \
-  )
-
 #define NEW_ENV(MS, WS, RS, LS, DS)       \
   U8 mem[MS] = {0};                       \
-  tokenState = (TokenState*) TOKEN_LOC(mem); \
   U8 wsMem[WS];                           \
   U8 rsMem[RS];                           \
   Env env = {                             \
     .mem = mem,                           \
     .cp = 0,                              \
-    .heap = HEAP_LOC,                     \
+    .heap = (APtr*) (mem + 4),              \
+    .topHeap = (APtr*) (mem + 8),           \
+    .topMem = (APtr*) (mem + 12),           \
+    .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
     .rs = { .size = RS, .sp = RS, .mem = rsMem },     \
-    .ls = {                               \
-      .sp = LS_SIZE,                      \
-        .mem = mem+MS-LS                  \
-    },                                    \
-    .dict = {                             \
-      .sp = DS,                           \
-      .mem = mem+MS-LS-DS,                \
-    },                                    \
-  }
+  };                                      \
+  /* configure heap+topheap */            \
+  *env.heap = 16;                         \
+  *env.topHeap = MS;                      \
+  *env.topMem = MS;                       \
+  /* put Local Stack, Dict on topheap */  \
+  *env.topHeap -= LS;                     \
+  env.ws.mem = mem + *env.topHeap;        \
+  *env.topHeap -= sizeof(TokenState) + TOKEN_BUF; \
+  tokenState = (TokenState*) (mem + *env.topHeap); \
+  *env.topHeap -= DS;                      \
+  dict = (Dict*) (mem + *env.topHeap);
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
@@ -568,7 +567,7 @@ int main() {
 
 #define TEST_ENV \
   SMALL_ENV; \
-  U32 heapStart = env.heap
+  U32 heapStart = *env.heap
 
 U8* testBuf = NULL;
 U16 testBufIdx = 0;
@@ -597,6 +596,7 @@ ssize_t testing_read(size_t nbyte) {
 
 ErrCode testHex() {
   TEST_ENV;
+  printf("... mem=%x heap=%x topHeap=%x ts=%x\n", mem, env.heap, env.topHeap, tokenState);
 
   printf("## testHex #01...\n");
   COMPILE("#10\0");
