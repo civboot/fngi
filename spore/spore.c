@@ -43,6 +43,8 @@ typedef enum {
   S_U32,  S_UNDEF
 } Sz;
 
+#define S_APTR S_U32
+
 // Mem
 typedef enum {
   SRLP,   SRCP,   SROI,   FTLP,
@@ -83,6 +85,8 @@ typedef struct {
   Stk ws;
   Stk rs;
 } Env;
+
+#define LS_OFFSET() ((size_t)mem - (size_t)env.ls.mem)
 
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
@@ -217,6 +221,8 @@ U32 Stk_pop(Stk* stk, Sz sz) {
   return out;
 }
 
+#define Stk_len(STK) (STK.size - STK.sp)
+
 // Shift opdata to the right.
 void shift_op(OpData* out) {
   out->v[2] = out->v[1];
@@ -277,11 +283,119 @@ op_t ops[] = {
   op_add,        op_notimpl,    op_notimpl,   op_notimpl,
 };
 
+U16 popImm() {
+    U16 out = fetch(mem, env.ep, S_U16);
+    env.ep += 2;
+    return out;
+}
+
+ErrCode executeInstr(U16 instr) {
+  Op i_op =   (Op)    (0x3F & instr);
+  Mem i_mem = (Mem)   (0x7  & (instr >>              6));
+  Jmp jmp = (Jmp)   (0x7  & (instr >>     (2 + 3 + 6)));
+  Sz sz =   (Sz)    (0x7  & (instr >> (3 + 2 + 3 + 6)));
+
+  if(i_op == FT && !(i_mem == WS && sz == S_APTR)) {
+      fail("FT must use WS and size=ptr");
+  }
+  if(!( (jmp == NOJ) || (jmp == RET))) {
+    if(( (jmp == JZ) || (jmp == JTBL) ) && i_mem != WS) {
+      fail("JZ/JTBL require IMM for offset/table meta so mem cannot use it.");
+    }
+    elif(i_mem <= SROI) fail("jumps require Mem.Store = WS");
+  }
+
+  U32 top = 0;
+  U32 snd = 0;
+  U8 len = 1;
+  APtr srPtr = 0;
+  U8 usesImm = FALSE;
+
+  // *****************
+  // * Mem: get the appropriate values
+
+  // Get Top
+  switch(i_mem) {
+    case SRLP:
+      usesImm = TRUE;
+      srPtr = LS_OFFSET() + env.ls.sp + popImm();
+      top = Stk_pop(&env.ws, sz);
+      break;
+    case SRCP:
+      usesImm = TRUE;
+      srPtr = env.mp + popImm();
+      top = Stk_pop(&env.ws, sz);
+      break;
+    case SROI:
+    case FTLP:
+    case FTCI:
+    case FTOI: fail("unknown mem");
+    case IMWS:
+      usesImm = TRUE;
+      top = popImm();
+      break;
+    case WS:
+      if(Stk_len(&env.ws) == 0) len = 0;
+      else top = Stk_pop(&env.ws, sz);
+      break;
+    default: fail("unknown mem");
+  }
+
+  // Get Second
+  if(i_op == SR) {
+    assert(i_mem==WS || i_mem==IMWS);
+    snd = Stk_pop(&env.ws, S_APTR);
+    len += 1;
+  } else {
+    if(i_mem == FTCI) {
+      snd = popImm();
+      len += 1;
+    } elif(Stk_len(&env.ws) >= szToBytes(sz)) {
+      snd = Stk_pop(&env.ws, sz);
+      len += 1;
+    }
+  }
+
+  // *************
+  // * Op: perform the operation
+  OpData data = {.v = {top, snd, 0}, .sz = sz, .len = len, .usesImm = usesImm };
+  ops[(U8) i_op] (&data); // call op from array
+
+  APtr jmpLoc = 0;
+
+  // *************
+  // * Jmp: perform the jump
+  switch(jmp) {
+    case NOJ: break;
+    case JZ: jmpLoc = popImm(); break;
+    case CALL: fail("not implemented");
+    case JST:
+      assert(data.len > 0);
+      data.len -= 1;
+      jmpLoc = data.v[0];
+      data.v[0] = data.v[1];
+      data.v[1] = data.v[2];
+      break;
+    case CNW: fail("not implemented");
+    case JTBL: fail("not implemented");
+    case RET: fail("not implemented");
+  }
+
+  // *************
+  // * Store Result
+  if (srPtr && data.len > 0) store(mem, srPtr, data.v[0], sz);
+  elif (data.len) Stk_push(&env.ws, data.v[0], sz);
+
+  if (data.len > 1) Stk_push(&env.ws, data.v[1], sz);
+  if (data.len > 2) Stk_push(&env.ws, data.v[2], sz);
+  return OK;
+}
+
 ErrCode execute(APtr ap) {
   while(TRUE) {
     assert(ap < *env.topMem);
     U16 instr = mem[ap];
-
+    executeInstr(instr);
   }
 }
 
