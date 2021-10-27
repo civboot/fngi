@@ -41,7 +41,7 @@ typedef U8 ErrCode;
 typedef enum {
   S_U8,   S_U16,
   S_U32,  S_UNDEF
-} SzBits;
+} Sz;
 
 // Mem
 typedef enum {
@@ -85,7 +85,7 @@ typedef struct {
 
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
-  SzBits sz;
+  Sz sz;
   U8 len;
   Bool usesImm;
 } OpData;
@@ -123,6 +123,13 @@ U8* mem = NULL;
 Dict* dict = NULL;
 TokenState* tokenState = NULL;
 
+#define INSTR_DEFAULT \
+  (S_U32 << 14)       \
+  + (NOJ << 11)       \
+  + (WS  << 6 )       \
+  + NOP
+U16 instr = INSTR_DEFAULT;
+
 // ********************************************
 // ** Helpers
 
@@ -132,7 +139,7 @@ void fail(U8* cstr) {
   exit(1);
 }
 
-ErrCode szBits_toBytes(SzBits sz) {
+U8 szToBytes(Sz sz) {
   switch (sz) {
     case S_U8: return 1;
     case S_U16: return 2;
@@ -141,7 +148,7 @@ ErrCode szBits_toBytes(SzBits sz) {
   }
 }
 
-SzBits bytesToSz(U8 bytes) {
+Sz bytesToSz(U8 bytes) {
   if(bytes <= 1) return S_U8;
   if(bytes <= 2) return S_U16;
   if(bytes <= 4) return S_U32;
@@ -160,7 +167,7 @@ APtr align(APtr aPtr, U8 szBytes) {
   return aPtr + (szBytes - mod);
 }
 
-void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
+void store(U8* mem, APtr aptr, U32 value, Sz sz) {
   switch (sz) {
     case S_U8: 
       *(mem+aptr) = (U8)value;
@@ -177,7 +184,7 @@ void store(U8* mem, APtr aptr, U32 value, SzBits sz) {
   }
 }
 
-U32 fetch(U8* mem, APtr aptr, SzBits sz) {
+U32 fetch(U8* mem, APtr aptr, Sz sz) {
   U8 value;
   switch (sz) {
     case S_U8: 
@@ -192,16 +199,16 @@ U32 fetch(U8* mem, APtr aptr, SzBits sz) {
   }
 }
 
-ErrCode Stk_push(Stk* stk, U32 value, SzBits sz) {
-  U8 szBytes = szBits_toBytes(sz);
+ErrCode Stk_push(Stk* stk, U32 value, Sz sz) {
+  U8 szBytes = szToBytes(sz);
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
   return OK;
 }
 
-U32 Stk_pop(Stk* stk, SzBits sz) {
-  U8 szBytes = szBits_toBytes(sz);
+U32 Stk_pop(Stk* stk, Sz sz) {
+  U8 szBytes = szToBytes(sz);
 
   if(stk->sp + szBytes > stk->size) { fail ("stack underflow"); }
   U32 out = fetch(stk->mem, stk->sp, sz);
@@ -336,7 +343,6 @@ void Dict_forget(U8 slen, U8* s) {
 #define tokenBufSize (tokenState->size)
 #define tokenLen tokenState->len
 #define tokenBuf tokenState->buf
-#define tokenGroup ((TokenGroup) tokenState->group)
 
 void dbgToken() {
   printf("token: size=%u, len=%u\n", tokenBufSize, tokenLen);
@@ -403,14 +409,14 @@ ErrCode scan(read_t r) {
   tokenLen = 0;
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
-  if(tokenGroup <= T_ALPHA) tokenState->group = T_ALPHA;
+  if(tokenState->group <= T_ALPHA) tokenState->group = T_ALPHA;
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
     c = tokenBuf[tokenLen];
     TokenGroup tg = toTokenGroup(c);
-    if (tg == tokenGroup) {}
-    elif (tokenGroup == T_ALPHA && tg <= T_ALPHA) {}
+    if (tg == tokenState->group) {}
+    elif (tokenState->group == T_ALPHA && tg <= T_ALPHA) {}
     else break;
     OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
     tokenLen += 1;
@@ -489,14 +495,86 @@ ErrCode tokenHex() {
   return OK;
 }
 
+ErrCode readSz(read_t r, Sz* out) {
+  U8 szBytes = charToHex(tokenBuf[tokenLen]);
+  *out = bytesToSz(szBytes);
+  tokenLen += 1;
+  return OK;
+}
+
+ErrCode readSzPush(read_t r, U32 value) {
+  // read the next symbol to get sz and push value.
+  if(tokenLen >= tokenBufSize) readAppend(r);
+  Sz sz; OP_ASSERT(readSz(r, &sz), "readSzPush");
+  OP_ASSERT(sz == S_U16 || sz == S_U32, "size invalid");
+  OP_CHECK(Stk_push(&env.ws, value, sz), "readSzPush.push");
+  return OK;
+}
+
+ErrCode readSzPop(read_t r, U32* out) {
+  if(tokenLen >= tokenBufSize) readAppend(r);
+  Sz sz; OP_ASSERT(readSz(r, &sz), "readSzPop");
+  OP_ASSERT(sz == S_U16 || sz == S_U32, "size invalid");
+  *out = Stk_pop(&env.ws, sz);
+  return OK;
+}
+
+
 ErrCode putLoc(read_t r) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
-  if(tokenLen >= tokenBufSize) readAppend(r);
-  U8 szBytes = charToHex(tokenBuf[tokenLen]);
-  SzBits sz = bytesToSz(szBytes);
-  tokenLen += 1;
-  OP_ASSERT(sz == S_U16 || sz == S_U32, "& size invalid");
-  OP_CHECK(Stk_push(&env.ws, *env.heap, sz), "putLoc.push");
+  readSzPush(r, *env.heap);
+  return OK;
+}
+
+ErrCode nameSet(read_t r) { // `=`
+  OP_ASSERT(tokenLen == 1, "only one = allowed");
+  U32 value; OP_ASSERT(readSzPop(r, &value), "nameSet.read");
+
+  OP_ASSERT(scan(r), "nameSet.scan"); // load name token
+  Dict_set(tokenLen, tokenBuf, value);
+  return OK;
+}
+
+ErrCode nameGet(read_t r) { // `@`
+  OP_ASSERT(tokenLen == 1, "multi @");
+  Sz sz; OP_ASSERT(readSz(r, &sz), "nameGet");
+  OP_ASSERT(scan(r), "@ scan"); // load name token
+  U32 value; OP_ASSERT(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
+  OP_CHECK(Stk_push(&env.ws, value, sz), "& push");
+  return OK;
+}
+
+ErrCode nameForget(read_t r) { // `~`
+  OP_ASSERT(tokenLen == 1, "multi ~");
+  OP_ASSERT(scan(r), "~ scan");
+  Dict_forget(tokenLen, tokenBuf);
+  return OK;
+}
+
+ErrCode writeHeap(read_t r) { // `,`
+  OP_ASSERT(tokenLen == 1, "multi ,");
+  Sz sz; OP_ASSERT(readSz(r, &sz), ",.sz");
+  U32 value = Stk_pop(&env.ws, sz);
+  store(mem, *env.heap, value, sz);
+  *env.heap += szToBytes(sz);
+  return OK;
+}
+
+ErrCode writeInstr(read_t r) { // `;`
+  OP_ASSERT(tokenLen == 1, "multi ;");
+  store(mem, *env.heap, instr, S_U16);
+  *env.heap += 2;
+  return OK;
+}
+
+ErrCode updateInstr() { // any alphanumeric
+  OP_CHECK(tokenState->group <= T_ALPHA, "unrecognized symbol");
+  U32 value; OP_ASSERT(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
+  U16 mask = ~(value >> 16);
+  U16 setInstr = value && 0xFFFF;
+
+  instr = instr & mask;
+  instr = instr | setInstr;
   return OK;
 }
 
@@ -508,9 +586,16 @@ ErrCode compile(read_t r) {
     if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
     elif (c == '"') { OP_CHECK(linestr(r), "compile.linestr"); }
     elif (c == '#') { scan(r); OP_CHECK(tokenHex(), "compile.tokenHex"); }
-    elif (c == '&') OP_CHECK(putLoc(r), "compile.putLoc");
+    elif (c == '&') { OP_CHECK(putLoc(r), "compile.putLoc"); }
+    elif (c == '=') { OP_CHECK(nameSet(r), "compile.nameSet"); }
+    elif (c == '@') { OP_CHECK(nameGet(r), "compile.nameGet"); }
+    elif (c == '~') { OP_CHECK(nameForget(r), "compile.nameForget"); }
+    elif (c == ',') { OP_CHECK(writeHeap(r), "compile.writeHeap"); }
+    elif (c == ';') { OP_CHECK(writeInstr(r), "compile.writeInstr"); }
+    elif (c == '^') { assert(FALSE); }
+    elif (c == '$') { assert(FALSE); }
+    else            { OP_CHECK(updateInstr(), "compile.instr"); }
   }
-  return OK;
 }
 
 

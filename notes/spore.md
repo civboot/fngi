@@ -117,26 +117,24 @@ Each has defaults:
 
 Assembly syntax:
 - `/ line comment`
-- `#NN` pushes a 8bit unsigned hex number, i.e. `#1F`
-- `#NNNN` pushes a 16bit unsigned hex number, i.e. `#001F`
-- `#NNNN_NNNN` pushes a 32bit unsigned hex number, i.e. `#001F4200`
-- `&N` push the current location onto the stack. N=2 for CPtr, N=4 for APtr.
+- `#NN / #NNNN / #NNNN_NNNN` pushes a 8/16/32 unsigned hex number, i.e. `#1F
+  /``#001F`/ `#001F4200`
+- `&N` push heap value onto the stack. N=2 for CPtr, N=4 for APtr.
 - `=N<name>` pop a value of N bytes from the stack and store at name. If name
   doesn't exist, add to dict.
 - `@N<name>` get value from name of size N bytes.
-- `>N` ptr-align the current location to N bytes.
-- `,N` pops N bytes from the stack and compiles them to current location,
-  updating current location.
-- `!AN` pop two values from the stack. A (second) is the address, N (top) is
-  the value. Store N at A.
-- alpha-numeric: read as bits of a a spore instruction, i.e. WS, FTOI, ADD, etc.
-  the "instr" U16 value will be updated with the appropriate mask and value.
-- `;` compiles the current 16bit instruction and clears it (sets to default values).
-- `)` or an EOF character ends the assembly parsing. Used when embedding spore
-  assembly in other languages but still using the native assembler.
-- `~<name>` forgetful tilde. Forget all items in the dictionary until and
-  including `<name>`
-- `$N` pop N bytes from the stack and begin executing there until return.
+- `~<name>` Forget all items in the dictionary until and including `<name>`
+- `,N` pop N bytes from the stack and write to and update heap (compile them).
+
+Compiling and executing asm. Note that there is a global 16bit value that gets
+updated by the below:
+- `;` compile the current 16bit instr to heap and clear the instr (sets to default
+  values).
+- `^` run the current instr and clear it.
+- `$<name>` begin executing at location stored in name.
+- alpha-numeric i.e. "foo": get the U32 value from the dict. Treat the first 16
+  bits as a mask and second 16bits as a value to update the current asm
+  instruction.
 
 Example to add a byte to 42 and return
 ```
@@ -178,6 +176,7 @@ Only 16bit immediates are supported. 32bit constants can be pushed to the stack
 by LoaDing them from sector memory or pushing two 16bit constants and using
 math to join them. The former is typically more compact, while the later can be
 faster on due to cache coherency.
+
 
 ### Size
 The size affects the type of opcode performed. For instance ADD8 will add two
