@@ -141,14 +141,14 @@ U16 instr = INSTR_DEFAULT;
 // ********************************************
 // ** Helpers
 
-void fail(U8* cstr) {
+/*fn*/ void fail(U8* cstr) {
   printf("!!FAIL!! ");
   printf(cstr);
   printf("\n");
   exit(1);
 }
 
-U8 szToBytes(Sz sz) {
+/*fn*/ U8 szToBytes(Sz sz) {
   switch (sz) {
     case S_U8: return 1;
     case S_U16: return 2;
@@ -157,26 +157,26 @@ U8 szToBytes(Sz sz) {
   }
 }
 
-Sz bytesToSz(U8 bytes) {
+/*fn*/ Sz bytesToSz(U8 bytes) {
   if(bytes <= 1) return S_U8;
   if(bytes <= 2) return S_U16;
   if(bytes <= 4) return S_U32;
   fail("invalid bytes");
 }
 
-void* alignSys(void* p, U8 szBytes) {
+/*fn*/ void* alignSys(void* p, U8 szBytes) {
   U8 mod = (size_t)p % szBytes;
   if(mod == 0) return p;
   return p + (szBytes - mod);
 }
 
-APtr align(APtr aPtr, U8 szBytes) {
+/*fn*/ APtr align(APtr aPtr, U8 szBytes) {
   U8 mod = aPtr % szBytes;
   if(mod == 0) return aPtr;
   return aPtr + (szBytes - mod);
 }
 
-void store(U8* mem, APtr aptr, U32 value, Sz sz) {
+/*fn*/ void store(U8* mem, APtr aptr, U32 value, Sz sz) {
   switch (sz) {
     case S_U8: 
       *(mem+aptr) = (U8)value;
@@ -193,7 +193,7 @@ void store(U8* mem, APtr aptr, U32 value, Sz sz) {
   }
 }
 
-U32 fetch(U8* mem, APtr aptr, Sz sz) {
+/*fn*/ U32 fetch(U8* mem, APtr aptr, Sz sz) {
   U8 value;
   switch (sz) {
     case S_U8: 
@@ -208,7 +208,7 @@ U32 fetch(U8* mem, APtr aptr, Sz sz) {
   }
 }
 
-ErrCode Stk_push(Stk* stk, U32 value, Sz sz) {
+/*fn*/ ErrCode Stk_push(Stk* stk, U32 value, Sz sz) {
   U8 szBytes = szToBytes(sz);
   if(stk->sp < szBytes) { fail("stack overflow"); }
   store(stk->mem, stk->sp - szBytes, value, sz);
@@ -216,7 +216,7 @@ ErrCode Stk_push(Stk* stk, U32 value, Sz sz) {
   return OK;
 }
 
-U32 Stk_pop(Stk* stk, Sz sz) {
+/*fn*/ U32 Stk_pop(Stk* stk, Sz sz) {
   U8 szBytes = szToBytes(sz);
 
   if(stk->sp + szBytes > stk->size) { fail ("stack underflow"); }
@@ -228,7 +228,7 @@ U32 Stk_pop(Stk* stk, Sz sz) {
 #define Stk_len(STK) (STK.size - STK.sp)
 
 // Shift opdata to the right.
-void shift_op(OpData* out) {
+/*fn*/ void shift_op(OpData* out) {
   out->v[2] = out->v[1];
   out->v[1] = out->v[0];
   out->len += 1;
@@ -287,13 +287,13 @@ op_t ops[] = {
   op_add,        op_notimpl,    op_notimpl,   op_notimpl,
 };
 
-U16 popImm() {
+/*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, S_U16);
     env.ep += 2;
     return out;
 }
 
-ErrCode executeInstr(U16 instr) {
+/*fn*/ ErrCode executeInstr(U16 instr) {
   Op i_op =   (Op)    (0x3F & instr);
   Mem i_mem = (Mem)   (0x7  & (instr >>              6));
   Jmp jmp = (Jmp)   (0x7  & (instr >>     (2 + 3 + 6)));
@@ -395,7 +395,7 @@ ErrCode executeInstr(U16 instr) {
   return OK;
 }
 
-ErrCode execute(APtr ap) {
+/*fn*/ ErrCode execute(APtr ap) {
   while(TRUE) {
     assert(ap < *env.topMem);
     U16 instr = fetch(mem, ap, S_U16);
@@ -411,7 +411,7 @@ ErrCode execute(APtr ap) {
 // Given ptr to key, get pointer to the value.
 #define Key_vptr(KEY) ((U32*) alignSys(((U8*)KEY) + KEY->len + 1, 4));
 
-U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
+/*fn*/ U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
   if(slen0 != slen1) return FALSE;
   for(U8 i = 0; i < slen0; i += 1) {
     if(s0[i] != s1[i]) return FALSE;
@@ -420,7 +420,7 @@ U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
 }
 
 // find key offset from dict. Else return dict.heap
-U16 Dict_find(U8 slen, U8* s) {
+/*fn*/ U16 Dict_find(U8 slen, U8* s) {
   Key* key = Dict_key(0);
   U16 offset = 0;
 
@@ -437,7 +437,7 @@ U16 Dict_find(U8 slen, U8* s) {
   return offset;
 }
 
-U16 Dict_set(U8 slen, U8* s, U32 value) {
+/*fn*/ U16 Dict_set(U8 slen, U8* s, U32 value) {
   // Set a key to a value, returning the offset
   U16 offset = Dict_find(slen, s);
   Key* key = Dict_key(offset);
@@ -452,7 +452,7 @@ U16 Dict_set(U8 slen, U8* s, U32 value) {
   return offset;
 }
 
-ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
+/*fn*/ ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
   OP_ASSERT(offset != dict->heap, "key not found");
   Key* key = Dict_key(offset);
@@ -460,7 +460,7 @@ ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
   return OK;
 }
 
-void Dict_forget(U8 slen, U8* s) {
+/*fn*/ void Dict_forget(U8 slen, U8* s) {
   dict->heap = Dict_find(slen, s);
 }
 
@@ -477,7 +477,7 @@ void dbgToken() {
 
 #define IS_WHITESPC(C) (C<=' ')
 
-TokenGroup toTokenGroup(U8 c) {
+/*fn*/ TokenGroup toTokenGroup(U8 c) {
   if(c <= ' ') return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
   if('a' <= c && c <= 'f') return T_HEX;
@@ -493,18 +493,18 @@ TokenGroup toTokenGroup(U8 c) {
 }
 
 // Read bytes incrementing tokenBufSize
-void readAppend(read_t r) {
+/*fn*/ void readAppend(read_t r) {
   r(TOKEN_BUF - tokenBufSize);
 }
 
 // clear token buf and read bytes
-void readNew(read_t r) {
+/*fn*/ void readNew(read_t r) {
   tokenLen = 0;
   tokenBufSize = 0;
   readAppend(r);
 }
 
-ErrCode shiftBuf() {
+/*fn*/ ErrCode shiftBuf() {
   // Shift buffer left from end of token
   if(tokenLen == 0) return OK;
   U8 newStart = tokenLen;
@@ -520,7 +520,7 @@ ErrCode shiftBuf() {
 }
 
 // Scan next token;
-ErrCode scan(read_t r) {
+/*fn*/ ErrCode scan(read_t r) {
 
   // Skip whitespace
   while(TRUE) {
@@ -553,7 +553,7 @@ ErrCode scan(read_t r) {
   return OK;
 }
 
-ErrCode tilNewline(read_t r) {
+/*fn*/ ErrCode tilNewline(read_t r) {
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return OK;
@@ -563,7 +563,7 @@ ErrCode tilNewline(read_t r) {
   return OK;
 }
 
-ErrCode linestr(read_t r) {
+/*fn*/ ErrCode linestr(read_t r) {
   while(TRUE) {
     if (tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return OK;
@@ -592,7 +592,7 @@ ErrCode linestr(read_t r) {
 }
 
 // Taking a char that is known to be hex, return the hex value.
-ErrCode charToHex(U8 c) {
+/*fn*/ ErrCode charToHex(U8 c) {
   c = c - '0';
   if(c <= 9) return c;
   c = c - ('A' - '0');
@@ -603,7 +603,7 @@ ErrCode charToHex(U8 c) {
 
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
-ErrCode tokenHex() {
+/*fn*/ ErrCode tokenHex() {
   OP_ASSERT(tokenLen > 0, "hanging #");
   U32 v = 0;
   U8 i = 0;
@@ -623,7 +623,7 @@ ErrCode tokenHex() {
   return OK;
 }
 
-ErrCode readSz(read_t r, Sz* sz) {
+/*fn*/ ErrCode readSz(read_t r, Sz* sz) {
   if(tokenLen >= tokenBufSize) readAppend(r);
   U8 szBytes = charToHex(tokenBuf[tokenLen]);
   *sz = bytesToSz(szBytes);
@@ -631,7 +631,7 @@ ErrCode readSz(read_t r, Sz* sz) {
   return OK;
 }
 
-ErrCode readSzPush(read_t r, U32 value) {
+/*fn*/ ErrCode readSzPush(read_t r, U32 value) {
   // read the next symbol to get sz and push value.
   Sz sz; OP_CHECK(readSz(r, &sz), "readSzPush");
   OP_ASSERT(sz == S_U16 || sz == S_U32, "size invalid");
@@ -639,20 +639,20 @@ ErrCode readSzPush(read_t r, U32 value) {
   return OK;
 }
 
-ErrCode readSzPop(read_t r, U32* out) {
+/*fn*/ ErrCode readSzPop(read_t r, U32* out) {
   Sz sz; OP_CHECK(readSz(r, &sz), "readSzPop");
   OP_ASSERT(sz == S_U16 || sz == S_U32, "size invalid");
   *out = Stk_pop(&env.ws, sz);
   return OK;
 }
 
-ErrCode putLoc(read_t r) { // `&`
+/*fn*/ ErrCode putLoc(read_t r) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
   readSzPush(r, *env.heap);
   return OK;
 }
 
-ErrCode nameSet(read_t r) { // `=`
+/*fn*/ ErrCode nameSet(read_t r) { // `=`
   OP_ASSERT(tokenLen == 1, "only one = allowed");
   U32 value; OP_CHECK(readSzPop(r, &value), "nameSet.read");
 
@@ -661,7 +661,7 @@ ErrCode nameSet(read_t r) { // `=`
   return OK;
 }
 
-ErrCode nameGet(read_t r) { // `@`
+/*fn*/ ErrCode nameGet(read_t r) { // `@`
   OP_ASSERT(tokenLen == 1, "multi @");
   Sz sz; OP_CHECK(readSz(r, &sz), "nameGet");
   OP_CHECK(scan(r), "@ scan"); // load name token
@@ -670,14 +670,14 @@ ErrCode nameGet(read_t r) { // `@`
   return OK;
 }
 
-ErrCode nameForget(read_t r) { // `~`
+/*fn*/ ErrCode nameForget(read_t r) { // `~`
   OP_ASSERT(tokenLen == 1, "multi ~");
   OP_CHECK(scan(r), "~ scan");
   Dict_forget(tokenLen, tokenBuf);
   return OK;
 }
 
-ErrCode writeHeap(read_t r) { // `,`
+/*fn*/ ErrCode writeHeap(read_t r) { // `,`
   OP_ASSERT(tokenLen == 1, "multi ,");
   Sz sz; OP_CHECK(readSz(r, &sz), ",.sz");
   U32 value = Stk_pop(&env.ws, sz);
@@ -686,14 +686,14 @@ ErrCode writeHeap(read_t r) { // `,`
   return OK;
 }
 
-ErrCode writeInstr(read_t r) { // `;`
+/*fn*/ ErrCode writeInstr(read_t r) { // `;`
   OP_ASSERT(tokenLen == 1, "multi ;");
   store(mem, *env.heap, instr, S_U16);
   *env.heap += 2;
   return OK;
 }
 
-ErrCode updateInstr() { // any alphanumeric
+/*fn*/ ErrCode updateInstr() { // any alphanumeric
   OP_CHECK(tokenState->group <= T_ALPHA, "unrecognized symbol");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   U16 mask = ~(value >> 16);
@@ -704,7 +704,7 @@ ErrCode updateInstr() { // any alphanumeric
   return OK;
 }
 
-ErrCode compile(read_t r) {
+/*fn*/ ErrCode compile(read_t r) {
   while(TRUE) {
     scan(r);
     if(tokenLen == 0) return OK;
@@ -764,7 +764,7 @@ ErrCode compile(read_t r) {
 // ** Main
 void tests();
 
-int main() {
+/*fn*/ int main() {
   printf("compiling spore...:\n");
 
   tests();
@@ -788,7 +788,7 @@ U8* testBuf = NULL;
 U16 testBufIdx = 0;
 
 // read_t used for testing.
-ssize_t testing_read(size_t nbyte) {
+/*test*/ ssize_t testing_read(size_t nbyte) {
   size_t i = 0;
   while (i < nbyte) {
     U8 c = testBuf[testBufIdx];
@@ -809,7 +809,7 @@ ssize_t testing_read(size_t nbyte) {
 #define POP(S)  Stk_pop(&env.ws, S)
 
 
-void testHex() {
+/*test*/ void testHex() {
   TEST_ENV;
 
   printf("## testHex #01...\n");
@@ -822,7 +822,7 @@ void testHex() {
   assert(result == 0x10AF);
 }
 
-void testLoc() {
+/*test*/ void testLoc() {
   printf("## testLoc...\n");
   TEST_ENV;
   COMPILE("&4 &2");
@@ -831,7 +831,7 @@ void testLoc() {
   assert(result2 == heapStart);
 }
 
-void testQuotes() {
+/*test*/ void testQuotes() {
   printf("## testQuotes...\n");
   TEST_ENV;
   COMPILE("\"foo bar\" baz\\0\n\0");
@@ -839,7 +839,7 @@ void testQuotes() {
   assert(0 == strcmp(mem + heapStart, "foo bar\" baz\0"));
 }
 
-void testDictDeps() {
+/*test*/ void testDictDeps() {
   TEST_ENV;
   printf("## testDict... cstr\n");
   assert(cstrEq(1, 1, "a", "a"));
@@ -870,7 +870,7 @@ void testDictDeps() {
   assert(result == 0xF00F);
 }
 
-void testDict() {
+/*test*/ void testDict() {
   TEST_ENV;
   printf("## testDict\n");
 
@@ -880,7 +880,7 @@ void testDict() {
   assert(0xBA2AA == Stk_pop(&env.ws, S_U32)); // 4bazaa
 }
 
-void tests() {
+/*test*/ void tests() {
   testHex();
   testLoc();
   testQuotes();
