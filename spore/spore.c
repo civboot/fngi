@@ -89,6 +89,8 @@ typedef struct {
   Stk rs;
 } Env;
 
+Env env;
+
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
   SzBits sz;
@@ -192,7 +194,7 @@ void shift_op(OpData* out) {
 // ********************************************
 // ** Operations
 
-#define OP_ARGS Env* env, OpData *out
+#define OP_ARGS OpData *out
 #define OP_ASSERT(COND, MSG) \
   if(!(COND)) { printf(MSG); printf("\n"); return 1; }
 
@@ -205,8 +207,8 @@ ErrCode op_notimpl(OP_ARGS) {
   fail("op not implemented");
 }
 
-ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(env->mem, out->v[0], out->sz); }
-ErrCode op_store(OP_ARGS) { store(env->mem, out->v[1], out->v[0], out->sz); out->len = 0; }
+ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(env.mem, out->v[0], out->sz); }
+ErrCode op_store(OP_ARGS) { store(env.mem, out->v[1], out->v[0], out->sz); out->len = 0; }
 // DVF
 // DVS
 ErrCode op_nop(OP_ARGS) {};
@@ -432,7 +434,7 @@ ErrCode tilNewline(read_t r) {
   return OK;
 }
 
-ErrCode linestr(read_t r, Env* env) {
+ErrCode linestr(read_t r) {
   while(TRUE) {
     if (tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return OK;
@@ -453,8 +455,8 @@ ErrCode linestr(read_t r, Env* env) {
       elif(c == '0') c = '\0';
       else OP_ASSERT(FALSE, "invalid escaped char");
     }
-    env->mem[*env->heap] = c;
-    *env->heap += 1;
+    env.mem[*env.heap] = c;
+    *env.heap += 1;
     tokenLen += 1;
   }
   return OK;
@@ -472,7 +474,7 @@ ErrCode charToHex(U8 c) {
 
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
-ErrCode tokenHex(Env* env) {
+ErrCode tokenHex() {
   OP_ASSERT(tokenLen > 0, "hanging #");
   U32 v = 0;
   U8 i = 0;
@@ -487,31 +489,31 @@ ErrCode tokenHex(Env* env) {
     tokenSize += 1;
     i += 1;
   }
-  Stk_push(&env->ws, v, bytesToSz((tokenSize>>1) + tokenSize % 2));
+  Stk_push(&env.ws, v, bytesToSz((tokenSize>>1) + tokenSize % 2));
   shiftBuf();
   return OK;
 }
 
-ErrCode putLoc(read_t r, Env* env) { // `&`
+ErrCode putLoc(read_t r) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
   if(tokenLen >= tokenBufSize) readAppend(r);
   U8 szBytes = charToHex(tokenBuf[tokenLen]);
   SzBits sz = bytesToSz(szBytes);
   tokenLen += 1;
   OP_ASSERT(sz == S_U16 || sz == S_U32, "& size invalid");
-  OP_CHECK(Stk_push(&env->ws, *env->heap, sz), "putLoc.push");
+  OP_CHECK(Stk_push(&env.ws, *env.heap, sz), "putLoc.push");
   return OK;
 }
 
-ErrCode compile(read_t r, Env* env) {
+ErrCode compile(read_t r) {
   while(TRUE) {
     scan(r);
     if(tokenLen == 0) return OK;
     char c = tokenBuf[0];
     if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
-    elif (c == '"') { OP_CHECK(linestr(r, env), "compile.linestr"); }
-    elif (c == '#') { scan(r); OP_CHECK(tokenHex(env), "compile.tokenHex"); }
-    elif (c == '&') OP_CHECK(putLoc(r, env), "compile.putLoc");
+    elif (c == '"') { OP_CHECK(linestr(r), "compile.linestr"); }
+    elif (c == '#') { scan(r); OP_CHECK(tokenHex(), "compile.tokenHex"); }
+    elif (c == '&') OP_CHECK(putLoc(r), "compile.putLoc");
   }
   return OK;
 }
@@ -523,7 +525,7 @@ ErrCode compile(read_t r, Env* env) {
   U8 mem[MS] = {0};                       \
   U8 wsMem[WS];                           \
   U8 rsMem[RS];                           \
-  Env env = {                             \
+  env = (Env) {                           \
     .mem = mem,                           \
     .cp = 0,                              \
     .heap = (APtr*) (mem + 4),              \
@@ -589,7 +591,7 @@ ssize_t testing_read(size_t nbyte) {
 #define COMPILE(S) \
   testBuf = S; \
   testBufIdx = 0; \
-  assert(!compile(*testing_read, &env));
+  assert(!compile(*testing_read));
 
 #define POP(S)  Stk_pop(&env.ws, S)
 
