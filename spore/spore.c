@@ -139,6 +139,7 @@ U16 instr = INSTR_DEFAULT;
 // ** Helpers
 
 void fail(U8* cstr) {
+  printf("!!FAIL!! ");
   printf(cstr);
   printf("\n");
   exit(1);
@@ -235,10 +236,10 @@ void shift_op(OpData* out) {
 
 #define OP_ARGS OpData *out
 #define OP_ASSERT(COND, MSG) \
-  if(!(COND)) { printf(MSG); printf("\n"); return 1; }
+  if(!(COND)) { printf("!A! "); printf(MSG); printf("\n"); return 1; }
 
 #define OP_CHECK(COND, MSG) \
-  if(COND) { printf(MSG); printf("\n"); return 1; }
+  if(COND) { printf("!A! "); printf(MSG); printf("\n"); return 1; }
 
 typedef ErrCode (*op_t)(OP_ARGS);
 
@@ -835,7 +836,7 @@ ErrCode testQuotes() {
   return OK;
 }
 
-ErrCode testDict() {
+ErrCode testDictDeps() {
   TEST_ENV;
   printf("## testDict... cstr\n");
   assert(cstrEq(1, 1, "a", "a"));
@@ -864,14 +865,23 @@ ErrCode testDict() {
   assert(0 == Dict_set(3, "foo", 0xF00F));
   assert(!Dict_get(&result, 3, "foo"));
   assert(result == 0xF00F);
-
   return OK;
+}
+
+ErrCode testDict() {
+  TEST_ENV;
+  printf("## testDict\n");
+
+  COMPILE("#0F00 =2foo  #0x000B_A2AA =4bazaa");
+
+
 }
 
 void tests() {
   assert(!testHex());
   assert(!testLoc());
   assert(!testQuotes());
+  assert(!testDictDeps());
   assert(!testDict());
 }
 
