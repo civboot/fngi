@@ -539,7 +539,6 @@ ErrCode scan(read_t r) {
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
   if(tokenState->group <= T_ALPHA) tokenState->group = T_ALPHA;
-  printf("group=%x\n", tokenState->group);
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
