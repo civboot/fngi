@@ -606,6 +606,7 @@ ErrCode tokenHex() {
   U8 tokenSize = 0;
   while(i < tokenLen) {
     U8 c = tokenBuf[i];
+    printf("c=%c %x\n", c, c);
 
     if (c == '_') { i+= 1; continue; }
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
@@ -619,30 +620,28 @@ ErrCode tokenHex() {
   return OK;
 }
 
-ErrCode readSz(read_t r, Sz* out) {
+ErrCode readSz(read_t r, Sz* sz) {
+  if(tokenLen >= tokenBufSize) readAppend(r);
   U8 szBytes = charToHex(tokenBuf[tokenLen]);
-  *out = bytesToSz(szBytes);
+  *sz = bytesToSz(szBytes);
   tokenLen += 1;
   return OK;
 }
 
 ErrCode readSzPush(read_t r, U32 value) {
   // read the next symbol to get sz and push value.
-  if(tokenLen >= tokenBufSize) readAppend(r);
-  Sz sz; OP_ASSERT(readSz(r, &sz), "readSzPush");
+  Sz sz; OP_CHECK(readSz(r, &sz), "readSzPush");
   OP_ASSERT(sz == S_U16 || sz == S_U32, "size invalid");
   OP_CHECK(Stk_push(&env.ws, value, sz), "readSzPush.push");
   return OK;
 }
 
 ErrCode readSzPop(read_t r, U32* out) {
-  if(tokenLen >= tokenBufSize) readAppend(r);
-  Sz sz; OP_ASSERT(readSz(r, &sz), "readSzPop");
+  Sz sz; OP_CHECK(readSz(r, &sz), "readSzPop");
   OP_ASSERT(sz == S_U16 || sz == S_U32, "size invalid");
   *out = Stk_pop(&env.ws, sz);
   return OK;
 }
-
 
 ErrCode putLoc(read_t r) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
@@ -652,9 +651,9 @@ ErrCode putLoc(read_t r) { // `&`
 
 ErrCode nameSet(read_t r) { // `=`
   OP_ASSERT(tokenLen == 1, "only one = allowed");
-  U32 value; OP_ASSERT(readSzPop(r, &value), "nameSet.read");
+  U32 value; OP_CHECK(readSzPop(r, &value), "nameSet.read");
 
-  OP_ASSERT(scan(r), "nameSet.scan"); // load name token
+  OP_CHECK(scan(r), "nameSet.scan"); // load name token
   Dict_set(tokenLen, tokenBuf, value);
   return OK;
 }
@@ -663,21 +662,21 @@ ErrCode nameGet(read_t r) { // `@`
   OP_ASSERT(tokenLen == 1, "multi @");
   Sz sz; OP_ASSERT(readSz(r, &sz), "nameGet");
   OP_ASSERT(scan(r), "@ scan"); // load name token
-  U32 value; OP_ASSERT(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
+  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   OP_CHECK(Stk_push(&env.ws, value, sz), "& push");
   return OK;
 }
 
 ErrCode nameForget(read_t r) { // `~`
   OP_ASSERT(tokenLen == 1, "multi ~");
-  OP_ASSERT(scan(r), "~ scan");
+  OP_CHECK(scan(r), "~ scan");
   Dict_forget(tokenLen, tokenBuf);
   return OK;
 }
 
 ErrCode writeHeap(read_t r) { // `,`
   OP_ASSERT(tokenLen == 1, "multi ,");
-  Sz sz; OP_ASSERT(readSz(r, &sz), ",.sz");
+  Sz sz; OP_CHECK(readSz(r, &sz), ",.sz");
   U32 value = Stk_pop(&env.ws, sz);
   store(mem, *env.heap, value, sz);
   *env.heap += szToBytes(sz);
@@ -693,7 +692,7 @@ ErrCode writeInstr(read_t r) { // `;`
 
 ErrCode updateInstr() { // any alphanumeric
   OP_CHECK(tokenState->group <= T_ALPHA, "unrecognized symbol");
-  U32 value; OP_ASSERT(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
+  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   U16 mask = ~(value >> 16);
   U16 setInstr = value && 0xFFFF;
 
@@ -849,10 +848,10 @@ ErrCode testDictDeps() {
   printf("## testDict... dict\n");
   assert(0 == Dict_find(3, "foo"));
 
-  printf("### set...\n");
+  // set
   assert(0 == Dict_set(3, "foo", 0xF00));
 
-  printf("### get...\n");
+  // get
   U32 result;
   assert(!Dict_get(&result, 3, "foo"));
   assert(result == 0xF00);
@@ -861,7 +860,7 @@ ErrCode testDictDeps() {
   assert(!Dict_get(&result, 5, "bazaa"));
   assert(result == 0xBA2AA);
 
-  printf("### re-set...\n");
+  // reset
   assert(0 == Dict_set(3, "foo", 0xF00F));
   assert(!Dict_get(&result, 3, "foo"));
   assert(result == 0xF00F);
@@ -872,8 +871,10 @@ ErrCode testDict() {
   TEST_ENV;
   printf("## testDict\n");
 
-  COMPILE("#0F00 =2foo  #0x000B_A2AA =4bazaa");
-
+  COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @2foo @4foo");
+  assert(0xF00 == Stk_pop(&env.ws, S_U32));   // 4foo
+  assert(0xF00 == Stk_pop(&env.ws, S_U16));   // 2foo
+  assert(0xBA2AA == Stk_pop(&env.ws, S_U32)); // 4bazaa
 
 }
 
