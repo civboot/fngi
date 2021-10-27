@@ -5,6 +5,9 @@
 #include <unistd.h>
 #include <string.h>
 
+// Debugging
+void dbgEnv();
+
 // ********************************************
 // ** Core Types
 
@@ -451,6 +454,7 @@ U16 Dict_set(U8 slen, U8* s, U32 value) {
 
 ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
+  dbgEnv();
   OP_ASSERT(offset != dict->heap, "key not found");
   Key* key = Dict_key(offset);
   *out = *Key_vptr(key);
@@ -481,6 +485,7 @@ TokenGroup toTokenGroup(U8 c) {
   if('A' <= c && c <= 'F') return T_HEX;
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
+  if(c == '_') return T_ALPHA;
   if(c == '~' || c == '\'' || c == '$' ||
      c == '.' || c ==  '(' || c == ')') {
     return T_SPECIAL;
@@ -515,7 +520,7 @@ ErrCode shiftBuf() {
   return OK;
 }
 
-// Scans next token.
+// Scan next token;
 ErrCode scan(read_t r) {
 
   // Skip whitespace
@@ -534,13 +539,14 @@ ErrCode scan(read_t r) {
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
   if(tokenState->group <= T_ALPHA) tokenState->group = T_ALPHA;
+  printf("group=%x\n", tokenState->group);
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
     c = tokenBuf[tokenLen];
     TokenGroup tg = toTokenGroup(c);
     if (tg == tokenState->group) {}
-    elif (tokenState->group == T_ALPHA && tg <= T_ALPHA) {}
+    elif (tokenState->group == T_ALPHA && (tg <= T_ALPHA)) {}
     else break;
     OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
     tokenLen += 1;
@@ -606,7 +612,6 @@ ErrCode tokenHex() {
   U8 tokenSize = 0;
   while(i < tokenLen) {
     U8 c = tokenBuf[i];
-    printf("c=%c %x\n", c, c);
 
     if (c == '_') { i+= 1; continue; }
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
@@ -771,6 +776,11 @@ int main() {
 // ********************************************
 // ** Tests
 #include <string.h>
+
+void dbgEnv() {
+  printf("token[%u]: %.*s\n", tokenLen, tokenLen, tokenBuf);
+}
+
 
 #define TEST_ENV \
   SMALL_ENV; \
