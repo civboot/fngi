@@ -454,7 +454,6 @@ U16 Dict_set(U8 slen, U8* s, U32 value) {
 
 ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
-  dbgEnv();
   OP_ASSERT(offset != dict->heap, "key not found");
   Key* key = Dict_key(offset);
   *out = *Key_vptr(key);
@@ -664,8 +663,8 @@ ErrCode nameSet(read_t r) { // `=`
 
 ErrCode nameGet(read_t r) { // `@`
   OP_ASSERT(tokenLen == 1, "multi @");
-  Sz sz; OP_ASSERT(readSz(r, &sz), "nameGet");
-  OP_ASSERT(scan(r), "@ scan"); // load name token
+  Sz sz; OP_CHECK(readSz(r, &sz), "nameGet");
+  OP_CHECK(scan(r), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   OP_CHECK(Stk_push(&env.ws, value, sz), "& push");
   return OK;
@@ -810,7 +809,7 @@ ssize_t testing_read(size_t nbyte) {
 #define POP(S)  Stk_pop(&env.ws, S)
 
 
-ErrCode testHex() {
+void testHex() {
   TEST_ENV;
 
   printf("## testHex #01...\n");
@@ -821,30 +820,26 @@ ErrCode testHex() {
   COMPILE("/comment\n#10AF\0");
   U32 result = POP(S_U16);
   assert(result == 0x10AF);
-
-  return OK;
 }
 
-ErrCode testLoc() {
+void testLoc() {
   printf("## testLoc...\n");
   TEST_ENV;
   COMPILE("&4 &2");
   U16 result1 = POP(S_U16); U32 result2 = POP(S_U32);
   assert(result1 == (U16)heapStart);
   assert(result2 == heapStart);
-  return OK;
 }
 
-ErrCode testQuotes() {
+void testQuotes() {
   printf("## testQuotes...\n");
   TEST_ENV;
   COMPILE("\"foo bar\" baz\\0\n\0");
 
   assert(0 == strcmp(mem + heapStart, "foo bar\" baz\0"));
-  return OK;
 }
 
-ErrCode testDictDeps() {
+void testDictDeps() {
   TEST_ENV;
   printf("## testDict... cstr\n");
   assert(cstrEq(1, 1, "a", "a"));
@@ -873,25 +868,23 @@ ErrCode testDictDeps() {
   assert(0 == Dict_set(3, "foo", 0xF00F));
   assert(!Dict_get(&result, 3, "foo"));
   assert(result == 0xF00F);
-  return OK;
 }
 
-ErrCode testDict() {
+void testDict() {
   TEST_ENV;
   printf("## testDict\n");
 
-  COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @2foo @4foo");
-  assert(0xF00 == Stk_pop(&env.ws, S_U32));   // 4foo
+  COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @4foo @2foo ");
   assert(0xF00 == Stk_pop(&env.ws, S_U16));   // 2foo
+  assert(0xF00 == Stk_pop(&env.ws, S_U32));   // 4foo
   assert(0xBA2AA == Stk_pop(&env.ws, S_U32)); // 4bazaa
-
 }
 
 void tests() {
-  assert(!testHex());
-  assert(!testLoc());
-  assert(!testQuotes());
-  assert(!testDictDeps());
-  assert(!testDict());
+  testHex();
+  testLoc();
+  testQuotes();
+  testDictDeps();
+  testDict();
 }
 
