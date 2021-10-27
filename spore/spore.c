@@ -76,7 +76,6 @@ typedef struct {
 
 // Environment
 typedef struct {
-  U8* mem;
   APtr cp;            // seCtion Pointer
   APtr lp;            // local stack pointer
   APtr* heap;
@@ -90,6 +89,7 @@ typedef struct {
 } Env;
 
 Env env;
+U8* mem;
 
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
@@ -207,8 +207,8 @@ ErrCode op_notimpl(OP_ARGS) {
   fail("op not implemented");
 }
 
-ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(env.mem, out->v[0], out->sz); }
-ErrCode op_store(OP_ARGS) { store(env.mem, out->v[1], out->v[0], out->sz); out->len = 0; }
+ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(mem, out->v[0], out->sz); }
+ErrCode op_store(OP_ARGS) { store(mem, out->v[1], out->v[0], out->sz); out->len = 0; }
 // DVF
 // DVS
 ErrCode op_nop(OP_ARGS) {};
@@ -334,7 +334,7 @@ typedef struct {
   U8 buf[]; // size=TOKEN_BUF
 } TokenState;
 
-TokenState* tokenState = NULL; // memory inside env.mem for access by program.
+TokenState* tokenState = NULL;
 
 #define tokenBufSize (tokenState->size)
 #define tokenLen tokenState->len
@@ -455,7 +455,7 @@ ErrCode linestr(read_t r) {
       elif(c == '0') c = '\0';
       else OP_ASSERT(FALSE, "invalid escaped char");
     }
-    env.mem[*env.heap] = c;
+    mem[*env.heap] = c;
     *env.heap += 1;
     tokenLen += 1;
   }
@@ -522,11 +522,11 @@ ErrCode compile(read_t r) {
 // ********************************************
 // ** Initialization
 #define NEW_ENV(MS, WS, RS, LS, DS)       \
-  U8 mem[MS] = {0};                       \
+  U8 localMem[MS] = {0};                       \
   U8 wsMem[WS];                           \
   U8 rsMem[RS];                           \
+  mem = localMem; \
   env = (Env) {                           \
-    .mem = mem,                           \
     .cp = 0,                              \
     .heap = (APtr*) (mem + 4),              \
     .topHeap = (APtr*) (mem + 8),           \
@@ -627,7 +627,7 @@ ErrCode testQuotes() {
   TEST_ENV;
   COMPILE("\"foo bar\" baz\\0\n\0");
 
-  assert(0 == strcmp(env.mem + heapStart, "foo bar\" baz\0"));
+  assert(0 == strcmp(mem + heapStart, "foo bar\" baz\0"));
   return OK;
 }
 
