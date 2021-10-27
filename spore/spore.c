@@ -871,8 +871,7 @@ U16 testBufIdx = 0;
 }
 
 /*test*/ void testDict() {
-  TEST_ENV;
-  printf("## testDict\n");
+  TEST_ENV; printf("## testDict\n");
 
   COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @4foo @2foo ");
   assert(0xF00 == Stk_pop(&env.ws, S_U16));   // 2foo
@@ -880,11 +879,21 @@ U16 testBufIdx = 0;
   assert(0xBA2AA == Stk_pop(&env.ws, S_U32)); // 4bazaa
 }
 
+/*test*/ void testWriteHeap() { // test , and ;
+  TEST_ENV; printf("## testWriteHeap\n");
+  COMPILE("#77770101,4 #0F00,2 ;");
+  assert(0x77770101 == fetch(mem, heapStart, S_U32));
+  assert(0x0F00 == fetch(mem, heapStart+4, S_U16));
+  assert(INSTR_DEFAULT == fetch(mem, heapStart+6, S_U16));
+}
+
+
 /*test*/ void tests() {
   testHex();
   testLoc();
   testQuotes();
   testDictDeps();
   testDict();
+  testWriteHeap();
 }
 
