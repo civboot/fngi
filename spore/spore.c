@@ -42,10 +42,10 @@ typedef U8 ErrCode;
 
 // Size
 typedef enum {
-  S_1,   S_2,
-  S_4,  S_UNDEF
+  SZ1,   SZ2,
+  SZ4,  SZUNDEF
 } Sz;
-#define S_APTR S_4
+#define SZAPTR SZ4
 
 // Mem
 typedef enum {
@@ -138,7 +138,7 @@ TokenState* tokenState = NULL;
 FILE* srcFile;
 
 #define INSTR_DEFAULT \
-    (S_4 << 14)       \
+    (SZ4 << 14)       \
   + (NOJ << 11)       \
   + (WS  << 6 )       \
   +  NOP
@@ -156,17 +156,17 @@ U16 instr = INSTR_DEFAULT;
 
 /*fn*/ U8 szToBytes(Sz sz) {
   switch (sz) {
-    case S_1: return 1;
-    case S_2: return 2;
-    case S_4: return 4;
+    case SZ1: return 1;
+    case SZ2: return 2;
+    case SZ4: return 4;
     default: fail("invalid Sz");
   }
 }
 
 /*fn*/ Sz bytesToSz(U8 bytes) {
-  if(bytes <= 1) return S_1;
-  if(bytes <= 2) return S_2;
-  if(bytes <= 4) return S_4;
+  if(bytes <= 1) return SZ1;
+  if(bytes <= 2) return SZ2;
+  if(bytes <= 4) return SZ4;
   fail("invalid bytes");
 }
 
@@ -184,14 +184,14 @@ U16 instr = INSTR_DEFAULT;
 
 /*fn*/ void store(U8* mem, APtr aptr, U32 value, Sz sz) {
   switch (sz) {
-    case S_1: 
+    case SZ1: 
       *(mem+aptr) = (U8)value;
       break;
-    case S_2: 
+    case SZ2: 
       assert(aptr % 2 == 0);
       *(((U16*) mem)+aptr) = (U16)value;
       break;
-    case S_4:
+    case SZ4:
       assert(aptr % 4 == 0);
       *(((U32*) mem)+aptr) = value;
       break;
@@ -202,12 +202,12 @@ U16 instr = INSTR_DEFAULT;
 /*fn*/ U32 fetch(U8* mem, APtr aptr, Sz sz) {
   U8 value;
   switch (sz) {
-    case S_1: 
+    case SZ1: 
       return (U32) *((U8*) (mem+aptr));
-    case S_2: 
+    case SZ2: 
       assert(aptr % 2 == 0);
       return *(((U16*)mem)+aptr);
-    case S_4:
+    case SZ4:
       assert(aptr % 4 == 0);
       return *(((U32*)mem)+aptr);
     default: fail("fetch: invalid Sz");
@@ -252,9 +252,9 @@ void _chk_shrink(Stk* stk, U16 szBytes) {
 
 APtr toAPtr(U32 v, Sz sz) {
   switch (sz) {
-    case S_1: fail("APtr.sz=U8");
-    case S_2: return env.mp + v;
-    case S_4: return v;
+    case SZ1: fail("APtr.sz=U8");
+    case SZ2: return env.mp + v;
+    case SZ4: return v;
     default: assert(FALSE);
   }
 }
@@ -293,9 +293,9 @@ ErrCode op_drp(OP_ARGS) { out->v[0] = out->v[1]; out->len -= 1; };
 ErrCode op_inv(OP_ARGS) { out->v[0] = ~out->v[0]; };
 ErrCode op_neg(OP_ARGS) {
   switch (out->sz) {
-    case S_1: out->v[0] = (U32) (-(I8)out->v[0]); break;
-    case S_2: out->v[0] = (U32) (-(I16)out->v[0]); break;
-    case S_4: out->v[0] = (U32) (-(I32)out->v[0]); break;
+    case SZ1: out->v[0] = (U32) (-(I8)out->v[0]); break;
+    case SZ2: out->v[0] = (U32) (-(I16)out->v[0]); break;
+    case SZ4: out->v[0] = (U32) (-(I32)out->v[0]); break;
   }
 }
 ErrCode op_eqz(OP_ARGS) { out->v[0] = out->v[0] == 0; }
@@ -322,7 +322,7 @@ op_t ops[] = {
 };
 
 /*fn*/ U16 popImm() {
-    U16 out = fetch(mem, env.ep, S_2);
+    U16 out = fetch(mem, env.ep, SZ2);
     env.ep += 2;
     return out;
 }
@@ -342,7 +342,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   Jmp jmp =   (Jmp)   (0x7  & (instr >>     (2 + 3 + 6)));
   Sz sz =     (Sz)    (0x7  & (instr >> (3 + 2 + 3 + 6)));
 
-  if(i_op == FT && !(i_mem == WS && sz == S_APTR)) {
+  if(i_op == FT && !(i_mem == WS && sz == SZAPTR)) {
       fail("FT must use WS and size=ptr");
   }
 
@@ -387,7 +387,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   // Get Second
   if(i_op == SR) {
     assert(i_mem==WS || i_mem==IMWS);
-    snd = WS_POP(S_APTR);
+    snd = WS_POP(SZAPTR);
     len += 1;
   } else {
     if(i_mem == FTCI) {
@@ -429,23 +429,23 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     case CALL:
       if(i_mem <= FTOI) fail(_jmp_call_err);
       aptr = toAPtr(WS_POP(sz), sz);
-      growLs = fetch(mem, aptr, S_2);
+      growLs = fetch(mem, aptr, SZ2);
       Stk_grow(&env.ls, growLs);
-      Stk_push(&env.callStk, env.ep, S_APTR);
-      Stk_push(&env.growStk, growLs, S_2);
+      Stk_push(&env.callStk, env.ep, SZAPTR);
+      Stk_push(&env.growStk, growLs, SZ2);
       env.ep = aptr + 2;
       break;
     case CNL: // call no locals
       if(i_mem <= SROI) fail(_jmp_mem_err);
       aptr = toAPtr(WS_POP(sz), sz);
-      Stk_push(&env.callStk, env.ep, S_APTR);
-      Stk_push(&env.growStk, 0, S_2);
+      Stk_push(&env.callStk, env.ep, SZAPTR);
+      Stk_push(&env.growStk, 0, SZ2);
       env.ep = aptr;
     case RET: 
       if(Stk_len(env.callStk) == 0) res.escape = TRUE;
       else {
-        growLs = Stk_pop(&env.growStk, S_2);
-        env.ep = Stk_pop(&env.callStk, S_APTR);
+        growLs = Stk_pop(&env.growStk, SZ2);
+        env.ep = Stk_pop(&env.callStk, SZAPTR);
         Stk_shrink(&env.ls, growLs);
       }
       break;
@@ -464,7 +464,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 /*fn*/ ErrCode execute(APtr ap) {
   while(TRUE) {
     assert(ap < *env.topMem);
-    U16 instr = fetch(mem, ap, S_2);
+    U16 instr = fetch(mem, ap, SZ2);
     ExecuteResult res = executeInstr(instr);
     OP_CHECK(res.err, "execute.instr");
     if(res.escape) {
@@ -654,7 +654,7 @@ void dbgToken() {
       elif(c == '0') c = '\0';
       else OP_ASSERT(FALSE, "invalid escaped char");
     }
-    store(mem, *env.heap, c, S_1);
+    store(mem, *env.heap, c, SZ1);
     *env.heap += 1;
     tokenLen += 1;
   }
@@ -704,14 +704,14 @@ void dbgToken() {
 /*fn*/ ErrCode readSzPush(read_t r, U32 value) {
   // read the next symbol to get sz and push value.
   Sz sz; OP_CHECK(readSz(r, &sz), "readSzPush");
-  OP_ASSERT(sz == S_2 || sz == S_4, "size invalid");
+  OP_ASSERT(sz == SZ2 || sz == SZ4, "size invalid");
   OP_CHECK(Stk_push(&env.ws, value, sz), "readSzPush.push");
   return OK;
 }
 
 /*fn*/ ErrCode readSzPop(read_t r, U32* out) {
   Sz sz; OP_CHECK(readSz(r, &sz), "readSzPop");
-  OP_ASSERT(sz == S_2 || sz == S_4, "size invalid");
+  OP_ASSERT(sz == SZ2 || sz == SZ4, "size invalid");
   *out = WS_POP(sz);
   return OK;
 }
@@ -758,7 +758,7 @@ void dbgToken() {
 
 /*fn*/ ErrCode cWriteInstr(read_t r) { // `;`
   OP_ASSERT(tokenLen == 1, "multi ;");
-  store(mem, *env.heap, instr, S_2);
+  store(mem, *env.heap, instr, SZ2);
   *env.heap += 2;
   return OK;
 }
@@ -921,18 +921,18 @@ U16 testBufIdx = 0;
   printf("## testHex #01...\n"); TEST_ENV_BARE;
 
   COMPILE("#10");
-  assert(WS_POP(S_1) == 0x10);
+  assert(WS_POP(SZ1) == 0x10);
 
   printf("## testHex #10AF...\n");
   COMPILE("/comment\n#10AF");
-  U32 result = WS_POP(S_2);
+  U32 result = WS_POP(SZ2);
   assert(result == 0x10AF);
 }
 
 /*test*/ void testLoc() {
   printf("## testLoc...\n"); TEST_ENV_BARE;
   COMPILE("&4 &2");
-  U16 result1 = WS_POP(S_2); U32 result2 = WS_POP(S_4);
+  U16 result1 = WS_POP(SZ2); U32 result2 = WS_POP(SZ4);
   assert(result1 == (U16)heapStart);
   assert(result2 == heapStart);
 }
@@ -978,30 +978,30 @@ U16 testBufIdx = 0;
   printf("## testDict\n"); TEST_ENV_BARE;
 
   COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @4foo @2foo ");
-  assert(0xF00 == WS_POP(S_2));   // 2foo
-  assert(0xF00 == WS_POP(S_4));   // 4foo
-  assert(0xBA2AA == WS_POP(S_4)); // 4bazaa
+  assert(0xF00 == WS_POP(SZ2));   // 2foo
+  assert(0xF00 == WS_POP(SZ4));   // 4foo
+  assert(0xBA2AA == WS_POP(SZ4)); // 4bazaa
 }
 
 /*test*/ void testWriteHeap() { // test , and ;
   printf("## testWriteHeap\n"); TEST_ENV_BARE;
   COMPILE("#77770101,4 #0F00,2 ;");
-  assert(0x77770101 == fetch(mem, heapStart, S_4));
-  assert(0x0F00 == fetch(mem, heapStart+4, S_2));
-  assert(INSTR_DEFAULT == fetch(mem, heapStart+6, S_2));
+  assert(0x77770101 == fetch(mem, heapStart, SZ4));
+  assert(0x0F00 == fetch(mem, heapStart+4, SZ2));
+  assert(INSTR_DEFAULT == fetch(mem, heapStart+6, SZ2));
 }
 
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
   COMPILE("@4 S2");
-  assert(0xC0004000 == WS_POP(S_4));
+  assert(0xC0004000 == WS_POP(SZ4));
 
   instr = 0xF9FF; // instr with unused=0
   COMPILE("S4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
   COMPILE("#01 #02   S1 ADD^");
-  assert(0x03 == WS_POP(S_1));
+  assert(0x03 == WS_POP(SZ1));
 }
 
 
