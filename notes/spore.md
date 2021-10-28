@@ -250,6 +250,19 @@ A Jmp (Jump) involves:
 For all jumps, a jump of size=U8 will trap, U16 is interpreted as an offset
 from the module, U32 is an absolute jump.
 
+Calls work a little different in spore than in many languages:
+- You can call using CALL or CNL. CALL expects the value at the pointer to be
+  a growLs value which defines how much the localstack needs to be grown.
+  This value is stored on the callStack so that RET will automatically update
+  the locals stack when returning.
+- Calls can be either 16bit or 32bit. 16 bit will be within the current "module"
+  (the upper 16bits of the execution pointer stay the same). Note that the
+  current limit for the number of modules is 256 so they can fit inside a
+  single byte (and the other byte can be used for the growLs value on the
+  callStack).
+- The localsStack can only grow by up to 256 * APtrSize so it can fit in a
+  single byte;
+
 The following Jump modes are possible:
 - 0 NOJ: No Jump, do not perform jump (but do the rest of the operation)
 - 1 JZ: Jump to Immediate if store=zero
@@ -259,17 +272,20 @@ The following Jump modes are possible:
 - 4 reserved
 - 5 CALL: Call an address
   - pop ptr off of store, convert to APtr using MP if necessary.
-  - fetch 16bit growWs value at ptr.
-  - grow LS by growWs.
-  - push `EP+INSTR_WIDTH` onto RS, including current MP and amount WS grew.
+  - fetch growLs value at ptr. growLs is from 0-256 and needs to be multipled
+    by ASIZE to get the amount the localstack should grow.
+  - grow LS by growLs.
+  - push the growLs byte, current module byte and current ep 16 bit value (4
+    bytes total) onto the CallStack. These are typically packed as a 32 bit
+    value.
   - jump to ptr+2 (skipping WS size)
 - 6 CNL: Call an address without a locals stack update. Does not require
     a memory read. Still pushes relevant values onto call stack so that RET
     works identically.
 - 7 RET: return
-  - pop address and WS growth from RS.
-  - shrink WS by grown amount
-  - jump to address
+  - pop return module,address and growWs from CallStack
+  - shrink local stack by grown amount
+  - jump to return module+mptr.
 
 Some constraints on jump modes:
 - NOJ and RET have no constraints.

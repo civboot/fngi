@@ -437,7 +437,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       Stk_push(&env.callStk, env.ep, 4);
       env.ep = aptr;
       break;
-    case RET: 
+    case RET:
       if(Stk_len(env.callStk) == 0) res.escape = TRUE;
       else {
         U32 callMeta = Stk_pop(&env.callStk, ASIZE);
