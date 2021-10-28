@@ -42,10 +42,10 @@ typedef U8 ErrCode;
 
 // Size
 typedef enum {
-  SZ1,   SZ2,
-  SZ4,  SZUNDEF
-} Sz;
-#define SZAPTR SZ4
+  Sz1,            Sz2,
+  _Sz_r,          Sz4,
+} SzI;
+#define SzA Sz4
 
 // Mem
 typedef enum {
@@ -138,7 +138,7 @@ TokenState* tokenState = NULL;
 FILE* srcFile;
 
 #define INSTR_DEFAULT \
-    (SZ4 << 14)       \
+    (Sz4 << 14)       \
   + (NOJ << 11)       \
   + (WS  << 6 )       \
   +  NOP
@@ -154,20 +154,8 @@ U16 instr = INSTR_DEFAULT;
   exit(1);
 }
 
-/*fn*/ U8 szToBytes(U8 sz) {
-  switch (sz) {
-    case SZ1: return 1;
-    case SZ2: return 2;
-    case SZ4: return 4;
-    default: printf("sz=0x%x ", sz); fail("invalid Sz");
-  }
-}
-
-/*fn*/ U8 bytesToSz(U8 bytes) {
-  if(bytes <= 1) return SZ1;
-  if(bytes <= 2) return SZ2;
-  if(bytes <= 4) return SZ4;
-  fail("invalid bytes");
+/*fn*/ U8 szToBytes(SzI sz) {
+  return (U8)sz + 1;
 }
 
 /*fn*/ void* alignSys(void* p, U8 szBytes) {
@@ -271,10 +259,10 @@ APtr toAPtr(U32 v, U8 sz) {
 
 #define OP_ARGS OpData *out
 #define OP_ASSERT(COND, MSG) \
-  if(!(COND)) { printf("!A! "); printf(MSG); printf("\n"); return 1; }
+  if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 
 #define OP_CHECK(COND, MSG) \
-  if(COND) { printf("!A! "); printf(MSG); printf("\n"); return 1; }
+  if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 
 typedef ErrCode (*op_t)(OP_ARGS);
 
@@ -338,10 +326,10 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   Op i_op =   (Op)    (0x3F & instr);
   Mem i_mem = (Mem)   (0x7  & (instr >>              6));
   Jmp jmp =   (Jmp)   (0x7  & (instr >>     (2 + 3 + 6)));
-  Sz szI =     (Sz)   (0x7  & (instr >> (3 + 2 + 3 + 6)));
+  SzI szI =     (SzI)   (0x7  & (instr >> (3 + 2 + 3 + 6)));
   U8 sz = szToBytes(szI);
 
-  if(i_op == FT && !(i_mem == WS && szI == SZAPTR)) {
+  if(i_op == FT && !(i_mem == WS && szI == SzA)) {
       fail("FT must use WS and size=ptr");
   }
 
@@ -687,14 +675,10 @@ void dbgToken() {
     tkLen += 1;
     i += 1;
   }
-  // convert tkLen to bytes
-  switch(tkLen) {
-    case 1:
-    case 2: tkLen = 1; break;
-    case 3:
-    case 4: tkLen = 2; break;
-    default: tkLen = 4;
-  }
+  // convert tkLen to sz bytes.
+  if(tkLen <= 2) tkLen = 1;
+  elif(tkLen <= 4) tkLen = 2;
+  else tkLen = 4;
   Stk_push(&env.ws, v, tkLen);
   shiftBuf();
   return OK;
@@ -887,7 +871,7 @@ void tests();
 #include <string.h>
 
 void dbgEnv() {
-  printf("token[%u]: %.*s\n", tokenLen, tokenLen, tokenBuf);
+  printf("\ntoken[%u]: %.*s\n", tokenLen, tokenLen, tokenBuf);
   printf("instr: 0x%x\n", instr, instr);
 }
 
@@ -999,14 +983,14 @@ U16 testBufIdx = 0;
 
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
-  COMPILE("@4 S2");
+  COMPILE("@4 Sz2");
   assert(0xC0004000 == WS_POP(4));
 
   instr = 0xF9FF; // instr with unused=0
-  COMPILE("S4 NOJ WS NOP");
+  COMPILE("Sz4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE("#01 #02   S1 ADD^");
+  COMPILE("#01 #02   Sz1 ADD^");
   assert(0x03 == WS_POP(1));
 }
 
