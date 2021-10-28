@@ -1,9 +1,9 @@
 
 // # Memory Locations
-#0000_0000 =4 null
-#0000_0004 =4 heap
-#0000_0008 =4 topHeap
-#0000_000C =4 topMem
+#0000_0000 =4 rNull
+#0000_0004 =4 rHeap // heap reference
+#0000_0008 =4 rTopHeap
+#0000_000C =4 rTopMem
 
 // # Instructions
 
@@ -25,10 +25,10 @@
 #3800_3800     =4 RET
 
 // Mem
-#01C0_0000     =4 SRLP
-#01C0_0040     =4 SRMP
+#01C0_0000     =4 SRLI
+#01C0_0040     =4 SRMI
 #01C0_0080     =4 SROI
-#01C0_00C0     =4 FTLP
+#01C0_00C0     =4 FTLI
 #01C0_0100     =4 FTMI
 #01C0_0140     =4 FTOI
 #01C0_0180     =4 IMWS
@@ -64,4 +64,10 @@
 #003F_0019     =4 GE_S
 #003F_001A     =4 LT_U
 #003F_001B     =4 LT_S
+
+// ASM Device Functions
+#0000 =2 D_dict1
+#0000 =2 D_dict2
+#0000 =2 D_dict4
+#0000 =2 D_scan
 

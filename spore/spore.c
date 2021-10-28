@@ -54,7 +54,7 @@ typedef enum {
 
 // Mem
 typedef enum {
-  SRLP,   SRCP,   SROI,   FTLP,
+  SRLI,   SRMI,   SROI,   FTLI,
   FTCI,   FTOI,   IMWS,   WS,
 } MemI;
 
@@ -142,11 +142,15 @@ Dict* dict = NULL;
 TokenState* tokenState = NULL;
 FILE* srcFile;
 
-#define INSTR_DEFAULT \
-    (Sz4 << 14)       \
-  + (NOJ << 11)       \
-  + (WS  << 6 )       \
-  +  NOP
+#define INSTR(SZ, JMP, MEM, OP) \
+    (SZ  << 14)  \
+  + (JMP << 11) \
+  + (MEM << 6 ) \
+  +  OP
+
+#define INSTR_DEFAULT INSTR(Sz4, NOJ, WS, NOP)
+#define INSTR_CNL     INSTR(Sz4, CNL, WS, NOP)
+
 U16 instr = INSTR_DEFAULT;
 
 // ********************************************
@@ -310,7 +314,7 @@ op_t ops[] = {
   // EQZ,        EQZ_NC,        DRP2,         OVR,
   op_eqz,        op_eqz_nc,     op_drop2,     op_ovr,
 
-  // ADD,        SUB,           MOD,          MUL,
+  // ADD,        SUB,           MOD,          INC,
   op_add,        op_notimpl,    op_notimpl,   op_notimpl,
 };
 
@@ -351,20 +355,20 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
   // Get Top
   switch(i_mem) {
-    case SRLP:
+    case SRLI:
       printf("srlp\n");
       usesImm = TRUE;
       srPtr = LS_OFFSET() + env.ls.sp + popImm();
       top = WS_POP(sz);
       break;
-    case SRCP:
+    case SRMI:
       printf("srcp\n");
       usesImm = TRUE;
       srPtr = env.mp + popImm();
       top = WS_POP(sz);
       break;
     case SROI:
-    case FTLP:
+    case FTLI:
     case FTCI:
     case FTOI: fail("unknown mem");
     case IMWS:
@@ -406,7 +410,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     case NOJ: break;
     case JZ: 
       if (i_mem != WS) fail(_jz_jtbl_err);
-      env.ep = popImm(); 
+      env.ep = popImm();
       break;
     case JTBL:
       if (i_mem != WS) fail(_jz_jtbl_err);
@@ -423,7 +427,6 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     case CALL:
       if(i_mem <= FTOI) fail(_jmp_call_err);
       aptr = toAPtr(WS_POP(sz), sz);
-
       growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
       Stk_grow(&env.ls, growLs << APO2);
       // Callstack has 4 byte value: growLs | module | 2-byte-cptr
@@ -465,6 +468,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       break;
     }
     U16 instr = fetch(mem, env.ep, 2);
+    env.ep += 2;
   }
   env.ep = 0;
   return OK;
@@ -723,7 +727,6 @@ void dbgToken() {
 }
 
 /*fn*/ ErrCode cNameSet(read_t r) { // `=`
-  OP_ASSERT(tokenLen == 1, "only one = allowed");
   U32 value; OP_CHECK(readSzPop(r, &value), "cNameSet.read");
 
   OP_CHECK(scan(r), "cNameSet.scan"); // load name token
@@ -732,7 +735,6 @@ void dbgToken() {
 }
 
 /*fn*/ ErrCode cNameGet(read_t r) { // `@`
-  OP_ASSERT(tokenLen == 1, "multi @");
   U8 sz; OP_CHECK(readSz(r, &sz), "cNameGet");
   OP_CHECK(scan(r), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
@@ -741,14 +743,12 @@ void dbgToken() {
 }
 
 /*fn*/ ErrCode cNameForget(read_t r) { // `~`
-  OP_ASSERT(tokenLen == 1, "multi ~");
   OP_CHECK(scan(r), "~ scan");
   Dict_forget(tokenLen, tokenBuf);
   return OK;
 }
 
 /*fn*/ ErrCode cWriteHeap(read_t r) { // `,`
-  OP_ASSERT(tokenLen == 1, "multi ,");
   U8 sz; OP_CHECK(readSz(r, &sz), ",.sz");
   U32 value = WS_POP(sz);
   store(mem, *env.heap, value, sz);
@@ -757,14 +757,13 @@ void dbgToken() {
 }
 
 /*fn*/ ErrCode cWriteInstr(read_t r) { // `;`
-  OP_ASSERT(tokenLen == 1, "multi ;");
   store(mem, *env.heap, instr, 2);
+  instr = INSTR_DEFAULT;
   *env.heap += 2;
   return OK;
 }
 
 /*fn*/ ErrCode updateInstr() { // any alphanumeric
-  OP_ASSERT(tokenState->group <= T_ALPHA, "unrecognized symbol");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "updateInstr: no name");
   U16 mask = ~(value >> 16);
   U16 setInstr = value & 0xFFFF;
@@ -774,18 +773,30 @@ void dbgToken() {
   return OK;
 }
 
-/*fn*/ ErrCode cExecute() { // ^
+/*fn*/ ErrCode cExecuteInstr() { // ^
   U16 i = instr;
   instr = INSTR_DEFAULT;
   return execute(i);
+}
+
+/*fn*/ ErrCode cExecute(read_t r) { // $
+  instr = INSTR_DEFAULT;
+  OP_CHECK(scan(r), "$ scan");
+  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "$: no name");
+  WS_PUSH(value, 4);
+  return execute(INSTR_CNL);
 }
 
 /*fn*/ ErrCode compile(read_t r) {
   while(TRUE) {
     scan(r);
     if(tokenLen == 0) return OK;
-    char c = tokenBuf[0];
-    switch (c) {
+    if(tokenState->group <= T_ALPHA) {
+      OP_CHECK(updateInstr(), "compile.instr");
+      continue;
+    }
+    tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
+    switch (tokenBuf[0]) {
       case '/': OP_CHECK(tilNewline(r), "compile /"); continue;
       case '"': OP_CHECK(linestr(r), "compile \""); continue;
       case '#': scan(r); OP_CHECK(tokenHex(), "compile #"); continue;
@@ -795,9 +806,11 @@ void dbgToken() {
       case '~': OP_CHECK(cNameForget(r), "compile ~"); continue;
       case ',': OP_CHECK(cWriteHeap(r), "compile ,"); continue;
       case ';': OP_CHECK(cWriteInstr(r), "compile ;"); continue;
-      case '^': OP_CHECK(cExecute(), "compile ^"); continue;
+      case '^': OP_CHECK(cExecuteInstr(), "compile ^"); continue;
+      case '$': OP_CHECK(cExecute(r), "compile $"); continue;
     }
-    OP_CHECK(updateInstr(), "compile.instr");
+    printf("invalid token: %c", tokenBuf[0]);
+    return 1;
   }
 }
 

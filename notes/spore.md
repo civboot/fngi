@@ -91,7 +91,7 @@ A single spore16 instruction can specify up to **three different operations that
 (might) all happen within a single clock cycle** on a suitably built machine.
 The approach is inspired by the [J1
 microprocessor](https://excamera.com/files/j1.pdf) with the desire to make a
-more general-purpose CPU. For demonstration, `1,SRMP,ADD,RET #4200` will:
+more general-purpose CPU. For demonstration, `1,SRMI,ADD,RET #4200` will:
 - Add two unsigned 32 bit (4 byte) values on the stack
 - Store their value at the 16bit address 0x4200 offset by the MP (module ptr).
 - Return, which not only continues executing from the previous function but
@@ -197,10 +197,10 @@ further information.
 ```
   bin Name    Top       Second  Store     Description
 --------------------------------------------------------------
-0 000 SRLP    WS0       WS1     ST(LP+IM) StoRe LocalsPtr
-1 001 SRMP    WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
+0 000 SRLI    WS0       WS1     ST(LP+IM) StoRe LocalsPtr offset
+1 001 SRMI    WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
 2 010 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
-3 011 FTLP    FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
+3 011 FTLI    FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
 4 100 FTMI    FT(MP+IM) WS0     WS        FeTch from ModulePtr offset
 5 101 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
 6 110 IMWS    IM        WS0     WS        IMmediate Working Stack
@@ -218,14 +218,14 @@ possibilities, describing them in reverse order (simplest to most complex):
   on the working stack and operates on it using the immediate value.
 - FTMI: means "FeTch Module pointer Immediate". It fetches from immediate
   with an offset of the module pointer. It stores on the working stack.
-- FTLP: means "FeTch LocalsPtr". It uses the immediate as the offset to
+- FTLI: means "FeTch LocalsPtr". It uses the immediate as the offset to
   fetch from the function locals. It stores on the working stack.
 - SROI: means "StoRe Operate Immediate". It uses the immediate value for
   the operation and uses WS1 as the "second". It stores the value
   at the address stored in WS0.
-- SRMP: means "StoRe ModulePtr". It uses the WS for the operation but then
+- SRMI: means "StoRe ModulePtr". It uses the WS for the operation but then
   stores at the immediate value offset by the module pointer.
-- SRLP: means "StoRe LocalsPtr". It uses the WS for the operation but
+- SRLI: means "StoRe LocalsPtr". It uses the WS for the operation but
   stores at the immediate value offset by the function locals.
 
 Cheatsheat for above table:
@@ -506,7 +506,7 @@ The registers are:
   allocator currently being used. The API for such an allocator will be
   implementation specific.
 - E 1110 MP: the ModulePtr.
-- F 1111 LP: the LocalsPtr register. Writing to will trap.
+- F 1111 LI: the LocalsPtr register. Writing to will trap.
 
 > Note that implementors don't have to actually store these in hardware
 > registers: they can just as easily go in non-accessible memory.
@@ -541,10 +541,10 @@ depends on endianness (see Alignment section for details).
 ### Mem
 Below is the spore16 description and what it instead does in spore8.
 
-- SRLP: Store WS0 at `LP+IM`
-- SRMP: Store WS0 at `MP+IM`
+- SRLI: Store WS0 at `LP+IM`
+- SRMI: Store WS0 at `MP+IM`
 - SROI: causes trap in spore8
-- FTLP: Fetch value at `LP+IM` onto WS
+- FTLI: Fetch value at `LP+IM` onto WS
 - FTMI: Fetch value at `MP+IM` onto WS
 - FTOI: causes trap in spore8
 - IMWS: push IMM onto WS
