@@ -193,7 +193,7 @@ U16 instr = INSTR_DEFAULT;
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
-  U8 value;
+  if(aptr == 0) fail("null access");
   switch (sz) {
     case 1:
       return (U32) *((U8*) (mem+aptr));
