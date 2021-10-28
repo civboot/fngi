@@ -65,6 +65,8 @@
 #003F_001A     =4 LT_U
 #003F_001B     =4 LT_S
 
-#0000 =2 D_dict1
-#0000 =2 D_dict2
+// # Device Operations
+#0000 =2 D_dict4 // FT=get SR=set 4byte dict value
+#0001 =2 D_scan  // scan next word
+
 
