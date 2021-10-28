@@ -24,9 +24,13 @@ typedef ASz APtr;
 typedef U16 CSz;
 typedef CSz CPtr;
 
+// 256 64k module blocks
+/*get aptr  */ #define MAX_APTR 0xFFFFFF
+/*get module*/ #define MOD_HIGH_MASK 0xFF0000 
+
+#define APO2  2
 #define ASIZE sizeof(ASz)
 #define CSIZE sizeof(CSz)
-#define NULL16 0xFFFF
 #define OK 0
 
 #ifndef FALSE
@@ -37,6 +41,7 @@ typedef CSz CPtr;
 #ifndef elif
 #define elif else if
 #endif
+
 
 typedef U8 ErrCode;
 
@@ -86,10 +91,10 @@ typedef struct {
   // Separate from mem
   Stk ws;
   Stk callStk;
-  Stk growStk;
 } Env;
 
 #define LS_OFFSET() ((size_t)mem - (size_t)env.ls.mem)
+#define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
 
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
@@ -239,8 +244,10 @@ void _chk_shrink(Stk* stk, U16 sz) {
 APtr toAPtr(U32 v, U8 sz) {
   switch (sz) {
     case 1: fail("APtr.sz=U8");
-    case 2: return env.mp + v;
-    case 4: return v;
+    case 2: return ENV_MOD_HIGH() + v;
+    case 4:
+      assert(v <= MAX_APTR);
+      return v;
     default: assert(FALSE);
   }
 }
@@ -416,24 +423,26 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     case CALL:
       if(i_mem <= FTOI) fail(_jmp_call_err);
       aptr = toAPtr(WS_POP(sz), sz);
-      growLs = fetch(mem, aptr, 2);
-      Stk_grow(&env.ls, growLs);
-      Stk_push(&env.callStk, env.ep, ASIZE);
-      Stk_push(&env.growStk, growLs, 2);
+
+      growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
+      Stk_grow(&env.ls, growLs << APO2);
+      // Callstack has 4 byte value: growLs | module | 2-byte-cptr
+      Stk_push(&env.callStk, (growLs << 24) + env.ep, 4);
       env.ep = aptr + 2;
+      env.mp = aptr >> 8;
       break;
     case CNL: // call no locals
       if(i_mem <= SROI) fail(_jmp_mem_err);
       aptr = toAPtr(WS_POP(sz), sz);
-      Stk_push(&env.callStk, env.ep, ASIZE);
-      Stk_push(&env.growStk, 0, 2);
+      Stk_push(&env.callStk, env.ep, 4);
       env.ep = aptr;
+      break;
     case RET: 
       if(Stk_len(env.callStk) == 0) res.escape = TRUE;
       else {
-        growLs = Stk_pop(&env.growStk, 2);
-        env.ep = Stk_pop(&env.callStk, ASIZE);
-        Stk_shrink(&env.ls, growLs);
+        U32 callMeta = Stk_pop(&env.callStk, ASIZE);
+        env.ep = MOD_HIGH_MASK & callMeta;
+        Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
       }
       break;
   }
@@ -448,16 +457,17 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   return res;
 }
 
-/*fn*/ ErrCode execute(APtr ap) {
+/*fn*/ ErrCode execute(U16 instr) {
   while(TRUE) {
-    assert(ap < *env.topMem);
-    U16 instr = fetch(mem, ap, 2);
     ExecuteResult res = executeInstr(instr);
-    OP_CHECK(res.err, "execute.instr");
+    if(res.err) { return 1; }
     if(res.escape) {
       break;
     }
+    U16 instr = fetch(mem, env.ep, 2);
   }
+  env.ep = 0;
+  return OK;
 }
 
 // ********************************************
@@ -764,10 +774,10 @@ void dbgToken() {
   return OK;
 }
 
-/*fn*/ ErrCode cExecuteInstr() { // ^
+/*fn*/ ErrCode cExecute() { // ^
   U16 i = instr;
   instr = INSTR_DEFAULT;
-  return executeInstr(i).err;
+  return execute(i);
 }
 
 /*fn*/ ErrCode compile(read_t r) {
@@ -785,8 +795,7 @@ void dbgToken() {
       case '~': OP_CHECK(cNameForget(r), "compile ~"); continue;
       case ',': OP_CHECK(cWriteHeap(r), "compile ,"); continue;
       case ';': OP_CHECK(cWriteInstr(r), "compile ;"); continue;
-      case '^': OP_CHECK(cExecuteInstr(), "compile ^"); continue;
-      case '$': assert(FALSE); continue;
+      case '^': OP_CHECK(cExecute(), "compile ^"); continue;
     }
     OP_CHECK(updateInstr(), "compile.instr");
   }
@@ -812,10 +821,8 @@ ssize_t read_src(size_t nbyte) {
   U8 localMem[MS] = {0};                  \
   U8 wsMem[WS];                           \
   U8 callStkMem[RS];                      \
-  U8 growStkMem[RS >> 1];                 \
   mem = localMem; \
   env = (Env) {                           \
-    .mp = 0,                              \
     .heap = (APtr*) (mem + 4),            \
     .topHeap = (APtr*) (mem + 8),         \
     .topMem = (APtr*) (mem + 12),         \
@@ -823,8 +830,6 @@ ssize_t read_src(size_t nbyte) {
     .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
     .callStk = \
     { .size = RS, .sp = RS, .mem = callStkMem },     \
-    .growStk = \
-    { .size = RS >> 1, .sp = RS >> 1, .mem = growStkMem },     \
   };                                      \
   /* configure heap+topheap */            \
   *env.heap = 16;                         \
@@ -990,7 +995,7 @@ U16 testBufIdx = 0;
   COMPILE("Sz4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE("#01 #02   Sz1 ADD^");
+  COMPILE("#01 #02   Sz1 ADD RET^");
   assert(0x03 == WS_POP(1));
 }
 
