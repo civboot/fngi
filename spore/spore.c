@@ -727,6 +727,7 @@ void dbgToken() {
 
 // ********************************************
 // ** Initialization
+
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS)       \
   U8 localMem[MS] = {0};                       \
   U8 wsMem[WS];                           \
@@ -754,6 +755,7 @@ void dbgToken() {
   dict = (Dict*) (mem + *env.topHeap);    \
   dict->heap = 0;                         \
   dict->end = DS;
+
 
 #define SMALL_ENV_BARE \
   /*      MS      WS     RS     LS     DICT */    \

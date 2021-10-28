@@ -267,7 +267,7 @@ The following Jump modes are possible:
   - pop address and WS growth from RS.
   - shrink WS by grown amount
   - jump to address
-- 7 110 NOJ: No Jump, do not perform jump (but do the rest of the operation)
+- 7 111 NOJ: No Jump, do not perform jump (but do the rest of the operation)
 
 Some constraints on jump modes:
 - NOJ and RET have no constraints.
