@@ -314,7 +314,7 @@ op_t ops[] = {
   // EQZ,        EQZ_NC,        DRP2,         OVR,
   op_eqz,        op_eqz_nc,     op_drop2,     op_ovr,
 
-  // ADD,        SUB,           MOD,          INC,
+  // ADD,        SUB,           MOD,          MUL,
   op_add,        op_notimpl,    op_notimpl,   op_notimpl,
 };
 
@@ -356,13 +356,11 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   // Get Top
   switch(i_mem) {
     case SRLI:
-      printf("srlp\n");
       usesImm = TRUE;
       srPtr = LS_OFFSET() + env.ls.sp + popImm();
       top = WS_POP(sz);
       break;
     case SRMI:
-      printf("srcp\n");
       usesImm = TRUE;
       srPtr = env.mp + popImm();
       top = WS_POP(sz);
@@ -410,7 +408,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     case NOJ: break;
     case JZ: 
       if (i_mem != WS) fail(_jz_jtbl_err);
-      env.ep = popImm();
+      env.ep = toAPtr(popImm(), 2);
       break;
     case JTBL:
       if (i_mem != WS) fail(_jz_jtbl_err);
@@ -514,6 +512,8 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   Key* key = Dict_key(offset);
   if(offset == dict->heap) {
     // new key
+    U16 addedSize = align(1 + slen + 4, 4);
+    assert(dict->heap + addedSize <= dict->end);
     key->len = slen;
     memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
     dict->heap += align(1 + slen + 4, 4);
@@ -605,19 +605,18 @@ void dbgToken() {
   }
   if(tokenBufSize < MAX_TOKEN) readAppend(r);
 
-  tokenLen = 0;
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
   if(tokenState->group <= T_ALPHA) tokenState->group = T_ALPHA;
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
+    OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
     c = tokenBuf[tokenLen];
     TokenGroup tg = toTokenGroup(c);
     if (tg == tokenState->group) {}
     elif (tokenState->group == T_ALPHA && (tg <= T_ALPHA)) {}
     else break;
-    OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
     tokenLen += 1;
   }
 
@@ -820,14 +819,16 @@ void dbgToken() {
 //
 
 
-ssize_t read_src(size_t nbyte) {
+ssize_t readSrc(size_t nbyte) {
   ssize_t numRead = fread(
     tokenBuf + tokenState->size,
     1, // size
     TOKEN_BUF - tokenState->size, // count
     srcFile);
   assert(!ferror(srcFile));
+  if(numRead < 0) return 0;
   tokenBufSize += numRead;
+  return 0;
 }
 
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS)  \
@@ -860,17 +861,17 @@ ssize_t read_src(size_t nbyte) {
 
 #define SMALL_ENV_BARE \
   /*      MS      WS     RS     LS     DICT */    \
-  NEW_ENV_BARE(0x4000, 0x100, 0x100, 0x200, 0x200)
+  NEW_ENV_BARE(0x8000, 0x100, 0x100, 0x200, 0x1000)
 
 
 #define NEW_ENV(MS, WS, RS, LS, DS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS); \
   srcFile = fopen("spore/asm.sa", "rb"); \
-  assert(!compile(*read_src));
+  assert(!compile(*readSrc));
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
-  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200)
+  NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x1000)
 
 
 // ********************************************
@@ -889,8 +890,9 @@ void tests();
 #include <string.h>
 
 void dbgEnv() {
-  printf("\ntoken[%u]: %.*s\n", tokenLen, tokenLen, tokenBuf);
-  printf("instr: 0x%x\n", instr, instr);
+  printf("~~~ token[%u, %u]=%.*s  ", tokenLen, tokenBufSize, tokenLen, tokenBuf);
+  printf("tokenGroup=%u  ", tokenState->group);
+  printf("instr=0x%x\n", instr, instr);
 }
 
 #define TEST_ENV_BARE \

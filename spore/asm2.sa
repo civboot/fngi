@@ -1,0 +1,8 @@
+
+
+// First we will make it easier to define functions without @4=4
+@4=4 aFn
+  SZA FTMI    ;     @2 rHeap,2   // fetch heap. {heap}
+  SZ2 IMWS DVL;     @2 D_scan,2  // scan next token into tokenBuf. {heap}
+  SZ2 IMWS DVS RET; @2 D_dict4,2 // set dict key(tokenBuf) to current heap and ret.
+

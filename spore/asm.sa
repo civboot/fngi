@@ -65,9 +65,6 @@
 #003F_001A     =4 LT_U
 #003F_001B     =4 LT_S
 
-// ASM Device Functions
 #0000 =2 D_dict1
 #0000 =2 D_dict2
-#0000 =2 D_dict4
-#0000 =2 D_scan
 
