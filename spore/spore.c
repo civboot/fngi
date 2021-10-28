@@ -51,13 +51,13 @@ typedef enum {
 typedef enum {
   SRLP,   SRCP,   SROI,   FTLP,
   FTCI,   FTOI,   IMWS,   WS,
-} Mem;
+} MemI;
 
 // Jmp
 typedef enum {
   NOJ,          JZ,           JTBL,         JST,
   _JR0,         CALL,         CNL,          RET,
-} Jmp;
+} JmpI;
 
 // Operation
 typedef enum {
@@ -65,7 +65,7 @@ typedef enum {
   NOP,          DRP,          INV,          NEG,
   EQZ,          EQZ_NC,       DRP2,         OVR,
   ADD,          SUB,          MOD,          MUL,
-} Op;
+} OpI;
 
 // Generic stack.
 typedef struct {
@@ -323,13 +323,13 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
 
-  Op i_op =   (Op)    (0x3F & instr);
-  Mem i_mem = (Mem)   (0x7  & (instr >>              6));
-  Jmp jmp =   (Jmp)   (0x7  & (instr >>     (2 + 3 + 6)));
+  OpI opI =   (OpI)    (0x3F & instr);
+  MemI i_mem = (MemI)   (0x7  & (instr >>              6));
+  JmpI jmp =   (JmpI)   (0x7  & (instr >>     (2 + 3 + 6)));
   SzI szI =     (SzI)   (0x7  & (instr >> (3 + 2 + 3 + 6)));
   U8 sz = szToBytes(szI);
 
-  if(i_op == FT && !(i_mem == WS && szI == SzA)) {
+  if(opI == FT && !(i_mem == WS && szI == SzA)) {
       fail("FT must use WS and size=ptr");
   }
 
@@ -372,7 +372,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   }
 
   // Get Second
-  if(i_op == SR) {
+  if(opI == SR) {
     assert(i_mem==WS || i_mem==IMWS);
     snd = WS_POP(ASIZE);
     len += 1;
@@ -389,7 +389,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   // *************
   // * Op: perform the operation
   OpData data = {.v = {top, snd, 0}, .sz = sz, .len = len, .usesImm = usesImm };
-  ops[(U8) i_op] (&data); // call op from array
+  ops[(U8) opI] (&data); // call op from array
 
   APtr aptr;
   U16 growLs = 0;
