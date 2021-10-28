@@ -122,7 +122,7 @@ typedef enum {
   T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
 } TokenGroup;
 
-typedef ssize_t (*read_t)(size_t nbyte);
+typedef ssize_t (*read_t)();
 
 // ********************************************
 // ** Globals
@@ -130,6 +130,7 @@ Env env;
 U8* mem = NULL;
 Dict* dict = NULL;
 TokenState* tokenState = NULL;
+FILE* srcFile;
 
 #define INSTR_DEFAULT \
   (S_U32 << 14)       \
@@ -293,6 +294,9 @@ op_t ops[] = {
     return out;
 }
 
+#define dbgExecute() printf("sz=%x top=%x snd=%x len=%u srPtr=%x usesImm=%u\n", \
+    sz, top, snd, len, srPtr, usesImm)
+
 /*fn*/ ErrCode executeInstr(U16 instr) {
   Op i_op =   (Op)    (0x3F & instr);
   Mem i_mem = (Mem)   (0x7  & (instr >>              6));
@@ -321,11 +325,13 @@ op_t ops[] = {
   // Get Top
   switch(i_mem) {
     case SRLP:
+      printf("srlp\n");
       usesImm = TRUE;
       srPtr = LS_OFFSET() + env.ls.sp + popImm();
       top = Stk_pop(&env.ws, sz);
       break;
     case SRCP:
+      printf("srcp\n");
       usesImm = TRUE;
       srPtr = env.mp + popImm();
       top = Stk_pop(&env.ws, sz);
@@ -494,7 +500,7 @@ void dbgToken() {
 
 // Read bytes incrementing tokenBufSize
 /*fn*/ void readAppend(read_t r) {
-  r(TOKEN_BUF - tokenBufSize);
+  r();
 }
 
 // clear token buf and read bytes
@@ -694,14 +700,20 @@ void dbgToken() {
 }
 
 /*fn*/ ErrCode updateInstr() { // any alphanumeric
-  OP_CHECK(tokenState->group <= T_ALPHA, "unrecognized symbol");
+  OP_ASSERT(tokenState->group <= T_ALPHA, "unrecognized symbol");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   U16 mask = ~(value >> 16);
-  U16 setInstr = value && 0xFFFF;
+  U16 setInstr = value & 0xFFFF;
 
   instr = instr & mask;
   instr = instr | setInstr;
   return OK;
+}
+
+/*fn*/ ErrCode cExecuteInstr() {
+  U16 i = instr;
+  instr = INSTR_DEFAULT;
+  return executeInstr(i);
 }
 
 /*fn*/ ErrCode compile(read_t r) {
@@ -709,16 +721,16 @@ void dbgToken() {
     scan(r);
     if(tokenLen == 0) return OK;
     char c = tokenBuf[0];
-    if(c == '/') { OP_CHECK(tilNewline(r), "compile.tilNewline"); }
-    elif (c == '"') { OP_CHECK(linestr(r), "compile.linestr"); }
-    elif (c == '#') { scan(r); OP_CHECK(tokenHex(), "compile.tokenHex"); }
-    elif (c == '&') { OP_CHECK(putLoc(r), "compile.putLoc"); }
-    elif (c == '=') { OP_CHECK(nameSet(r), "compile.nameSet"); }
-    elif (c == '@') { OP_CHECK(nameGet(r), "compile.nameGet"); }
-    elif (c == '~') { OP_CHECK(nameForget(r), "compile.nameForget"); }
-    elif (c == ',') { OP_CHECK(writeHeap(r), "compile.writeHeap"); }
-    elif (c == ';') { OP_CHECK(writeInstr(r), "compile.writeInstr"); }
-    elif (c == '^') { assert(FALSE); }
+    if(c == '/') { OP_CHECK(tilNewline(r), "compile /"); }
+    elif (c == '"') { OP_CHECK(linestr(r), "compile \""); }
+    elif (c == '#') { scan(r); OP_CHECK(tokenHex(), "compile #"); }
+    elif (c == '&') { OP_CHECK(putLoc(r), "compile &"); }
+    elif (c == '=') { OP_CHECK(nameSet(r), "compile ="); }
+    elif (c == '@') { OP_CHECK(nameGet(r), "compile @"); }
+    elif (c == '~') { OP_CHECK(nameForget(r), "compile ~"); }
+    elif (c == ',') { OP_CHECK(writeHeap(r), "compile ,"); }
+    elif (c == ';') { OP_CHECK(writeInstr(r), "compile ;"); }
+    elif (c == '^') { OP_CHECK(cExecuteInstr(), "compile ^"); }
     elif (c == '$') { assert(FALSE); }
     else            { OP_CHECK(updateInstr(), "compile.instr"); }
   }
@@ -727,6 +739,18 @@ void dbgToken() {
 
 // ********************************************
 // ** Initialization
+//
+
+
+ssize_t read_src(size_t nbyte) {
+  ssize_t numRead = fread(
+    tokenBuf + tokenState->size,
+    1, // size
+    TOKEN_BUF - tokenState->size, // count
+    srcFile);
+  assert(!ferror(srcFile));
+  tokenBufSize += numRead;
+}
 
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS)       \
   U8 localMem[MS] = {0};                       \
@@ -761,6 +785,16 @@ void dbgToken() {
   NEW_ENV_BARE(0x4000, 0x100, 0x100, 0x200, 0x200)
 
 
+#define NEW_ENV(MS, WS, RS, LS, DS) \
+  NEW_ENV_BARE(MS, WS, RS, LS, DS); \
+  srcFile = fopen("spore/asm.sa", "rb"); \
+  assert(!compile(*read_src));
+
+#define SMALL_ENV \
+  /*      MS      WS     RS     LS     DICT */    \
+  NEW_ENV(0x4000, 0x100, 0x100, 0x200, 0x200)
+
+
 // ********************************************
 // ** Main
 void tests();
@@ -778,20 +812,25 @@ void tests();
 
 void dbgEnv() {
   printf("token[%u]: %.*s\n", tokenLen, tokenLen, tokenBuf);
+  printf("instr: 0x%x\n", instr, instr);
 }
-
 
 #define TEST_ENV_BARE \
   SMALL_ENV_BARE; \
   U32 heapStart = *env.heap
 
+#define TEST_ENV \
+  SMALL_ENV \
+  U32 heapStart = *env.heap
+
+
 U8* testBuf = NULL;
 U16 testBufIdx = 0;
 
 // read_t used for testing.
-/*test*/ ssize_t testing_read(size_t nbyte) {
+/*test*/ ssize_t testing_read() {
   size_t i = 0;
-  while (i < nbyte) {
+  while (i < (TOKEN_BUF - tokenState->size)) {
     U8 c = testBuf[testBufIdx];
     if(c == 0) return i;
     tokenBuf[tokenBufSize] = c;
@@ -813,11 +852,11 @@ U16 testBufIdx = 0;
 /*test*/ void testHex() {
   printf("## testHex #01...\n"); TEST_ENV_BARE;
 
-  COMPILE("#10\0");
+  COMPILE("#10");
   assert(POP(S_U8) == 0x10);
 
   printf("## testHex #10AF...\n");
-  COMPILE("/comment\n#10AF\0");
+  COMPILE("/comment\n#10AF");
   U32 result = POP(S_U16);
   assert(result == 0x10AF);
 }
@@ -832,9 +871,9 @@ U16 testBufIdx = 0;
 
 /*test*/ void testQuotes() {
   printf("## testQuotes...\n"); TEST_ENV_BARE;
-  COMPILE("\"foo bar\" baz\\0\n\0");
+  COMPILE("\"foo bar\" baz\\0\n");
 
-  assert(0 == strcmp(mem + heapStart, "foo bar\" baz\0"));
+  assert(0 == strcmp(mem + heapStart, "foo bar\" baz"));
 }
 
 /*test*/ void testDictDeps() {
@@ -884,6 +923,19 @@ U16 testBufIdx = 0;
   assert(INSTR_DEFAULT == fetch(mem, heapStart+6, S_U16));
 }
 
+/*test*/ void testExecuteInstr() { // test ^
+  printf("## testExecuteInstr\n"); SMALL_ENV;
+  COMPILE("@4 S2");
+  assert(0xC0004000 == Stk_pop(&env.ws, S_U32));
+
+  instr = 0xFFFF;
+  COMPILE("S4 NOJ WS NOP");
+  assert(INSTR_DEFAULT == instr);
+
+  COMPILE("#01 #02 S1 ADD^");
+  assert(0x03 == Stk_pop(&env.ws, S_U8));
+}
+
 
 /*test*/ void tests() {
   testHex();
@@ -892,5 +944,6 @@ U16 testBufIdx = 0;
   testDictDeps();
   testDict();
   testWriteHeap();
+  testExecuteInstr();
 }
 
