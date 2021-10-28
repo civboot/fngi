@@ -652,38 +652,38 @@ void dbgToken() {
   return OK;
 }
 
-/*fn*/ ErrCode putLoc(read_t r) { // `&`
+/*fn*/ ErrCode cPutLoc(read_t r) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
   readSzPush(r, *env.heap);
   return OK;
 }
 
-/*fn*/ ErrCode nameSet(read_t r) { // `=`
+/*fn*/ ErrCode cNameSet(read_t r) { // `=`
   OP_ASSERT(tokenLen == 1, "only one = allowed");
-  U32 value; OP_CHECK(readSzPop(r, &value), "nameSet.read");
+  U32 value; OP_CHECK(readSzPop(r, &value), "cNameSet.read");
 
-  OP_CHECK(scan(r), "nameSet.scan"); // load name token
+  OP_CHECK(scan(r), "cNameSet.scan"); // load name token
   Dict_set(tokenLen, tokenBuf, value);
   return OK;
 }
 
-/*fn*/ ErrCode nameGet(read_t r) { // `@`
+/*fn*/ ErrCode cNameGet(read_t r) { // `@`
   OP_ASSERT(tokenLen == 1, "multi @");
-  Sz sz; OP_CHECK(readSz(r, &sz), "nameGet");
+  Sz sz; OP_CHECK(readSz(r, &sz), "cNameGet");
   OP_CHECK(scan(r), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   OP_CHECK(Stk_push(&env.ws, value, sz), "& push");
   return OK;
 }
 
-/*fn*/ ErrCode nameForget(read_t r) { // `~`
+/*fn*/ ErrCode cNameForget(read_t r) { // `~`
   OP_ASSERT(tokenLen == 1, "multi ~");
   OP_CHECK(scan(r), "~ scan");
   Dict_forget(tokenLen, tokenBuf);
   return OK;
 }
 
-/*fn*/ ErrCode writeHeap(read_t r) { // `,`
+/*fn*/ ErrCode cWriteHeap(read_t r) { // `,`
   OP_ASSERT(tokenLen == 1, "multi ,");
   Sz sz; OP_CHECK(readSz(r, &sz), ",.sz");
   U32 value = Stk_pop(&env.ws, sz);
@@ -692,7 +692,7 @@ void dbgToken() {
   return OK;
 }
 
-/*fn*/ ErrCode writeInstr(read_t r) { // `;`
+/*fn*/ ErrCode cWriteInstr(read_t r) { // `;`
   OP_ASSERT(tokenLen == 1, "multi ;");
   store(mem, *env.heap, instr, S_U16);
   *env.heap += 2;
@@ -710,7 +710,7 @@ void dbgToken() {
   return OK;
 }
 
-/*fn*/ ErrCode cExecuteInstr() {
+/*fn*/ ErrCode cExecuteInstr() { // ^
   U16 i = instr;
   instr = INSTR_DEFAULT;
   return executeInstr(i);
@@ -724,12 +724,12 @@ void dbgToken() {
     if(c == '/') { OP_CHECK(tilNewline(r), "compile /"); }
     elif (c == '"') { OP_CHECK(linestr(r), "compile \""); }
     elif (c == '#') { scan(r); OP_CHECK(tokenHex(), "compile #"); }
-    elif (c == '&') { OP_CHECK(putLoc(r), "compile &"); }
-    elif (c == '=') { OP_CHECK(nameSet(r), "compile ="); }
-    elif (c == '@') { OP_CHECK(nameGet(r), "compile @"); }
-    elif (c == '~') { OP_CHECK(nameForget(r), "compile ~"); }
-    elif (c == ',') { OP_CHECK(writeHeap(r), "compile ,"); }
-    elif (c == ';') { OP_CHECK(writeInstr(r), "compile ;"); }
+    elif (c == '&') { OP_CHECK(cPutLoc(r), "compile &"); }
+    elif (c == '=') { OP_CHECK(cNameSet(r), "compile ="); }
+    elif (c == '@') { OP_CHECK(cNameGet(r), "compile @"); }
+    elif (c == '~') { OP_CHECK(cNameForget(r), "compile ~"); }
+    elif (c == ',') { OP_CHECK(cWriteHeap(r), "compile ,"); }
+    elif (c == ';') { OP_CHECK(cWriteInstr(r), "compile ;"); }
     elif (c == '^') { OP_CHECK(cExecuteInstr(), "compile ^"); }
     elif (c == '$') { assert(FALSE); }
     else            { OP_CHECK(updateInstr(), "compile.instr"); }
@@ -932,7 +932,7 @@ U16 testBufIdx = 0;
   COMPILE("S4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE("#01 #02 S1 ADD^");
+  COMPILE("#01 #02   S1 ADD^");
   assert(0x03 == Stk_pop(&env.ws, S_U8));
 }
 

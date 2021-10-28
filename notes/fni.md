@@ -33,9 +33,10 @@ may one of three types:
 
 The first group is made up of special characters.
 
-- `~`: this is the "char" command. It compiles the next character as it's ASCII
-  byte value. For instance ~A is 65 since that is it's ASCII binary value.
-  Also supports simple escapes like `~\n` (newline).  Note: `~ ` is a space.
+- `~`: this is the "char" command. It puts the ASCII value of the next
+  character onto the stack.  For instance ~A is 65 since that is it's ASCII
+  binary value.  Also supports simple escapes like `~\n` (newline).  Note: `~ `
+  is a space.
 - `'`: toggles the PRE status of the next word. For IMM words causes it's
   execution to be delayed.
 - `$`: makes a non-IMM fn be IMM, or run at compile time. For a PRE fn it will
@@ -46,6 +47,7 @@ The first group is made up of special characters.
   function.
 - `.` is used for module lookups. It uses the typestack to find the next word
   in it's namespace. More details will be given later.
+- Finally `(` and `)`, described below.
 
 `(` and `)` are the real treat of fu vs a more traditional forth. All `(` does
 is compile and execute words until it encounters `)`.  The purpose of this primarily
