@@ -756,7 +756,6 @@ void dbgToken() {
   dict->heap = 0;                         \
   dict->end = DS;
 
-
 #define SMALL_ENV_BARE \
   /*      MS      WS     RS     LS     DICT */    \
   NEW_ENV_BARE(0x4000, 0x100, 0x100, 0x200, 0x200)

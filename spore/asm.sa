@@ -1,19 +1,26 @@
 
+// # Memory Locations
+#0000_0000 =4 null
+#0000_0004 =4 heap
+#0000_0008 =4 topHeap
+#0000_000C =4 topMem
+
+// # Instructions
 // Size
 #C000_0000     =4 S1
 #C000_4000     =4 S2
 #C000_8000     =4 S4
 #C000_8000     =4 SA  // Size Absolute Ptr
 
-// Jmp                  Mem
-#5600_0000     =4 JZ    #01C0_0000     =4 SRLP
-#5600_0800     =4 CALL  #01C0_0040     =4 SRMP
-#5600_1000     =4 JST   #01C0_0080     =4 SROI
-#5600_1800     =4 CNW   #01C0_00C0     =4 FTLP
-#5600_2000     =4 JTBL  #01C0_0100     =4 FTMI
-                        #01C0_0140     =4 FTOI
-#5600_3000     =4 RET   #01C0_0180     =4 IMWS
-#5600_3800     =4 NOJ   #01C0_01C0     =4 WS
+// Jmp                    Mem
+#5600_0000     =4 JZ      #01C0_0000     =4 SRLP
+#5600_0800     =4 CALL    #01C0_0040     =4 SRMP
+#5600_1000     =4 JST     #01C0_0080     =4 SROI
+#5600_1800     =4 CNW     #01C0_00C0     =4 FTLP
+#5600_2000     =4 JTBL    #01C0_0100     =4 FTMI
+                          #01C0_0140     =4 FTOI
+#5600_3000     =4 RET     #01C0_0180     =4 IMWS
+#5600_3800     =4 NOJ     #01C0_01C0     =4 WS
 
 // Operations
 #003F_0000     =4 FT      #003F_0010     =4 DIV_U
@@ -32,3 +39,4 @@
 #003F_000D     =4 SUB
 #003F_000E     =4 MOD
 #003F_000F     =4 MUL
+
