@@ -104,6 +104,7 @@ spore16's bit layout is as follows:
       Jump Unused
   Size   | |  Mem   Operation
     SS JJJ XX MMM   OO OOOO
+    |high byte||-low byte-|
 ```
 
 The assebmly syntax can put any command in any order, then uses `;` to compile them:
@@ -250,24 +251,25 @@ For all jumps, a jump of size=U8 will trap, U16 is interpreted as an offset
 from the module, U32 is an absolute jump.
 
 The following Jump modes are possible:
-- 0 000 JZ: Jump to Immediate if store=zero
-- 1 001 CALL: Call an address
+- 0 NOJ: No Jump, do not perform jump (but do the rest of the operation)
+- 1 JZ: Jump to Immediate if store=zero
+- 2 JTBL: consume StoRe and jump to the jump table which uses the IMM for
+  it's size.
+- 3 JST: Jump to STore. Consumes store.
+- 4 reserved
+- 5 CALL: Call an address
   - pop ptr off of store, convert to APtr using MP if necessary.
   - fetch 16bit growWs value at ptr.
-  - grow WS by growWs.
+  - grow LS by growWs.
   - push `EP+INSTR_WIDTH` onto RS, including current MP and amount WS grew.
   - jump to ptr+2 (skipping WS size)
-- 2 010 JST: Jump to STore. Consumes store.
-- 3 011 CNW: Call an address without a working stack update. Does not require
-    memory read.
-- 4 100 JTBL: consume StoRe and jump to the jump table which uses the IMM for
-  it's size.
-- 5 101 reserved
-- 6 110 RET: return
+- 6 CNL: Call an address without a locals stack update. Does not require
+    a memory read. Still pushes relevant values onto call stack so that RET
+    works identically.
+- 7 RET: return
   - pop address and WS growth from RS.
   - shrink WS by grown amount
   - jump to address
-- 7 111 NOJ: No Jump, do not perform jump (but do the rest of the operation)
 
 Some constraints on jump modes:
 - NOJ and RET have no constraints.
@@ -538,7 +540,7 @@ Unlike spore16, there are no restrictions on jump instructions in spore8
 - JZ: jumps to IMM if store=zero
 - CALL: calls WS, updating LP appropriately
 - JST: jumps to WS
-- CNW: calls WS without update to ws growth.
+- CNL: calls WS without update to local stack growth.
 - RET: return
 - NOJ: is a noop in spore8
 

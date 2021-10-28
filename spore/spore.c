@@ -45,7 +45,6 @@ typedef enum {
   S_1,   S_2,
   S_4,  S_UNDEF
 } Sz;
-
 #define S_APTR S_4
 
 // Mem
@@ -56,8 +55,8 @@ typedef enum {
 
 // Jmp
 typedef enum {
-  JZ,     CALL,   JST,    CNW,
-  JTBL,   _JR0,   RET,    NOJ,
+  NOJ,          JZ,           JTBL,         JST,
+  _JR0,         CALL,         CNL,          RET,
 } Jmp;
 
 // Operation
@@ -86,7 +85,8 @@ typedef struct {
 
   // Separate from mem
   Stk ws;
-  Stk rs;
+  Stk callStk;
+  Stk growStk;
 } Env;
 
 #define LS_OFFSET() ((size_t)mem - (size_t)env.ls.mem)
@@ -100,8 +100,7 @@ typedef struct {
 
 typedef struct {
   ErrCode err;
-  APtr jmpLoc;
-  U8 ret;
+  U8 escape; // True if RET but no more stack.
 } ExecuteResult;
 
 typedef struct {
@@ -139,10 +138,10 @@ TokenState* tokenState = NULL;
 FILE* srcFile;
 
 #define INSTR_DEFAULT \
-  (S_4 << 14)       \
+    (S_4 << 14)       \
   + (NOJ << 11)       \
   + (WS  << 6 )       \
-  + NOP
+  +  NOP
 U16 instr = INSTR_DEFAULT;
 
 // ********************************************
@@ -215,10 +214,18 @@ U16 instr = INSTR_DEFAULT;
   }
 }
 
+void _chk_grow(Stk* stk, U16 szBytes) {
+  if(stk->sp < szBytes) { fail("stack overflow"); };
+}
+
+void _chk_shrink(Stk* stk, U16 szBytes) {
+  if(stk->sp + szBytes > stk->size ) { fail("stack underflow"); };
+}
+
 #define WS_PUSH(VALUE, SZ)  Stk_push(&env.ws, VALUE, SZ)
 /*fn*/ ErrCode Stk_push(Stk* stk, U32 value, Sz sz) {
   U8 szBytes = szToBytes(sz);
-  if(stk->sp < szBytes) { fail("stack overflow"); }
+  _chk_grow(stk, szBytes);
   store(stk->mem, stk->sp - szBytes, value, sz);
   stk->sp -= szBytes;
   return OK;
@@ -227,11 +234,20 @@ U16 instr = INSTR_DEFAULT;
 #define WS_POP(SZ)  Stk_pop(&env.ws, SZ)
 /*fn*/ U32 Stk_pop(Stk* stk, Sz sz) {
   U8 szBytes = szToBytes(sz);
-
-  if(stk->sp + szBytes > stk->size) { fail ("stack underflow"); }
+  _chk_shrink(stk, szBytes);
   U32 out = fetch(stk->mem, stk->sp, sz);
   stk->sp += szBytes;
   return out;
+}
+
+/*fn*/ void Stk_grow(Stk* stk, U16 szBytes) {
+  _chk_grow(stk, szBytes);
+  stk->sp -= szBytes;
+}
+
+/*fn*/ void Stk_shrink(Stk* stk, U16 szBytes) {
+  _chk_shrink(stk, szBytes);
+  stk->sp += szBytes;
 }
 
 APtr toAPtr(U32 v, Sz sz) {
@@ -314,6 +330,10 @@ op_t ops[] = {
 #define dbgExecute() printf("sz=%x top=%x snd=%x len=%u srPtr=%x usesImm=%u\n", \
     sz, top, snd, len, srPtr, usesImm)
 
+U8* _jz_jtbl_err = "JZ/JTBL require IMM for offset/table";
+U8* _jmp_call_err = "call requies mem access";
+U8* _jmp_mem_err = "jumps require Mem.Store = WS";
+
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
 
@@ -324,12 +344,6 @@ op_t ops[] = {
 
   if(i_op == FT && !(i_mem == WS && sz == S_APTR)) {
       fail("FT must use WS and size=ptr");
-  }
-  if(!( (jmp == NOJ) || (jmp == RET))) {
-    if(( (jmp == JZ) || (jmp == JTBL) ) && i_mem != WS) {
-      fail("JZ/JTBL require IMM for offset/table meta so mem cannot use it.");
-    }
-    elif(i_mem <= SROI) fail("jumps require Mem.Store = WS");
   }
 
   U32 top = 0;
@@ -391,24 +405,50 @@ op_t ops[] = {
   ops[(U8) i_op] (&data); // call op from array
 
   APtr aptr;
+  U16 growLs = 0;
   // *************
   // * Jmp: perform the jump
   switch(jmp) {
     case NOJ: break;
-    case JZ: res.jmpLoc = popImm(); break;
-    case CALL:
-      aptr = toAPtr(WS_POP(sz), sz);
+    case JZ: 
+      if (i_mem != WS) fail(_jz_jtbl_err);
+      env.ep = popImm(); 
       break;
+    case JTBL:
+      if (i_mem != WS) fail(_jz_jtbl_err);
+      fail("not implemented");
     case JST:
+      if(i_mem <= SROI) fail(_jmp_mem_err);
       assert(data.len > 0);
-      data.len -= 1;
-      res.jmpLoc = data.v[0];
+      env.ep = data.v[0];
       data.v[0] = data.v[1];
       data.v[1] = data.v[2];
+      data.len -= 1;
       break;
-    case CNW: fail("not implemented");
-    case JTBL: fail("not implemented");
-    case RET: res.ret = TRUE; break;
+    case _JR0: fail("JR0");
+    case CALL:
+      if(i_mem <= FTOI) fail(_jmp_call_err);
+      aptr = toAPtr(WS_POP(sz), sz);
+      growLs = fetch(mem, aptr, S_2);
+      Stk_grow(&env.ls, growLs);
+      Stk_push(&env.callStk, env.ep, S_APTR);
+      Stk_push(&env.growStk, growLs, S_2);
+      env.ep = aptr + 2;
+      break;
+    case CNL: // call no locals
+      if(i_mem <= SROI) fail(_jmp_mem_err);
+      aptr = toAPtr(WS_POP(sz), sz);
+      Stk_push(&env.callStk, env.ep, S_APTR);
+      Stk_push(&env.growStk, 0, S_2);
+      env.ep = aptr;
+    case RET: 
+      if(Stk_len(env.callStk) == 0) res.escape = TRUE;
+      else {
+        growLs = Stk_pop(&env.growStk, S_2);
+        env.ep = Stk_pop(&env.callStk, S_APTR);
+        Stk_shrink(&env.ls, growLs);
+      }
+      break;
   }
 
   // *************
@@ -427,7 +467,7 @@ op_t ops[] = {
     U16 instr = fetch(mem, ap, S_2);
     ExecuteResult res = executeInstr(instr);
     OP_CHECK(res.err, "execute.instr");
-    if(res.ret) {
+    if(res.escape) {
       break;
     }
   }
@@ -725,7 +765,7 @@ void dbgToken() {
 
 /*fn*/ ErrCode updateInstr() { // any alphanumeric
   OP_ASSERT(tokenState->group <= T_ALPHA, "unrecognized symbol");
-  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
+  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "updateInstr: no name");
   U16 mask = ~(value >> 16);
   U16 setInstr = value & 0xFFFF;
 
@@ -778,19 +818,23 @@ ssize_t read_src(size_t nbyte) {
   tokenBufSize += numRead;
 }
 
-#define NEW_ENV_BARE(MS, WS, RS, LS, DS)       \
-  U8 localMem[MS] = {0};                       \
+#define NEW_ENV_BARE(MS, WS, RS, LS, DS)  \
+  U8 localMem[MS] = {0};                  \
   U8 wsMem[WS];                           \
-  U8 rsMem[RS];                           \
+  U8 callStkMem[RS];                      \
+  U8 growStkMem[RS >> 1];                 \
   mem = localMem; \
   env = (Env) {                           \
     .mp = 0,                              \
-    .heap = (APtr*) (mem + 4),              \
-    .topHeap = (APtr*) (mem + 8),           \
-    .topMem = (APtr*) (mem + 12),           \
+    .heap = (APtr*) (mem + 4),            \
+    .topHeap = (APtr*) (mem + 8),         \
+    .topMem = (APtr*) (mem + 12),         \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
-    .rs = { .size = RS, .sp = RS, .mem = rsMem },     \
+    .callStk = \
+    { .size = RS, .sp = RS, .mem = callStkMem },     \
+    .growStk = \
+    { .size = RS >> 1, .sp = RS >> 1, .mem = growStkMem },     \
   };                                      \
   /* configure heap+topheap */            \
   *env.heap = 16;                         \
@@ -952,7 +996,7 @@ U16 testBufIdx = 0;
   COMPILE("@4 S2");
   assert(0xC0004000 == WS_POP(S_4));
 
-  instr = 0xFFFF;
+  instr = 0xF9FF; // instr with unused=0
   COMPILE("S4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
