@@ -348,6 +348,7 @@ Binary operations are in syntax {l; r} (r i.e. right is at top of stack). This
 is so that when fngi-like languages compile them `a+b` gets compiled as
 `push$a; push$b; add[T]$()`:
 - `DRP2` drop 2. Consume both top and second and store neither.
+- `SWAP` swap two values.
 - `OVR` do not consume top or second, store second
 - `ADD` `l+r`
 - `SUB` `l-r`
