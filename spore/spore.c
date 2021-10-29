@@ -643,9 +643,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   elif(sz == 4) szI = Sz4;
   else OP_ASSERT(FALSE, "sz invalid");
 
-  printf("szI: %u  instr: 0x%x\n", szI, instr);
   instr = ((~SZ_MASK) & instr) | (szI << SZ_SHIFT);
-  printf("cSz: %u  instr: 0x%x\n", CUR_SZ(), instr);
   return OK;
 }
 
@@ -697,7 +695,6 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
   }
-  printf("hex: %u\n", CUR_SZ());
   Stk_push(&env.ws, v, CUR_SZ());
   shiftBuf();
   return OK;
