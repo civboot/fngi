@@ -153,6 +153,7 @@ FILE* srcFile;
 
 #define INSTR_DEFAULT (Sz4 << SZ_SHIFT)
 #define INSTR_CNL     INSTR(Sz4, CNL, WS, NOP)
+#define INSTR_W_SZ(INSTR, SZ)    (((~SZ_MASK) & INSTR) | (SZ << SZ_SHIFT))
 
 U16 instr = INSTR_DEFAULT;
 
@@ -643,7 +644,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   elif(sz == 4) szI = Sz4;
   else OP_ASSERT(FALSE, "sz invalid");
 
-  instr = ((~SZ_MASK) & instr) | (szI << SZ_SHIFT);
+  instr = INSTR_W_SZ(instr, szI);
   return OK;
 }
 
@@ -970,7 +971,8 @@ U16 testBufIdx = 0;
 /*test*/ void testDict() {
   printf("## testDict\n"); TEST_ENV_BARE;
 
-  COMPILE(".2 #0F00 =foo  .4 #000B_A2AA =bazaa @bazaa @foo .2 @foo ");
+  COMPILE(".2 #0F00 =foo  .4 #000B_A2AA =bazaa"
+      " @bazaa @foo .2 @foo");
   assert(0xF00 == WS_POP(2));   // 2foo
   assert(0xF00 == WS_POP(4));   // 4foo
   assert(0xBA2AA == WS_POP(4)); // 4bazaa
@@ -978,10 +980,10 @@ U16 testBufIdx = 0;
 
 /*test*/ void testWriteHeap() { // test , and ;
   printf("## testWriteHeap\n"); TEST_ENV_BARE;
-  COMPILE("#77770101,4 #0F00,2 ;");
+  COMPILE(".4 #77770101, .2 #0F00, ;");
   assert(0x77770101 == fetch(mem, heapStart, 4));
   assert(0x0F00 == fetch(mem, heapStart+4, 2));
-  assert(INSTR_DEFAULT == fetch(mem, heapStart+6, 2));
+  assert(INSTR_W_SZ(0, Sz2) == fetch(mem, heapStart+6, 2));
 }
 
 /*test*/ void testExecuteInstr() { // test ^
