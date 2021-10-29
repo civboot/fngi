@@ -142,19 +142,23 @@ Dict* dict = NULL;
 TokenState* tokenState = NULL;
 FILE* srcFile;
 
+#define SZ_SHIFT      14
+#define SZ_MASK       0xC0000000
+
 #define INSTR(SZ, JMP, MEM, OP) \
-    (SZ  << 14)  \
-  + (JMP << 11) \
-  + (MEM << 6 ) \
+    (SZ  << SZ_SHIFT)   \
+  + (JMP << 11)         \
+  + (MEM << 6 )         \
   +  OP
 
-#define INSTR_DEFAULT (Sz4 << 14)
+#define INSTR_DEFAULT (Sz4 << SZ_SHIFT)
 #define INSTR_CNL     INSTR(Sz4, CNL, WS, NOP)
 
 U16 instr = INSTR_DEFAULT;
 
+
 // ********************************************
-// ** Helpers
+// ** Utilities
 
 /*fn*/ void fail(U8* cstr) {
   printf("!!FAIL!! ");
@@ -164,9 +168,9 @@ U16 instr = INSTR_DEFAULT;
   exit(1);
 }
 
-/*fn*/ U8 szToBytes(SzI sz) {
-  return (U8)sz + 1;
-}
+// Note that enum+1 to get numBytes is just a clever trick.
+#define szToBytes(SZ)  ((U8)(SZ) + 1)
+#define CUR_SZ() szToBytes(instr >> SZ_SHIFT)
 
 /*fn*/ void* alignSys(void* p, U8 szBytes) {
   U8 mod = (size_t)p % szBytes;
@@ -195,6 +199,16 @@ U16 instr = INSTR_DEFAULT;
       break;
     default: fail("store: invalid Sz");
   }
+}
+
+// Return value of ASCII hex char.
+/*fn*/ ErrCode charToHex(U8 c) {
+  c = c - '0';
+  if(c <= 9) return c;
+  c = c - ('A' - '0');
+  if(c <= 5) return c + 10;
+  c = c - ('a' - 'A');
+  return c + 10;
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
@@ -543,12 +557,6 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 #define tokenLen tokenState->len
 #define tokenBuf tokenState->buf
 
-void dbgToken() {
-  printf("token: size=%u, len=%u\n", tokenBufSize, tokenLen);
-}
-
-#define IS_WHITESPC(C) (C<=' ')
-
 /*fn*/ TokenGroup toTokenGroup(U8 c) {
   if(c <= ' ') return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
@@ -624,7 +632,20 @@ void dbgToken() {
   return OK;
 }
 
-/*fn*/ ErrCode tilNewline(read_t r) {
+/*fn*/ ErrCode cSz(read_t r) { // '.': change sz
+  if(tokenLen >= tokenBufSize) readAppend(r);
+  U8 sz = charToHex(tokenBuf[tokenLen]);
+  SzI szI;
+  if(sz == 1) szI = Sz1;
+  elif(sz == 2) szI = Sz2;
+  elif(sz == 4) szI = Sz4;
+  else OP_ASSERT(FALSE, "sz invalid");
+
+  instr = ((~SZ_MASK) & instr) | (szI << 14);
+  return OK;
+}
+
+/*fn*/ ErrCode cComment(read_t r) {
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew(r);
     if (tokenBufSize == 0) return OK;
@@ -660,16 +681,6 @@ void dbgToken() {
     tokenLen += 1;
   }
   return OK;
-}
-
-// Taking a char that is known to be hex, return the hex value.
-/*fn*/ ErrCode charToHex(U8 c) {
-  c = c - '0';
-  if(c <= 9) return c;
-  c = c - ('A' - '0');
-  if(c <= 5) return c + 10;
-  c = c - ('a' - 'A');
-  return c + 10;
 }
 
 // Parse a hex token from the tokenLen and shift it out.
@@ -797,8 +808,8 @@ void dbgToken() {
     }
     tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
     switch (tokenBuf[0]) {
-      case '/': OP_CHECK(tilNewline(r), "compile /"); continue;
-      case '"': OP_CHECK(linestr(r), "compile \""); continue;
+      case '.': OP_CHECK(cSz(r), "compile ."); continue;
+      case '/': OP_CHECK(cComment(r), "compile /"); continue;
       case '#': scan(r); OP_CHECK(tokenHex(), "compile #"); continue;
       case '&': OP_CHECK(cPutLoc(r), "compile &"); continue;
       case '=': OP_CHECK(cNameSet(r), "compile ="); continue;
@@ -808,6 +819,9 @@ void dbgToken() {
       case ';': OP_CHECK(cWriteInstr(r), "compile ;"); continue;
       case '^': OP_CHECK(cExecuteInstr(), "compile ^"); continue;
       case '$': OP_CHECK(cExecute(r), "compile $"); continue;
+
+      // remove?
+      case '"': OP_CHECK(linestr(r), "compile \""); continue;
     }
     printf("invalid token: %c", tokenBuf[0]);
     return 1;
