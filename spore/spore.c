@@ -700,36 +700,14 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   return OK;
 }
 
-/*fn*/ ErrCode readSz(read_t r, U8* sz) {
-  if(tokenLen >= tokenBufSize) readAppend(r);
-  *sz = charToHex(tokenBuf[tokenLen]);
-  tokenLen += 1;
-  return OK;
-}
-
-/*fn*/ ErrCode readSzPush(read_t r, U32 value) {
-  // read the next symbol to get sz and push value.
-  U8 sz; OP_CHECK(readSz(r, &sz), "readSzPush");
-  OP_ASSERT(sz == 2 || sz == 4, "size invalid");
-  OP_CHECK(Stk_push(&env.ws, value, sz), "readSzPush.push");
-  return OK;
-}
-
-/*fn*/ ErrCode readSzPop(read_t r, U32* out) {
-  U8 sz; OP_CHECK(readSz(r, &sz), "readSzPop");
-  OP_ASSERT(sz == 2 || sz == 4, "size invalid");
-  *out = WS_POP(sz);
-  return OK;
-}
-
 /*fn*/ ErrCode cPutLoc(read_t r) { // `&`
   OP_ASSERT(tokenLen == 1, "only one & allowed");
-  readSzPush(r, *env.heap);
+  OP_CHECK(Stk_push(&env.ws, *env.heap, CUR_SZ()), "readSzPush.push");
   return OK;
 }
 
 /*fn*/ ErrCode cNameSet(read_t r) { // `=`
-  U32 value; OP_CHECK(readSzPop(r, &value), "cNameSet.read");
+  U32 value = WS_POP(CUR_SZ());
 
   OP_CHECK(scan(r), "cNameSet.scan"); // load name token
   Dict_set(tokenLen, tokenBuf, value);
@@ -737,10 +715,9 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 }
 
 /*fn*/ ErrCode cNameGet(read_t r) { // `@`
-  U8 sz; OP_CHECK(readSz(r, &sz), "cNameGet");
   OP_CHECK(scan(r), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
-  OP_CHECK(Stk_push(&env.ws, value, sz), "& push");
+  OP_CHECK(Stk_push(&env.ws, value, CUR_SZ()), "& push");
   return OK;
 }
 
@@ -751,7 +728,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 }
 
 /*fn*/ ErrCode cWriteHeap(read_t r) { // `,`
-  U8 sz; OP_CHECK(readSz(r, &sz), ",.sz");
+  U8 sz = CUR_SZ();
   U32 value = WS_POP(sz);
   store(mem, *env.heap, value, sz);
   *env.heap += sz;
@@ -947,7 +924,7 @@ U16 testBufIdx = 0;
 
 /*test*/ void testLoc() {
   printf("## testLoc...\n"); TEST_ENV_BARE;
-  COMPILE("&4 &2");
+  COMPILE(".4& .2&");
   U16 result1 = WS_POP(2); U32 result2 = WS_POP(4);
   assert(result1 == (U16)heapStart);
   assert(result2 == heapStart);
@@ -961,7 +938,7 @@ U16 testBufIdx = 0;
 }
 
 /*test*/ void testDictDeps() {
-  printf("## testDict... cstr\n"); TEST_ENV_BARE;
+  printf("## testDictDeps... cstr\n"); TEST_ENV_BARE;
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
 
@@ -969,7 +946,7 @@ U16 testBufIdx = 0;
   assert(!cstrEq(2, 1, "aa", "a"));
   assert(!cstrEq(2, 2, "aa", "ab"));
 
-  printf("## testDict... dict\n");
+  printf("## testDictDeps... dict\n");
   assert(0 == Dict_find(3, "foo"));
 
   // set
@@ -993,7 +970,7 @@ U16 testBufIdx = 0;
 /*test*/ void testDict() {
   printf("## testDict\n"); TEST_ENV_BARE;
 
-  COMPILE("#0F00 =2foo  #000B_A2AA =4bazaa @4bazaa @4foo @2foo ");
+  COMPILE(".2 #0F00 =foo  .4 #000B_A2AA =bazaa @bazaa @foo .2 @foo ");
   assert(0xF00 == WS_POP(2));   // 2foo
   assert(0xF00 == WS_POP(4));   // 4foo
   assert(0xBA2AA == WS_POP(4)); // 4bazaa
