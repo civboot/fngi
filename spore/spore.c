@@ -988,14 +988,14 @@ U16 testBufIdx = 0;
 
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
-  COMPILE("@4 Sz2");
+  COMPILE(".4 @Sz2");
   assert(0xC0004000 == WS_POP(4));
 
   instr = 0xF9FF; // instr with unused=0
-  COMPILE("Sz4 NOJ WS NOP");
+  COMPILE(".4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE("#01 #02   Sz1 ADD RET^");
+  COMPILE(".1 #01 #02  ADD RET^");
   assert(0x03 == WS_POP(1));
 }
 
