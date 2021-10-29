@@ -143,7 +143,7 @@ TokenState* tokenState = NULL;
 FILE* srcFile;
 
 #define SZ_SHIFT      14
-#define SZ_MASK       0xC0000000
+#define SZ_MASK       0xC000
 
 #define INSTR(SZ, JMP, MEM, OP) \
     (SZ  << SZ_SHIFT)   \
@@ -635,13 +635,17 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 /*fn*/ ErrCode cSz(read_t r) { // '.': change sz
   if(tokenLen >= tokenBufSize) readAppend(r);
   U8 sz = charToHex(tokenBuf[tokenLen]);
+  tokenLen += 1;
+
   SzI szI;
   if(sz == 1) szI = Sz1;
   elif(sz == 2) szI = Sz2;
   elif(sz == 4) szI = Sz4;
   else OP_ASSERT(FALSE, "sz invalid");
 
-  instr = ((~SZ_MASK) & instr) | (szI << 14);
+  printf("szI: %u  instr: 0x%x\n", szI, instr);
+  instr = ((~SZ_MASK) & instr) | (szI << SZ_SHIFT);
+  printf("cSz: %u  instr: 0x%x\n", CUR_SZ(), instr);
   return OK;
 }
 
@@ -685,26 +689,16 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
-/*fn*/ ErrCode tokenHex() {
-  OP_ASSERT(tokenLen > 0, "hanging #");
+/*fn*/ ErrCode cHex() {
   U32 v = 0;
-  U8 i = 0;
-  U8 tkLen = 0;
-  while(i < tokenLen) {
+  for(U8 i = 0; i < tokenLen; i += 1) {
     U8 c = tokenBuf[i];
-
-    if (c == '_') { i+= 1; continue; }
+    if (c == '_') continue;
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
-
-    tkLen += 1;
-    i += 1;
   }
-  // convert tkLen to sz bytes.
-  if(tkLen <= 2) tkLen = 1;
-  elif(tkLen <= 4) tkLen = 2;
-  else tkLen = 4;
-  Stk_push(&env.ws, v, tkLen);
+  printf("hex: %u\n", CUR_SZ());
+  Stk_push(&env.ws, v, CUR_SZ());
   shiftBuf();
   return OK;
 }
@@ -810,7 +804,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     switch (tokenBuf[0]) {
       case '.': OP_CHECK(cSz(r), "compile ."); continue;
       case '/': OP_CHECK(cComment(r), "compile /"); continue;
-      case '#': scan(r); OP_CHECK(tokenHex(), "compile #"); continue;
+      case '#': scan(r); OP_CHECK(cHex(), "compile #"); continue;
       case '&': OP_CHECK(cPutLoc(r), "compile &"); continue;
       case '=': OP_CHECK(cNameSet(r), "compile ="); continue;
       case '@': OP_CHECK(cNameGet(r), "compile @"); continue;
@@ -945,11 +939,11 @@ U16 testBufIdx = 0;
 /*test*/ void testHex() {
   printf("## testHex #01...\n"); TEST_ENV_BARE;
 
-  COMPILE("#10");
+  COMPILE(".1 #10");
   assert(WS_POP(1) == 0x10);
 
   printf("## testHex #10AF...\n");
-  COMPILE("/comment\n#10AF");
+  COMPILE("/comment\n.2 #10AF");
   U32 result = WS_POP(2);
   assert(result == 0x10AF);
 }
