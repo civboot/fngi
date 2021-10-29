@@ -142,13 +142,13 @@ Dict* dict = NULL;
 TokenState* tokenState = NULL;
 FILE* srcFile;
 
-#define SZ_SHIFT      14
-#define SZ_MASK       0xC000
+#define SZ_SHIFT      6
+#define SZ_MASK       0x00C0
 
 #define INSTR(SZ, JMP, MEM, OP) \
-    (SZ  << SZ_SHIFT)   \
-  + (JMP << 11)         \
+    (JMP << 13)         \
   + (MEM << 6 )         \
+  + (SZ  << SZ_SHIFT)   \
   +  OP
 
 #define INSTR_DEFAULT (Sz4 << SZ_SHIFT)
@@ -171,7 +171,7 @@ U16 instr = INSTR_DEFAULT;
 
 // Note that enum+1 to get numBytes is just a clever trick.
 #define szToBytes(SZ)  ((U8)(SZ) + 1)
-#define CUR_SZ() szToBytes(instr >> SZ_SHIFT)
+#define CUR_SZ() szToBytes((instr & SZ_MASK) >> SZ_SHIFT)
 
 /*fn*/ void* alignSys(void* p, U8 szBytes) {
   U8 mod = (size_t)p % szBytes;
@@ -350,10 +350,10 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
 
-  OpI opI =   (OpI)    (0x3F & instr);
-  MemI i_mem = (MemI)   (0x7  & (instr >>              6));
-  JmpI jmp =   (JmpI)   (0x7  & (instr >>     (2 + 3 + 6)));
-  SzI szI =     (SzI)   (0x7  & (instr >> (3 + 2 + 3 + 6)));
+  OpI opI =    (OpI)  (0x3F & instr);
+  SzI szI =    (SzI)  (0x7  & (instr >> (            6)));
+  MemI i_mem = (MemI) (0x7  & (instr >> (        3 + 6)));
+  JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 3 + 6)));
   U8 sz = szToBytes(szI);
 
   if(opI == FT && !(i_mem == WS && szI == SzA)) {
@@ -420,7 +420,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   U16 growLs = 0;
   // *************
   // * Jmp: perform the jump
-  switch(jmp) {
+  switch(jmpI) {
     case NOJ: break;
     case JZ: 
       if (i_mem != WS) fail(_jz_jtbl_err);
@@ -989,10 +989,11 @@ U16 testBufIdx = 0;
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
   COMPILE(".4 @Sz2");
-  assert(0xC0004000 == WS_POP(4));
+  assert(0x00C00040 == WS_POP(4));
 
-  instr = 0xF9FF; // instr with unused=0
+  instr = ~0x1800; // instr with unused=0 else=1
   COMPILE(".4 NOJ WS NOP");
+  // pf("0x%x == 0x%x\n", INSTR_DEFAULT, instr);
   assert(INSTR_DEFAULT == instr);
 
   COMPILE(".1 #01 #02  ADD RET^");

@@ -100,11 +100,10 @@ more general-purpose CPU. For demonstration, `1,SRMI,ADD,RET #4200` will:
 spore16's bit layout is as follows:
 
 ```
- |-- 10b Mode ----|- 6b Op -|
-      Jump Unused
-  Size   | |  Mem   Operation
-    SS JJJ XX MMM   OO OOOO
-    |high byte||-low byte-|
+    
+   Jmp    Mem   Sz Operation
+   JJJ XX MMM   SS OO OOOO
+   |high byte|  |low byte |
 ```
 
 The assebmly syntax can put any command in any order, then uses `;` to compile them:
