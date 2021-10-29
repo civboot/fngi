@@ -54,8 +54,8 @@ typedef enum {
 
 // Mem
 typedef enum {
-  SRLI,   SRMI,   SROI,   FTLI,
-  FTCI,   FTOI,   IMWS,   WS,
+  WS,     IMWS,   FTLI,   FTMI,
+  FTOI,   SRLI,   SRMI,   SROI,
 } MemI;
 
 // Jmp
@@ -66,8 +66,8 @@ typedef enum {
 
 // Operation
 typedef enum {
-  FT,           SR,           DVF,          DVS,
-  NOP,          DRP,          INV,          NEG,
+  NOP,          DVF,          DVS,          FT,
+  SR,           DRP,          INV,          NEG,
   EQZ,          EQZ_NC,       DRP2,         OVR,
   ADD,          SUB,          MOD,          MUL,
 } OpI;
@@ -148,7 +148,7 @@ FILE* srcFile;
   + (MEM << 6 ) \
   +  OP
 
-#define INSTR_DEFAULT INSTR(Sz4, NOJ, WS, NOP)
+#define INSTR_DEFAULT (Sz4 << 14)
 #define INSTR_CNL     INSTR(Sz4, CNL, WS, NOP)
 
 U16 instr = INSTR_DEFAULT;
@@ -160,6 +160,7 @@ U16 instr = INSTR_DEFAULT;
   printf("!!FAIL!! ");
   printf(cstr);
   printf("\n");
+  dbgEnv();
   exit(1);
 }
 
@@ -355,6 +356,14 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
   // Get Top
   switch(i_mem) {
+    case WS:
+      if(Stk_len(&env.ws) == 0) len = 0;
+      else top = WS_POP(sz);
+      break;
+    case IMWS:
+      usesImm = TRUE;
+      top = popImm();
+      break;
     case SRLI:
       usesImm = TRUE;
       srPtr = LS_OFFSET() + env.ls.sp + popImm();
@@ -367,16 +376,8 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       break;
     case SROI:
     case FTLI:
-    case FTCI:
+    case FTMI:
     case FTOI: fail("unknown mem");
-    case IMWS:
-      usesImm = TRUE;
-      top = popImm();
-      break;
-    case WS:
-      if(Stk_len(&env.ws) == 0) len = 0;
-      else top = WS_POP(sz);
-      break;
     default: fail("unknown mem");
   }
 
@@ -386,7 +387,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     snd = WS_POP(ASIZE);
     len += 1;
   } else {
-    if(i_mem == FTCI) {
+    if(i_mem == FTMI) {
       snd = popImm();
       len += 1;
     } elif(Stk_len(&env.ws) >= sz) {
@@ -414,7 +415,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       if (i_mem != WS) fail(_jz_jtbl_err);
       fail("not implemented");
     case JST:
-      if(i_mem <= SROI) fail(_jmp_mem_err);
+      if(i_mem >= SRLI) fail(_jmp_mem_err);
       assert(data.len > 0);
       env.ep = data.v[0];
       data.v[0] = data.v[1];
@@ -423,7 +424,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       break;
     case _JR0: fail("JR0");
     case CALL:
-      if(i_mem <= FTOI) fail(_jmp_call_err);
+      if(i_mem >= FTLI) fail(_jmp_call_err);
       aptr = toAPtr(WS_POP(sz), sz);
       growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
       Stk_grow(&env.ls, growLs << APO2);
@@ -433,7 +434,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       env.mp = aptr >> 8;
       break;
     case CNL: // call no locals
-      if(i_mem <= SROI) fail(_jmp_mem_err);
+      if(i_mem >= SRLI) fail(_jmp_mem_err);
       aptr = toAPtr(WS_POP(sz), sz);
       Stk_push(&env.callStk, env.ep, 4);
       env.ep = aptr;

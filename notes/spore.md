@@ -197,14 +197,15 @@ further information.
 ```
   bin Name    Top       Second  Store     Description
 --------------------------------------------------------------
-0 000 SRLI    WS0       WS1     ST(LP+IM) StoRe LocalsPtr offset
-1 001 SRMI    WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
-2 010 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
-3 011 FTLI    FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
-4 100 FTMI    FT(MP+IM) WS0     WS        FeTch from ModulePtr offset
-5 101 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
-6 110 IMWS    IM        WS0     WS        IMmediate Working Stack
-7 111 WS      WS0       WS1     WS        Working Stack
+
+0 000 WS      WS0       WS1     WS        Working Stack
+1 001 IMWS    IM        WS0     WS        IMmediate Working Stack
+2 010 SRLI    WS0       WS1     ST(LP+IM) StoRe LocalsPtr offset
+3 011 SRMI    WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
+4 100 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
+5 101 FTLI    FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
+6 110 FTMI    FT(MP+IM) WS0     WS        FeTch from ModulePtr offset
+7 111 FTOI    FT(WS0)   IM      WS        FeTch Operate Immediate
 ```
 
 The Mem bits define how memory is used for the operation. There are 8
@@ -322,22 +323,22 @@ Special store operations ignore `size` or require size to be a specific value.
 
 Load/Store can not be used with CALL, as that requires a memory operation. They
 also will always pull a ptr for their ptr argument.
-- `00 FT {addr: Ptr} -> value` fetch.
+- `FT {addr: Ptr} -> value` fetch.
   - Can only be used with mem of {WS} and size=ptrSize
-- `01 SR {addr: Ptr, value}` store. Note that the address is Second,
+- `SR {addr: Ptr, value}` store. Note that the address is Second,
   allowing for storing an IMM value with IMWS.
   - Can only be used with mem of {WS; IMWS}
 
 Device operations can only work with size=U16. They will update the stack
 differently per operation, ignoring the size bits. See **Device Operations**
 for more details and clarifications.
-- `02 DVF` `{dvPort: U16}` DeviceIn, get the value at the dvPort
-- `03 DVS` `{...; dvPort: U16}` send the value to the dvPort.
+- `DVF` `{dvPort: U16}` DeviceIn, get the value at the dvPort
+- `DVS` `{...; dvPort: U16}` send the value to the dvPort.
 
 **Non-special operations**: these use size normally.
 
 Unary: only top is used or consumed for these.
-- `04 000100 NOP`: no operation/identity. Simply store Top
+- `NOP`: no operation/identity. Simply store Top
 - `DRP`: drop Top by consuming it but not storing it
 - `INV`: inverse bitwise
 - `NEG`: two's compliment
