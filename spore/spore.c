@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,9 +39,7 @@ typedef CSz CPtr;
 #define TRUE 1
 #endif
 
-#ifndef elif
-#define elif else if
-#endif
+#define dbg(MSG)  printf(MSG); dbgEnv()
 
 
 typedef U8 ErrCode;
@@ -66,10 +65,19 @@ typedef enum {
 
 // Operation
 typedef enum {
-  NOP,          DVF,          DVS,          FT,
-  SR,           DRP,          INV,          NEG,
-  EQZ,          EQZ_NC,       DRP2,         OVR,
-  ADD,          SUB,          MOD,          MUL,
+  NOP,
+  TO1,
+  TO2,
+  TO4,
+  DRP,
+  DRP2,
+  DVL,
+  DVS,
+  FT,
+  SR,
+  INV,
+  NEG,
+  ADD,
 } OpI;
 
 // Generic stack.
@@ -98,8 +106,7 @@ typedef struct {
 
 typedef struct {
   U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
-  U8 sz;
-  U8 len;
+  U8 sz[3]; // sizes of values in bytes, or 0 if DNE
   Bool usesImm;
 } OpData;
 
@@ -192,11 +199,11 @@ U16 instr = INSTR_DEFAULT;
       break;
     case 2: 
       assert(aptr % 2 == 0);
-      *(((U16*) mem)+aptr) = (U16)value;
+      *((U16*) (mem+aptr)) = (U16)value;
       break;
     case 4:
       assert(aptr % 4 == 0);
-      *(((U32*) mem)+aptr) = value;
+      *((U32*) (mem+aptr)) = value;
       break;
     default: fail("store: invalid Sz");
   }
@@ -219,14 +226,16 @@ U16 instr = INSTR_DEFAULT;
       return (U32) *((U8*) (mem+aptr));
     case 2:
       assert(aptr % 2 == 0);
-      return *(((U16*)mem)+aptr);
+      return (U32) *((U16*) (mem+aptr));
     case 4:
       assert(aptr % 4 == 0);
-      return *(((U32*)mem)+aptr);
+      return (U32) *((U32*) (mem+aptr));
     default: fail("fetch: invalid Sz");
   }
 }
 
+#define Stk_len(STK)  (STK.size - STK.sp)
+#define WS_LEN        Stk_len(env.ws)
 void _chk_grow(Stk* stk, U16 sz) {
   if(stk->sp < sz) { fail("stack overflow"); };
 }
@@ -272,14 +281,24 @@ APtr toAPtr(U32 v, U8 sz) {
   }
 }
 
-#define Stk_len(STK) (STK.size - STK.sp)
 
 // Shift opdata to the right.
-/*fn*/ void shift_op(OpData* out) {
+/*fn*/ void op_stk_larger(OpData* out) {
   out->v[2] = out->v[1];
+  out->sz[2] = out->sz[1];
   out->v[1] = out->v[0];
-  out->len += 1;
+  out->sz[1] = out->sz[0];
 }
+
+// Shift opdata to the left
+/*fn*/ void op_stk_smaller(OpData* out) {
+  out->v[0] = out->v[1];
+  out->sz[0] = out->sz[1];
+  out->v[1] = out->v[2];
+  out->sz[1] = out->sz[2];
+  out->sz[2] = 0;
+}
+
 
 // ********************************************
 // ** Operations
@@ -291,47 +310,59 @@ APtr toAPtr(U32 v, U8 sz) {
 #define OP_CHECK(COND, MSG) \
   if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 
-typedef ErrCode (*op_t)(OP_ARGS);
+typedef void (*op_t)(OP_ARGS);
 
 ErrCode op_notimpl(OP_ARGS) {
   fail("op not implemented");
 }
 
-ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(mem, out->v[0], out->sz); }
-ErrCode op_store(OP_ARGS) { store(mem, out->v[1], out->v[0], out->sz); out->len = 0; }
 // DVF
 // DVS
-ErrCode op_nop(OP_ARGS) {};
-ErrCode op_drp(OP_ARGS) { out->v[0] = out->v[1]; out->len -= 1; };
-ErrCode op_inv(OP_ARGS) { out->v[0] = ~out->v[0]; };
-ErrCode op_neg(OP_ARGS) {
-  switch (out->sz) {
-    case 1: out->v[0] = (U32) (-(I8)out->v[0]); break;
-    case 2: out->v[0] = (U32) (-(I16)out->v[0]); break;
-    case 4: out->v[0] = (U32) (-(I32)out->v[0]); break;
+
+void rS(OpData *data, U8 len) {
+  assert(data->sz[len-1]);
+}
+
+void op_nop(OP_ARGS) { }
+void op_to1(OP_ARGS) { rS(out, 1); out->sz[0] = 1; };
+void op_to2(OP_ARGS) { rS(out, 1); out->sz[0] = 2; };
+void op_to4(OP_ARGS) { rS(out, 1); out->sz[0] = 4; };
+void op_drp(OP_ARGS) { rS(out, 1); op_stk_smaller(out); }
+void op_drp2(OP_ARGS) { rS(out, 2); out->sz[0] = 0; out->sz[1] = 0; };
+
+
+void op_inv(OP_ARGS) { rS(out, 1); out->v[0] = ~out->v[0]; }
+void op_neg(OP_ARGS) {
+  rS(out, 1);
+  switch (out->sz[0]) {
+    case 1: out->v[0] = (U32) (-(I8)out->v[0]); return;
+    case 2: out->v[0] = (U32) (-(I16)out->v[0]); return;
+    case 4: out->v[0] = (U32) (-(I32)out->v[0]); return;
   }
 }
-ErrCode op_eqz(OP_ARGS) { out->v[0] = out->v[0] == 0; }
-ErrCode op_eqz_nc(OP_ARGS) { shift_op(out); out->v[0] = out->v[1] == 0; }
-ErrCode op_drop2(OP_ARGS) { out->len = 0; }
-ErrCode op_ovr(OP_ARGS) { shift_op(out); out->v[0] = out->v[2]; }
-ErrCode op_add(OP_ARGS) { out->v[0] = out->v[1] + out->v[0]; out->len = 1; }
-ErrCode op_sub(OP_ARGS) { out->v[0] = out->v[1] - out->v[0]; out->len = 1; }
-ErrCode op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
-ErrCode op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
+
+// ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(mem, out->v[0], out->sz); }
+// ErrCode op_store(OP_ARGS) { store(mem, out->v[1], out->v[0], out->sz); out->len = 0; }
+// ErrCode op_drp(OP_ARGS) { out->v[0] = out->v[1]; out->len -= 1; };
+// ErrCode op_inv(OP_ARGS) { out->v[0] = ~out->v[0]; };
+// ErrCode op_eqz(OP_ARGS) { out->v[0] = out->v[0] == 0; }
+// ErrCode op_eqz_nc(OP_ARGS) { shift_op(out); out->v[0] = out->v[1] == 0; }
+// ErrCode op_drop2(OP_ARGS) { out->sz[0] = 0; out->sz[1] = 0; }
+// ErrCode op_ovr(OP_ARGS) { shift_op(out); out->v[0] = out->v[2]; }
+// ErrCode op_add(OP_ARGS) { out->v[0] = out->v[1] + out->v[0]; out->len = 1; }
+// ErrCode op_sub(OP_ARGS) { out->v[0] = out->v[1] - out->v[0]; out->len = 1; }
+// ErrCode op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
+// ErrCode op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
 
 op_t ops[] = {
-  // FT,          SR,           DVF,          DVS,
-  op_fetch,       op_store,     op_notimpl,   op_notimpl,
-
-  // NOP,         DRP,          INV,          NEG,
-  op_nop,         op_drp,       op_inv,       op_neg,
-
-  // EQZ,        EQZ_NC,        DRP2,         OVR,
-  op_eqz,        op_eqz_nc,     op_drop2,     op_ovr,
-
-  // ADD,        SUB,           MOD,          MUL,
-  op_add,        op_notimpl,    op_notimpl,   op_notimpl,
+  op_nop,
+  op_to1,
+  op_to2,
+  op_to4,
+  op_drp,
+  op_drp2,
+  // op_dvl,
+  // op_dvs,
 };
 
 /*fn*/ U16 popImm() {
@@ -352,68 +383,62 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
   OpI opI =    (OpI)  (0x3F & instr);
   SzI szI =    (SzI)  (0x7  & (instr >> (            6)));
-  MemI i_mem = (MemI) (0x7  & (instr >> (        3 + 6)));
-  JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 3 + 6)));
+  MemI memI = (MemI) (0x7  & (instr >> (        2 + 6)));
+  JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
   U8 sz = szToBytes(szI);
 
-  if(opI == FT && !(i_mem == WS && szI == SzA)) {
+  if(opI == FT && !(memI == WS && szI == SzA)) {
       fail("FT must use WS and size=ptr");
   }
 
-  U32 top = 0;
-  U32 snd = 0;
-  U8 len = 1;
+  OpData data = {.v = {0, 0, 0}, .sz = {sz, 0, 0}, .usesImm = FALSE };
   APtr srPtr = 0;
-  U8 usesImm = FALSE;
 
   // *****************
   // * Mem: get the appropriate values
 
   // Get Top
-  switch(i_mem) {
+  switch(memI) {
     case WS:
-      if(Stk_len(&env.ws) == 0) len = 0;
-      else top = WS_POP(sz);
+      if(WS_LEN == 0) {
+        data.sz[0] = 0;
+      } else {
+        data.v[0] = WS_POP(sz);
+      }
       break;
     case IMWS:
-      usesImm = TRUE;
-      top = popImm();
+      data.usesImm = TRUE;
+      data.v[0] = popImm();
       break;
     case SRLI:
-      usesImm = TRUE;
+      data.usesImm = TRUE;
       srPtr = LS_OFFSET() + env.ls.sp + popImm();
-      top = WS_POP(sz);
+      data.v[0] = WS_POP(sz);
       break;
     case SRMI:
-      usesImm = TRUE;
+      data.usesImm = TRUE;
       srPtr = env.mp + popImm();
-      top = WS_POP(sz);
+      data.v[0] = WS_POP(sz);
       break;
     case SROI:
     case FTLI:
     case FTMI:
-    case FTOI: fail("unknown mem");
+    case FTOI: fail("not impl");
     default: fail("unknown mem");
   }
 
   // Get Second
   if(opI == SR) {
-    assert(i_mem==WS || i_mem==IMWS);
-    snd = WS_POP(ASIZE);
-    len += 1;
-  } else {
-    if(i_mem == FTMI) {
-      snd = popImm();
-      len += 1;
-    } elif(Stk_len(&env.ws) >= sz) {
-      snd = WS_POP(sz);
-      len += 1;
-    }
+    assert(memI <= IMWS);
+    data.v[1] = WS_POP(ASIZE);
+    data.sz[1] = ASIZE;
+  } else if(WS_LEN >= sz) {
+    data.v[1] = WS_POP(sz);
+    data.sz[1] = sz;
   }
 
   // *************
   // * Op: perform the operation
-  OpData data = {.v = {top, snd, 0}, .sz = sz, .len = len, .usesImm = usesImm };
   ops[(U8) opI] (&data); // call op from array
 
   APtr aptr;
@@ -423,23 +448,22 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   switch(jmpI) {
     case NOJ: break;
     case JZ: 
-      if (i_mem != WS) fail(_jz_jtbl_err);
+      if (memI != WS) fail(_jz_jtbl_err);
       env.ep = toAPtr(popImm(), 2);
       break;
     case JTBL:
-      if (i_mem != WS) fail(_jz_jtbl_err);
+      if (memI != WS) fail(_jz_jtbl_err);
       fail("not implemented");
     case JST:
-      if(i_mem >= SRLI) fail(_jmp_mem_err);
-      assert(data.len > 0);
+      printf("JST?\n");
+      if(memI >= SRLI) fail(_jmp_mem_err);
+      assert(data.sz[1]);
       env.ep = data.v[0];
-      data.v[0] = data.v[1];
-      data.v[1] = data.v[2];
-      data.len -= 1;
+      op_stk_smaller(&data);
       break;
     case _JR0: fail("JR0");
     case CALL:
-      if(i_mem >= FTLI) fail(_jmp_call_err);
+      if(memI >= FTLI) fail(_jmp_call_err);
       aptr = toAPtr(WS_POP(sz), sz);
       growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
       Stk_grow(&env.ls, growLs << APO2);
@@ -449,13 +473,13 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       env.mp = aptr >> 8;
       break;
     case CNL: // call no locals
-      if(i_mem >= SRLI) fail(_jmp_mem_err);
+      if(memI >= SRLI) fail(_jmp_mem_err);
       aptr = toAPtr(WS_POP(sz), sz);
       Stk_push(&env.callStk, env.ep, 4);
       env.ep = aptr;
       break;
     case RET:
-      if(Stk_len(env.callStk) == 0) res.escape = TRUE;
+      if(WS_LEN == 0) res.escape = TRUE;
       else {
         U32 callMeta = Stk_pop(&env.callStk, ASIZE);
         env.ep = MOD_HIGH_MASK & callMeta;
@@ -466,11 +490,16 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
   // *************
   // * Store Result
-  if (srPtr && data.len > 0) store(mem, srPtr, data.v[0], sz);
-  elif (data.len) Stk_push(&env.ws, data.v[0], sz);
+  U8 i = 0;
+  if (srPtr && data.sz[0] > 0) {
+    store(mem, srPtr, data.v[0], data.sz[0]);
+    i += 1;
+  }
 
-  if (data.len > 1) Stk_push(&env.ws, data.v[1], sz);
-  if (data.len > 2) Stk_push(&env.ws, data.v[2], sz);
+  while(data.sz[i]) {
+    WS_PUSH(data.v[i], data.sz[i]);
+    i += 1;
+  }
   return res;
 }
 
@@ -625,7 +654,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     c = tokenBuf[tokenLen];
     TokenGroup tg = toTokenGroup(c);
     if (tg == tokenState->group) {}
-    elif (tokenState->group == T_ALPHA && (tg <= T_ALPHA)) {}
+    else if (tokenState->group == T_ALPHA && (tg <= T_ALPHA)) {}
     else break;
     tokenLen += 1;
   }
@@ -640,8 +669,8 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
   SzI szI;
   if(sz == 1) szI = Sz1;
-  elif(sz == 2) szI = Sz2;
-  elif(sz == 4) szI = Sz4;
+  else if(sz == 2) szI = Sz2;
+  else if(sz == 4) szI = Sz4;
   else OP_ASSERT(FALSE, "sz invalid");
 
   instr = INSTR_W_SZ(instr, szI);
@@ -674,9 +703,9 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
       OP_ASSERT(tokenLen < tokenBufSize, "Hanging \\");
       c = tokenBuf[tokenLen];
       if(c == '\\') {}
-      elif(c == 'n') c = '\n';
-      elif(c == 't') c = '\t';
-      elif(c == '0') c = '\0';
+      else if(c == 'n') c = '\n';
+      else if(c == 't') c = '\t';
+      else if(c == '0') c = '\0';
       else OP_ASSERT(FALSE, "invalid escaped char");
     }
     store(mem, *env.heap, c, 1);
@@ -696,7 +725,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
   }
-  Stk_push(&env.ws, v, CUR_SZ());
+  WS_PUSH(v, CUR_SZ());
   shiftBuf();
   return OK;
 }
@@ -801,8 +830,6 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 // ********************************************
 // ** Initialization
 //
-
-
 ssize_t readSrc(size_t nbyte) {
   ssize_t numRead = fread(
     tokenBuf + tokenState->size,
@@ -875,6 +902,7 @@ void tests();
 
 void dbgEnv() {
   printf("~~~ token[%u, %u]=%.*s  ", tokenLen, tokenBufSize, tokenLen, tokenBuf);
+  printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=0x%x\n", instr, instr);
 }
@@ -921,6 +949,11 @@ U16 testBufIdx = 0;
   COMPILE("/comment\n.2 #10AF");
   U32 result = WS_POP(2);
   assert(result == 0x10AF);
+
+  COMPILE(".4 #1002_3004");
+  result = WS_POP(2);
+  assert(0x3004 == result);
+  assert(0x1002 == WS_POP(2));
 }
 
 /*test*/ void testLoc() {
@@ -996,8 +1029,19 @@ U16 testBufIdx = 0;
   // pf("0x%x == 0x%x\n", INSTR_DEFAULT, instr);
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE(".1 #01 #02  ADD RET^");
-  assert(0x03 == WS_POP(1));
+  COMPILE(".4 #1002_3004 TO2 RET^");
+  U16 result = WS_POP(2);
+  assert(0x3004 == result);
+
+  COMPILE(".4 #5006_7008");
+  assert(0x50067008 == WS_POP(4));
+
+  COMPILE(".4 #5006_7008 .2 DRP RET^");
+  U16 result2 = WS_POP(2);
+  assert(0x5006 == result2);
+
+  // COMPILE(".1 #01 #02  ADD RET^");
+  // assert(0x03 == WS_POP(1));
 }
 
 
