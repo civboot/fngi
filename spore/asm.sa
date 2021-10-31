@@ -44,30 +44,34 @@
 #003F_0005 =DRP2  // {l r} -> {} drop 2
 #003F_0006 =DVL   // Device Load (Device operation)
 #003F_0007 =DVS   // Device Store (Device operation)
-#003F_0008 =FT    // {aptr:4} -> {v:sz} Fetch from abs addr
-#003F_0009 =SR    // {aptr:4 v:sz} -> {} Store at abs addr
-#003F_000A =INV   // Invert bits
-#003F_000B =NEG   // Negate (2's compliment)
-#003F_000C =ADD   // {l r} -> {l+r}
-#003F_000D =SUB   // {l r} -> {l-r}
-#003F_000E =MOD   // {l r} -> {l%r} interger modulo (remainder)
-#003F_000F =SHL   // {l r} -> {l << r} bit shift left
+#003F_0008 =RGL   // Register Load
+#003F_0009 =RGS   // Register Store
 
-#003F_0010 =SHR   // {l r} -> {l >> r} bit shift right
-#003F_0010 =INC   // {v} -> {v+1}
-#003F_0011 =INC2  // {v} -> {v+2}
-#003F_0012 =INC4  // {v} -> {v+4}
-#003F_0013 =AND   // {l r} -> {l & r} bitwise and
-#003F_0014 =OR    // {l r} -> {l | r} bitwise or
-#003F_0015 =XOR   // {l r} -> {l ^ r} bitwise xor
-#003F_0016 =EQZ   // {v} -> {v == 0}
-#003F_0017 =EQZ_NC // {v} -> {v, v==0}
-#003F_0018 =EQ    // {l r} -> {l == r} equal
-#003F_0019 =NEQ   // {l r} -> {l != r} not equal
-#003F_001A =GE_U  // {l r} -> {l >= r} unsigned
-#003F_001B =GE_S  // {l r} -> {l >= r} signed
-#003F_001C =LT_U  // {l r} -> {l <  r} unsigned
-#003F_001D =LT_S  // {l r} -> {l <  r} signed
+
+/ #003F_0008 =FT    // {aptr:4} -> {v:sz} Fetch from abs addr
+/ #003F_0009 =SR    // {aptr:4 v:sz} -> {} Store at abs addr
+/ #003F_000A =INV   // Invert bits
+/ #003F_000B =NEG   // Negate (2's compliment)
+/ #003F_000C =ADD   // {l r} -> {l+r}
+/ #003F_000D =SUB   // {l r} -> {l-r}
+/ #003F_000E =MOD   // {l r} -> {l%r} interger modulo (remainder)
+/ #003F_000F =SHL   // {l r} -> {l << r} bit shift left
+/ 
+/ #003F_0010 =SHR   // {l r} -> {l >> r} bit shift right
+/ #003F_0010 =INC   // {v} -> {v+1}
+/ #003F_0011 =INC2  // {v} -> {v+2}
+/ #003F_0012 =INC4  // {v} -> {v+4}
+/ #003F_0013 =AND   // {l r} -> {l & r} bitwise and
+/ #003F_0014 =OR    // {l r} -> {l | r} bitwise or
+/ #003F_0015 =XOR   // {l r} -> {l ^ r} bitwise xor
+/ #003F_0016 =EQZ   // {v} -> {v == 0}
+/ #003F_0017 =EQZ_NC // {v} -> {v, v==0}
+/ #003F_0018 =EQ    // {l r} -> {l == r} equal
+/ #003F_0019 =NEQ   // {l r} -> {l != r} not equal
+/ #003F_001A =GE_U  // {l r} -> {l >= r} unsigned
+/ #003F_001B =GE_S  // {l r} -> {l >= r} signed
+/ #003F_001C =LT_U  // {l r} -> {l <  r} unsigned
+/ #003F_001D =LT_S  // {l r} -> {l <  r} signed
 
 // Maybe will be added
 // #003F_0000 =MUL
@@ -81,8 +85,6 @@
 // # Device Operations
 #00 =D_read   // {count:2} read bytes from src
 #00 =D_scan   // scan next word into tokenBuf[0:tokenLen]
-#00 =D_run    // tell the compiler to run the word in the tokenBuf
-#00 =D_dict4  // FT=get SR=set 4byte dict value in tokenBuf
-#00 =D_instr  // {instr:4} get/set cached instr.
-#00 =D_sz     // {sz:1} get/set current sz in bytes
-
+#00 =D_dict   // FT=get SR=set dict value of sz from tokenBuf
+#00 =D_instr  // get/set cached instr (2 bytes).
+#00 =D_sz     // get/set current sz in bytes
