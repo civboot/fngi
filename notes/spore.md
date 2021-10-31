@@ -387,15 +387,16 @@ executed from asm (using `$`) but the compiler infrasture itself such as
 `read`, `scan`, dict get/set, etc. This allows for the asm to be self
 hosting.
 
-Device operations must be 16bit values called a dvPort. The low-order byte is
-the port and the high order byte is the dvId (device id). Currently the only
-reserved dvid is 0, which is for assembler communication.
+When device operation command is called it always pulls {dvId:1 port:1} from
+the stack. These values do not have alignment requirements. In addition,
+if IMWS is used, then the dvId is the high order byte and the port is the low
+order byte.
 
 In the future, the assembly will be able to register/override dvIds by simply
 executing a DVSR to port 0xFF of the dvId with a 32bit APtr to the code to
 execute. The signature of a device must be:
 ```
-{port:1, meta:1}
+{port:1 meta:1}
 ```
 
 The meta byte has the following bit structure. X is reserved for future use.

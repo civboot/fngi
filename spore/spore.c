@@ -73,11 +73,13 @@ typedef enum {
   DRP2,
   DVL,
   DVS,
+  RGL,
+  RGS,
   FT,
   SR,
-  INV,
-  NEG,
-  ADD,
+  // INV,
+  // NEG,
+  // ADD,
 } OpI;
 
 // Generic stack.
@@ -330,6 +332,17 @@ void op_to4(OP_ARGS) { rS(out, 1); out->sz[0] = 4; };
 void op_drp(OP_ARGS) { rS(out, 1); op_stk_smaller(out); }
 void op_drp2(OP_ARGS) { rS(out, 2); out->sz[0] = 0; out->sz[1] = 0; };
 
+// Device Operations
+void device(OpData* out) {
+}
+
+void op_dvl(OP_ARGS) {
+  if(out->sz[0] != 2) fail("DVL sz != 2");
+  U8 port = 0xFF & out->v[0];
+  U16 dv = out->v[0] >> 8;
+  if(dv > 0) fail("dv>0 not impl");
+};
+
 
 void op_inv(OP_ARGS) { rS(out, 1); out->v[0] = ~out->v[0]; }
 void op_neg(OP_ARGS) {
@@ -354,7 +367,7 @@ void op_neg(OP_ARGS) {
 // ErrCode op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
 // ErrCode op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
 
-op_t ops[] = {
+op_t opArray[] = {
   op_nop,
   op_to1,
   op_to2,
@@ -378,6 +391,19 @@ U8* _jz_jtbl_err = "JZ/JTBL require IMM for offset/table";
 U8* _jmp_call_err = "call requies mem access";
 U8* _jmp_mem_err = "jumps require Mem.Store = WS";
 
+void _ws(OpData *data) {
+  if(WS_LEN == 0) {
+    data->sz[0] = 0;
+  } else {
+    data->v[0] = WS_POP(data->sz[0]);
+  }
+}
+
+void _imws(OpData *data) {
+  data->usesImm = TRUE;
+  data->v[0] = popImm();
+}
+
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
 
@@ -387,59 +413,72 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
   U8 sz = szToBytes(szI);
 
-  if(opI == FT && !(memI == WS && szI == SzA)) {
-      fail("FT must use WS and size=ptr");
-  }
 
   OpData data = {.v = {0, 0, 0}, .sz = {sz, 0, 0}, .usesImm = FALSE };
   APtr srPtr = 0;
 
-  // *****************
-  // * Mem: get the appropriate values
-
-  // Get Top
-  switch(memI) {
-    case WS:
-      if(WS_LEN == 0) {
-        data.sz[0] = 0;
-      } else {
-        data.v[0] = WS_POP(sz);
-      }
-      break;
-    case IMWS:
-      data.usesImm = TRUE;
-      data.v[0] = popImm();
-      break;
-    case SRLI:
-      data.usesImm = TRUE;
-      srPtr = LS_OFFSET() + env.ls.sp + popImm();
-      data.v[0] = WS_POP(sz);
-      break;
-    case SRMI:
-      data.usesImm = TRUE;
-      srPtr = env.mp + popImm();
-      data.v[0] = WS_POP(sz);
-      break;
-    case SROI:
-    case FTLI:
-    case FTMI:
-    case FTOI: fail("not impl");
-    default: fail("unknown mem");
-  }
-
-  // Get Second
-  if(opI == SR) {
+  if(opI >= DVL && opI <= SR) {
+    // Special operations
     assert(memI <= IMWS);
-    data.v[1] = WS_POP(ASIZE);
-    data.sz[1] = ASIZE;
-  } else if(WS_LEN >= sz) {
-    data.v[1] = WS_POP(sz);
-    data.sz[1] = sz;
-  }
+    if(opI <= RGS) {
+      if(memI == IMWS) {
+        // Use both bytes from IMM
+        U16 v = popImm();
+        data.v[0] = v >> 8;
+        data.v[1] = 0xFF && v;
+      } else {
+        data.v[0] = WS_POP(1);
+        data.v[1] = WS_POP(1);
+      }
+      data.sz[0] = 1;
+      data.sz[1] = 1;
+    } else if (opI == SR) {
+      if(memI == WS) _ws(&data);
+      else if(memI == IMWS) _imws(&data);
+      data.v[1] = WS_POP(ASIZE);
+      data.sz[1] = ASIZE;
+    } else {
+      data.v[0] = WS_POP(ASIZE);
+      data.sz[0] = ASIZE;
+    }
+  } else {
+    // *****************
+    // * Normal Mem: get the appropriate values
+
+    // Get Top
+    switch(memI) {
+      case WS:
+        _ws(&data);
+        break;
+      case IMWS:
+        _imws(&data);
+        break;
+      case SRLI:
+        data.usesImm = TRUE;
+        srPtr = LS_OFFSET() + env.ls.sp + popImm();
+        data.v[0] = WS_POP(sz);
+        break;
+      case SRMI:
+        data.usesImm = TRUE;
+        srPtr = env.mp + popImm();
+        data.v[0] = WS_POP(sz);
+        break;
+      case SROI:
+      case FTLI:
+      case FTMI:
+      case FTOI: fail("not impl");
+      default: fail("unknown mem");
+    }
+
+    if(WS_LEN >= sz) {
+      data.v[1] = WS_POP(sz);
+      data.sz[1] = sz;
+    }
+  } // end else "Normal Mem"
 
   // *************
   // * Op: perform the operation
-  ops[(U8) opI] (&data); // call op from array
+  opArray[(U8) opI] (&data); // call op from array
 
   APtr aptr;
   U16 growLs = 0;
@@ -447,7 +486,7 @@ U8* _jmp_mem_err = "jumps require Mem.Store = WS";
   // * Jmp: perform the jump
   switch(jmpI) {
     case NOJ: break;
-    case JZ: 
+    case JZ:
       if (memI != WS) fail(_jz_jtbl_err);
       env.ep = toAPtr(popImm(), 2);
       break;
