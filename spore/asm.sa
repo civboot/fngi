@@ -35,52 +35,51 @@
 #00C0_00C0 =Sz4
 #00C0_00C0 =SzA // APtr
 
-// Operations
+// Operations: Special
 #003F_0000 =NOP   // no operation
-#003F_0001 =TO1   // {v:sz} -> {v:1}
-#003F_0002 =TO2   // {v:sz} -> {v:2}
-#003F_0003 =TO4   // {v:sz} -> {v:4}
-#003F_0004 =DRP   // {v} -> {} drop
-#003F_0005 =DRP2  // {l r} -> {} drop 2
-#003F_0006 =DVL   // Device Load (Device operation)
-#003F_0007 =DVS   // Device Store (Device operation)
-#003F_0008 =RGL   // Register Load
-#003F_0009 =RGS   // Register Store
+//   _0001        // reserved
+#003F_0002 =DVL   // Device Operation Load
+#003F_0003 =DVS   // Device Operation Store
+#003F_0004 =RGL   // Register Load
+#003F_0005 =RGS   // Register Store
+#003F_0006 =FT    // Fetch
+#003F_0007 =SR    // Store
 
+// Operations: Single Arg
+#003F_0008 =DRP     // {v -> } drop
+#003F_0009 =DUP     // {v -> v v} duplicate
+#003F_000A =INC     // {v -> v+1} increment 1
+#003F_000B =INC2    // {v -> v+2} increment 2
+#003F_000C =INC4    // {v -> v+4} increment 4
+#003F_000D =INV     // {v -> ~v}  Invert bits
+#003F_000E =NEG     // {v -> -v}  Negate (2's compliment)
+#003F_000F =EQZ     // {v -> v==0}
+#003F_0010 =EQZ_NC  // {v -> v v==0}
 
-/ #003F_0008 =FT    // {aptr:4} -> {v:sz} Fetch from abs addr
-/ #003F_0009 =SR    // {aptr:4 v:sz} -> {} Store at abs addr
-/ #003F_000A =INV   // Invert bits
-/ #003F_000B =NEG   // Negate (2's compliment)
-/ #003F_000C =ADD   // {l r} -> {l+r}
-/ #003F_000D =SUB   // {l r} -> {l-r}
-/ #003F_000E =MOD   // {l r} -> {l%r} interger modulo (remainder)
-/ #003F_000F =SHL   // {l r} -> {l << r} bit shift left
-/ 
-/ #003F_0010 =SHR   // {l r} -> {l >> r} bit shift right
-/ #003F_0010 =INC   // {v} -> {v+1}
-/ #003F_0011 =INC2  // {v} -> {v+2}
-/ #003F_0012 =INC4  // {v} -> {v+4}
-/ #003F_0013 =AND   // {l r} -> {l & r} bitwise and
-/ #003F_0014 =OR    // {l r} -> {l | r} bitwise or
-/ #003F_0015 =XOR   // {l r} -> {l ^ r} bitwise xor
-/ #003F_0016 =EQZ   // {v} -> {v == 0}
-/ #003F_0017 =EQZ_NC // {v} -> {v, v==0}
-/ #003F_0018 =EQ    // {l r} -> {l == r} equal
-/ #003F_0019 =NEQ   // {l r} -> {l != r} not equal
-/ #003F_001A =GE_U  // {l r} -> {l >= r} unsigned
-/ #003F_001B =GE_S  // {l r} -> {l >= r} signed
-/ #003F_001C =LT_U  // {l r} -> {l <  r} unsigned
-/ #003F_001D =LT_S  // {l r} -> {l <  r} signed
+// Operations: Two Arg
+#003F_0018 =DRP2  // {l r -> } drop 2
+#003F_0019 =SWP   // {l r -> r l} swap
+#003F_001A =ADD   // {l r -> l+r}
+#003F_001B =SUB   // {l r -> l-r}
+#003F_001C =MOD   // {l r -> l%r} interger modulo (remainder)
+#003F_001D =SHL   // {l r -> l << r} bit shift left
+#003F_001E =SHR   // {l r -> l >> r} bit shift right
 
-// Maybe will be added
+/ #003F_0000 =AND   // {l r} -> {l & r} bitwise and
+/ #003F_0000 =OR    // {l r} -> {l | r} bitwise or
+/ #003F_0000 =XOR   // {l r} -> {l ^ r} bitwise xor
+/ #003F_0000 =EQ    // {l r} -> {l == r} equal
+/ #003F_0000 =NEQ   // {l r} -> {l != r} not equal
+/ #003F_0000 =GE_U  // {l r} -> {l >= r} unsigned
+/ #003F_0000 =GE_S  // {l r} -> {l >= r} signed
+/ #003F_0000 =LT_U  // {l r} -> {l <  r} unsigned
+/ #003F_0000 =LT_S  // {l r} -> {l <  r} signed
+
+// Extensions
 // #003F_0000 =MUL
 // #003F_0000 =DIV_U
 // #003F_0000 =DIV_S
 // #003F_0000 =OVR
-
-// Note: instr commands are 4 bytes to make working with masks
-// easier. Only the lower 2 bytes are used.
 
 // # Device Operations
 #00 =D_read   // {count:2} read bytes from src
