@@ -1070,22 +1070,18 @@ U16 testBufIdx = 0;
 
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
-  // printf("what???\n");
-  // COMPILE(".4 @Sz2");
-  // assert(0x00C00040 == WS_POP());
+  COMPILE(".4 @Sz2");
+  assert(0x00C00040 == WS_POP());
 
-  // dbg("??? 1");
-  // instr = ~0x1800; // instr with unused=0 else=1
-  // COMPILE(".4 NOJ WS NOP");
-  // assert(INSTR_DEFAULT == instr);
+  instr = ~0x1800; // instr with unused=0 else=1
+  COMPILE(".4 NOJ WS NOP");
+  assert(INSTR_DEFAULT == instr);
 
-  // dbg("??? 4");
-  // COMPILE(".4 #5006_7008 .2 DRP RET^");
-  // U16 result2 = WS_POP();
-  // assert(0x5006 == result2);
+  COMPILE(".4 #5006 #7008 .2 DRP RET^");
+  assert(0x5006 == WS_POP());
 
-  // COMPILE(".1 #01 #02  ADD RET^");
-  // assert(0x03 == WS_POP());
+  COMPILE(".1 #01 #02  ADD RET^");
+  assert(0x03 == WS_POP());
 }
 
 
