@@ -88,7 +88,7 @@
 // floating point: add,sub,mul,div,ge,lt
 
 / // # Device Operations
-#00 =D_read   // {count:2}  read bytes from src
+#00 =D_read   // read from src, filling up tokenBuf
 #00 =D_scan   // scan next word into tokenBuf[0:tokenLen]
 #00 =D_dict   // FT=get SR=set dict key=tokenBuf, value of sz
 #00 =D_instr  // get/set cached instr (Sz2)

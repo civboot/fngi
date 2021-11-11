@@ -78,7 +78,7 @@ typedef enum {
 
 #define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
 #define INSTR_CNL     INSTR(SzI4, CNL, WS, 0)
-#define INSTR_W_SZ(INSTR, SZ)    (((~SZI_MASK) & INSTR) | (SZ << SZI_SHIFT))
+#define INSTR_W_SZ(INSTR, SZI)    (((~SZI_MASK) & INSTR) | (SZI << SZI_SHIFT))
 
 
 #define OPI1_START 0x10
@@ -173,6 +173,15 @@ U8 szIToSz(SzI szI) {
     case 1: return 2;
     case 2: return 4;
     default: fail("invalid szI");
+  }
+}
+
+SzI szToSzI(U8 sz) {
+  switch (sz) {
+    case 1: return SzI1;
+    case 2: return SzI2;
+    case 4: return SzI4;
+    default: fail("invalid sz");
   }
 }
 
@@ -282,11 +291,29 @@ APtr toAPtr(U32 v, U8 sz) {
 // ** Executing Instructions
 
 // Device Operations
-void deviceOp(Bool isLoad) {
+void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   U32 op = WS_POP();
+  U32 tmp;
   switch(op) {
-    case 0:
-
+    case 0: /*D_read*/ readAppend(); break;
+    case 1: /*D_scan*/ assert(!scan()); break;
+    case 2: /*D_dict*/
+      if(isFetch) {
+        assert(Dict_get(&out, tokenLen, tokenBuf));
+        WS_PUSH(szMask & out);
+      } else {
+        Dict_set(tokenLen, tokenBuf, szMask & WS_POP());
+      }
+      break;
+      // FT=get SR=set dict key=tokenBuf, value of sz
+    case 3: /*D_instr*/
+      if(isFetch) WS_PUSH(instr);
+      else instr = WS_POP();
+      break;
+    case 4: /*D_sz*/
+      if(isFetch) WS_PUSH(sz);
+      else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
+      break;
     default: fail("device op not impl");
   }
 
@@ -364,7 +391,7 @@ void deviceOp(Bool isLoad) {
         case 0x3: /*DRP2*/ WS_POP(); WS_POP(); break;
         case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
-        case 0x6: /*DVL */ deviceOp(TRUE); break;
+        case 0x6: /*DVL */ deviceOp(TRUE, szI, szMask, sz); break;
         case 0x7: /*DVS */ deviceOp(FALSE); break;
         case 0x8: /*RGL */ fail("RGL not impl"); break;
         case 0x9: /*RGS */ fail("RGS not impl"); break;
