@@ -135,6 +135,9 @@ typedef enum {
 
 // ********************************************
 // ** Globals
+
+void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz);
+
 Env env;
 U8* mem = NULL;
 Dict* dict = NULL;
@@ -290,35 +293,6 @@ APtr toAPtr(U32 v, U8 sz) {
 // ********************************************
 // ** Executing Instructions
 
-// Device Operations
-void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
-  U32 op = WS_POP();
-  U32 tmp;
-  switch(op) {
-    case 0: /*D_read*/ readAppend(); break;
-    case 1: /*D_scan*/ assert(!scan()); break;
-    case 2: /*D_dict*/
-      if(isFetch) {
-        assert(Dict_get(&out, tokenLen, tokenBuf));
-        WS_PUSH(szMask & out);
-      } else {
-        Dict_set(tokenLen, tokenBuf, szMask & WS_POP());
-      }
-      break;
-      // FT=get SR=set dict key=tokenBuf, value of sz
-    case 3: /*D_instr*/
-      if(isFetch) WS_PUSH(instr);
-      else instr = WS_POP();
-      break;
-    case 4: /*D_sz*/
-      if(isFetch) WS_PUSH(sz);
-      else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
-      break;
-    default: fail("device op not impl");
-  }
-
-}
-
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
     env.ep += 2;
@@ -392,7 +366,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
         case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
         case 0x6: /*DVL */ deviceOp(TRUE, szI, szMask, sz); break;
-        case 0x7: /*DVS */ deviceOp(FALSE); break;
+        case 0x7: /*DVS */ deviceOp(FALSE, szI, szMask, sz); break;
         case 0x8: /*RGL */ fail("RGL not impl"); break;
         case 0x9: /*RGS */ fail("RGS not impl"); break;
         case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
@@ -827,6 +801,35 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   }
 }
 
+// Device Operations
+// Note: this must be declared last since it ties into the compiler infra.
+void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
+  U32 op = WS_POP();
+  U32 tmp;
+  switch(op) {
+    case 0: /*D_read*/ readAppend(); break;
+    case 1: /*D_scan*/ assert(!scan()); break;
+    case 2: /*D_dict*/
+      if(isFetch) {
+        assert(Dict_get(&tmp, tokenLen, tokenBuf));
+        WS_PUSH(szMask & tmp);
+      } else {
+        Dict_set(tokenLen, tokenBuf, szMask & WS_POP());
+      }
+      break;
+      // FT=get SR=set dict key=tokenBuf, value of sz
+    case 3: /*D_instr*/
+      if(isFetch) WS_PUSH(instr);
+      else instr = WS_POP();
+      break;
+    case 4: /*D_sz*/
+      if(isFetch) WS_PUSH(sz);
+      else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
+      break;
+    default: fail("device op not impl");
+  }
+}
+
 
 // ********************************************
 // ** Initialization
@@ -1039,6 +1042,9 @@ U16 testBufIdx = 0;
 
   COMPILE(".1 #01 #02  ADD RET^");
   assert(0x03 == WS_POP());
+
+  COMPILE(".A @D_sz DVL RET^");
+  assert(0x04 == WS_POP());
 }
 
 

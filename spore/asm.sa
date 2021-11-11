@@ -89,7 +89,7 @@
 
 / // # Device Operations
 #00 =D_read   // read from src, filling up tokenBuf
-#00 =D_scan   // scan next word into tokenBuf[0:tokenLen]
-#00 =D_dict   // FT=get SR=set dict key=tokenBuf, value of sz
-#00 =D_instr  // get/set cached instr (Sz2)
-#00 =D_sz     // get/set current sz in bytes
+#01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
+#02 =D_dict   // FT=get SR=set dict key=tokenBuf, value of sz
+#03 =D_instr  // get/set cached instr (Sz2)
+#04 =D_sz     // get/set current sz in bytes
