@@ -58,16 +58,20 @@
 #003F_0016 =CI1     // {ISz}  Convert I1 to ISz
 #003F_0017 =CI2     // {ISz}  Convert I2 to ISz
 // future: leading 0's, trailing 0's, count of 1's
+// Some single-arg extension commands might be:
+// (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
+// (1) i -> f conversion
+// (1) f -> i conversion
 
 // Operations: Two Inp {l r} -> One Out
-#003F_0020 =ADD   // {l+r    } add
-#h03F_0021 =SUB   // {l-r    } subtract
-#003F_0022 =MOD   // {l%r    } integer modulo (remainder)
+#003F_0020 =ADD   // {l +  r } add
+#003F_0021 =SUB   // {l -  r } subtract
+#003F_0022 =MOD   // {l %  r } integer modulo (remainder)
 #003F_0023 =SHL   // {l << r } bit shift left
 #003F_0024 =SHR   // {l >> r } bit shift right
-#003F_0025 =AND   // {l & r  } bitwise and
-#003F_0026 =OR    // {l | r  } bitwise or
-#003F_0027 =XOR   // {l ^ r  } bitwise xor
+#003F_0025 =AND   // {l &  r } bitwise and
+#003F_0026 =OR    // {l |  r } bitwise or
+#003F_0027 =XOR   // {l ^  r } bitwise xor
 #003F_0028 =LAND  // {l && r } logical and
 #003F_0029 =LOR   // {l || r } logical or
 #003F_002A =EQ    // {l == r } equal
@@ -80,15 +84,12 @@
 #003F_0030 =MUL   // {l *  r } multiplication
 #003F_0031 =DIV_U // {l / r  } unsigned division
 #003F_0032 =DIV_S // {l / r  } signed division
+// Double-arg extension commands might be:
+// floating point: add,sub,mul,div,ge,lt
 
-// Some single-arg extension commands might be:
-// (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
-// (1) i -> f conversion
-// (1) f -> i conversion
-
-// # Device Operations
-#00 =D_read   // {count:2} read bytes from src
-#00 =D_scan   // scan next word into tokenBuf[0:tokenLen]
-#00 =D_dict   // FT=get SR=set dict value of sz from tokenBuf
-#00 =D_instr  // get/set cached instr (2 bytes).
-#00 =D_sz     // get/set current sz in bytes
+/ // # Device Operations
+/ #00 =D_read   // {count:2} read bytes from src
+/ #00 =D_scan   // scan next word into tokenBuf[0:tokenLen]
+/ #00 =D_dict   // FT=get SR=set dict value of sz from tokenBuf
+/ #00 =D_instr  // get/set cached instr (2 bytes).
+/ #00 =D_sz     // get/set current sz in bytes

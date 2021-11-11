@@ -553,17 +553,13 @@ void _imws(OpData *data) {
 }
 
 /*fn*/ ErrCode execute(U16 instr) {
+  env.ep = 0;
   while(TRUE) {
     ExecuteResult res = executeInstr(instr);
-    if(res.err) { return 1; }
-    if(res.escape) {
-      break;
-    }
-    U16 instr = fetch(mem, env.ep, 2);
-    env.ep += 2;
+    if(res.err) return res.err;
+    if(res.escape) return OK;
+    U16 instr = popImm();
   }
-  env.ep = 0;
-  return OK;
 }
 
 // ********************************************
@@ -1074,21 +1070,22 @@ U16 testBufIdx = 0;
 
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
-  COMPILE(".4 @Sz2");
-  assert(0x00C00040 == WS_POP());
+  // printf("what???\n");
+  // COMPILE(".4 @Sz2");
+  // assert(0x00C00040 == WS_POP());
 
-  dbg("??? 1");
-  instr = ~0x1800; // instr with unused=0 else=1
-  COMPILE(".4 NOJ WS NOP");
-  assert(INSTR_DEFAULT == instr);
+  // dbg("??? 1");
+  // instr = ~0x1800; // instr with unused=0 else=1
+  // COMPILE(".4 NOJ WS NOP");
+  // assert(INSTR_DEFAULT == instr);
 
-  dbg("??? 4");
-  COMPILE(".4 #5006_7008 .2 DRP RET^");
-  U16 result2 = WS_POP();
-  assert(0x5006 == result2);
+  // dbg("??? 4");
+  // COMPILE(".4 #5006_7008 .2 DRP RET^");
+  // U16 result2 = WS_POP();
+  // assert(0x5006 == result2);
 
-  COMPILE(".1 #01 #02  ADD RET^");
-  assert(0x03 == WS_POP());
+  // COMPILE(".1 #01 #02  ADD RET^");
+  // assert(0x03 == WS_POP());
 }
 
 
@@ -1099,6 +1096,6 @@ U16 testBufIdx = 0;
   testDictDeps();
   testDict();
   testWriteHeap();
-  // testExecuteInstr();
+  testExecuteInstr();
 }
 
