@@ -292,6 +292,22 @@ void device(Bool isLoad) {
     return out;
 }
 
+/* Takes the 16bit instruction and executes it as follows:
+ * - mem: perform load/popImm. set srPtr if it is a SR Mem instruction (not
+ *   related to SR op).
+ * - operation: perform the operation.
+ * - If srPtr is set (from mem), pop a value and store it at srPtr.
+ * - jmp: Perform jmp/call instruction. If an imm is required pull it.
+ *   - RET has special handling if the callstak is empty where it returns to
+ *     native execution handling.
+ *
+ * A few notes:
+ * - It's legal to use two immediates (one for MEM and one for JMP).
+ * - It's legal to do multiple memory operations in one instriction, i.e. read
+ *   from and address using MEM and then use SR op.
+ * - CALL can be done after an operation. Useful for LoaDing an address then
+ *   calling it.
+ */
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
 
@@ -308,8 +324,14 @@ void device(Bool isLoad) {
   switch(memI) {
     case WS: break;
     case IMWS: WS_PUSH(szMask & popImm());    break;
-    case SRLI: srPtr = env.ls.sp + popImm();  break;
-    case SRMI: srPtr = env.mp    + popImm();  break;
+    case SRLI:
+      srPtr = env.ls.sp + popImm();
+      if(!srPtr) fail("SRLI at NULL");
+      break;
+    case SRMI:
+      srPtr = env.mp + popImm();
+      if(!srPtr) fail("SRMI at NULL");
+      break;
     case SROI: WS_PUSH(szMask & popImm());    break;
     case FTLI: WS_PUSH(fetch(mem, env.ls.sp + popImm(), sz)); break;
     case FTMI: WS_PUSH(fetch(mem, env.mp    + popImm(), sz)); break;
@@ -338,13 +360,14 @@ void device(Bool isLoad) {
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
         case 0x6: /*DVL */ device(TRUE); break;
         case 0x7: /*DVS */ device(FALSE); break;
-        case 0x9: /*RGL */ fail("RGL not impl"); break;
+        case 0x8: /*RGL */ fail("RGL not impl"); break;
         case 0x9: /*RGS */ fail("RGS not impl"); break;
         case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
         case 0xB: /*SR  */
           if(srPtr) fail("SR double store");
           l = WS_POP(); // value
-          store(mem, WS_POP(), l, sz);
+          srPtr = WS_POP();
+          WS_PUSH(l);
           break;
       }
       break;
