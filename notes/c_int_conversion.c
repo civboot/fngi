@@ -15,9 +15,13 @@ U32 negOne = 0xFF;
 int main() {
   U32 a = (U32) negOne;
   I32 b = (I32) negOne;
-  I32 c = (I32) ((I8) negOne);
+  U32 c = (I32) ((I8) negOne);
   U32 d = (U32) ((U32) negOne);
   U32 e = (U8) -((I8) one);
+
   // a: 255  b:255  c:-1
-  printf("a: %i  b:%i  c:%i  d:%x  e:%x\n", a, b, c, d, e);
+  printf("a: %i  b:%i  c:%x d:%x  e:%x\n", a, b, c, d, e);
+
+  U32 t = 0xFFFF & (-one - 1);
+  printf("t: %x\n", t);
 }

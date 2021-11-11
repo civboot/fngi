@@ -35,50 +35,56 @@
 #00C0_0080 =SzA   // APtr
 
 // Operations: Special
-#003F_0000 =NOP   // no operation
-//   _0001        // reserved
-#003F_0002 =DVL   // Device Operation Load
-#003F_0003 =DVS   // Device Operation Store
-#003F_0004 =RGL   // Register Load
-#003F_0005 =RGS   // Register Store
-#003F_0006 =FT    // Fetch
-#003F_0007 =SR    // Store
+#003F_0000 =NOP     // { -> }     no operation
+#003F_0001 =SWP     // {l r -> r l} swap
+#003F_0002 =DRP     // {l -> }    drop
+#003F_0003 =DRP2    // {l r -> }  drop 2
+#003F_0004 =DUP     // {l -> l l} duplicate
+#003F_0005 =DUPN    // {l -> l l==0} DUP then NOT
+#003F_0006 =DVL     // Device Operation Load
+#003F_0007 =DVS     // Device Operation Store
+#003F_0008 =RGL     // Register Load
+#003F_0009 =RGS     // Register Store
+#003F_000A =FT      // Fetch
+#003F_000B =SR      // Store
 
-// Operations: Single Arg
-#003F_0008 =DRP     // {v -> } drop
-#003F_0009 =DUP     // {v -> v v} duplicate
-#003F_000A =INC     // {v -> v+1} increment 1
-#003F_000B =INC2    // {v -> v+2} increment 2
-#003F_000C =INC4    // {v -> v+4} increment 4
-#003F_000D =INV     // {v -> ~v}  Invert bits
-#003F_000E =NEG     // {v -> -v}  Negate (2's compliment)
-#003F_000F =EQZ     // {v -> v==0}
-#003F_0010 =EQZ_NC  // {v -> v v==0}
+// Operations: One Inp {l} -> One Out
+#003F_0010 =INC     // {l+1}  increment 1
+#003F_0011 =INC2    // {l+2}  increment 2
+#003F_0012 =INC4    // {l+4}  increment 4
+#003F_0013 =INV     // {~l}   Bitwise Inversion
+#003F_0014 =NEG     // {-l}   Negate (2's compliment)
+#003F_0015 =NOT     // {l==0} Logical NOT
+#003F_0016 =CI1     // {ISz}  Convert I1 to ISz
+#003F_0017 =CI2     // {ISz}  Convert I2 to ISz
+// future: leading 0's, trailing 0's, count of 1's
 
-// Operations: Two Arg
-#003F_0018 =DRP2  // {l r -> } drop 2
-#003F_0019 =SWP   // {l r -> r l} swap
-#003F_001A =ADD   // {l r -> l+r}
-#h03F_001B =SUB   // {l r -> l-r}
-#003F_001C =MOD   // {l r -> l%r} interger modulo (remainder)
-#003F_001D =SHL   // {l r -> l << r} bit shift left
-#003F_001E =SHR   // {l r -> l >> r} bit shift right
+// Operations: Two Inp {l r} -> One Out
+#003F_0020 =ADD   // {l+r    } add
+#h03F_0021 =SUB   // {l-r    } subtract
+#003F_0022 =MOD   // {l%r    } integer modulo (remainder)
+#003F_0023 =SHL   // {l << r } bit shift left
+#003F_0024 =SHR   // {l >> r } bit shift right
+#003F_0025 =AND   // {l & r  } bitwise and
+#003F_0026 =OR    // {l | r  } bitwise or
+#003F_0027 =XOR   // {l ^ r  } bitwise xor
+#003F_0028 =LAND  // {l && r } logical and
+#003F_0029 =LOR   // {l || r } logical or
+#003F_002A =EQ    // {l == r } equal
+#003F_002B =NEQ   // {l != r } not equal
+#003F_002C =GE_U  // {l >= r } unsigned greater than or equal
+#003F_002D =LT_U  // {l <  r } unsigned less than
+#003F_002E =GE_S  // {l >= r } signed greater than or equal
+#003F_002F =LT_S  // {l <  r } signed less than
 
-/ #003F_0000 =AND   // {l r} -> {l & r} bitwise and
-/ #003F_0000 =OR    // {l r} -> {l | r} bitwise or
-/ #003F_0000 =XOR   // {l r} -> {l ^ r} bitwise xor
-/ #003F_0000 =EQ    // {l r} -> {l == r} equal
-/ #003F_0000 =NEQ   // {l r} -> {l != r} not equal
-/ #003F_0000 =GE_U  // {l r} -> {l >= r} unsigned
-/ #003F_0000 =GE_S  // {l r} -> {l >= r} signed
-/ #003F_0000 =LT_U  // {l r} -> {l <  r} unsigned
-/ #003F_0000 =LT_S  // {l r} -> {l <  r} signed
+#003F_0030 =MUL   // {l *  r } multiplication
+#003F_0031 =DIV_U // {l / r  } unsigned division
+#003F_0032 =DIV_S // {l / r  } signed division
 
-// Extensions
-// #003F_0000 =MUL
-// #003F_0000 =DIV_U
-// #003F_0000 =DIV_S
-// #003F_0000 =OVR
+// Some single-arg extension commands might be:
+// (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
+// (1) i -> f conversion
+// (1) f -> i conversion
 
 // # Device Operations
 #00 =D_read   // {count:2} read bytes from src

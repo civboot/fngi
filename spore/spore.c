@@ -27,7 +27,7 @@ typedef CSz CPtr;
 
 // 256 64k module blocks
 /*get aptr  */ #define MAX_APTR 0xFFFFFF
-/*get module*/ #define MOD_HIGH_MASK 0xFF0000 
+/*get module*/ #define MOD_HIGH_MASK 0xFF0000
 
 #define APO2  2
 #define ASIZE sizeof(ASz)
@@ -62,13 +62,17 @@ typedef enum {
 
 // Operations
 
-#define OP1_START 0x8
-#define OP2_START 0x18
+#define OPI1_START 0x10
+#define OPI2_START 0x20
 
 // Special
 typedef enum {
   NOP,
-  _SRESERVED,
+  SWP,
+  DRP,
+  DRP2,
+  DUP,
+  DUPN,
   DVL,
   DVS,
   RGL,
@@ -391,8 +395,7 @@ void _imws(OpData *data) {
   U8 sz = szIToSz(szI);
 
   APtr srPtr = 0;
-  U32 tmp;
-  U32 tmp2;
+  U32 l; U32 r;
 
   switch(memI) {
     case WS: break;
@@ -403,140 +406,149 @@ void _imws(OpData *data) {
     case FTLI: WS_PUSH(fetch(mem, env.ls.sp + popImm(), sz)); break;
     case FTMI: WS_PUSH(fetch(mem, env.mp    + popImm(), sz)); break;
     case FTOI:
-      tmp = WS_POP();     // Address
+      l = WS_POP();       // Address
       WS_PUSH(popImm());  // Second
-      WS_PUSH(fetch(mem, tmp, sz));
+      WS_PUSH(fetch(mem, l, sz));
       break;
     default: fail("unknown mem");
   }
 
-  switch (opI >> 3) {
-    // Special    [0b000000 - 0b001000)
+  switch (opI >> 4) {
+    // Special    [0x0 - 0x10)
     case 0:
       switch (opI) {
         case NOP: break;
+        case SWP:
+          r = szMask & WS_POP();
+          l = szMask & WS_POP();
+          WS_PUSH(r);
+          WS_PUSH(l);
+          break;
+        case DRP:  WS_POP(); break;
+        case DRP2: WS_POP(); WS_POP(); break;
+        case DUP: l = WS_POP(); WS_PUSH(l); WS_PUSH(l); break;
+        case DUPN:
+          l = WS_POP();
+          WS_PUSH(l);
+          WS_PUSH(0 == l);
+          break;
         case DVL: device(TRUE); break;
         case DVS: device(FALSE); break;
         case RGL:
-        case RGS: fail("RG not impl");
+        case RGS: fail("RG not impl"); break;
         case FT: WS_PUSH(fetch(mem, WS_POP(), sz)); break;
         case SR:
           if(srPtr) fail("SR double store");
-          tmp = WS_POP(); // value
-          store(mem, WS_POP(), tmp, sz);
+          l = WS_POP(); // value
+          store(mem, WS_POP(), l, sz);
           break;
       }
       break;
 
-    // Single Arg [0b001000 - 0b011000)
+    // Single Arg [0x10 - 0x20)
     case 1:
-    case 2:
+      r = WS_POP();
       switch (opI - OPI1_START) {
-        case 0: /*DRP */ WS_POP(); break;
-        case 1: /*DUP */
-          tmp = szMask & WS_POP();
-          WS_PUSH(tmp);
-          WS_PUSH(tmp);
-          break;
-        case 2: /*INC */ WS_PUSH(szMask & (WS_POP() + 1));  break;
-        case 3: /*INC2*/ WS_PUSH(szMask & (WS_POP() + 2));  break;
-        case 4: /*INC4*/ WS_PUSH(szMask & (WS_POP() + 4));  break;
-        case 5: /*INV */ WS_PUSH(szMask & (~WS_POP()));     break;
-        case 6: /*NEG */
+        case 0: /*INC */ r = r + 1; break;
+        case 1: /*INC2*/ r = r + 2; break;
+        case 2: /*INC4*/ r = r + 4; break;
+        case 3: /*INV */ r = ~r; break;
+        case 4: /*NEG */ r = -r; break;
+        case 5: /*NOT */ r = 0==r; break;
+        case 6: /*CI1 */ r = (I32) ((I8) r); break;
+        case 7: /*CI2 */ r = (I32) ((I16) r); break;
+      }
+      WS_PUSH(szMask & r);
+      break;
+
+    // Two Arg    [0x20 - 0x3F)
+    case 2:
+      r = WS_POP();
+      l = WS_POP();
+      switch (opI - OPI2_START) {
+        case 0x0: /*ADD */ r = l + r; break;
+        case 0x1: /*SUB */ r = l - r; break;
+        case 0x2: /*MOD */ r = l % r; break;
+        case 0x3: /*SHL */ r = l << r; break;
+        case 0x4: /*SHR */ r = l >> r; break;
+        case 0x5: /*AND */ r = l & r; break;
+        case 0x6: /*OR */ r = l | r; break;
+        case 0x7: /*XOR*/ r = l ^ r; break;
+        case 0x8: /*LAND*/ r = l && r; break;
+        case 0x9: /*LOR */ r = l || r; break;
+        case 0xA: /*EQ  */ r = l == r; break;
+        case 0xB: /*NEQ */ r = l != r; break;
+        case 0xC: /*GE_U*/ r = l >= r; break;
+        case 0xD: /*LT_U*/ r = l < r; break;
+        case 0xE: /*GE_S*/
           switch (szI) {
-            case SzI1:
-              WS_PUSH( (U8)  -((I8)  WS_POP()) );
-              break;
-            case SzI2:
-              WS_PUSH( (U16) -((I16) WS_POP()) );
-              break;
-            case SzI4:
-              WS_PUSH( (U32) -((I32) WS_POP()) );
-              break;
+            case SzI1: r = (I8)  l >= (I8)  r; break;
+            case SzI2: r = (I16) l >= (I16) r; break;
+            case SzI4: r = (I32) l >= (I32) r; break;
           }
-      }
-
-    // Two Arg    [0b011000 - ...)
-    case 3:
-      switch (opI - OP2_START) {
-        case 0: /*DRP2*/ WS_POP(); WS_POP(); break;
-        case 1: /*SWP*/
-          tmp =  WS_POP();
-          tmp2 = WS_POP();
-          WS_PUSH(szMask & tmp);
-          WS_PUSH(szMask & tmp2);
           break;
-        case 2: /*ADD*/ WS_PUSH(szMask & (WS_POP() + WS_POP())); break;
-        case 3: /*SUB*/
-          tmp = WS_POP();
-          WS_PUSH(szMask & (WS_POP() - tmp));
+        case 0xF: /*LT_S*/
+          switch (szI) {
+            case SzI1: r = (I8)  l < (I8)  r; break;
+            case SzI2: r = (I16) l < (I16) r; break;
+            case SzI4: r = (I32) l < (I32) r; break;
+          }
           break;
-        case 4: /*MOD*/
-          tmp = WS_POP();
-          WS_PUSH(szMask & (WS_POP() % tmp));
-          break;
-        case 5: /*SHL*/
-          tmp = WS_POP();
-          WS_PUSH(szMask & (WS_POP() << tmp));
-          break;
-        case 6: /*SHR*/
-          tmp = WS_POP();
-          WS_PUSH(szMask & (WS_POP() >> tmp));
+        case 0x10: /*MUL  */ r = l * r; break;
+        case 0x11: /*DIV_U*/ r = l / r; break;
+        case 0x12: /*DIV_S*/
+          switch (szI) {
+            case SzI1: r = (I8)  l / (I8)  r; break;
+            case SzI2: r = (I16) l / (I16) r; break;
+            case SzI4: r = (I32) l / (I32) r; break;
+          }
           break;
       }
+      WS_PUSH(szMask & r);
   }
-
-//   U16 growLs = 0;
-//   // *************
-//   // * Jmp: perform the jump
-//   switch(jmpI) {
-//     case NOJ: break;
-//     case JZ:
-//       if (memI != WS) fail(_jz_jtbl_err);
-//       env.ep = toAPtr(popImm(), 2);
-//       break;
-//     case JTBL:
-//       if (memI != WS) fail(_jz_jtbl_err);
-//       fail("not implemented");
-//     case JST:
-//       printf("JST?\n");
-//       if(memI >= SRLI) fail(_jmp_mem_err);
-//       assert(data.sz[1]);
-//       env.ep = data.v[0];
-//       op_stk_smaller(&data);
-//       break;
-//     case _JR0: fail("JR0");
-//     case CALL:
-//       if(memI >= FTLI) fail(_jmp_call_err);
-//       aptr = toAPtr(WS_POP(), sz);
-//       growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
-//       Stk_grow(&env.ls, growLs << APO2);
-//       // Callstack has 4 byte value: growLs | module | 2-byte-cptr
-//       Stk_push(&env.callStk, (growLs << 24) + env.ep);
-//       env.ep = aptr + 2;
-//       env.mp = aptr >> 8;
-//       break;
-//     case CNL: // call no locals
-//       if(memI >= SRLI) fail(_jmp_mem_err);
-//       aptr = toAPtr(WS_POP(), sz);
-//       Stk_push(&env.callStk, env.ep);
-//       env.ep = aptr;
-//       break;
-//     case RET:
-//       if(WS_LEN == 0) res.escape = TRUE;
-//       else {
-//         U32 callMeta = Stk_pop(&env.callStk, ASIZE);
-//         env.ep = MOD_HIGH_MASK & callMeta;
-//         Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
-//       }
-//       break;
-//   }
 
   // *************
-  // * Store Result
-  if (srPtr) {
-    store(mem, srPtr, WS_POP(), sz);
+  // * Store Result (if selected in Mem)
+  if (srPtr) store(mem, srPtr, WS_POP(), sz);
+
+  APtr aptr;
+  U16 growLs;
+
+  // *************
+  // * Jmp: perform the jump
+  switch(jmpI) {
+    case NOJ: break;
+    case JZ: env.ep = toAPtr(popImm(), 2); break;
+    case JTBL: fail("not implemented"); break;
+    case JST: env.ep = WS_POP(); break;
+    case _JR0: fail("JR0");
+    case CALL:
+      aptr = toAPtr(WS_POP(), sz);
+      growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
+      Stk_grow(&env.ls, growLs << APO2);
+      // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
+      Stk_push(&env.callStk, (growLs << 24) + env.ep);
+      env.mp = MOD_HIGH_MASK & aptr;
+      env.ep = aptr + 2;
+      break;
+    case CNL: // call no locals
+      aptr = toAPtr(WS_POP(), sz);
+      Stk_push(&env.callStk, env.ep);
+      env.mp = MOD_HIGH_MASK & aptr;
+      env.ep = aptr;
+      break;
+    case RET:
+      if(Stk_len(env.callStk) == 0) {
+        res.escape = TRUE;
+      } else {
+        U32 callMeta = Stk_pop(&env.callStk);
+        Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
+        env.mp = MOD_HIGH_MASK & callMeta;
+        env.ep = MAX_APTR & callMeta;
+      }
+      break;
   }
+
   return res;
 }
 
