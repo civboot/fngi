@@ -77,34 +77,15 @@ typedef enum {
   +  OP
 
 #define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
-#define INSTR_CNL     INSTR(SzI4, CNL, WS, NOP)
+#define INSTR_CNL     INSTR(SzI4, CNL, WS, 0)
 #define INSTR_W_SZ(INSTR, SZ)    (((~SZI_MASK) & INSTR) | (SZ << SZI_SHIFT))
 
 
 #define OPI1_START 0x10
 #define OPI2_START 0x20
 
-typedef enum {
-  NOP,
-  SWP,
-  DRP,
-  DRP2,
-  DUP,
-  DUPN,
-  DVL,
-  DVS,
-  RGL,
-  RGS,
-  FT,
-  SR,
-} OpI;
-
 // Generic stack.
-typedef struct {
-  U16 sp;
-  U16 size;
-  U8* mem;
-} Stk;
+typedef struct { U16 sp; U16 size; U8* mem; } Stk;
 
 // Environment
 typedef struct {
@@ -122,12 +103,6 @@ typedef struct {
 
 #define LS_OFFSET() ((size_t)mem - (size_t)env.ls.mem)
 #define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
-
-typedef struct {
-  U32 v[3]; // value "stack". 0=top, 1=scnd, 2=extra
-  U8 sz[3]; // sizes of values in bytes, or 0 if DNE
-  Bool usesImm;
-} OpData;
 
 typedef struct {
   ErrCode err;
@@ -320,10 +295,10 @@ void device(Bool isLoad) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
 
-  OpI opI =    (OpI)  (0x3F & instr);
-  SzI szI =    (SzI)  (0x7  & (instr >> (            6)));
+  U8 opI =    (U8 )  (0x3F & instr);
+  SzI szI =   (SzI)  (0x7  & (instr >> (            6)));
   MemI memI = (MemI) (0x7  & (instr >> (        2 + 6)));
-  JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
+  JmpI jmpI = (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
   U32 szMask = szIToMask(szI);
   U8 sz = szIToSz(szI);
 
@@ -350,27 +325,23 @@ void device(Bool isLoad) {
     // Special    [0x0 - 0x10)
     case 0:
       switch (opI) {
-        case NOP: break;
-        case SWP:
+        case 0x0: /*NOP */ break;
+        case 0x1: /*SWP */
           r = szMask & WS_POP();
           l = szMask & WS_POP();
           WS_PUSH(r);
           WS_PUSH(l);
           break;
-        case DRP:  WS_POP(); break;
-        case DRP2: WS_POP(); WS_POP(); break;
-        case DUP: l = WS_POP(); WS_PUSH(l); WS_PUSH(l); break;
-        case DUPN:
-          l = WS_POP();
-          WS_PUSH(l);
-          WS_PUSH(0 == l);
-          break;
-        case DVL: device(TRUE); break;
-        case DVS: device(FALSE); break;
-        case RGL:
-        case RGS: fail("RG not impl"); break;
-        case FT: WS_PUSH(fetch(mem, WS_POP(), sz)); break;
-        case SR:
+        case 0x2: /*DRP */ WS_POP(); break;
+        case 0x3: /*DRP2*/ WS_POP(); WS_POP(); break;
+        case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
+        case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
+        case 0x6: /*DVL */ device(TRUE); break;
+        case 0x7: /*DVS */ device(FALSE); break;
+        case 0x9: /*RGL */ fail("RGL not impl"); break;
+        case 0x9: /*RGS */ fail("RGS not impl"); break;
+        case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
+        case 0xB: /*SR  */
           if(srPtr) fail("SR double store");
           l = WS_POP(); // value
           store(mem, WS_POP(), l, sz);
