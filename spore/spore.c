@@ -40,6 +40,11 @@ typedef CSz CPtr;
 #endif
 
 #define dbg(MSG)  printf(MSG); dbgEnv()
+#define OP_ASSERT(COND, MSG) \
+  if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
+#define OP_CHECK(COND, MSG) \
+  if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
+
 
 
 typedef U8 ErrCode;
@@ -62,10 +67,23 @@ typedef enum {
 
 // Operations
 
+#define SZI_SHIFT      6
+#define SZI_MASK       0x00C0
+
+#define INSTR(SZ, JMP, MEM, OP) \
+    (JMP << 13)         \
+  + (MEM << 6 )         \
+  + (SZ  << SZI_SHIFT)   \
+  +  OP
+
+#define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
+#define INSTR_CNL     INSTR(SzI4, CNL, WS, NOP)
+#define INSTR_W_SZ(INSTR, SZ)    (((~SZI_MASK) & INSTR) | (SZ << SZI_SHIFT))
+
+
 #define OPI1_START 0x10
 #define OPI2_START 0x20
 
-// Special
 typedef enum {
   NOP,
   SWP,
@@ -80,7 +98,6 @@ typedef enum {
   FT,
   SR,
 } OpI;
-
 
 // Generic stack.
 typedef struct {
@@ -150,22 +167,7 @@ U8* mem = NULL;
 Dict* dict = NULL;
 TokenState* tokenState = NULL;
 FILE* srcFile;
-
-#define SZI_SHIFT      6
-#define SZI_MASK       0x00C0
-
-#define INSTR(SZ, JMP, MEM, OP) \
-    (JMP << 13)         \
-  + (MEM << 6 )         \
-  + (SZ  << SZI_SHIFT)   \
-  +  OP
-
-#define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
-#define INSTR_CNL     INSTR(SzI4, CNL, WS, NOP)
-#define INSTR_W_SZ(INSTR, SZ)    (((~SZI_MASK) & INSTR) | (SZ << SZI_SHIFT))
-
 U16 instr = INSTR_DEFAULT;
-
 
 // ********************************************
 // ** Utilities
@@ -200,7 +202,6 @@ U8 szIToSz(SzI szI) {
   }
 }
 
-
 /*fn*/ void* alignSys(void* p, U8 sz) {
   U8 mod = (size_t)p % sz;
   if(mod == 0) return p;
@@ -211,6 +212,16 @@ U8 szIToSz(SzI szI) {
   U8 mod = aPtr % sz;
   if(mod == 0) return aPtr;
   return aPtr + (sz - mod);
+}
+
+// Return value of ASCII hex char.
+/*fn*/ ErrCode charToHex(U8 c) {
+  c = c - '0';
+  if(c <= 9) return c;
+  c = c - ('A' - '0');
+  if(c <= 5) return c + 10;
+  c = c - ('a' - 'A');
+  return c + 10;
 }
 
 /*fn*/ void store(U8* mem, APtr aptr, U32 value, U8 sz) {
@@ -228,16 +239,6 @@ U8 szIToSz(SzI szI) {
       break;
     default: fail("store: invalid Sz");
   }
-}
-
-// Return value of ASCII hex char.
-/*fn*/ ErrCode charToHex(U8 c) {
-  c = c - '0';
-  if(c <= 9) return c;
-  c = c - ('A' - '0');
-  if(c <= 5) return c + 10;
-  c = c - ('a' - 'A');
-  return c + 10;
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
@@ -303,85 +304,17 @@ APtr toAPtr(U32 v, U8 sz) {
 }
 
 
-// Shift opdata to the right.
-/*fn*/ void op_stk_larger(OpData* out) {
-  out->v[2] = out->v[1];
-  out->sz[2] = out->sz[1];
-  out->v[1] = out->v[0];
-  out->sz[1] = out->sz[0];
-}
-
-// Shift opdata to the left
-/*fn*/ void op_stk_smaller(OpData* out) {
-  out->v[0] = out->v[1];
-  out->sz[0] = out->sz[1];
-  out->v[1] = out->v[2];
-  out->sz[1] = out->sz[2];
-  out->sz[2] = 0;
-}
-
-
 // ********************************************
-// ** Operations
-
-#define OP_ARGS OpData *out
-#define OP_ASSERT(COND, MSG) \
-  if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
-
-#define OP_CHECK(COND, MSG) \
-  if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
+// ** Executing Instructions
 
 // Device Operations
 void device(Bool isLoad) {
 }
 
-// void op_inv(OP_ARGS) { rS(out, 1); out->v[0] = ~out->v[0]; }
-// void op_neg(OP_ARGS) {
-//   rS(out, 1);
-//   switch (out->sz[0]) {
-//     case 1: out->v[0] = (U32) (-(I8)out->v[0]); return;
-//     case 2: out->v[0] = (U32) (-(I16)out->v[0]); return;
-//     case 4: out->v[0] = (U32) (-(I32)out->v[0]); return;
-//   }
-// }
-
-// ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(mem, out->v[0], out->sz); }
-// ErrCode op_store(OP_ARGS) { store(mem, out->v[1], out->v[0], out->sz); out->len = 0; }
-// ErrCode op_drp(OP_ARGS) { out->v[0] = out->v[1]; out->len -= 1; };
-// ErrCode op_inv(OP_ARGS) { out->v[0] = ~out->v[0]; };
-// ErrCode op_eqz(OP_ARGS) { out->v[0] = out->v[0] == 0; }
-// ErrCode op_eqz_nc(OP_ARGS) { shift_op(out); out->v[0] = out->v[1] == 0; }
-// ErrCode op_drop2(OP_ARGS) { out->sz[0] = 0; out->sz[1] = 0; }
-// ErrCode op_ovr(OP_ARGS) { shift_op(out); out->v[0] = out->v[2]; }
-// ErrCode op_add(OP_ARGS) { out->v[0] = out->v[1] + out->v[0]; out->len = 1; }
-// ErrCode op_sub(OP_ARGS) { out->v[0] = out->v[1] - out->v[0]; out->len = 1; }
-// ErrCode op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
-// ErrCode op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
-
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
     env.ep += 2;
     return out;
-}
-
-#define dbgExecute() printf("sz=%x top=%x snd=%x len=%u srPtr=%x usesImm=%u\n", \
-    sz, top, snd, len, srPtr, usesImm)
-
-U8* _jz_jtbl_err = "JZ/JTBL require IMM for offset/table";
-U8* _jmp_call_err = "call requies mem access";
-U8* _jmp_mem_err = "jumps require Mem.Store = WS";
-
-void _ws(OpData *data) {
-  if(WS_LEN == 0) {
-    data->sz[0] = 0;
-  } else {
-    data->v[0] = WS_POP();
-  }
-}
-
-void _imws(OpData *data) {
-  data->usesImm = TRUE;
-  data->v[0] = popImm();
 }
 
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
