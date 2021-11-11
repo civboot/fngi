@@ -133,8 +133,6 @@ typedef enum {
   T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
 } TokenGroup;
 
-typedef ssize_t (*read_t)();
-
 // ********************************************
 // ** Globals
 Env env;
@@ -143,6 +141,7 @@ Dict* dict = NULL;
 TokenState* tokenState = NULL;
 FILE* srcFile;
 U16 instr = INSTR_DEFAULT;
+ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
 
 // ********************************************
 // ** Utilities
@@ -283,7 +282,14 @@ APtr toAPtr(U32 v, U8 sz) {
 // ** Executing Instructions
 
 // Device Operations
-void device(Bool isLoad) {
+void deviceOp(Bool isLoad) {
+  U32 op = WS_POP();
+  switch(op) {
+    case 0:
+
+    default: fail("device op not impl");
+  }
+
 }
 
 /*fn*/ U16 popImm() {
@@ -358,8 +364,8 @@ void device(Bool isLoad) {
         case 0x3: /*DRP2*/ WS_POP(); WS_POP(); break;
         case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
-        case 0x6: /*DVL */ device(TRUE); break;
-        case 0x7: /*DVS */ device(FALSE); break;
+        case 0x6: /*DVL */ deviceOp(TRUE); break;
+        case 0x7: /*DVS */ deviceOp(FALSE); break;
         case 0x8: /*RGL */ fail("RGL not impl"); break;
         case 0x9: /*RGS */ fail("RGS not impl"); break;
         case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
@@ -574,16 +580,11 @@ void device(Bool isLoad) {
   return T_SYMBOL;
 }
 
-// Read bytes incrementing tokenBufSize
-/*fn*/ void readAppend(read_t r) {
-  r();
-}
-
 // clear token buf and read bytes
-/*fn*/ void readNew(read_t r) {
+/*fn*/ void readNew() {
   tokenLen = 0;
   tokenBufSize = 0;
-  readAppend(r);
+  readAppend();
 }
 
 /*fn*/ ErrCode shiftBuf() {
@@ -602,11 +603,11 @@ void device(Bool isLoad) {
 }
 
 // Scan next token;
-/*fn*/ ErrCode scan(read_t r) {
+/*fn*/ ErrCode scan() {
 
   // Skip whitespace
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew(r);
+    if(tokenLen >= tokenBufSize) readNew();
     if(tokenBufSize == 0) return OK;
     if (toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
       shiftBuf();
@@ -614,7 +615,7 @@ void device(Bool isLoad) {
     }
     tokenLen += 1;
   }
-  if(tokenBufSize < MAX_TOKEN) readAppend(r);
+  if(tokenBufSize < MAX_TOKEN) readAppend();
 
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
@@ -634,8 +635,8 @@ void device(Bool isLoad) {
   return OK;
 }
 
-/*fn*/ ErrCode cSz(read_t r) { // '.': change sz
-  if(tokenLen >= tokenBufSize) readAppend(r);
+/*fn*/ ErrCode cSz() { // '.': change sz
+  if(tokenLen >= tokenBufSize) readAppend();
   U8 sz = charToHex(tokenBuf[tokenLen]);
   tokenLen += 1;
 
@@ -644,15 +645,16 @@ void device(Bool isLoad) {
     case 1: szI = SzI1; break;
     case 2: szI = SzI2; break;
     case 4: szI = SzI4; break;
+    case 0xA: szI = SzIA; break;
     default: fail("cSz invalid");
   }
   instr = INSTR_W_SZ(instr, szI);
   return OK;
 }
 
-/*fn*/ ErrCode cComment(read_t r) {
+/*fn*/ ErrCode cComment() {
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew(r);
+    if(tokenLen >= tokenBufSize) readNew();
     if (tokenBufSize == 0) return OK;
     if (tokenBuf[tokenLen] == '\n') return OK;
     tokenLen += 1;
@@ -660,9 +662,9 @@ void device(Bool isLoad) {
   return OK;
 }
 
-/*fn*/ ErrCode linestr(read_t r) {
+/*fn*/ ErrCode linestr() {
   while(TRUE) {
-    if (tokenLen >= tokenBufSize) readNew(r);
+    if (tokenLen >= tokenBufSize) readNew();
     if (tokenBufSize == 0) return OK;
     char c = tokenBuf[tokenLen];
 
@@ -703,33 +705,33 @@ void device(Bool isLoad) {
   return OK;
 }
 
-/*fn*/ ErrCode cPutLoc(read_t r) { // `&`
+/*fn*/ ErrCode cPutLoc() { // `&`
   OP_CHECK(WS_PUSH(CUR_SZ_MASK & *env.heap), "readSzPush.push");
   return OK;
 }
 
-/*fn*/ ErrCode cNameSet(read_t r) { // `=`
+/*fn*/ ErrCode cNameSet() { // `=`
   U32 value = WS_POP();
 
-  OP_CHECK(scan(r), "cNameSet.scan"); // load name token
+  OP_CHECK(scan(), "cNameSet.scan"); // load name token
   Dict_set(tokenLen, tokenBuf, CUR_SZ_MASK & value);
   return OK;
 }
 
-/*fn*/ ErrCode cNameGet(read_t r) { // `@`
-  OP_CHECK(scan(r), "@ scan"); // load name token
+/*fn*/ ErrCode cNameGet() { // `@`
+  OP_CHECK(scan(), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   OP_CHECK(WS_PUSH(CUR_SZ_MASK & value), "& push");
   return OK;
 }
 
-/*fn*/ ErrCode cNameForget(read_t r) { // `~`
-  OP_CHECK(scan(r), "~ scan");
+/*fn*/ ErrCode cNameForget() { // `~`
+  OP_CHECK(scan(), "~ scan");
   Dict_forget(tokenLen, tokenBuf);
   return OK;
 }
 
-/*fn*/ ErrCode cWriteHeap(read_t r) { // `,`
+/*fn*/ ErrCode cWriteHeap() { // `,`
   U8 sz = szIToSz(CUR_SZI);
   U32 value = WS_POP();
   store(mem, *env.heap, value, sz);
@@ -737,7 +739,7 @@ void device(Bool isLoad) {
   return OK;
 }
 
-/*fn*/ ErrCode cWriteInstr(read_t r) { // `;`
+/*fn*/ ErrCode cWriteInstr() { // `;`
   store(mem, *env.heap, instr, 2);
   instr = INSTR_DEFAULT;
   *env.heap += 2;
@@ -760,17 +762,17 @@ void device(Bool isLoad) {
   return execute(i);
 }
 
-/*fn*/ ErrCode cExecute(read_t r) { // $
+/*fn*/ ErrCode cExecute() { // $
   instr = INSTR_DEFAULT;
-  OP_CHECK(scan(r), "$ scan");
+  OP_CHECK(scan(), "$ scan");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "$: no name");
   WS_PUSH(value);
   return execute(INSTR_CNL);
 }
 
-/*fn*/ ErrCode compile(read_t r) {
+/*fn*/ ErrCode compile() {
   while(TRUE) {
-    scan(r);
+    scan();
     if(tokenLen == 0) return OK;
     if(tokenState->group <= T_ALPHA) {
       OP_CHECK(updateInstr(), "compile.instr");
@@ -778,20 +780,20 @@ void device(Bool isLoad) {
     }
     tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
     switch (tokenBuf[0]) {
-      case '.': OP_CHECK(cSz(r), "compile ."); continue;
-      case '/': OP_CHECK(cComment(r), "compile /"); continue;
-      case '#': scan(r); OP_CHECK(cHex(), "compile #"); continue;
-      case '&': OP_CHECK(cPutLoc(r), "compile &"); continue;
-      case '=': OP_CHECK(cNameSet(r), "compile ="); continue;
-      case '@': OP_CHECK(cNameGet(r), "compile @"); continue;
-      case '~': OP_CHECK(cNameForget(r), "compile ~"); continue;
-      case ',': OP_CHECK(cWriteHeap(r), "compile ,"); continue;
-      case ';': OP_CHECK(cWriteInstr(r), "compile ;"); continue;
+      case '.': OP_CHECK(cSz(), "compile ."); continue;
+      case '/': OP_CHECK(cComment(), "compile /"); continue;
+      case '#': scan(); OP_CHECK(cHex(), "compile #"); continue;
+      case '&': OP_CHECK(cPutLoc(), "compile &"); continue;
+      case '=': OP_CHECK(cNameSet(), "compile ="); continue;
+      case '@': OP_CHECK(cNameGet(), "compile @"); continue;
+      case '~': OP_CHECK(cNameForget(), "compile ~"); continue;
+      case ',': OP_CHECK(cWriteHeap(), "compile ,"); continue;
+      case ';': OP_CHECK(cWriteInstr(), "compile ;"); continue;
       case '^': OP_CHECK(cExecuteInstr(), "compile ^"); continue;
-      case '$': OP_CHECK(cExecute(r), "compile $"); continue;
+      case '$': OP_CHECK(cExecute(), "compile $"); continue;
 
       // remove?
-      case '"': OP_CHECK(linestr(r), "compile \""); continue;
+      case '"': OP_CHECK(linestr(), "compile \""); continue;
     }
     printf("invalid token: %c", tokenBuf[0]);
     return 1;
@@ -850,7 +852,8 @@ ssize_t readSrc(size_t nbyte) {
 #define NEW_ENV(MS, WS, RS, LS, DS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS); \
   srcFile = fopen("spore/asm.sa", "rb"); \
-  assert(!compile(*readSrc));
+  readAppend = &readSrc; \
+  assert(!compile());
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
@@ -892,8 +895,7 @@ void dbgEnv() {
 U8* testBuf = NULL;
 U16 testBufIdx = 0;
 
-// read_t used for testing.
-/*test*/ ssize_t testing_read() {
+/*test*/ ssize_t testingRead() {
   size_t i = 0;
   while (i < (TOKEN_BUF - tokenState->size)) {
     U8 c = testBuf[testBufIdx];
@@ -909,7 +911,8 @@ U16 testBufIdx = 0;
 #define COMPILE(S) \
   testBuf = S; \
   testBufIdx = 0; \
-  assert(!compile(*testing_read));
+  readAppend = &testingRead; \
+  assert(!compile());
 
 
 /*test*/ void testHex() {
