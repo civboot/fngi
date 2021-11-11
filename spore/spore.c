@@ -45,11 +45,8 @@ typedef CSz CPtr;
 typedef U8 ErrCode;
 
 // Size
-typedef enum {
-  Sz1,            Sz2,
-  _Sz_r,          Sz4,
-} SzI;
-#define SzA Sz4
+typedef enum { SzI1, SzI2, SzI4 } SzI;
+#define SzIA SzI4
 
 // Mem
 typedef enum {
@@ -65,6 +62,9 @@ typedef enum {
 
 // Operations
 
+#define OP1_START 0x8
+#define OP2_START 0x18
+
 // Special
 typedef enum {
   NOP,
@@ -75,25 +75,8 @@ typedef enum {
   RGS,
   FT,
   SR,
-} OpISpecial;
+} OpI;
 
-// One Arg
-typedef enum {
-  DRP,
-  INC1,
-  INC2,
-  INC4,
-  INV,
-  NEG,
-} OpI1;
-
-// Two Arg
-typedef enum {
-  DRP2,
-  SWP,
-  JOIN, // {l r -> (l<<16) + (0xFFFF & r)}
-  ADD,
-} OpI2;
 
 // Generic stack.
 typedef struct {
@@ -173,8 +156,8 @@ FILE* srcFile;
   + (SZ  << SZI_SHIFT)   \
   +  OP
 
-#define INSTR_DEFAULT (Sz4 << SZI_SHIFT)
-#define INSTR_CNL     INSTR(Sz4, CNL, WS, NOP)
+#define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
+#define INSTR_CNL     INSTR(SzI4, CNL, WS, NOP)
 #define INSTR_W_SZ(INSTR, SZ)    (((~SZI_MASK) & INSTR) | (SZ << SZI_SHIFT))
 
 U16 instr = INSTR_DEFAULT;
@@ -191,13 +174,28 @@ U16 instr = INSTR_DEFAULT;
   exit(1);
 }
 
-// Convert SZ (in bytes) to a mask. Note: <<3 is same as times 8
-#define SZ_MASK(SZ)       (0xFFFFFFFF >> ((4 - SZ) << 3))
+// Bitmask for SZ in bytes. Note: <<3 is same as times 8
+#define CUR_SZI         ((instr & SZI_MASK) >> SZI_SHIFT)
+#define CUR_SZ_MASK     szIToMask(CUR_SZI)
 
-// Note that enum+1 to get numBytes is just a clever trick.
-#define szToBytes(SZ)     ((U8)(SZ) + 1)
-#define CUR_SZ            szToBytes((instr & SZI_MASK) >> SZI_SHIFT)
-#define CUR_SZ_MASK       SZ_MASK(CUR_SZ)
+U32 szIToMask(SzI szI) {
+  switch (szI) {
+    case 0: return 0xFF;
+    case 1: return 0xFFFF;
+    case 2: return 0xFFFFFFFF;
+    default: fail("invalid szI");
+  }
+}
+
+U8 szIToSz(SzI szI) {
+  switch (szI) {
+    case 0: return 1;
+    case 1: return 2;
+    case 2: return 4;
+    default: fail("invalid szI");
+  }
+}
+
 
 /*fn*/ void* alignSys(void* p, U8 sz) {
   U8 mod = (size_t)p % sz;
@@ -329,47 +327,19 @@ APtr toAPtr(U32 v, U8 sz) {
 #define OP_CHECK(COND, MSG) \
   if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 
-typedef void (*op_t)(OP_ARGS);
-
-ErrCode op_notimpl(OP_ARGS) {
-  fail("op not implemented");
-}
-
-// DVF
-// DVS
-
-void rS(OpData *data, U8 len) {
-  assert(data->sz[len-1]);
-}
-
-void op_nop(OP_ARGS) { }
-void op_to1(OP_ARGS) { rS(out, 1); out->sz[0] = 1; };
-void op_to2(OP_ARGS) { rS(out, 1); out->sz[0] = 2; };
-void op_to4(OP_ARGS) { rS(out, 1); out->sz[0] = 4; };
-void op_drp(OP_ARGS) { rS(out, 1); op_stk_smaller(out); }
-void op_drp2(OP_ARGS) { rS(out, 2); out->sz[0] = 0; out->sz[1] = 0; };
-
 // Device Operations
-void device(OpData* out) {
+void device(Bool isLoad) {
 }
 
-void op_dvl(OP_ARGS) {
-  if(out->sz[0] != 2) fail("DVL sz != 2");
-  U8 port = 0xFF & out->v[0];
-  U16 dv = out->v[0] >> 8;
-  if(dv > 0) fail("dv>0 not impl");
-};
-
-
-void op_inv(OP_ARGS) { rS(out, 1); out->v[0] = ~out->v[0]; }
-void op_neg(OP_ARGS) {
-  rS(out, 1);
-  switch (out->sz[0]) {
-    case 1: out->v[0] = (U32) (-(I8)out->v[0]); return;
-    case 2: out->v[0] = (U32) (-(I16)out->v[0]); return;
-    case 4: out->v[0] = (U32) (-(I32)out->v[0]); return;
-  }
-}
+// void op_inv(OP_ARGS) { rS(out, 1); out->v[0] = ~out->v[0]; }
+// void op_neg(OP_ARGS) {
+//   rS(out, 1);
+//   switch (out->sz[0]) {
+//     case 1: out->v[0] = (U32) (-(I8)out->v[0]); return;
+//     case 2: out->v[0] = (U32) (-(I16)out->v[0]); return;
+//     case 4: out->v[0] = (U32) (-(I32)out->v[0]); return;
+//   }
+// }
 
 // ErrCode op_fetch(OP_ARGS) { out->v[0] = fetch(mem, out->v[0], out->sz); }
 // ErrCode op_store(OP_ARGS) { store(mem, out->v[1], out->v[0], out->sz); out->len = 0; }
@@ -383,17 +353,6 @@ void op_neg(OP_ARGS) {
 // ErrCode op_sub(OP_ARGS) { out->v[0] = out->v[1] - out->v[0]; out->len = 1; }
 // ErrCode op_mod(OP_ARGS) { out->v[0] = out->v[1] % out->v[0]; out->len = 1; }
 // ErrCode op_mul(OP_ARGS) { out->v[0] = out->v[1] * out->v[0]; out->len = 1; }
-
-op_t opArray[] = {
-  op_nop,
-  op_to1,
-  op_to2,
-  op_to4,
-  op_drp,
-  op_drp2,
-  // op_dvl,
-  // op_dvs,
-};
 
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
@@ -423,81 +382,110 @@ void _imws(OpData *data) {
 
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
-// 
-//   OpI opI =    (OpI)  (0x3F & instr);
-//   SzI szI =    (SzI)  (0x7  & (instr >> (            6)));
-//   MemI memI = (MemI) (0x7  & (instr >> (        2 + 6)));
-//   JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
-//   U8 sz = szToBytes(szI);
-// 
-// 
-//   OpData data = {.v = {0, 0, 0}, .sz = {sz, 0, 0}, .usesImm = FALSE };
-//   APtr srPtr = 0;
-// 
-//   if(opI >= DVL && opI <= SR) {
-//     // Special operations
-//     assert(memI <= IMWS);
-//     if(opI <= RGS) {
-//       if(memI == IMWS) {
-//         // Use both bytes from IMM
-//         U16 v = popImm();
-//         data.v[0] = v >> 8;
-//         data.v[1] = 0xFF && v;
-//       } else {
-//         data.v[0] = WS_POP();
-//         data.v[1] = WS_POP();
-//       }
-//       data.sz[0] = 1;
-//       data.sz[1] = 1;
-//     } else if (opI == SR) {
-//       if(memI == WS) _ws(&data);
-//       else if(memI == IMWS) _imws(&data);
-//       data.v[1] = WS_POP();
-//       data.sz[1] = ASIZE;
-//     } else {
-//       data.v[0] = WS_POP();
-//       data.sz[0] = ASIZE;
-//     }
-//   } else {
-//     // *****************
-//     // * Normal Mem: get the appropriate values
-// 
-//     // Get Top
-//     switch(memI) {
-//       case WS:
-//         _ws(&data);
-//         break;
-//       case IMWS:
-//         _imws(&data);
-//         break;
-//       case SRLI:
-//         data.usesImm = TRUE;
-//         srPtr = LS_OFFSET() + env.ls.sp + popImm();
-//         data.v[0] = WS_POP();
-//         break;
-//       case SRMI:
-//         data.usesImm = TRUE;
-//         srPtr = env.mp + popImm();
-//         data.v[0] = WS_POP();
-//         break;
-//       case SROI:
-//       case FTLI:
-//       case FTMI:
-//       case FTOI: fail("not impl");
-//       default: fail("unknown mem");
-//     }
-// 
-//     if(WS_LEN >= sz) {
-//       data.v[1] = WS_POP();
-//       data.sz[1] = sz;
-//     }
-//   } // end else "Normal Mem"
-// 
-//   // *************
-//   // * Op: perform the operation
-//   opArray[(U8) opI] (&data); // call op from array
-// 
-//   APtr aptr;
+
+  OpI opI =    (OpI)  (0x3F & instr);
+  SzI szI =    (SzI)  (0x7  & (instr >> (            6)));
+  MemI memI = (MemI) (0x7  & (instr >> (        2 + 6)));
+  JmpI jmpI =  (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
+  U32 szMask = szIToMask(szI);
+  U8 sz = szIToSz(szI);
+
+  APtr srPtr = 0;
+  U32 tmp;
+  U32 tmp2;
+
+  switch(memI) {
+    case WS: break;
+    case IMWS: WS_PUSH(szMask & popImm());    break;
+    case SRLI: srPtr = env.ls.sp + popImm();  break;
+    case SRMI: srPtr = env.mp    + popImm();  break;
+    case SROI: WS_PUSH(szMask & popImm());    break;
+    case FTLI: WS_PUSH(fetch(mem, env.ls.sp + popImm(), sz)); break;
+    case FTMI: WS_PUSH(fetch(mem, env.mp    + popImm(), sz)); break;
+    case FTOI:
+      tmp = WS_POP();     // Address
+      WS_PUSH(popImm());  // Second
+      WS_PUSH(fetch(mem, tmp, sz));
+      break;
+    default: fail("unknown mem");
+  }
+
+  switch (opI >> 3) {
+    // Special    [0b000000 - 0b001000)
+    case 0:
+      switch (opI) {
+        case NOP: break;
+        case DVL: device(TRUE); break;
+        case DVS: device(FALSE); break;
+        case RGL:
+        case RGS: fail("RG not impl");
+        case FT: WS_PUSH(fetch(mem, WS_POP(), sz)); break;
+        case SR:
+          if(srPtr) fail("SR double store");
+          tmp = WS_POP(); // value
+          store(mem, WS_POP(), tmp, sz);
+          break;
+      }
+      break;
+
+    // Single Arg [0b001000 - 0b011000)
+    case 1:
+    case 2:
+      switch (opI - OPI1_START) {
+        case 0: /*DRP */ WS_POP(); break;
+        case 1: /*DUP */
+          tmp = szMask & WS_POP();
+          WS_PUSH(tmp);
+          WS_PUSH(tmp);
+          break;
+        case 2: /*INC */ WS_PUSH(szMask & (WS_POP() + 1));  break;
+        case 3: /*INC2*/ WS_PUSH(szMask & (WS_POP() + 2));  break;
+        case 4: /*INC4*/ WS_PUSH(szMask & (WS_POP() + 4));  break;
+        case 5: /*INV */ WS_PUSH(szMask & (~WS_POP()));     break;
+        case 6: /*NEG */
+          switch (szI) {
+            case SzI1:
+              WS_PUSH( (U8)  -((I8)  WS_POP()) );
+              break;
+            case SzI2:
+              WS_PUSH( (U16) -((I16) WS_POP()) );
+              break;
+            case SzI4:
+              WS_PUSH( (U32) -((I32) WS_POP()) );
+              break;
+          }
+      }
+
+    // Two Arg    [0b011000 - ...)
+    case 3:
+      switch (opI - OP2_START) {
+        case 0: /*DRP2*/ WS_POP(); WS_POP(); break;
+        case 1: /*SWP*/
+          tmp =  WS_POP();
+          tmp2 = WS_POP();
+          WS_PUSH(szMask & tmp);
+          WS_PUSH(szMask & tmp2);
+          break;
+        case 2: /*ADD*/ WS_PUSH(szMask & (WS_POP() + WS_POP())); break;
+        case 3: /*SUB*/
+          tmp = WS_POP();
+          WS_PUSH(szMask & (WS_POP() - tmp));
+          break;
+        case 4: /*MOD*/
+          tmp = WS_POP();
+          WS_PUSH(szMask & (WS_POP() % tmp));
+          break;
+        case 5: /*SHL*/
+          tmp = WS_POP();
+          WS_PUSH(szMask & (WS_POP() << tmp));
+          break;
+        case 6: /*SHR*/
+          tmp = WS_POP();
+          WS_PUSH(szMask & (WS_POP() >> tmp));
+          break;
+      }
+  }
+
 //   U16 growLs = 0;
 //   // *************
 //   // * Jmp: perform the jump
@@ -543,19 +531,12 @@ void _imws(OpData *data) {
 //       }
 //       break;
 //   }
-// 
-//   // *************
-//   // * Store Result
-//   U8 i = 0;
-//   if (srPtr && data.sz[0] > 0) {
-//     store(mem, srPtr, data.v[0], data.sz[0]);
-//     i += 1;
-//   }
-// 
-//   while(data.sz[i]) {
-//     WS_PUSH(data.v[i]);
-//     i += 1;
-//   }
+
+  // *************
+  // * Store Result
+  if (srPtr) {
+    store(mem, srPtr, WS_POP(), sz);
+  }
   return res;
 }
 
@@ -724,11 +705,12 @@ void _imws(OpData *data) {
   tokenLen += 1;
 
   SzI szI;
-  if(sz == 1) szI = Sz1;
-  else if(sz == 2) szI = Sz2;
-  else if(sz == 4) szI = Sz4;
-  else OP_ASSERT(FALSE, "sz invalid");
-
+  switch (sz) {
+    case 1: szI = SzI1; break;
+    case 2: szI = SzI2; break;
+    case 4: szI = SzI4; break;
+    default: fail("cSz invalid");
+  }
   instr = INSTR_W_SZ(instr, szI);
   return OK;
 }
@@ -813,7 +795,7 @@ void _imws(OpData *data) {
 }
 
 /*fn*/ ErrCode cWriteHeap(read_t r) { // `,`
-  U8 sz = CUR_SZ;
+  U8 sz = szIToSz(CUR_SZI);
   U32 value = WS_POP();
   store(mem, *env.heap, value, sz);
   *env.heap += sz;
@@ -1075,7 +1057,7 @@ U16 testBufIdx = 0;
   COMPILE(".4 #77770101, .2 #0F00, ;");
   assert(0x77770101 == fetch(mem, heapStart, 4));
   assert(0x0F00 == fetch(mem, heapStart+4, 2));
-  assert(INSTR_W_SZ(0, Sz2) == fetch(mem, heapStart+6, 2));
+  assert(INSTR_W_SZ(0, SzI2) == fetch(mem, heapStart+6, 2));
 }
 
 /*test*/ void testExecuteInstr() { // test ^
