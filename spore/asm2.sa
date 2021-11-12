@@ -28,14 +28,15 @@ $loc setSz       DVS  RET; @D_sz $h2
 
 
 $loc srSz // {addr value sz} store a value at address of sz
-  .4 DUP;  IMWS EQ JZ; #1 $h2   // if not equal to 1 jump
-  $getHeap =jmpTo               // jmpTo stores where to put address to jump to.
+  // if not equal to 1, jmp location stored at jmpTo (currently 0)
+  .4 DUP;  IMWS EQ JZ;  #1$h2   $loc jmpTo #0$h2
     DRP; .1 SR RET;       // drp excess sz and execute store at sz=1
   @jmpTo $getHeap .2SR^   // update jmpTo
-  IMWS EQ JZ; #2 $h2      // same as above with sz=2 and without dup/drp
+  IMWS EQ JZ; #2$h2  $loc jmpTo #0$h2
     .2 SR RET;
   @jmpTo $getHeap .2SR^
   .4 SR RET; // assume sz=4
+
 $loc ldSz // {addr sz} load a value at address of sz
   .4 DUP;  IMWS EQ JZ; #1 $h2
   $getHeap =jmpTo
