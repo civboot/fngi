@@ -65,21 +65,28 @@ typedef enum {
   _JR0,         CALL,         CNL,          RET,
 } JmpI;
 
+typedef struct {
+  U8 op;
+  SzI szI;
+  MemI mem;
+  JmpI jmp;
+} Instr;
+
 // Operations
 #define JMP_SHIFT      13
-#define JMP_MASK       0xE000
-
+#define MEM_SHIFT      8
 #define SZI_SHIFT      6
+
+#define JMP_MASK       0xE000
 #define SZI_MASK       0x00C0
 
 #define INSTR(SZ, JMP, MEM, OP) \
-    (JMP << 13) \
-  + (MEM << 6 )         \
-  + (SZ  << SZI_SHIFT)  \
-  +  OP
+    ((JMP) << JMP_SHIFT)  \
+  + ((MEM) << MEM_SHIFT)  \
+  + ((SZ)  << SZI_SHIFT)  \
+  + (OP)
 
 #define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
-#define INSTR_CNL     INSTR(SzI4, CNL, WS, 0)
 #define INSTR_W_SZ(INSTR, SZI)    (((~SZI_MASK) & INSTR) | (SZI  << SZI_SHIFT))
 #define INSTR_W_JMP(INSTR, JMPI)  (((~JMP_MASK) & INSTR) | (JMPI << JMP_SHIFT))
 
@@ -192,6 +199,21 @@ SzI szToSzI(U8 sz) {
   }
 }
 
+Instr splitInstr(U16 instr) {
+  Instr i = {
+    .op =     (U8 )  (0x3F & instr),
+    .szI =    (SzI)  (0x3  & (instr >> SZI_SHIFT)),
+    .mem =    (MemI) (0x7  & (instr >> MEM_SHIFT)),
+    .jmp =    (JmpI) (0x7  & (instr >> JMP_SHIFT)),
+  };
+  return i;
+}
+
+void dbgInstr(Instr i) {
+  printf("op:%x szI:%x mem:%x jmp:%x ", i.op, i.szI, i.mem, i.jmp);
+}
+
+
 /*fn*/ void* alignSys(void* p, U8 sz) {
   U8 mod = (size_t)p % sz;
   if(mod == 0) return p;
@@ -299,6 +321,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
+    printf("?? popImm: 0x%x\n", out);
     env.ep += 2;
     return out;
 }
@@ -321,18 +344,15 @@ APtr toAPtr(U32 v, U8 sz) {
  */
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
-
-  U8 opI =    (U8 )  (0x3F & instr);
-  SzI szI =   (SzI)  (0x7  & (instr >> (            6)));
-  MemI memI = (MemI) (0x7  & (instr >> (        2 + 6)));
-  JmpI jmpI = (JmpI) (0x7  & (instr >> (3 + 2 + 2 + 6)));
-  U32 szMask = szIToMask(szI);
-  U8 sz = szIToSz(szI);
+  Instr i = splitInstr(instr);
+  printf("??? executeInstr: 0x%x ", instr); dbgInstr(i); dbgEnv();
+  U8 sz = szIToSz(i.szI);
+  U32 szMask = szIToMask(i.szI);
 
   APtr srPtr = 0;
   U32 l; U32 r;
 
-  switch(memI) {
+  switch(i.mem) {
     case WS: break;
     case IMWS: WS_PUSH(szMask & popImm());    break;
     case SRLI:
@@ -354,10 +374,10 @@ APtr toAPtr(U32 v, U8 sz) {
     default: fail("unknown mem");
   }
 
-  switch (opI >> 4) {
+  switch (i.op >> 4) {
     // Special    [0x0 - 0x10)
     case 0:
-      switch (opI) {
+      switch (i.op) {
         case 0x0: /*NOP */ break;
         case 0x1: /*SWP */
           r = szMask & WS_POP();
@@ -369,8 +389,8 @@ APtr toAPtr(U32 v, U8 sz) {
         case 0x3: /*DRP2*/ WS_POP(); WS_POP(); break;
         case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
-        case 0x6: /*DVL */ deviceOp(TRUE, szI, szMask, sz); break;
-        case 0x7: /*DVS */ deviceOp(FALSE, szI, szMask, sz); break;
+        case 0x6: /*DVL */ deviceOp(TRUE, i.szI, szMask, sz); break;
+        case 0x7: /*DVS */ deviceOp(FALSE, i.szI, szMask, sz); break;
         case 0x8: /*RGL */ fail("RGL not impl"); break;
         case 0x9: /*RGS */ fail("RGS not impl"); break;
         case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
@@ -386,7 +406,7 @@ APtr toAPtr(U32 v, U8 sz) {
     // Single Arg [0x10 - 0x20)
     case 1:
       r = WS_POP();
-      switch (opI - OPI1_START) {
+      switch (i.op - OPI1_START) {
         case 0: /*INC */ r = r + 1; break;
         case 1: /*INC2*/ r = r + 2; break;
         case 2: /*INC4*/ r = r + 4; break;
@@ -403,7 +423,7 @@ APtr toAPtr(U32 v, U8 sz) {
     case 2:
       r = WS_POP();
       l = WS_POP();
-      switch (opI - OPI2_START) {
+      switch (i.op - OPI2_START) {
         case 0x0: /*ADD */ r = l + r; break;
         case 0x1: /*SUB */ r = l - r; break;
         case 0x2: /*MOD */ r = l % r; break;
@@ -419,14 +439,14 @@ APtr toAPtr(U32 v, U8 sz) {
         case 0xC: /*GE_U*/ r = l >= r; break;
         case 0xD: /*LT_U*/ r = l < r; break;
         case 0xE: /*GE_S*/
-          switch (szI) {
+          switch (i.szI) {
             case SzI1: r = (I8)  l >= (I8)  r; break;
             case SzI2: r = (I16) l >= (I16) r; break;
             case SzI4: r = (I32) l >= (I32) r; break;
           }
           break;
         case 0xF: /*LT_S*/
-          switch (szI) {
+          switch (i.szI) {
             case SzI1: r = (I8)  l < (I8)  r; break;
             case SzI2: r = (I16) l < (I16) r; break;
             case SzI4: r = (I32) l < (I32) r; break;
@@ -435,7 +455,7 @@ APtr toAPtr(U32 v, U8 sz) {
         case 0x10: /*MUL  */ r = l * r; break;
         case 0x11: /*DIV_U*/ r = l / r; break;
         case 0x12: /*DIV_S*/
-          switch (szI) {
+          switch (i.szI) {
             case SzI1: r = (I8)  l / (I8)  r; break;
             case SzI2: r = (I16) l / (I16) r; break;
             case SzI4: r = (I32) l / (I32) r; break;
@@ -454,7 +474,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
   // *************
   // * Jmp: perform the jump
-  switch(jmpI) {
+  switch(i.jmp) {
     case NOJ: break;
     case JZ: env.ep = toAPtr(popImm(), 2); break;
     case JTBL: fail("not implemented"); break;
@@ -655,7 +675,6 @@ APtr toAPtr(U32 v, U8 sz) {
     case 0xA: szI = SzIA; break;
     default: fail("cSz invalid");
   }
-  printf("set sz: %u\n", szIToSz(szI));
   instr = INSTR_W_SZ(instr, szI);
   return OK;
 }
@@ -766,15 +785,14 @@ APtr toAPtr(U32 v, U8 sz) {
 }
 
 /*fn*/ ErrCode cExecute() { // $
-  instr = SZI_MASK & instr;
   OP_CHECK(scan(), "$ scan");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "$: no name");
+  U32 i = INSTR(SzI4, JMP, WS, 0);
   WS_PUSH(value);
-  return execute(INSTR_CNL);
+  return execute(i);
 }
 
 /*fn*/ ExecuteResult compileOne() {
-  printf("?? compileOne "); dbgEnv();
   ExecuteResult result = {};
   if(tokenLen == 0) {
     result.escape = TRUE;
@@ -927,7 +945,7 @@ void tests();
 #include <string.h>
 
 void dbgEnv() {
-  printf("~~~ line=%u token[%u, %u]=%.*s  ", line, tokenLen, tokenBufSize, tokenLen, tokenBuf);
+  printf("  \t-DBG- line=%u token[%u, %u]=%.*s  ", line, tokenLen, tokenBufSize, tokenLen, tokenBuf);
   printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=0x%x ", instr);

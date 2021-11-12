@@ -8,14 +8,14 @@
      IMWS DVS RET; @D_dict,   // set dict key(tokenBuf) to current heap
 
 $loc h2  // {val:2} push 2bytes from stack to heap
-  .4 FTMI SWAP; .2@rHeap,  // fetch heap and swap {heap, val}
-  .2      SR;              // store 2 byte value at heap
-  .4 FTMI INC2; .2@rHeap,  // fetch heap and increment by 2
-  .4 SRMI  RET; .2@rHeap,  // store new heap and return
+  .4 FTMI SWP; .2@rHeap,  // fetch heap and swap {heap, val}
+  .2      SR;             // store 2 byte value at heap
+  .4 FTMI INC2; .2@rHeap, // fetch heap and increment by 2
+  .4 SRMI  RET; .2@rHeap, // store new heap and return
 
 $loc im // compile an immediate from the stack {v:2}
   .2 IMWS; @Sz2 @IMWS ADD^, // push .2IMWS instruction to stack
-     IMWS CNW; @h2, // compile it
+     IMWS CNL; @h2, // compile it
      IMWS JMP; @h2, // jmp to h2 to compile value (it will return)
 
 // Tell the assembler to scan and run the next token.  `$asmComp #2` is the
