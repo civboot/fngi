@@ -771,34 +771,46 @@ APtr toAPtr(U32 v, U8 sz) {
   return execute(INSTR_CNL);
 }
 
+/*fn*/ ExecuteResult compileOne() {
+  ExecuteResult result = {};
+  scan();
+  if(tokenLen == 0) {
+    result.escape = TRUE;
+    return result;
+  }
+  if(tokenState->group <= T_ALPHA) {
+    result.err = updateInstr();
+    return result;
+  }
+  tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
+  switch (tokenBuf[0]) {
+    case '.': result.err = cSz(); break;
+    case '/': result.err = cComment(); break;
+    case '#': scan(); result.err = cHex(); break;
+    case '&': result.err = cPutLoc(); break;
+    case '=': result.err = cNameSet(); break;
+    case '@': result.err = cNameGet(); break;
+    case '~': result.err = cNameForget(); break;
+    case ',': result.err = cWriteHeap(); break;
+    case ';': result.err = cWriteInstr(); break;
+    case '^': result.err = cExecuteInstr(); break;
+    case '$': result.err = cExecute(); break;
+    // remove?
+    case '"': result.err = linestr(); break;
+    default:
+      printf("invalid token: %c", tokenBuf[0]);
+      result.err = 1;
+  }
+  return result;
+}
+
 /*fn*/ ErrCode compile() {
   while(TRUE) {
-    scan();
-    if(tokenLen == 0) return OK;
-    if(tokenState->group <= T_ALPHA) {
-      OP_CHECK(updateInstr(), "compile.instr");
-      continue;
-    }
-    tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
-    switch (tokenBuf[0]) {
-      case '.': OP_CHECK(cSz(), "compile ."); continue;
-      case '/': OP_CHECK(cComment(), "compile /"); continue;
-      case '#': scan(); OP_CHECK(cHex(), "compile #"); continue;
-      case '&': OP_CHECK(cPutLoc(), "compile &"); continue;
-      case '=': OP_CHECK(cNameSet(), "compile ="); continue;
-      case '@': OP_CHECK(cNameGet(), "compile @"); continue;
-      case '~': OP_CHECK(cNameForget(), "compile ~"); continue;
-      case ',': OP_CHECK(cWriteHeap(), "compile ,"); continue;
-      case ';': OP_CHECK(cWriteInstr(), "compile ;"); continue;
-      case '^': OP_CHECK(cExecuteInstr(), "compile ^"); continue;
-      case '$': OP_CHECK(cExecute(), "compile $"); continue;
-
-      // remove?
-      case '"': OP_CHECK(linestr(), "compile \""); continue;
-    }
-    printf("invalid token: %c", tokenBuf[0]);
-    return 1;
+    ExecuteResult r = compileOne();
+    OP_CHECK(r.err, "compile");
+    if(r.escape) break;
   }
+  return OK;
 }
 
 // Device Operations
@@ -806,6 +818,7 @@ APtr toAPtr(U32 v, U8 sz) {
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   U32 op = WS_POP();
   U32 tmp;
+  ExecuteResult result;
   switch(op) {
     case 0: /*D_read*/ readAppend(); break;
     case 1: /*D_scan*/ assert(!scan()); break;
@@ -825,6 +838,11 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case 4: /*D_sz*/
       if(isFetch) WS_PUSH(sz);
       else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
+      break;
+    case 5: /*D_comp*/
+      result = compileOne();
+      assert(!result.escape);
+      assert(!result.err);
       break;
     default: fail("device op not impl");
   }

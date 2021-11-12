@@ -93,3 +93,4 @@
 #02 =D_dict   // FT=get SR=set dict key=tokenBuf, value of sz
 #03 =D_instr  // get/set cached instr (Sz2)
 #04 =D_sz     // get/set current sz in bytes
+#05 =D_comp   // scan and compile next token.

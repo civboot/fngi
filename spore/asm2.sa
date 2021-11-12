@@ -14,10 +14,9 @@ $loc pushHeap2  // {val:2} push 2byte value to heap.
   .4 SRMI  RET; .2@rHeap,  // store new heap and return
 
 // Tell the assembler to scan and run the next token.
-// `$asmRun #2` is the same as `#2` except we can call this.
-$loc asmRun
-  .2 IMWS DVS; @D_scan,
-  .2 IMWS DVS RET; @D_run, // tell assembler to run next word
+// `$asmComp #2` is the same as `#2` except we can call this.
+$loc asmComp
+  .2 IMWS DVS RET; @D_comp,
 
 // Compiles next value as 2 bytes to heap.
 // Shortcut for `.2<...>,` but w/out changing global sz, making it a bit safer.
