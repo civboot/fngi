@@ -1,25 +1,25 @@
 // This file creates some essential assembly utilities including
 // $loc, $im
 
-// Make fn for defining locations (in dictionary)
-.4@=loc
+// Define $loc
+.4@rHeap FT^ =loc // fetch current heap and set to loc
   .4 FTMI        ; .2@rHeap,  // fetch heap {heap:4}
   .2 IMWS DVL    ; @D_scan,   // scan next token into tokenBuf {heap}
-  .4 IMWS DVS RET; @D_dict,   // set dict key(tokenBuf) to current heap
+     IMWS DVS RET; @D_dict,   // set dict key(tokenBuf) to current heap
 
-$loc pheap2  // {val:2} push 2bytes to heap.
+$loc h2  // {val:2} push 2bytes from stack to heap
   .4 FTMI SWAP; .2@rHeap,  // fetch heap and swap {heap, val}
-  .2      SR;              // store 2 byte value
+  .2      SR;              // store 2 byte value at heap
   .4 FTMI INC2; .2@rHeap,  // fetch heap and increment by 2
   .4 SRMI  RET; .2@rHeap,  // store new heap and return
 
 $loc im // compile an immediate from the stack {v:2}
   .2 IMWS; @Sz2 @IMWS ADD^, // push .2IMWS instruction to stack
-  .2 IMWS CNW; #pheap2, // compile it
-  .2 IMWS JMP; #pheap2, // compile the value from stack and return
+     IMWS CNW; @h2, // compile it
+     IMWS JMP; @h2, // jmp to h2 to compile value (it will return)
 
-// Tell the assembler to scan and run the next token.
-// `$asmComp #2` is the same as `#2` except we can call this.
+// Tell the assembler to scan and run the next token.  `$asmComp #2` is the
+// same as `#2` except we can call this inside functions to make macros.
 $loc comp
   .2 IMWS DVL    ; @D_scan,
      IMWS DVL RET; @D_comp,

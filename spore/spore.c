@@ -709,11 +709,6 @@ APtr toAPtr(U32 v, U8 sz) {
   return OK;
 }
 
-/*fn*/ ErrCode cPutLoc() { // `&`
-  OP_CHECK(WS_PUSH(CUR_SZ_MASK & *env.heap), "readSzPush.push");
-  return OK;
-}
-
 /*fn*/ ErrCode cNameSet() { // `=`
   U32 value = WS_POP();
 
@@ -789,7 +784,6 @@ APtr toAPtr(U32 v, U8 sz) {
     case '.': result.err = cSz(); break;
     case '/': result.err = cComment(); break;
     case '#': scan(); result.err = cHex(); break;
-    case '&': result.err = cPutLoc(); break;
     case '=': result.err = cNameSet(); break;
     case '@': result.err = cNameGet(); break;
     case '~': result.err = cNameForget(); break;

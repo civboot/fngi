@@ -117,9 +117,7 @@ Each has defaults:
 
 Assembly syntax:
 - `/ line comment`
-- `#NN / #NNNN / #NNNN_NNNN` pushes a 8/16/32 unsigned hex number, i.e. `#1F
-  /``#001F`/ `#001F4200`
-- `&N` push heap value onto the stack. N=2 for MPtr, N=4 for APtr.
+- `#NN...` pushes an unsigned hex number onto the stack
 - `=N<name>` pop a value of N bytes from the stack and store at name. If name
   doesn't exist, add to dict.
 - `@N<name>` get value from name of size N bytes.
