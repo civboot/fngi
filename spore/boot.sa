@@ -1,0 +1,19 @@
+// Bootstrap outselves outside of spore assembly and into spore proper.
+//
+// Main items we already have through device ports:
+// - Token scanner (D_scan). Tokens are the same for spore asm as spore proper.
+// - Local offset and location store (D_dict)
+// - Assembler (D_comp)
+//
+// Main items we have to build in asm:
+// - Compiler to convert tokens into either executed or compiled words in a
+//   function.
+// - Ability to read types of words being compiled.
+//
+// Functions are stored in the dictionary. Spore requires only 24bits for an
+// APtr to a function, so we have 8bits to use for metadata. They are:
+// - 5 bits reserved (unused)
+// - 1 IMM bit: is this function immediate(1) or compiled(0)
+// - 1 PRE bit: is this function prefix(1) or postfix(0)
+// - 1 NL bit: does this function have a local stack.
+
