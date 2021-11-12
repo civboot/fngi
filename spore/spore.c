@@ -39,7 +39,7 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
-#define dbg(MSG)  printf(MSG); dbgEnv()
+#define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 #define OP_ASSERT(COND, MSG) \
   if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 #define OP_CHECK(COND, MSG) \
@@ -148,6 +148,7 @@ TokenState* tokenState = NULL;
 FILE* srcFile;
 U16 instr = INSTR_DEFAULT;
 ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
+U32 line = 1;
 
 // ********************************************
 // ** Utilities
@@ -156,8 +157,8 @@ ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
   printf("!!FAIL!! ");
   printf(cstr);
   printf("\n");
-  dbgEnv();
   exit(1);
+  dbgEnv();
 }
 
 // Bitmask for SZ in bytes. Note: <<3 is same as times 8
@@ -169,7 +170,7 @@ U32 szIToMask(SzI szI) {
     case 0: return 0xFF;
     case 1: return 0xFFFF;
     case 2: return 0xFFFFFFFF;
-    default: fail("invalid szI");
+    default: printf("szI=0x%x ", szI); fail("invalid szI");
   }
 }
 
@@ -489,13 +490,13 @@ APtr toAPtr(U32 v, U8 sz) {
   return res;
 }
 
-/*fn*/ ErrCode execute(U16 instr) {
+/*fn*/ ErrCode execute(U16 exInstr) {
   env.ep = 0;
   while(TRUE) {
-    ExecuteResult res = executeInstr(instr);
+    ExecuteResult res = executeInstr(exInstr);
     if(res.err) return res.err;
     if(res.escape) return OK;
-    U16 instr = popImm();
+    exInstr = popImm();
   }
 }
 
@@ -617,6 +618,7 @@ APtr toAPtr(U32 v, U8 sz) {
       shiftBuf();
       break;
     }
+    if(tokenBuf[tokenLen] == '\n') line += 1;
     tokenLen += 1;
   }
   if(tokenBufSize < MAX_TOKEN) readAppend();
@@ -629,6 +631,7 @@ APtr toAPtr(U32 v, U8 sz) {
   while(tokenLen < tokenBufSize) {
     OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
     c = tokenBuf[tokenLen];
+
     TokenGroup tg = toTokenGroup(c);
     if (tg == tokenState->group) {}
     else if (tokenState->group == T_ALPHA && (tg <= T_ALPHA)) {}
@@ -652,6 +655,7 @@ APtr toAPtr(U32 v, U8 sz) {
     case 0xA: szI = SzIA; break;
     default: fail("cSz invalid");
   }
+  printf("set sz: %u\n", szIToSz(szI));
   instr = INSTR_W_SZ(instr, szI);
   return OK;
 }
@@ -740,7 +744,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ ErrCode cWriteInstr() { // `;`
   store(mem, *env.heap, instr, 2);
-  instr = INSTR_DEFAULT;
+  instr = SZI_MASK & instr;
   *env.heap += 2;
   return OK;
 }
@@ -757,12 +761,12 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ ErrCode cExecuteInstr() { // ^
   U16 i = INSTR_W_JMP(instr, RET);
-  instr = INSTR_DEFAULT;
+  instr = SZI_MASK & instr;
   return execute(i);
 }
 
 /*fn*/ ErrCode cExecute() { // $
-  instr = INSTR_DEFAULT;
+  instr = SZI_MASK & instr;
   OP_CHECK(scan(), "$ scan");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "$: no name");
   WS_PUSH(value);
@@ -770,6 +774,7 @@ APtr toAPtr(U32 v, U8 sz) {
 }
 
 /*fn*/ ExecuteResult compileOne() {
+  printf("?? compileOne "); dbgEnv();
   ExecuteResult result = {};
   if(tokenLen == 0) {
     result.escape = TRUE;
@@ -794,7 +799,7 @@ APtr toAPtr(U32 v, U8 sz) {
     // remove?
     case '"': result.err = linestr(); break;
     default:
-      printf("invalid token: %c", tokenBuf[0]);
+      printf("!! invalid token: %c\n", tokenBuf[0]);
       result.err = 1;
   }
   return result;
@@ -841,7 +846,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       assert(!result.escape);
       assert(!result.err);
       break;
-    case 6: assert(/*DV assert*/ WS_POP()); break
+    case 6: assert(/*DV assert*/ WS_POP()); break;
     default: fail("device op not impl");
   }
 }
@@ -898,7 +903,7 @@ ssize_t readSrc(size_t nbyte) {
 #define NEW_ENV(MS, WS, RS, LS, DS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS); \
   srcFile = fopen("spore/asm.sa", "rb"); \
-  readAppend = &readSrc; \
+  line = 1; readAppend = &readSrc; \
   assert(!compile());
 
 #define SMALL_ENV \
@@ -922,10 +927,11 @@ void tests();
 #include <string.h>
 
 void dbgEnv() {
-  printf("~~~ token[%u, %u]=%.*s  ", tokenLen, tokenBufSize, tokenLen, tokenBuf);
+  printf("~~~ line=%u token[%u, %u]=%.*s  ", line, tokenLen, tokenBufSize, tokenLen, tokenBuf);
   printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
-  printf("instr=0x%x\n", instr, instr);
+  printf("instr=0x%x ", instr);
+  printf("sz=%u\n", szIToSz(CUR_SZI));
 }
 
 #define TEST_ENV_BARE \
@@ -979,14 +985,6 @@ U16 testBufIdx = 0;
   COMPILE(".2 #1002_3004");
   result = WS_POP();
   assert(0x3004 == result);
-}
-
-/*test*/ void testLoc() {
-  printf("## testLoc...\n"); TEST_ENV_BARE;
-  COMPILE(".4& .2&");
-  U32 result1 = WS_POP(); U32 result2 = WS_POP();
-  assert(result1 == (U16)heapStart);
-  assert(result2 == heapStart);
 }
 
 /*test*/ void testQuotes() {
@@ -1049,7 +1047,7 @@ U16 testBufIdx = 0;
   COMPILE(".4 @Sz2");
   assert(0x00C00040 == WS_POP());
 
-  instr = ~0x1800; // instr with unused=0 else=1
+  instr = INSTR_W_SZ(~0x1800, SzI1); // instr with unused=0 else=1
   COMPILE(".4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
@@ -1063,14 +1061,21 @@ U16 testBufIdx = 0;
   assert(0x04 == WS_POP());
 }
 
+/*test*/ void testAsm2() { // test ^
+  printf("## testAsm2\n"); SMALL_ENV;
+  line = 1;
+  srcFile = fopen("spore/asm2.sa", "rb");
+  assert(!compile());
+}
+
 
 /*test*/ void tests() {
   testHex();
-  testLoc();
   testQuotes();
   testDictDeps();
   testDict();
   testWriteHeap();
   testExecuteInstr();
+  testAsm2();
 }
 
