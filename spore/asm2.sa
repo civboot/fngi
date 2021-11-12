@@ -13,13 +13,43 @@ $loc h2  // {val:2} push 2bytes from stack to heap
   .4 FTMI INC2; .2@rHeap, // fetch heap and increment by 2
   .4 SRMI  RET; .2@rHeap, // store new heap and return
 
-$loc im // compile an immediate from the stack {v:2}
-  .2 IMWS; @Sz2 @IMWS ADD^, // push .2IMWS instruction to stack
+.2 $loc im // compile an immediate from the stack {v:2}
+  IMWS; @Sz2 @IMWS ADD^, // push `.2 IMWS` instruction to stack
      IMWS CNL; @h2, // compile it
-     IMWS JMP; @h2, // jmp to h2 to compile value (it will return)
+     IMWS JMP; @h2, // compile value. note: h2 function will return
+
+.4
+$loc getHeap     FTMI RET; @rHeap $h2
+$loc setHeap     SRMI RET; @rHeap $h2
+$loc getTopHeap  FTMI RET; @rTopHeap $h2
+$loc setTopHeap  SRMI RET; @rTopHeap $h2
+$loc getSz       DVL  RET; @D_sz $h2
+$loc setSz       DVS  RET; @D_sz $h2
+
+
+$loc srSz // {addr value sz} store a value at address of sz
+  .4 DUP;  IMWS EQ JZ; #1 $h2   // if not equal to 1 jump
+  $getHeap =jmpTo               // jmpTo stores where to put address to jump to.
+    DRP; .1 SR RET;       // drp excess sz and execute store at sz=1
+  @jmpTo $getHeap .2SR^   // update jmpTo
+  IMWS EQ JZ; #2 $h2      // same as above with sz=2 and without dup/drp
+    .2 SR RET;
+  @jmpTo $getHeap .2SR^
+  .4 SR RET; // assume sz=4
+$loc ldSz // {addr sz} load a value at address of sz
+  .4 DUP;  IMWS EQ JZ; #1 $h2
+  $getHeap =jmpTo
+    .1 DRP; LD RET;
+  @jmpTo $getHeap SR^
+  IMWS EQ JZ; #2 $h2
+    .2 LD RET;
+  @jmpTo $getHeap SR^
+  .4 LD RET;
+~jmpTo // forget jmpTo
 
 // Tell the assembler to scan and run the next token.  `$asmComp #2` is the
 // same as `#2` except we can call this inside functions to make macros.
 $loc comp
-  .2 IMWS DVL    ; @D_scan,
-     IMWS DVL RET; @D_comp,
+  .2 IMWS DVL    ; @D_scan$h2
+     IMWS DVL RET; @D_comp$h2
+
