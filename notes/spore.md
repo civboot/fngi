@@ -400,7 +400,7 @@ execute. The signature of a device must be:
 ```
 
 The meta byte has the following bit structure. X is reserved for future use.
-     
+```
      direction 0=LOAD 1=STORE
      | sz in bytes
 XXXX DSSS

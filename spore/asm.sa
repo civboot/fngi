@@ -1,5 +1,13 @@
 
 .4
+
+// Bit layout of an instruction (R=returnbit, X=unused)
+//
+// Jmp    Mem   Sz Operation
+// JJJ RX MMM   SS OO OOOO
+// |high byte|  |low byte |
+
+
 // # Memory Locations
 #0000_0000 =rNull
 #0000_0004 =rHeap // heap reference
@@ -9,54 +17,54 @@
 // # Instructions
 
 // Jmp            // Description
-#E000_0000 =NOJ         // No Jump
-#E000_2000 =JZ          // Jmp to Imm if store==0
-#E000_4000 =JTBL        // JTBL consume store and jump to table using size=Imm
-#E000_600 =JST          // Jump to store.
-//   _8000 =reserved
-#E000_A000 =CALL        // Call, fetching LS size at address.
-#E000_C000 =CNL         // Call, not fetching LS size at address.
-#E000_E000 =RET         // Return, updating LS size appropriately.
+#E000_0000 =NOJ   // No Jump
+#E000_2000 =JZ    // Jmp to Imm if store==0
+#E000_4000 =JTBL  // JTBL consume store and jump to table using size=Imm
+#E000_6000 =JMP   // Jump to store.
+//   _8000 =res   // reserved
+#E000_A000 =CALL  // Call, fetching LS size at address.
+#E000_C000 =CNL   // Call, not fetching LS size at address.
+#E000_E000 =RET   // Return
 
-// Mem              // Top       Second  Store     Description
-#0700_0000 =WS      // WS0       WS1     WS        Working Stack
-#0700_0100 =IMWS    // IM        WS0     WS        IMmediate Working Stack
-#0700_0200 =FTLI    // WS0       WS1     ST(LP+IM) StoRe LocalsPtr offset
-#0700_0300 =FTMI    // WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
-#0700_0400 =FTOI    // IM        WS1     ST(WS0)   StoRe Operate Immediate
-#0700_0500 =SRLI    // FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
-#0700_0600 =SRMI    // FT(MP+IM) WS0     WS        FeTch from ModulePtr offset
-#0700_0700 =SROI    // FT(WS0)   IM      WS        FeTch Operate Immediate
+// Mem            // Top       Second  Store     Description
+#0700_0000 =WS    // WS0       WS1     WS        Working Stack
+#0700_0100 =IMWS  // IM        WS0     WS        IMmediate Working Stack
+#0700_0200 =FTLI  // WS0       WS1     ST(LP+IM) StoRe LocalsPtr offset
+#0700_0300 =FTMI  // WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
+#0700_0400 =FTOI  // IM        WS1     ST(WS0)   StoRe Operate Immediate
+#0700_0500 =SRLI  // FT(LP+IM) WS0     WS        FeTch from LocalsPtr offset
+#0700_0600 =SRMI  // FT(MP+IM) WS0     WS        FeTch from ModulePtr offset
+#0700_0700 =SROI  // FT(WS0)   IM      WS        FeTch Operate Immediate
 
 // Size
-#00C0_0000 =Sz1     // 1 byte, .1
-#00C0_0040 =Sz2     // 2 byte, .2
-#00C0_0080 =Sz4     // 4 byte, .4
-#00C0_0080 =SzA     // APtr,   .A
+#00C0_0000 =Sz1   // 1 byte, .1
+#00C0_0040 =Sz2   // 2 byte, .2
+#00C0_0080 =Sz4   // 4 byte, .4
+#00C0_0080 =SzA   // APtr,   .A
 
 // Operations: Special
-#003F_0000 =NOP     // { -> }     no operation
-#003F_0001 =SWP     // {l r -> r l} swap
-#003F_0002 =DRP     // {l -> }    drop
-#003F_0003 =DRP2    // {l r -> }  drop 2
-#003F_0004 =DUP     // {l -> l l} duplicate
-#003F_0005 =DUPN    // {l -> l l==0} DUP then NOT
-#003F_0006 =DVL     // Device Operation Load
-#003F_0007 =DVS     // Device Operation Store
-#003F_0008 =RGL     // Register Load
-#003F_0009 =RGS     // Register Store
-#003F_000A =FT      // Fetch
-#003F_000B =SR      // Store
+#003F_0000 =NOP   // { -> }     no operation
+#003F_0001 =SWP   // {l r -> r l} swap
+#003F_0002 =DRP   // {l -> }    drop
+#003F_0003 =DRP2  // {l r -> }  drop 2
+#003F_0004 =DUP   // {l -> l l} duplicate
+#003F_0005 =DUPN  // {l -> l l==0} DUP then NOT
+#003F_0006 =DVL   // Device Operation Load
+#003F_0007 =DVS   // Device Operation Store
+#003F_0008 =RGL   // Register Load
+#003F_0009 =RGS   // Register Store
+#003F_000A =FT    // Fetch
+#003F_000B =SR    // Store
 
 // Operations: One Inp {l} -> One Out
-#003F_0010 =INC     // {l+1}  increment 1
-#003F_0011 =INC2    // {l+2}  increment 2
-#003F_0012 =INC4    // {l+4}  increment 4
-#003F_0013 =INV     // {~l}   Bitwise Inversion
-#003F_0014 =NEG     // {-l}   Negate (2's compliment)
-#003F_0015 =NOT     // {l==0} Logical NOT
-#003F_0016 =CI1     // {ISz}  Convert I1 to ISz
-#003F_0017 =CI2     // {ISz}  Convert I2 to ISz
+#003F_0010 =INC   // {l+1}  increment 1
+#003F_0011 =INC2  // {l+2}  increment 2
+#003F_0012 =INC4  // {l+4}  increment 4
+#003F_0013 =INV   // {~l}   Bitwise Inversion
+#003F_0014 =NEG   // {-l}   Negate (2's compliment)
+#003F_0015 =NOT   // {l==0} Logical NOT
+#003F_0016 =CI1   // {ISz}  Convert I1 to ISz
+#003F_0017 =CI2   // {ISz}  Convert I2 to ISz
 // future: leading 0's, trailing 0's, count of 1's
 // Some single-arg extension commands might be:
 // (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
@@ -87,10 +95,11 @@
 // Double-arg extension commands might be:
 // floating point: add,sub,mul,div,ge,lt
 
-/ // # Device Operations
+// # Device Operations
 #00 =D_read   // read from src, filling up tokenBuf
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
 #02 =D_dict   // FT=get SR=set dict key=tokenBuf, value of sz
 #03 =D_instr  // get/set cached instr (Sz2)
 #04 =D_sz     // get/set current sz in bytes
-#05 =D_comp   // scan and compile next token.
+#05 =D_comp   // compile the token in tokenBuf
+#06 =D_assert // error if != 0

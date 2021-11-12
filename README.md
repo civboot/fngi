@@ -36,15 +36,14 @@ except heap grow/shrink, arena/GC/application-specific allocators encouraged).
 It is designed to seamlessly compile directly into wasm or to a physical or
 virtual machine.
 
-Fngi has two parallel implementations, Python and Forth. Along with allowing
-faster prototyping in Python, it allows for a robust [Test
-Strategy](notes/test_strategy.md) to exist with minimal effort. It is hoped
-that fngi will be implementeable in less than 10,000 lines of well-documented
-forth code, and less than 80,000 lines of additional fngi code. Even less is
-better, but fngi is not an attempt to create a language in as few lines as
-possible. See lisp or forth for that kind of effort. In short, it should be
-comparible in complexity to [tcc](https://bellard.org/tcc/) but hopefully
-a more useable and extensible language than C.
+# Spore
+Fngi is implemented in spore, a virtual machine bytecode, assembly and
+stack-based language. Spore starts as a very primitive assembler and 16bit
+bytecode. The bytecode is sophisticated enough to implement a general-purpose
+language in (fngi) but simple enough to implement in a few thousand lines
+of C or assembly.
+
+
 
 # Hacking
 

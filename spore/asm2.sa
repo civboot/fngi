@@ -1,32 +1,25 @@
+// This file creates some essential assembly utilities including
+// $loc, $im
 
 // Make fn for defining locations (in dictionary)
 .4@=loc
-  .4 FTMI        ; .2@rHeap,  // fetch heap. {heap:4}
-  .2 IMWS DVL    ; @D_scan,   // scan next token into tokenBuf. {heap}
-     IMWS DVS RET; @D_dict4,  // set dict key(tokenBuf) to current heap and ret.
+  .4 FTMI        ; .2@rHeap,  // fetch heap {heap:4}
+  .2 IMWS DVL    ; @D_scan,   // scan next token into tokenBuf {heap}
+  .4 IMWS DVS RET; @D_dict,   // set dict key(tokenBuf) to current heap
 
-$loc pushHeap2  // {val:2} push 2byte value to heap.
-  .2      TO4; // convert the 2 byte value to 4 bytes for alignment
+$loc pheap2  // {val:2} push 2bytes to heap.
   .4 FTMI SWAP; .2@rHeap,  // fetch heap and swap {heap, val}
-  .4      TO2; // convert back to 2 byte value {heap:4, val:2}
-  .2      SR;
+  .2      SR;              // store 2 byte value
   .4 FTMI INC2; .2@rHeap,  // fetch heap and increment by 2
   .4 SRMI  RET; .2@rHeap,  // store new heap and return
 
+$loc im // compile an immediate from the stack {v:2}
+  .2 IMWS; @Sz2 @IMWS ADD^, // push .2IMWS instruction to stack
+  .2 IMWS CNW; #pheap2, // compile it
+  .2 IMWS JMP; #pheap2, // compile the value from stack and return
+
 // Tell the assembler to scan and run the next token.
 // `$asmComp #2` is the same as `#2` except we can call this.
-$loc asmComp
-  .2 IMWS DVS RET; @D_comp,
-
-// Compiles next value as 2 bytes to heap.
-// Shortcut for `.2<...>,` but w/out changing global sz, making it a bit safer.
-//
-// Example to add 42 to 4 byte value: .4 IMWS ADD; $h2#42
-// the size will still be 4
-$loc h2
-  .2 FTMI DVL; @D_sz  .TO4; // get sz and convert to 4 bytes
-  .1 IMWS; #2,  .2 IMWS DVS; @D_sz,   // Set current D_sz to 2
-  .2 IMWS CALL; @asmRun,              // run next token
-  .2 IMWS CALL; @pushHeap2,            // compile 2bytes to heap
-  .4 TO1 RET;   .2 IMWS DVS; @D_sz,   // Set D_sz back to original and RET
-
+$loc comp
+  .2 IMWS DVL    ; @D_scan,
+     IMWS DVL RET; @D_comp,

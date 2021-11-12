@@ -61,24 +61,27 @@ typedef enum {
 
 // Jmp
 typedef enum {
-  NOJ,          JZ,           JTBL,         JST,
+  NOJ,          JZ,           JTBL,         JMP,
   _JR0,         CALL,         CNL,          RET,
 } JmpI;
 
 // Operations
+#define JMP_SHIFT      13
+#define JMP_MASK       0xE000
 
 #define SZI_SHIFT      6
 #define SZI_MASK       0x00C0
 
 #define INSTR(SZ, JMP, MEM, OP) \
-    (JMP << 13)         \
+    (JMP << 13) \
   + (MEM << 6 )         \
-  + (SZ  << SZI_SHIFT)   \
+  + (SZ  << SZI_SHIFT)  \
   +  OP
 
 #define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
 #define INSTR_CNL     INSTR(SzI4, CNL, WS, 0)
-#define INSTR_W_SZ(INSTR, SZI)    (((~SZI_MASK) & INSTR) | (SZI << SZI_SHIFT))
+#define INSTR_W_SZ(INSTR, SZI)    (((~SZI_MASK) & INSTR) | (SZI  << SZI_SHIFT))
+#define INSTR_W_JMP(INSTR, JMPI)  (((~JMP_MASK) & INSTR) | (JMPI << JMP_SHIFT))
 
 
 #define OPI1_START 0x10
@@ -454,7 +457,7 @@ APtr toAPtr(U32 v, U8 sz) {
     case NOJ: break;
     case JZ: env.ep = toAPtr(popImm(), 2); break;
     case JTBL: fail("not implemented"); break;
-    case JST: env.ep = WS_POP(); break;
+    case JMP: env.ep = WS_POP(); break;
     case _JR0: fail("JR0");
     case CALL:
       aptr = toAPtr(WS_POP(), sz);
@@ -758,7 +761,7 @@ APtr toAPtr(U32 v, U8 sz) {
 }
 
 /*fn*/ ErrCode cExecuteInstr() { // ^
-  U16 i = instr;
+  U16 i = INSTR_W_JMP(instr, RET);
   instr = INSTR_DEFAULT;
   return execute(i);
 }
@@ -773,7 +776,6 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ ExecuteResult compileOne() {
   ExecuteResult result = {};
-  scan();
   if(tokenLen == 0) {
     result.escape = TRUE;
     return result;
@@ -806,6 +808,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ ErrCode compile() {
   while(TRUE) {
+    scan();
     ExecuteResult r = compileOne();
     OP_CHECK(r.err, "compile");
     if(r.escape) break;
@@ -844,6 +847,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       assert(!result.escape);
       assert(!result.err);
       break;
+    case 6: assert(/*DV assert*/ WS_POP()); break
     default: fail("device op not impl");
   }
 }
@@ -1055,13 +1059,13 @@ U16 testBufIdx = 0;
   COMPILE(".4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE(".4 #5006 #7008 .2 DRP RET^");
+  COMPILE(".4 #5006 #7008 .2 DRP^");
   assert(0x5006 == WS_POP());
 
-  COMPILE(".1 #01 #02  ADD RET^");
+  COMPILE(".1 #01 #02  ADD^");
   assert(0x03 == WS_POP());
 
-  COMPILE(".A @D_sz DVL RET^");
+  COMPILE(".A @D_sz DVL^");
   assert(0x04 == WS_POP());
 }
 
