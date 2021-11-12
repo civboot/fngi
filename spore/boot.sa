@@ -10,10 +10,16 @@
 //   function.
 // - Ability to read types of words being compiled.
 //
-// Functions are stored in the dictionary. Spore requires only 24bits for an
-// APtr to a function, so we have 8bits to use for metadata. They are:
-// - 5 bits reserved (unused)
-// - 1 IMM bit: is this function immediate(1) or compiled(0)
-// - 1 PRE bit: is this function prefix(1) or postfix(0)
-// - 1 NL bit: does this function have a local stack.
+
+// Dictionary value masks for functions
+#1 #18 SHL^ =IMM_MASK // 1=is immediate
+#1 #19 SHL^ =PRE_MASK // 1=is prefix
+#1 #1A SHL^ =LOC_MASK // 1=has local stack
+#FFFF_FFFF_FFFF =FN_PTR_MASK // function ptr mask
+
+
+// Core Spore compiler function. Compiles the current scanned token as a spore
+// function.
+$loc comp
+
 

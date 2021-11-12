@@ -1,12 +1,10 @@
 
 .4
-
 // Bit layout of an instruction (R=returnbit, X=unused)
 //
 // Jmp    Mem   Sz Operation
 // JJJ RX MMM   SS OO OOOO
 // |high byte|  |low byte |
-
 
 // # Memory Locations
 #0000_0000 =rNull
@@ -98,8 +96,11 @@
 // # Device Operations
 #00 =D_read   // read from src, filling up tokenBuf
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
-#02 =D_dict   // FT=get SR=set dict key=tokenBuf, value of sz
-#03 =D_instr  // get/set cached instr (Sz2)
-#04 =D_sz     // get/set current sz in bytes
-#05 =D_comp   // compile the token in tokenBuf
-#06 =D_assert // error if != 0
+#02 =D_dict   // FT=get SR=set dict key=tokenBuf
+#03 =D_rdict  // get the reference to the dictionary value.
+#04 =D_instr  // get/set cached instr (Sz2)
+#05 =D_sz     // get/set current sz in bytes
+#06 =D_comp   // compile the token in tokenBuf
+#07 =D_assert // error if != 0
+#08 =D_wslen  // working stk len
+#09 =D_cslen  // call stk len

@@ -1,11 +1,17 @@
 // This file creates some essential assembly utilities including
-// $loc, $im
 
 // Define $loc
 .4@rHeap FT^ =loc // fetch current heap and set to loc
-  .4 FTMI        ; .2@rHeap,  // fetch heap {heap:4}
-  .2 IMWS DVL    ; @D_scan,   // scan next token into tokenBuf {heap}
-     IMWS DVS RET; @D_dict,   // set dict key(tokenBuf) to current heap
+  FTMI        ; .2@rHeap,  // fetch heap {heap:4}
+  .4 IMWS DVL    ; .2@D_scan,   // scan next token into tokenBuf {heap}
+  .4 IMWS DVS RET; .2@D_dict,   // set dict key(tokenBuf) to current heap
+
+.4 $loc dictSet / {v}
+  .4 IMWS DVL    ; .2@D_scan,
+  .4 IMWS DVS RET; .2@D_dict,
+$loc dictGet / { -> v}
+  .4 IMWS DVL    ; .2@D_scan,
+  .4 IMWS DVL RET; .2@D_dict,
 
 $loc h2  // {val:2} push 2bytes from stack to heap
   .4 FTMI SWP; .2@rHeap,  // fetch heap and swap {heap, val}
@@ -13,44 +19,41 @@ $loc h2  // {val:2} push 2bytes from stack to heap
   .4 FTMI INC2; .2@rHeap, // fetch heap and increment by 2
   .4 SRMI  RET; .2@rHeap, // store new heap and return
 
-.2 $loc im // compile an immediate from the stack {v:2}
-  IMWS; @Sz2 @IMWS ADD^, // push `.2 IMWS` instruction to stack
-     IMWS CNL; @h2, // compile it
-     IMWS JMP; @h2, // compile value. note: h2 function will return
-
 .4
 $loc getHeap     FTMI RET; @rHeap $h2
 $loc setHeap     SRMI RET; @rHeap $h2
 $loc getTopHeap  FTMI RET; @rTopHeap $h2
 $loc setTopHeap  SRMI RET; @rTopHeap $h2
-$loc getSz       DVL  RET; @D_sz $h2
-$loc setSz       DVS  RET; @D_sz $h2
+$loc getSz       IMWS DVL RET; @D_sz $h2
+$loc setSz       IMWS DVS RET; @D_sz $h2
+$loc getWsLen    IMWS DVL RET; @D_wslen $h2
 
+$loc assertWsEmpty IMWS CNL; @getWsLen $h2 // fallthrough
+$loc assertFals NOT; // fallthrough
+$loc assert     IMWS DVL RET; @D_assert $h2
 
-$loc srSz // {addr value sz} store a value at address of sz
-  // if not equal to 1, jmp location stored at jmpTo (currently 0)
-  .4 DUP;  IMWS EQ JZ;  #1$h2   $loc jmpTo #0$h2
-    DRP; .1 SR RET;       // drp excess sz and execute store at sz=1
-  @jmpTo $getHeap .2SR^   // update jmpTo
-  IMWS EQ JZ; #2$h2  $loc jmpTo #0$h2
-    .2 SR RET;
-  @jmpTo $getHeap .2SR^
-  .4 SR RET; // assume sz=4
+.2 $loc c_IM // compile an immediate from the stack {v:2}
+  IMWS;  @Sz2 @IMWS ADD^, // push `.2 IMWS` instruction to stack
+  IMWS CNL; @h2, // compile it
+  IMWS JMP; @h2, // compile value
 
-$loc ldSz // {addr sz} load a value at address of sz
-  .4 DUP;  IMWS EQ JZ; #1 $h2
-  $getHeap =jmpTo
-    .1 DRP; LD RET;
-  @jmpTo $getHeap SR^
-  IMWS EQ JZ; #2 $h2
-    .2 LD RET;
-  @jmpTo $getHeap SR^
-  .4 LD RET;
-~jmpTo // forget jmpTo
+$loc c_CNL / {loc} compile a cnl
+  @Sz4 @IMWS @CNL ADD^ ADD^ $c_IM // push .4 IMWS CNL instr
+  IMWS CNL; @h2 $h2 // compile it.
+  IMWS JMP; @h2 $h2 // compile the loc
 
-// Tell the assembler to scan and run the next token.  `$asmComp #2` is the
-// same as `#2` except we can call this inside functions to make macros.
-$loc comp
-  .2 IMWS DVL    ; @D_scan$h2
-     IMWS DVL RET; @D_comp$h2
+$loc c_JMP / {loc} compile a jmp
+  @Sz4 @IMWS @JMP ADD^ ADD^ $c_IM // push .4 IMWS JMP instr
+  @h2 $c_CNL // compile it
+  IMWS JMP; @h2 $h2 // compile the loc
 
+.2 $loc jloc // declare a jump location. ex: $jloc jmpTo
+  @getHeap $c_CNL   @dictSet $c_CNL // set dict of token to heap
+  #BAD $c_IM        @h2 $c_JMP      // set asside space to update
+
+// Update jloc with current 2byte heap. ex: $jset jmpTo
+.4 $loc jset
+  @dictGet $c_CNL  @getHeap $c_CNL // {addr curHeap}
+  .2 SR RET; // store curHeap
+
+$assertWsEmpty

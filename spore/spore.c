@@ -164,8 +164,8 @@ U32 line = 1;
   printf("!!FAIL!! ");
   printf(cstr);
   printf("\n");
-  exit(1);
   dbgEnv();
+  exit(1);
 }
 
 // Bitmask for SZ in bytes. Note: <<3 is same as times 8
@@ -177,7 +177,7 @@ U32 szIToMask(SzI szI) {
     case 0: return 0xFF;
     case 1: return 0xFFFF;
     case 2: return 0xFFFFFFFF;
-    default: printf("szI=0x%x ", szI); fail("invalid szI");
+    default: printf("szI=0x%X ", szI); fail("invalid szI");
   }
 }
 
@@ -210,7 +210,7 @@ Instr splitInstr(U16 instr) {
 }
 
 void dbgInstr(Instr i) {
-  printf("op:%x szI:%x mem:%x jmp:%x ", i.op, i.szI, i.mem, i.jmp);
+  printf("op:%X szI:%X mem:%X jmp:%X ", i.op, i.szI, i.mem, i.jmp);
 }
 
 
@@ -268,7 +268,7 @@ void dbgInstr(Instr i) {
   }
 }
 
-#define Stk_len(STK)  (STK.size - STK.sp)
+#define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
 void _chk_grow(Stk* stk, U16 sz) {
   if(stk->sp < sz) { fail("stack overflow"); };
@@ -321,7 +321,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
-    printf("?? popImm: 0x%x\n", out);
+    printf("?? popImm: 0x%X\n", out);
     env.ep += 2;
     return out;
 }
@@ -345,7 +345,7 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
   Instr i = splitInstr(instr);
-  printf("??? executeInstr: 0x%x ", instr); dbgInstr(i); dbgEnv();
+  printf("??? executeInstr: 0x%X ", instr); dbgInstr(i); dbgEnv();
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
 
@@ -434,7 +434,7 @@ APtr toAPtr(U32 v, U8 sz) {
         case 0x7: /*XOR*/ r = l ^ r; break;
         case 0x8: /*LAND*/ r = l && r; break;
         case 0x9: /*LOR */ r = l || r; break;
-        case 0xA: /*EQ  */ r = l == r; break;
+        case 0xA: /*EQ  */ printf("eq: %X == %X\n", l, r); r = l == r; break;
         case 0xB: /*NEQ */ r = l != r; break;
         case 0xC: /*GE_U*/ r = l >= r; break;
         case 0xD: /*LT_U*/ r = l < r; break;
@@ -476,7 +476,12 @@ APtr toAPtr(U32 v, U8 sz) {
   // * Jmp: perform the jump
   switch(i.jmp) {
     case NOJ: break;
-    case JZ: env.ep = toAPtr(popImm(), 2); break;
+    case JZ:
+      l = popImm();
+      r = WS_POP();
+      printf("??? JZ: %X  %X\n", r, l);
+      if(!r) { printf("...jmping\n"); env.ep = toAPtr(l, 2); }
+      break;
     case JTBL: fail("not implemented"); break;
     case JMP: env.ep = WS_POP(); break;
     case _JR0: fail("JR0");
@@ -732,22 +737,22 @@ APtr toAPtr(U32 v, U8 sz) {
   return OK;
 }
 
-/*fn*/ ErrCode cNameSet() { // `=`
+/*fn*/ ErrCode cDictSet() { // `=`
   U32 value = WS_POP();
 
-  OP_CHECK(scan(), "cNameSet.scan"); // load name token
+  OP_CHECK(scan(), "cDictSet.scan"); // load name token
   Dict_set(tokenLen, tokenBuf, CUR_SZ_MASK & value);
   return OK;
 }
 
-/*fn*/ ErrCode cNameGet() { // `@`
+/*fn*/ ErrCode cDictGet() { // `@`
   OP_CHECK(scan(), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
   OP_CHECK(WS_PUSH(CUR_SZ_MASK & value), "& push");
   return OK;
 }
 
-/*fn*/ ErrCode cNameForget() { // `~`
+/*fn*/ ErrCode cDictForget() { // `~`
   OP_CHECK(scan(), "~ scan");
   Dict_forget(tokenLen, tokenBuf);
   return OK;
@@ -807,9 +812,9 @@ APtr toAPtr(U32 v, U8 sz) {
     case '.': result.err = cSz(); break;
     case '/': result.err = cComment(); break;
     case '#': scan(); result.err = cHex(); break;
-    case '=': result.err = cNameSet(); break;
-    case '@': result.err = cNameGet(); break;
-    case '~': result.err = cNameForget(); break;
+    case '=': result.err = cDictSet(); break;
+    case '@': result.err = cDictGet(); break;
+    case '~': result.err = cDictForget(); break;
     case ',': result.err = cWriteHeap(); break;
     case ';': result.err = cWriteInstr(); break;
     case '^': result.err = cExecuteInstr(); break;
@@ -838,33 +843,46 @@ APtr toAPtr(U32 v, U8 sz) {
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   U32 op = WS_POP();
   U32 tmp;
+  U32* tmpR;
   ExecuteResult result;
   switch(op) {
     case 0: /*D_read*/ readAppend(); break;
     case 1: /*D_scan*/ assert(!scan()); break;
     case 2: /*D_dict*/
       if(isFetch) {
-        assert(Dict_get(&tmp, tokenLen, tokenBuf));
+        assert(!Dict_get(&tmp, tokenLen, tokenBuf));
         WS_PUSH(szMask & tmp);
       } else {
         Dict_set(tokenLen, tokenBuf, szMask & WS_POP());
       }
       break;
       // FT=get SR=set dict key=tokenBuf, value of sz
-    case 3: /*D_instr*/
+    case 3: /*D_rdict*/
+      tmp = Dict_find(tokenLen, tokenBuf);
+      if(tmp == dict->heap) {
+        WS_PUSH(0); break; // not found
+      }
+      tmpR = Key_vptr(Dict_key(tmp));
+      WS_PUSH((U8*)tmpR - mem);
+      break;
+    case 4: /*D_instr*/
       if(isFetch) WS_PUSH(instr);
       else instr = WS_POP();
       break;
-    case 4: /*D_sz*/
+    case 5: /*D_sz*/
       if(isFetch) WS_PUSH(sz);
       else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
       break;
-    case 5: /*D_comp*/
+    case 6: /*D_comp*/
       result = compileOne();
       assert(!result.escape);
       assert(!result.err);
       break;
-    case 6: assert(/*DV assert*/ WS_POP()); break;
+    case 7: /*D_assert*/ 
+      if(!WS_POP()) fail("D_assert failed");
+      break;
+    case 8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
+    case 9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
     default: fail("device op not impl");
   }
 }
@@ -946,9 +964,10 @@ void tests();
 
 void dbgEnv() {
   printf("  \t-DBG- line=%u token[%u, %u]=%.*s  ", line, tokenLen, tokenBufSize, tokenLen, tokenBuf);
+  printf("ep:0x%X ", env.ep);
   printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
-  printf("instr=0x%x ", instr);
+  printf("instr=0x%X ", instr);
   printf("sz=%u\n", szIToSz(CUR_SZI));
 }
 
@@ -1084,6 +1103,28 @@ U16 testBufIdx = 0;
   line = 1;
   srcFile = fopen("spore/asm2.sa", "rb");
   assert(!compile());
+
+  printf("## testAsm2... stk empty\n");
+  COMPILE("$assertWsEmpty");
+
+  printf("## testAsm2... testIf code\n");
+  COMPILE(
+    ".4 $loc testIf / converts 1->10 else: 42 \n"
+    "  IMWS EQ JZ; #1 $h2  $jloc jmpTo        \n"
+    "    IMWS RET; #10 $h2                    \n"
+    "  $jset jmpTo                             \n"
+    "  IMWS RET; #42 $h2                      \n"
+    "$assertWsEmpty                           \n");
+
+  printf("\n\n## testAsm2... testIf\n");
+  U32 res;
+  COMPILE("#1 $testIf");  res = WS_POP();
+  printf("res: %X\n", res);
+  assert(0x10 == res);
+
+  COMPILE("#2 $testIf");  res = WS_POP();
+  printf("res: %X\n", res);
+  assert(0x42 == res);
 }
 
 
@@ -1095,5 +1136,6 @@ U16 testBufIdx = 0;
   testWriteHeap();
   testExecuteInstr();
   testAsm2();
-}
 
+  assert(0 == WS_LEN);
+}
