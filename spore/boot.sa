@@ -11,15 +11,106 @@
 // - Ability to read types of words being compiled.
 //
 
-// Dictionary value masks for functions
-#1 #18 SHL^ =IMM_MASK // 1=is immediate
-#1 #19 SHL^ =PRE_MASK // 1=is prefix
-#1 #1A SHL^ =LOC_MASK // 1=has local stack
-#FFFF_FFFF_FFFF =FN_PTR_MASK // function ptr mask
+// 8bit meta masks
+#1 =PRE_MASK // 1=is prefix
+#2 =IMM_MASK // 1=is immediate
+#4 =LCL_MASK // 1=has local stack
 
+// 4 byte globals
+$loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
+$loc rI_CNL      .4 @CNL  @IMWS ADD^,
+$loc rI_CALL_IM  .4 @CALL @IMWS ADD^,
+$loc rI_CLR_IM   .4 #FFFF_0000, // instr clear
+
+#10 =EXEC_MASK // 1=compiler executes everything
+
+// compiler globals
+$loc c_STATE .2 #0,
+$hAlign4
+
+
+$loc stateClear // {mask}
+  NOT;
+  FTMI AND; @c_STATE $h2
+  SRMI RET; @c_STATE $h2
+
+$loc toMeta   IMWS SHR RET; #18 $h2 // shift to make just 8bit meta
+$loc hasPre   IMWS AND RET; @PRE_MASK $h2
+$loc hasImm   IMWS AND RET; @IMM_MASK $h2
+$loc hasLcl   IMWS AND RET; @LCL_MASK $h2
+$loc hasExec  IMWS AND RET; @EXEC_MASK $h2
+
+// Force execute a metaFn
+$loc forceExec // {metaFn}
+  // Check if Fn is LCL or not
+  .4 DUP;  @toMeta $c_CNL  @hasLcl $c_CNL
+  JZ; $jloc j_call  .4 CALL; RET;
+  $jset j_call      .4 CNL; RET;
+$dForget j_call
+
+// Force compile a metaFn to a value.
+$loc forceComp // {metaFn}
+  // TODO: make sure token is in same module.
+
+  .4 FTMI; @D_sz $h2 // cache current sz
+
+  // Check if Fn is LCL or not
+  .4 DUP;  @toMeta $c_CNL  @hasLcl $c_CNL
+  JZ; $jloc j_call
+    // is LCL, has locals
+    .4 FTMI; @rI_CALL_IM $h2 // fetch CALL mask+instr
+    IMWS JMP; $jloc j_end
+  $jset j_call
+    .4 FTMI; @rI_CNL_IM $h2 // fetch CNL mask+instr
+  $jset j_end
+  !@##$%^&,.
+
+  .4 IMWS DVS; @D_instr $h2 // mask to current instr
+  .4 IMWS DVL; @D_instr $h2 // get current instr
+  @h2 $c_CNL // compile instr to heap
+
+  // Clear current instr but keep original Sz
+  .4 FTMI; @rI_CLR $h2   ADD^
+  IMWS DVS; @D_instr $h2
+
+  @h2 $c_CNL // Compile the fn ptr.
+  RET
+$dForget j_call
 
 // Core Spore compiler function. Compiles the current scanned token as a spore
 // function.
 $loc comp
+  // Load dict ref and check it
+  .4 IMWS DVL; @D_scan $h2
+  // TODO: check if token is "#"
+
+  .4 IMWS DVL; @D_rdict $h2 // {rValue}
+  // Make sure token exists
+  .4 DUP;  @E_DictDNE $imm  @assert $c_CNL
+  LD; // load it {metaFn}
+
+  // Check the meta for PRE. XOR with preBit to toggle
+  .4 DUP;  @toMeta $c_CNL  @hasPre $c_CNL
+  .2 FTMI; @c_STATE $h2    @hasPre $c_CNL
+  @PRE_MASK $c_IM  @stateClear $c_CLS // clear state.PRE
+
+  XOR JZ; $jloc j_to // Checking for PRE.
+    @comp $c_CNL // Pre: simply compile next token
+  $jset j_to
+
+  // Check the meta for IMM or EXEC mode
+  .4 DUP;  @toMeta $c_CNL  @hasImm $c_CNL
+  .2 FTMI; @c_STATE $h2    @hasImm $c_CNL
+  @PRE_MASK $c_IM  @stateClear $c_IMM // clear state.IMM
+  XOR;
+  .2 FTMI; @c_STATE $h2    @hasExec $c_CNL
+
+  LOR JZ; $jloc j_to // Checking for IMM
+    @forceExec $c_CNL // IMM: forge execute
+    RET
+  $jset j_to
+    @forceExec $c_CNL // not IMM: force compile
+    RET
+$dForget j_to
 
 

@@ -209,6 +209,13 @@ Instr splitInstr(U16 instr) {
   return i;
 }
 
+/*fn*/ void updateInstr(U32 maskSet) {
+  U16 mask = ~(maskSet >> 16);
+  U16 setInstr = maskSet & 0xFFFF;
+  instr = instr & mask;
+  instr = instr | setInstr;
+}
+
 void dbgInstr(Instr i) {
   printf("op:%X szI:%X mem:%X jmp:%X ", i.op, i.szI, i.mem, i.jmp);
 }
@@ -321,7 +328,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
-    printf("?? popImm: 0x%X\n", out);
+    // printf("?? popImm: 0x%X\n", out);
     env.ep += 2;
     return out;
 }
@@ -345,7 +352,7 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
   Instr i = splitInstr(instr);
-  printf("??? executeInstr: 0x%X ", instr); dbgInstr(i); dbgEnv();
+  // printf("??? executeInstr: 0x%X ", instr); dbgInstr(i); dbgEnv();
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
 
@@ -434,7 +441,7 @@ APtr toAPtr(U32 v, U8 sz) {
         case 0x7: /*XOR*/ r = l ^ r; break;
         case 0x8: /*LAND*/ r = l && r; break;
         case 0x9: /*LOR */ r = l || r; break;
-        case 0xA: /*EQ  */ printf("eq: %X == %X\n", l, r); r = l == r; break;
+        case 0xA: /*EQ  */ r = l == r; break;
         case 0xB: /*NEQ */ r = l != r; break;
         case 0xC: /*GE_U*/ r = l >= r; break;
         case 0xD: /*LT_U*/ r = l < r; break;
@@ -479,8 +486,7 @@ APtr toAPtr(U32 v, U8 sz) {
     case JZ:
       l = popImm();
       r = WS_POP();
-      printf("??? JZ: %X  %X\n", r, l);
-      if(!r) { printf("...jmping\n"); env.ep = toAPtr(l, 2); }
+      if(!r) { env.ep = toAPtr(l, 2); }
       break;
     case JTBL: fail("not implemented"); break;
     case JMP: env.ep = WS_POP(); break;
@@ -752,12 +758,6 @@ APtr toAPtr(U32 v, U8 sz) {
   return OK;
 }
 
-/*fn*/ ErrCode cDictForget() { // `~`
-  OP_CHECK(scan(), "~ scan");
-  Dict_forget(tokenLen, tokenBuf);
-  return OK;
-}
-
 /*fn*/ ErrCode cWriteHeap() { // `,`
   U8 sz = szIToSz(CUR_SZI);
   U32 value = WS_POP();
@@ -770,16 +770,6 @@ APtr toAPtr(U32 v, U8 sz) {
   store(mem, *env.heap, instr, 2);
   instr = SZI_MASK & instr;
   *env.heap += 2;
-  return OK;
-}
-
-/*fn*/ ErrCode updateInstr() { // any alphanumeric
-  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "updateInstr: no name");
-  U16 mask = ~(value >> 16);
-  U16 setInstr = value & 0xFFFF;
-
-  instr = instr & mask;
-  instr = instr | setInstr;
   return OK;
 }
 
@@ -804,7 +794,9 @@ APtr toAPtr(U32 v, U8 sz) {
     return result;
   }
   if(tokenState->group <= T_ALPHA) {
-    result.err = updateInstr();
+    U32 maskSet;
+    assert(!Dict_get(&maskSet, tokenLen, tokenBuf));
+    updateInstr(maskSet);
     return result;
   }
   tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
@@ -814,7 +806,6 @@ APtr toAPtr(U32 v, U8 sz) {
     case '#': scan(); result.err = cHex(); break;
     case '=': result.err = cDictSet(); break;
     case '@': result.err = cDictGet(); break;
-    case '~': result.err = cDictForget(); break;
     case ',': result.err = cWriteHeap(); break;
     case ';': result.err = cWriteInstr(); break;
     case '^': result.err = cExecuteInstr(); break;
@@ -858,16 +849,18 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       break;
       // FT=get SR=set dict key=tokenBuf, value of sz
     case 3: /*D_rdict*/
-      tmp = Dict_find(tokenLen, tokenBuf);
-      if(tmp == dict->heap) {
-        WS_PUSH(0); break; // not found
-      }
-      tmpR = Key_vptr(Dict_key(tmp));
-      WS_PUSH((U8*)tmpR - mem);
+      if(isFetch) {
+        tmp = Dict_find(tokenLen, tokenBuf);
+        if(tmp == dict->heap) {
+          WS_PUSH(0); break; // not found
+        }
+        tmpR = Key_vptr(Dict_key(tmp));
+        WS_PUSH((U8*)tmpR - mem);
+      } else Dict_forget(tokenLen, tokenBuf);
       break;
     case 4: /*D_instr*/
       if(isFetch) WS_PUSH(instr);
-      else instr = WS_POP();
+      else updateInstr(WS_POP());
       break;
     case 5: /*D_sz*/
       if(isFetch) WS_PUSH(sz);
@@ -879,7 +872,11 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       assert(!result.err);
       break;
     case 7: /*D_assert*/ 
-      if(!WS_POP()) fail("D_assert failed");
+      tmp = WS_POP();
+      if(!WS_POP()) {
+        printf("fail code=0x%x ", tmp);
+        fail("D_assert failed");
+      }
       break;
     case 8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
     case 9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
@@ -1104,10 +1101,7 @@ U16 testBufIdx = 0;
   srcFile = fopen("spore/asm2.sa", "rb");
   assert(!compile());
 
-  printf("## testAsm2... stk empty\n");
-  COMPILE("$assertWsEmpty");
-
-  printf("## testAsm2... testIf code\n");
+  printf("## testAsm2... testIf\n");
   COMPILE(
     ".4 $loc testIf / converts 1->10 else: 42 \n"
     "  IMWS EQ JZ; #1 $h2  $jloc jmpTo        \n"
@@ -1115,16 +1109,8 @@ U16 testBufIdx = 0;
     "  $jset jmpTo                             \n"
     "  IMWS RET; #42 $h2                      \n"
     "$assertWsEmpty                           \n");
-
-  printf("\n\n## testAsm2... testIf\n");
-  U32 res;
-  COMPILE("#1 $testIf");  res = WS_POP();
-  printf("res: %X\n", res);
-  assert(0x10 == res);
-
-  COMPILE("#2 $testIf");  res = WS_POP();
-  printf("res: %X\n", res);
-  assert(0x42 == res);
+  COMPILE("#1 $testIf");  assert(0x10 == WS_POP());
+  COMPILE("#2 $testIf");  assert(0x42 == WS_POP());
 }
 
 
