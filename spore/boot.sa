@@ -73,7 +73,7 @@ $loc forceComp // {metaFn}
   IMWS DVS; @D_instr $h2
 
   @h2 $c_CNL // Compile the fn ptr.
-  RET
+  RET;
 $dForget j_call
 
 // Core Spore compiler function. Compiles the current scanned token as a spore
@@ -106,10 +106,10 @@ $loc comp
 
   LOR JZ; $jloc j_to // Checking for IMM
     @forceExec $c_CNL // IMM: forge execute
-    RET
+    RET;
   $jset j_to
     @forceExec $c_CNL // not IMM: force compile
-    RET
+    RET;
 $dForget j_to
 
 
