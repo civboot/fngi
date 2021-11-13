@@ -28,7 +28,6 @@ $loc rI_CLR_IM   .4 #FFFF_0000, // instr clear
 $loc c_STATE .2 #0,
 $hAlign4
 
-
 $loc stateClear // {mask}
   NOT;
   FTMI AND; @c_STATE $h2
