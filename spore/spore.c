@@ -854,7 +854,8 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       if(isFetch) {
         tmp = Dict_find(tokenLen, tokenBuf);
         if(tmp == dict->heap) {
-          WS_PUSH(0); break; // not found
+          WS_PUSH(0);
+          break; // not found
         }
         tmpR = Key_vptr(Dict_key(tmp));
         WS_PUSH((U8*)tmpR - mem);
@@ -948,7 +949,7 @@ void compileFile(U8* s) {
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
-  NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x1000)
+  NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x2000)
 
 
 // ********************************************
@@ -1131,6 +1132,9 @@ void compileStr(U8* s) {
   printf("## testBoot\n"); SMALL_ENV;
   compileFile("spore/asm2.sa");
   compileFile("spore/boot.sa");
+
+  printf("## testBoot... testBoot.sa\n");
+  compileFile("spore/testBoot.sa");
 }
 
 

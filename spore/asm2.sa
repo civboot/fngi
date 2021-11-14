@@ -89,10 +89,17 @@ $dForget j_to
 #00 =E_Unknown
 #01 =E_WsNotEmpty
 #02 =E_DictDNE
+#03 =E_Test
 
+.4
 $loc assertWsEmpty @getWsLen $c_CNL @E_WsNotEmpty $c_IM // fallthrough
-$loc assertFals    SWP; NOT; SWP; // fallthrough
+$loc assertNot     SWP; NOT; SWP; // fallthrough
 $loc assert        IMWS DVL RET; @D_assert $h2
 
-$hAlign4
+$loc tAssert     @E_Test $c_IM  @assert $c_JMP
+$loc tAssertNot  @E_Test $c_IM  @assertNot $c_JMP
+$loc tAssertEq   EQ;            @tAssert $c_JMP
+$loc tAssertNe   NEQ;           @tAssert $c_JMP
+
 $assertWsEmpty
+#1 $tAssert
