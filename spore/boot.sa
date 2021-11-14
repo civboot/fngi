@@ -134,7 +134,7 @@ $loc c_comp
   FT; // fetch it {metaFn}
   @c_compMetaFn $c_JMP
 
-$loc c_compLoop
+$loc END_ASM // spore compilation loop. Calling will end ASM syntax.
   $loc j_loop
     @c_comp $c_CNL
     @STATE $c_FTMI2   @c_maskQuit $c_CNL
@@ -180,7 +180,8 @@ $c_floc ALI     $INSTANT @ALI_MASK $c_IM  @c_fnMask $c_JMP // make ALI
 $c_floc PRE     $INSTANT @PRE_MASK $c_IM  @c_fnMask $c_JMP // make PRE
 $c_floc $       $INSTANT @TNT_MASK $c_IM  @c_stateSet $c_JMP  // toggle next INSTANT
 $c_floc '       $INSTANT @PRE_MASK $c_IM  @c_stateSet $c_JMP  // toggle next PRE
-$loc %%         $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm token
+$c_floc %%      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
+$c_floc BEG_ASM $INSTANT @QUIT_MASK $c_IM  @c_stateSet $c_JMP // begin assembly syntax
 
 $c_floc #       $ALI // Immediate Value (hex constant)
   .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.
@@ -189,8 +190,7 @@ $c_floc #       $ALI // Immediate Value (hex constant)
   FTMI; @rI_IM $h2   @c_compMaskInstr $c_CNL // compile TNT instr
   @h2 $c_CNL // Compile the immediate value.
   $jset j_ret   RET
-$c_fnClean
+$c_fnClean   $c_dRef j_ret $tAssertNot // assert j_ret is deleted
 
-$c_dRef j_ret $tAssertNot // assert j_ret is deleted
+
 $assertWsEmpty
-
