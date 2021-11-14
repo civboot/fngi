@@ -33,12 +33,12 @@ $loc getWsLen    IMWS DVL RET; @D_wslen $h2
   IMWS CNL; @h2, // compile it
   IMWS JMP; @h2, // compile value
 
-$loc c_CNL / {loc} compile a cnl
+.4 $loc c_CNL / {loc} compile a cnl
   @Sz4 @IMWS @CNL ADD^ ADD^ $c_IM // push .4 IMWS CNL instr
   IMWS CNL; @h2 $h2 // compile it.
   IMWS JMP; @h2 $h2 // compile the loc
 
-$loc c_JMP / {loc} compile a jmp
+.4 $loc c_JMP / {loc} compile a jmp
   @Sz4 @IMWS @JMP ADD^ ADD^ $c_IM // push .4 IMWS JMP instr
   @h2 $c_CNL // compile it
   IMWS JMP; @h2 $h2 // compile the loc
@@ -56,10 +56,11 @@ $loc c_JMP / {loc} compile a jmp
 
 // **********
 // * Utilities
+.4
 $loc scan     .4 IMWS DVL RET; @D_scan $h2
 
 // Get next token dict reference
-$loc dRef     @scan $c_CNL  .4 IMWS DVL RET; @D_rdict $h2
+$loc c_dRef     @scan $c_CNL  .4 IMWS DVL RET; @D_rdict $h2
 
 // Forget dict until and including next token
 $loc dForget  @scan $c_CNL  .4 IMWS DVS RET; @D_rdict $h2
