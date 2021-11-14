@@ -157,12 +157,13 @@ $loc c_floc
   @loc $c_CNL // set location of next token
   .4 IMWS DVL; @D_rdict $h2 // get dictionary reference of current token
   SRMI; @c_rFN $h2 // store to c_rFN
-  FTMI FT; @c_rDictHeap $h2 // double fetch rDict heap
-  SRMI RET; @c_fnDictHeap $h2 // update fnDictHeap
+
+  .2 FTMI FT; @c_rDictHeap $h2 // double fetch rDict heap
+  .2 SRMI RET; @c_fnDictHeap $h2 // update fnDictHeap
 
 $c_floc c_fnClean
   @c_fnDictHeap $c_FTMI2 // fetch dict heap after current fn
-  SRMI RET; @c_rDictHeap $h2 // store to rDictHeap (forget keys after fn)
+  .2 SRMI RET; @c_rDictHeap $h2 // store to rDictHeap (forget keys after fn)
 
 // {8bit mask} apply an 8-bit mask to the c_rFN (current fn ref)
 $c_floc c_fnMask

@@ -1105,8 +1105,10 @@ void compileStr(U8* s) {
   compileStr(".A @D_sz DVL^");
   assert(0x04 == WS_POP());
 
-  compileStr("@rTopHeap"); assert(*env.topHeap == WS_POP());
-  compileStr("@rDictHeap"); assert(*env.topHeap == WS_POP());
+  U32 expectDictHeap = (U8*)dict - mem;
+  compileStr("@rTopHeap FT^");  assert(*env.topHeap == WS_POP());
+  compileStr("@c_rDictHeap");   assert(expectDictHeap == WS_POP());
+  compileStr("@c_dictStart");   assert(expectDictHeap + 4 == WS_POP());
 }
 
 /*test*/ void testAsm2() {

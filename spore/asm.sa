@@ -111,5 +111,5 @@
 // **********
 // * Compiler Constants
 .4
-@rTopHeap     FT^         =c_rDictHeap  // dict grows
-@c_rDictHeap  FT^ #4 ADD^ =c_dictStart  // first dict word
+@rTopHeap     FT^   =c_rDictHeap  // dict grows
+@c_rDictHeap  INC4^ =c_dictStart  // first dict word
