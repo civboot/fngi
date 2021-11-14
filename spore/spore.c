@@ -217,7 +217,8 @@ Instr splitInstr(U16 instr) {
 }
 
 void dbgInstr(Instr i) {
-  printf("op:%X szI:%X mem:%X jmp:%X ", i.op, i.szI, i.mem, i.jmp);
+  U8 sz = szIToSz(i.szI);
+  printf("sz:%X mem:%X jmp:%X op:%X ", sz, i.mem, i.jmp, i.op);
 }
 
 
@@ -261,6 +262,7 @@ void dbgInstr(Instr i) {
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
+  printf("??? Fetching: 0x%X\n", aptr);
   if(aptr == 0) fail("null access");
   switch (sz) {
     case 1:
@@ -352,7 +354,7 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
   Instr i = splitInstr(instr);
-  // printf("??? executeInstr: 0x%X ", instr); dbgInstr(i); dbgEnv();
+  printf("??? executeInstr: \t0x%X \t", instr); dbgInstr(i); dbgEnv();
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
 
@@ -1102,6 +1104,9 @@ void compileStr(U8* s) {
 
   compileStr(".A @D_sz DVL^");
   assert(0x04 == WS_POP());
+
+  compileStr("@rTopHeap"); assert(*env.topHeap == WS_POP());
+  compileStr("@rDictHeap"); assert(*env.topHeap == WS_POP());
 }
 
 /*test*/ void testAsm2() {
