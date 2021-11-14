@@ -329,7 +329,6 @@ APtr toAPtr(U32 v, U8 sz) {
 
 /*fn*/ U16 popImm() {
     U16 out = fetch(mem, env.ep, 2);
-    // printf("?? popImm: 0x%X\n", out);
     env.ep += 2;
     return out;
 }
@@ -353,7 +352,7 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
   Instr i = splitInstr(instr);
-  // printf("??? executeInstr: \t0x%X \t", instr); dbgInstr(i); dbgEnv();
+  printf("??? executeInstr: \t0x%X \t", instr); dbgInstr(i); dbgEnv();
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
 
@@ -940,6 +939,7 @@ void compileFile(U8* s) {
   line = 1;
   readAppend = &readSrc;
   srcFile = fopen(s, "rb");
+  if(srcFile <= 0) fail("could not open file");
   assert(!compile());
 }
 
@@ -1135,6 +1135,9 @@ void compileStr(U8* s) {
 
   printf("## testBoot... testBoot.sa\n");
   compileFile("spore/testBoot.sa");
+
+  printf("## testBoot... boot.sp\n");
+  compileFile("spore/boot.sp");
 }
 
 

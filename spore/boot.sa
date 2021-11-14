@@ -1,4 +1,5 @@
 // Bootstrap outselves outside of spore assembly and into spore proper.
+// Requires: asm*.sa
 //
 // Main items we already have through device ports:
 // - Token scanner (D_scan). Tokens are the same for spore asm as spore proper.
@@ -35,7 +36,7 @@ $loc c_stateClr // {mask}
   NOT; FTMI AND; @STATE $h2
   SRMI RET; @STATE $h2
 $loc c_stateSet // {mask}
-  FTMI AND @STATE $h2
+  FTMI AND; @STATE $h2
   SRMI RET; @STATE $h2
 
 $loc c_toMeta   IMWS SHR RET; #18 $h2 // shift to make just 8bit meta
@@ -134,7 +135,8 @@ $loc c_comp
   FT; // fetch it {metaFn}
   @c_compMetaFn $c_JMP
 
-$loc END_ASM // spore compilation loop. Calling will end ASM syntax.
+$loc ASM_END // spore compilation loop. Calling will end ASM syntax.
+  @QUIT_MASK $c_IM  @c_stateClr $c_CNL
   $loc j_loop
     @c_comp $c_CNL
     @STATE $c_FTMI2   @c_maskQuit $c_CNL
@@ -181,7 +183,10 @@ $c_floc PRE     $INSTANT @PRE_MASK $c_IM  @c_fnMask $c_JMP // make PRE
 $c_floc $       $INSTANT @TNT_MASK $c_IM  @c_stateSet $c_JMP  // toggle next INSTANT
 $c_floc '       $INSTANT @PRE_MASK $c_IM  @c_stateSet $c_JMP  // toggle next PRE
 $c_floc %%      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
-$c_floc BEG_ASM $INSTANT @QUIT_MASK $c_IM  @c_stateSet $c_JMP // begin assembly syntax
+$c_floc ASM_BEG          @QUIT_MASK $c_IM  @c_stateSet $c_JMP // begin assembly syntax
+
+// Note: this actually isn't a comment. It's defining comments for spore.
+$c_floc //      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
 
 $c_floc #       $ALI // Immediate Value (hex constant)
   .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.

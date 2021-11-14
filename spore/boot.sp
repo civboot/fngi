@@ -1,3 +1,5 @@
-// Hi
+// Spore bootsrap. Requires boot.sa.
 
-$foo %%instr
+// Starts with a small amount of ASM
+@EXEC_MASK $c_stateSet
+$ASM_END
