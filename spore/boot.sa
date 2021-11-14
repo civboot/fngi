@@ -15,7 +15,6 @@ $loc rI_IM       .4 @CNL  @IMWS ADD^,
 $loc rI_CNL_IM   .4 @CNL  @IMWS ADD^,
 $loc rI_CALL_IM  .4 @CALL @IMWS ADD^,
 $loc rI_CLR      .4 #FFFF_0000, // instr clear
-$assertWsEmpty
 
 // State Globals
 $loc STATE .2 #0,   // compiler state ` global-bits | fn-meta-bits `
@@ -146,6 +145,7 @@ $dForget j_loop
 
 // ******************
 // * Core Syntax: define fns for the core syntax tokens.
+$assertWsEmpty
 
 $hAlign4
 $loc c_rFN #0 .4, // dict ref of currently compiling fn.

@@ -262,7 +262,6 @@ void dbgInstr(Instr i) {
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
-  printf("??? Fetching: 0x%X\n", aptr);
   if(aptr == 0) fail("null access");
   switch (sz) {
     case 1:
@@ -354,7 +353,7 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
   Instr i = splitInstr(instr);
-  printf("??? executeInstr: \t0x%X \t", instr); dbgInstr(i); dbgEnv();
+  // printf("??? executeInstr: \t0x%X \t", instr); dbgInstr(i); dbgEnv();
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
 
