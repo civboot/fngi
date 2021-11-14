@@ -1,2 +1,3 @@
-
 // Hi
+
+$foo %%instr

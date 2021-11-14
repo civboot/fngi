@@ -8,10 +8,10 @@ if exists("b:current_syntax")
 endif
 
 
-syn match elAlpha    '[_a-zA-Z0-9]\+' nextGroup=elSingleAsm
-syn match elSingleAsm '%%[^\s]\+'     nextGroup=elSymbol
+syn match elAlpha    '[_a-zA-Z0-9]\+' nextGroup=elSymbol
 syn match elSymbol    '[^!'()_a-zA-Z0-9.]' nextgroup=elSpecial
-syn match elSpecial   '[!'()]' nextgroup=elNum
+syn match elSpecial   '[!'()]' nextgroup=elSingleAsm
+syn match elSingleAsm '[%][%]\S\+'     nextGroup=elNum
 syn match elNum       '#[_0-9a-fA-F]\+' nextgroup=elInstant
 syn match elInstant   '$[_0-9a-zA-Z]\+' nextgroup=elComment
 syn match elComment   '/.*$'
