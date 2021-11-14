@@ -8,6 +8,8 @@
 // ******************
 // * Compiler:
 
+$assertWsEmpty
+
 // 4 byte globals
 $hAlign4
 $loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
