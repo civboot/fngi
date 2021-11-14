@@ -4,12 +4,9 @@
 // - Token scanner (D_scan). Tokens are the same for spore asm as spore proper.
 // - Local offset and location store (D_dict)
 // - Assembler (D_comp)
-//
-// Main items we have to build in asm:
-// - Compiler to convert tokens into either executed or compiled words in a
-//   function.
-// - Ability to read types of words being compiled.
-//
+
+// ******************
+// * Compiler: 
 
 // 8bit meta masks
 .4
@@ -25,6 +22,7 @@ $loc rI_CALL_IM  .4 @CALL @IMWS ADD^,
 $loc rI_CLR      .4 #FFFF_0000, // instr clear
 
 #10 =EXEC_MASK // 1=compiler executes everything
+#10 =QUIT_MASK // 1=quit compiler when instr completes
 
 // compiler globals
 $loc c_STATE .2 #0,
@@ -43,7 +41,9 @@ $loc hasImm // masks for ALI (always imm) and IMM
   IMWS OR; @IMM_MASK $h2
   AND RET;
 $loc hasLcl   IMWS AND RET; @LCL_MASK $h2
+
 $loc hasExec  IMWS AND RET; @EXEC_MASK $h2
+$loc hasQuit  IMWS AND RET; @QUIT_MASK $h2
 
 // Force execute a metaFn
 $loc forceExec // {metaFn}
@@ -120,4 +120,14 @@ $loc comp
     @forceComp $c_JMP // not IMM: force compile
 $dForget j_to
 
+$loc compLoop
+  $loc j_loop
+    @scan $c_CNL
+    .2 FTMI; @c_STATE $h2    @hasQuit $c_CNL
+    JZ; $jloc j_quit
+    IMWS JMP; @j_loop $h2
+  $jset j_quit RET;
+$dForget j_loop
 
+// ******************
+// * Declaring Fns
