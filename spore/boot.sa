@@ -6,31 +6,30 @@
 // - Assembler (D_comp)
 
 // ******************
-// * Compiler: 
-
-// 8bit meta masks
-.4
-#1 =LCL_MASK // 1=has local stack
-#2 =PRE_MASK // 1=is prefix
-#4 =TNT_MASK // 1=is insTaNT
-#8 =ALI_MASK // 1=always instant ($ may alter behavior)
+// * Compiler:
 
 // 4 byte globals
+$hAlign4
 $loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
 $loc rI_IM       .4 @CNL  @IMWS,
 $loc rI_CNL_IM   .4 @CNL  @IMWS ADD^,
 $loc rI_CALL_IM  .4 @CALL @IMWS ADD^,
 $loc rI_CLR      .4 #FFFF_0000, // instr clear
 
-#10 =EXEC_MASK // 1=compiler executes everything
-#10 =QUIT_MASK // 1=quit compiler when instr completes
-#10 =HAS_CONST_MASK // 1=there is an immediate value that needs compiling.
-
-// compiler globals
-$loc STATE .2 #0,
+// State Globals
+$loc STATE .2 #0,   // compiler state ` global-bits | fn-meta-bits `
 $loc XSTATE .2 #0, // Execution state of a fn
-.4
 
+// 16bit [global-bits | fn-meta-bits] Masks
+#0001 =LCL_MASK // 1=has local stack
+#0002 =PRE_MASK // 1=is prefix
+#0004 =TNT_MASK // 1=is insTaNT
+#0008 =ALI_MASK // 1=always instant ($ may alter behavior)
+
+#0100 =EXEC_MASK // 1=everything is always instant.
+#0200 =QUIT_MASK // 1=quit compLoop.
+
+.4
 $loc c_stateClr // {mask}
   NOT; FTMI AND; @STATE $h2
   SRMI RET; @STATE $h2
@@ -53,8 +52,8 @@ $loc c_maskQuit  IMWS AND RET; @QUIT_MASK $h2
 // been asked to be "super" instant. Supper instant happens
 // when `$` flips ALI's TNT bit or compiler state is EXEC
 $loc c_stateSuperIns
-  FTMI; @STATE $h2   @c_maskExec $c_CNL
-  FTMI; @XSTATE $h2  @c_maskIns $c_CNL
+  @STATE $c_FTMI2   @c_maskExec $c_CNL
+  @XSTATE $c_FTMI2  @c_maskIns $c_CNL
   AND RET;
 
 
@@ -67,41 +66,38 @@ $loc c_forceExec // {metaFn}
 $dForget j_call
 
 $loc c_compMaskInstr // {maskInstr:4}
-  .4 IMWS DVS; @D_instr $h2 // mask to current instr
-  .4 IMWS DVL; @D_instr $h2 // get current instr
+  @getSz $c_CNL  SWP; // cache sz {sz maskInstr}
+  .4 IMWS DVS; @D_instr $h2 // use mask on instr
+  .4 IMWS DVL; @D_instr $h2 // get instr
   @h2 $c_CNL // compile instr to heap
 
-  // Clear current instr but keep original Sz
-  .4 FTMI; @rI_CLR $h2
-  ADD; // add cached sz
+  // Clear current instr but with cached size
+  .4 FTMI ADD; @rI_CLR $h2
   IMWS DVS RET; @D_instr $h2
 
 // Force compile a metaFn to a value.
 $loc c_forceComp // {metaFn}
   // TODO: make sure token is in same module.
 
-  .4 FTMI; @D_sz $h2 // cache current sz
-
   // Check if Fn is LCL or not
   .4 DUP;  @c_toMeta $c_CNL  @c_maskLcl $c_CNL
-  JZ; $jloc j_call
-    // is LCL
-    .4 FTMI; @rI_CALL_IM $h2 // fetch CALL mask+instr
+  JZ; $jloc j_cnl
+    @rI_CALL_IM $c_FTMI4 // (has locals) fetch CALL mask+instr
     IMWS JMP; $jloc j_end
-  $jset j_call
+  $jset j_cnl
     .4 FTMI; @rI_CNL_IM $h2 // fetch CNL mask+instr
   $jset j_end
   @c_compMaskInstr $c_CNL  // mask and compile them mask+instr
   @h2 $c_JMP // Compile the fn ptr.
-$dForget j_call
+$dForget j_cnl
 
 // Core Spore compiler function. Compiles the metaFn passed to it as a spore
 // function, checking for PRE, TNT, ALI and LCL bits appropriately.
 $loc c_compMetaFn // {metaFn} compile the meta fn
   // Check the meta for PRE. XOR with preBit to toggle
   .4 DUP;  @c_toMeta $c_CNL  @c_maskPre $c_CNL
-  .2 FTMI; @STATE $h2    @c_maskPre $c_CNL
-  @PRE_MASK $c_IM  @c_stateClr $c_CNL // clear state.PRE
+  @STATE $c_FTMI2     @c_maskPre $c_CNL
+  @PRE_MASK $c_IM     @c_stateClr $c_CNL // clear state.PRE
 
   XOR JZ; $jloc j_to // Checking for PRE.
     // Pre: simply compile next token.
@@ -110,14 +106,13 @@ $loc c_compMetaFn // {metaFn} compile the meta fn
   $jset j_to
 
   // Check the meta for TNT or EXEC mode
-  .4 DUP;  @c_toMeta $c_CNL  @c_maskIns $c_CNL
-  .2 FTMI; @STATE $h2    @c_maskIns $c_CNL
-  // xor to toggle. We store it in XSTATE so an always-instant
-  // fn can know which state was selected.
+  .4 DUP;  @c_toMeta $c_CNL   @c_maskIns $c_CNL
+  @STATE $c_FTMI2             @c_maskIns $c_CNL
+  // xor to toggle. We store it in XSTATE so an ALI fn can selected state.
   XOR; SRMI DUP; @XSTATE $h2
 
   // also check for state.EXEC which overrides both
-  .2 FTMI; @STATE $h2    @c_maskExec $c_CNL
+  @STATE $c_FTMI2             @c_maskExec $c_CNL
 
   @PRE_MASK $c_IM  @c_stateClr $c_CNL // clear state.TNT
   LOR JZ; $jloc j_to
@@ -141,7 +136,7 @@ $loc c_comp
 $loc c_compLoop
   $loc j_loop
     @c_comp $c_CNL
-    .2 FTMI; @STATE $h2    @c_maskQuit $c_CNL
+    @STATE $c_FTMI2   @c_maskQuit $c_CNL
     JZ; $jloc j_quit
     IMWS JMP; @j_loop $h2
   $jset j_quit RET;
@@ -151,36 +146,43 @@ $dForget j_loop
 // * Core Syntax: define fns for the core syntax tokens.
 
 $hAlign4
-$loc CUR_rFN #0 .4, // dictionary reference of currently compiling function.
+$loc c_rFN #0 .4, // dict ref of currently compiling fn.
+$loc c_fnDictHeap #0 .4, // dict heap after defining current fn.
 
-// {8bit mask} apply an 8-bit mask to the CUR_rFN (current fn ref)
-$loc rFnMask
-  IMWS SHL; #18 $h2 // shift mask left by 0x18 (24)
-  FTMI FT; @CUR_rFN $h2 // double fetch of rFN (get metaFn)
-  SRMI OR RET; @CUR_rFN $h2 // bit-or mask and store.
-
-$loc INSTANT  FTMI; @TNT_MASK $h2  @rFnMask $c_JMP
-$loc PRE      FTMI; @PRE_MASK $h2  @rFnMask $c_JMP
-$loc $        @TNT_MASK $c_IM  @c_stateSet $c_JMP
-$loc '        @PRE_MASK $c_IM  @c_stateSet $c_JMP
-
-// usage: $fnLoc <fn-name>
+// usage: $floc <fn-name>
 // Set location of spore fn. This is ultra-basic. The syntax is still assembly.
-$loc c_fnLoc
+$loc c_floc
+  #00FF $c_IM  @c_stateClr $c_CNL // clear toggle bits
+  .2 SRMI ZERO; @XSTATE $h2       // clear XSTATE
   @loc $c_CNL // set location of next token
-  .4 IMWS DVL RET; @D_rdict $h2 // get dictionary reference of current token
-  SRMI RET; @CUR_rFN $h2 // store to CUR_rFN
+  .4 IMWS DVL; @D_rdict $h2 // get dictionary reference of current token
+  SRMI; @c_rFN $h2 // store to c_rFN
+  FTMI FT; @c_rDictHeap $h2 // double fetch rDict heap
+  SRMI RET; @c_fnDictHeap $h2 // update fnDictHeap
 
-$loc # // Immediate Value (hex constant)
+$c_floc c_fnClean
+  @c_fnDictHeap $c_FTMI2 // fetch dict heap after current fn
+  SRMI RET; @c_rDictHeap $h2 // store to rDictHeap (forget keys after fn)
+
+// {8bit mask} apply an 8-bit mask to the c_rFN (current fn ref)
+$c_floc c_fnMask
+  IMWS SHL; #18 $h2 // shift mask left by 0x18 (24)
+  FTMI FT; @c_rFN $h2 // double fetch of rFN (get metaFn)
+  SRMI OR RET; @c_rFN $h2 // bitwise-or mask and store.
+
+$c_floc INSTANT          @TNT_MASK $c_IM  @c_fnMask $c_JMP // make INSTANT
+                $INSTANT // make INSTANT an instant fn
+$c_floc ALI     $INSTANT @ALI_MASK $c_IM  @c_fnMask $c_JMP // make ALI
+$c_floc PRE     $INSTANT @PRE_MASK $c_IM  @c_fnMask $c_JMP // make PRE
+$c_floc $       $INSTANT @TNT_MASK $c_IM  @c_stateSet $c_JMP  // toggle next INSTANT
+$c_floc '       $INSTANT @PRE_MASK $c_IM  @c_stateSet $c_JMP  // toggle next PRE
+$loc %%         $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm token
+
+$c_floc #       $ALI // Immediate Value (hex constant)
   .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.
   // If we are "super instant" simply return to keep number on stack.
   @c_stateSuperIns $c_CNL  NOT JZ; $jloc j_ret
   FTMI; @rI_IM $h2   @c_compMaskInstr $c_CNL // compile TNT instr
   @h2 $c_CNL // Compile the immediate value.
   $jset j_ret   RET
-$dForget j_ret
-
-// update current asm instr. This is used to "pack" assembly with spore calls,
-// i.e. `%%ADD %%RET #42`: 0x42 immediate, ADD and RET in a single instr.
-// i.e. `%%INC4 myFn`: increment by 4 and call myFn in a single instr.
-$loc %%
+$c_fnClean

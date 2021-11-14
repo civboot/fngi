@@ -54,6 +54,7 @@
 #003F_0009 =RGS   // Register Store
 #003F_000A =FT    // Fetch
 #003F_000B =SR    // Store
+#003F_000C =ZERO  // { -> 0} push zero onto WS
 
 // # Operations: One Inp {l} -> One Out
 #003F_0010 =INC   // {l+1}  increment 1

@@ -13,7 +13,8 @@ syn keyword elInstr
       \ NOJ   JZ    JTBL  JMP   CALL  CNL   RET
       \ WS    IMWS  FTLI  FTMI  FTOI  SRLI  SRMI  SROI
       \ Sz1   Sz2   Sz4   SzA
-      \ NOP   SWP   DRP   DRP2  DUP   DUPN  DVL   DVS   RGL   RGS   FT    SR
+      \ NOP   SWP   DRP   DRP2  DUP   DUPN  DVL   DVS   
+      \ RGL   RGS   FT    SR    ZERO
       \ INC   INC2  INC4  INV   NEG   NOT   CI1   CI2
       \ ADD   SUB   MOD   SHL   SHR   AND   OR    XOR   LAND  LOR
       \ EQ    NEQ   GE_U  LT_U  GE_S  LT_S

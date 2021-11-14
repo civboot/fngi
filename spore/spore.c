@@ -171,7 +171,6 @@ U32 line = 1;
 
 // Bitmask for SZ in bytes. Note: <<3 is same as times 8
 #define CUR_SZI         ((instr & SZI_MASK) >> SZI_SHIFT)
-#define CUR_SZ_MASK     szIToMask(CUR_SZI)
 
 U32 szIToMask(SzI szI) {
   switch (szI) {
@@ -408,6 +407,7 @@ APtr toAPtr(U32 v, U8 sz) {
           srPtr = WS_POP();
           WS_PUSH(l);
           break;
+        case 0xC: /*ZERO*/ WS_PUSH(0);
       }
       break;
 
@@ -739,7 +739,7 @@ APtr toAPtr(U32 v, U8 sz) {
     OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
     v = (v << 4) + charToHex(c);
   }
-  WS_PUSH(CUR_SZ_MASK & v);
+  WS_PUSH(v);
   shiftBuf();
   return OK;
 }
@@ -748,14 +748,14 @@ APtr toAPtr(U32 v, U8 sz) {
   U32 value = WS_POP();
 
   OP_CHECK(scan(), "cDictSet.scan"); // load name token
-  Dict_set(tokenLen, tokenBuf, CUR_SZ_MASK & value);
+  Dict_set(tokenLen, tokenBuf, value);
   return OK;
 }
 
 /*fn*/ ErrCode cDictGet() { // `@`
   OP_CHECK(scan(), "@ scan"); // load name token
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
-  OP_CHECK(WS_PUSH(CUR_SZ_MASK & value), "& push");
+  OP_CHECK(WS_PUSH(value), "& push");
   return OK;
 }
 
@@ -1024,9 +1024,10 @@ void compileStr(U8* s) {
   result = WS_POP();
   assert(0x10023004 == result);
 
+  // Note: ignores sz
   compileStr(".2 #1002_3004");
   result = WS_POP();
-  assert(0x3004 == result);
+  assert(0x10023004 == result);
 }
 
 /*test*/ void testQuotes() {

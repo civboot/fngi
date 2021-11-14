@@ -43,6 +43,16 @@ $loc getWsLen    IMWS DVL RET; @D_wslen $h2
   @h2 $c_CNL // compile it
   IMWS JMP; @h2 $h2 // compile the loc
 
+.4 $loc c_FTMI4 / {loc} compile a fetch immediate sz=4
+  @Sz4 @FTMI ADD^ $c_IM // push .4 FTMI instr
+  @h2 $c_CNL // compile it
+  IMWS JMP; @h2 $h2 // compile the loc
+
+.4 $loc c_FTMI2 / {loc} compile a fetch immediate sz=2
+  @Sz2 @FTMI ADD^ $c_IM // push .2 FTMI instr
+  @h2 $c_CNL // compile it
+  IMWS JMP; @h2 $h2 // compile the loc
+
 // **********
 // * Jump location setup and update
 .2 $loc jloc // declare a jump location. ex: $jloc jmpTo
