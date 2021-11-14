@@ -12,9 +12,10 @@
 //
 
 // 8bit meta masks
-#1 =PRE_MASK // 1=is prefix
-#2 =IMM_MASK // 1=is immediate
-#4 =LCL_MASK // 1=has local stack
+#1 =LCL_MASK // 1=has local stack
+#2 =PRE_MASK // 1=is prefix
+#4 =IMM_MASK // 1=is immediate
+#8 =ALI_MASK // 1=always immediate ($ may alter behavior)
 
 // 4 byte globals
 $loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
@@ -26,23 +27,27 @@ $loc rI_CLR_IM   .4 #FFFF_0000, // instr clear
 
 // compiler globals
 $loc c_STATE .2 #0,
+$loc c_CN_EXEC .2 #0,
 $hAlign4
 
-$loc stateClear // {mask}
+$loc stateClr // {mask}
   NOT;
   FTMI AND; @c_STATE $h2
   SRMI RET; @c_STATE $h2
 
 $loc toMeta   IMWS SHR RET; #18 $h2 // shift to make just 8bit meta
 $loc hasPre   IMWS AND RET; @PRE_MASK $h2
-$loc hasImm   IMWS AND RET; @IMM_MASK $h2
+$loc hasImm // masks for ALI (always imm) and IMM
+  @ALI_MASK $im;
+  IMWS OR; @IMM_MASK $h2
+  AND RET;
 $loc hasLcl   IMWS AND RET; @LCL_MASK $h2
 $loc hasExec  IMWS AND RET; @EXEC_MASK $h2
 
 // Force execute a metaFn
 $loc forceExec // {metaFn}
-  // Check if Fn is LCL or not
-  .4 DUP;  @toMeta $c_CNL  @hasLcl $c_CNL
+  .4 DUP;  @toMeta $c_CNL  @hasLcl $c_CNL // get meta
+  SWP;  .4 FTMI AND; @rFN_PTR_MASK $h2 SWP; // get masked fn ptr
   JZ; $jloc j_call  .4 CALL; RET;
   $jset j_call      .4 CNL; RET;
 $dForget j_call
@@ -91,7 +96,7 @@ $loc comp
   // Check the meta for PRE. XOR with preBit to toggle
   .4 DUP;  @toMeta $c_CNL  @hasPre $c_CNL
   .2 FTMI; @c_STATE $h2    @hasPre $c_CNL
-  @PRE_MASK $c_IM  @stateClear $c_CLS // clear state.PRE
+  @PRE_MASK $c_IM  @stateClr $c_CNL // clear state.PRE
 
   XOR JZ; $jloc j_to // Checking for PRE.
     @comp $c_CNL // Pre: simply compile next token
@@ -100,16 +105,18 @@ $loc comp
   // Check the meta for IMM or EXEC mode
   .4 DUP;  @toMeta $c_CNL  @hasImm $c_CNL
   .2 FTMI; @c_STATE $h2    @hasImm $c_CNL
-  @PRE_MASK $c_IM  @stateClear $c_IMM // clear state.IMM
-  XOR;
+  // xor to toggle. We store it in c_FN_EXEC so an always-imm
+  // fn can know which state was selected.
+  XOR; SRMI DUP; @c_FN_EXEC $h2
+
+  // also check for state.EXEC which overrides both
   .2 FTMI; @c_STATE $h2    @hasExec $c_CNL
 
-  LOR JZ; $jloc j_to // Checking for IMM
-    @forceExec $c_CNL // IMM: forge execute
-    RET;
+  @PRE_MASK $c_IM  @stateClr $c_CNL // clear state.IMM
+  LOR JZ; $jloc j_to
+    @forceExec $c_JMP // IMM: forge execute
   $jset j_to
-    @forceExec $c_CNL // not IMM: force compile
-    RET;
+    @forceComp $c_JMP // not IMM: force compile
 $dForget j_to
 
 
