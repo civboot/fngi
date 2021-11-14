@@ -104,7 +104,9 @@ $loc c_compMetaFn // {metaFn} compile the meta fn
   @PRE_MASK $c_IM  @c_stateClr $c_CNL // clear state.PRE
 
   XOR JZ; $jloc j_to // Checking for PRE.
-    @c_comp $c_CNL // Pre: simply compile next token
+    // Pre: simply compile next token.
+    // Note: this is a forward call (c_comp not yet defined)
+    IMWS CNL; $jloc j_c_comp
   $jset j_to
 
   // Check the meta for TNT or EXEC mode
@@ -119,10 +121,11 @@ $loc c_compMetaFn // {metaFn} compile the meta fn
 
   @PRE_MASK $c_IM  @c_stateClr $c_CNL // clear state.TNT
   LOR JZ; $jloc j_to
-    @c_forceExec $c_JMP // TNT: forge execute
+    @c_forceExec $c_JMP // instant: forge execute
   $jset j_to
-    @c_forceComp $c_JMP // not TNT: force compile
-$dForget j_to
+    @c_forceComp $c_JMP // not instant: force compile
+$jset j_c_comp    // update location of j_c_comp = c_comp (here)
+$dForget j_to     // forget j_to and j_c_comp
 
 $loc c_comp
   // Load dict ref and check it
@@ -172,7 +175,7 @@ $loc # // Immediate Value (hex constant)
   .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.
   // If we are "super instant" simply return to keep number on stack.
   @c_stateSuperIns $c_CNL  NOT JZ; $jloc j_ret
-  FTMI; @rI_IM $h2   @compMaskInstr $c_CNL // compile TNT instr
+  FTMI; @rI_IM $h2   @c_compMaskInstr $c_CNL // compile TNT instr
   @h2 $c_CNL // Compile the immediate value.
   $jset j_ret   RET
 $dForget j_ret
