@@ -152,6 +152,7 @@ Env env;
 U8* mem = NULL;
 Dict* dict = NULL;
 TokenState* tokenState = NULL;
+U8* compilingName;
 FILE* srcFile;
 U16 instr = INSTR_DEFAULT;
 ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
@@ -932,12 +933,17 @@ ssize_t readSrc(size_t nbyte) {
   /*      MS      WS     RS     LS     DICT */    \
   NEW_ENV_BARE(0x8000, 0x100, 0x100, 0x200, 0x1000)
 
+void compileFile(U8* s) {
+  compilingName = s;
+  line = 1;
+  readAppend = &readSrc;
+  srcFile = fopen(s, "rb");
+  assert(!compile());
+}
 
 #define NEW_ENV(MS, WS, RS, LS, DS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS); \
-  srcFile = fopen("spore/asm.sa", "rb"); \
-  line = 1; readAppend = &readSrc; \
-  assert(!compile());
+  compileFile("spore/asm.sa");
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
@@ -994,36 +1000,38 @@ U16 testBufIdx = 0;
   return i;
 }
 
-#define COMPILE(S) \
-  testBuf = S; \
-  testBufIdx = 0; \
-  readAppend = &testingRead; \
+void compileStr(U8* s) {
+  compilingName = s;
+  testBuf = s;
+  testBufIdx = 0;
+  line = 1;
+  readAppend = &testingRead;
   assert(!compile());
-
+}
 
 /*test*/ void testHex() {
   printf("## testHex #01...\n"); TEST_ENV_BARE;
 
-  COMPILE(".1 #10");
+  compileStr(".1 #10");
   assert(WS_POP() == 0x10);
 
   printf("## testHex #10AF...\n");
-  COMPILE("/comment\n.2 #10AF");
+  compileStr("/comment\n.2 #10AF");
   U32 result = WS_POP();
   assert(result == 0x10AF);
 
-  COMPILE(".4 #1002_3004");
+  compileStr(".4 #1002_3004");
   result = WS_POP();
   assert(0x10023004 == result);
 
-  COMPILE(".2 #1002_3004");
+  compileStr(".2 #1002_3004");
   result = WS_POP();
   assert(0x3004 == result);
 }
 
 /*test*/ void testQuotes() {
   printf("## testQuotes...\n"); TEST_ENV_BARE;
-  COMPILE("\"foo bar\" baz\\0\n");
+  compileStr("\"foo bar\" baz\\0\n");
 
   assert(0 == strcmp(mem + heapStart, "foo bar\" baz"));
 }
@@ -1061,7 +1069,7 @@ U16 testBufIdx = 0;
 /*test*/ void testDict() {
   printf("## testDict\n"); TEST_ENV_BARE;
 
-  COMPILE(".2 #0F00 =foo  .4 #000B_A2AA =bazaa"
+  compileStr(".2 #0F00 =foo  .4 #000B_A2AA =bazaa"
       " @bazaa @foo .2 @foo");
   assert(0xF00 == WS_POP());   // 2foo
   assert(0xF00 == WS_POP());   // 4foo
@@ -1070,7 +1078,7 @@ U16 testBufIdx = 0;
 
 /*test*/ void testWriteHeap() { // test , and ;
   printf("## testWriteHeap\n"); TEST_ENV_BARE;
-  COMPILE(".4 #77770101, .2 #0F00, ;");
+  compileStr(".4 #77770101, .2 #0F00, ;");
   assert(0x77770101 == fetch(mem, heapStart, 4));
   assert(0x0F00 == fetch(mem, heapStart+4, 2));
   assert(INSTR_W_SZ(0, SzI2) == fetch(mem, heapStart+6, 2));
@@ -1078,39 +1086,38 @@ U16 testBufIdx = 0;
 
 /*test*/ void testExecuteInstr() { // test ^
   printf("## testExecuteInstr\n"); SMALL_ENV;
-  COMPILE(".4 @Sz2");
+  compileStr(".4 @Sz2");
   assert(0x00C00040 == WS_POP());
 
   instr = INSTR_W_SZ(~0x1800, SzI1); // instr with unused=0 else=1
-  COMPILE(".4 NOJ WS NOP");
+  compileStr(".4 NOJ WS NOP");
   assert(INSTR_DEFAULT == instr);
 
-  COMPILE(".4 #5006 #7008 .2 DRP^");
+  compileStr(".4 #5006 #7008 .2 DRP^");
   assert(0x5006 == WS_POP());
 
-  COMPILE(".1 #01 #02  ADD^");
+  compileStr(".1 #01 #02  ADD^");
   assert(0x03 == WS_POP());
 
-  COMPILE(".A @D_sz DVL^");
+  compileStr(".A @D_sz DVL^");
   assert(0x04 == WS_POP());
 }
 
 /*test*/ void testAsm2() { // test ^
   printf("## testAsm2\n"); SMALL_ENV;
-  line = 1;
-  srcFile = fopen("spore/asm2.sa", "rb");
+  compileFile("spore/asm2.sa");
   assert(!compile());
 
   printf("## testAsm2... testIf\n");
-  COMPILE(
+  compileStr(
     ".4 $loc testIf / converts 1->10 else: 42 \n"
     "  IMWS EQ JZ; #1 $h2  $jloc jmpTo        \n"
     "    IMWS RET; #10 $h2                    \n"
     "  $jset jmpTo                             \n"
     "  IMWS RET; #42 $h2                      \n"
     "$assertWsEmpty                           \n");
-  COMPILE("#1 $testIf");  assert(0x10 == WS_POP());
-  COMPILE("#2 $testIf");  assert(0x42 == WS_POP());
+  compileStr("#1 $testIf");  assert(0x10 == WS_POP());
+  compileStr("#2 $testIf");  assert(0x42 == WS_POP());
 }
 
 

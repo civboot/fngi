@@ -82,7 +82,7 @@ $loc forceComp // {metaFn}
 $dForget j_call
 
 // Core Spore compiler function. Compiles the current scanned token as a spore
-// function.
+// function, checking for PRE, IMM, ALI and LCL bits appropriately.
 $loc comp
   // Load dict ref and check it
   .4 IMWS DVL; @D_scan $h2
