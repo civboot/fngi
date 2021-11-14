@@ -12,6 +12,7 @@
 //
 
 // 8bit meta masks
+.4
 #1 =LCL_MASK // 1=has local stack
 #2 =PRE_MASK // 1=is prefix
 #4 =IMM_MASK // 1=is immediate
@@ -19,15 +20,15 @@
 
 // 4 byte globals
 $loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
-$loc rI_CNL      .4 @CNL  @IMWS ADD^,
+$loc rI_CNL_IM   .4 @CNL  @IMWS ADD^,
 $loc rI_CALL_IM  .4 @CALL @IMWS ADD^,
-$loc rI_CLR_IM   .4 #FFFF_0000, // instr clear
+$loc rI_CLR      .4 #FFFF_0000, // instr clear
 
 #10 =EXEC_MASK // 1=compiler executes everything
 
 // compiler globals
 $loc c_STATE .2 #0,
-$loc c_CN_EXEC .2 #0,
+$loc c_XSTATE .2 #0, // Execution state of a fn
 $hAlign4
 
 $loc stateClr // {mask}
@@ -38,7 +39,7 @@ $loc stateClr // {mask}
 $loc toMeta   IMWS SHR RET; #18 $h2 // shift to make just 8bit meta
 $loc hasPre   IMWS AND RET; @PRE_MASK $h2
 $loc hasImm // masks for ALI (always imm) and IMM
-  @ALI_MASK $im;
+  @ALI_MASK $c_IM;
   IMWS OR; @IMM_MASK $h2
   AND RET;
 $loc hasLcl   IMWS AND RET; @LCL_MASK $h2
@@ -67,14 +68,14 @@ $loc forceComp // {metaFn}
   $jset j_call
     .4 FTMI; @rI_CNL_IM $h2 // fetch CNL mask+instr
   $jset j_end
-  !@##$%^&,.
 
   .4 IMWS DVS; @D_instr $h2 // mask to current instr
   .4 IMWS DVL; @D_instr $h2 // get current instr
   @h2 $c_CNL // compile instr to heap
 
   // Clear current instr but keep original Sz
-  .4 FTMI; @rI_CLR $h2   ADD^
+  .4 FTMI; @rI_CLR $h2
+  ADD; // add cached sz
   IMWS DVS; @D_instr $h2
 
   @h2 $c_CNL // Compile the fn ptr.
@@ -90,8 +91,8 @@ $loc comp
 
   .4 IMWS DVL; @D_rdict $h2 // {rValue}
   // Make sure token exists
-  .4 DUP;  @E_DictDNE $imm  @assert $c_CNL
-  LD; // load it {metaFn}
+  .4 DUP;  @E_DictDNE $c_IM  @assert $c_CNL
+  FT; // fetch it {metaFn}
 
   // Check the meta for PRE. XOR with preBit to toggle
   .4 DUP;  @toMeta $c_CNL  @hasPre $c_CNL
@@ -105,9 +106,9 @@ $loc comp
   // Check the meta for IMM or EXEC mode
   .4 DUP;  @toMeta $c_CNL  @hasImm $c_CNL
   .2 FTMI; @c_STATE $h2    @hasImm $c_CNL
-  // xor to toggle. We store it in c_FN_EXEC so an always-imm
+  // xor to toggle. We store it in c_XSTATE so an always-imm
   // fn can know which state was selected.
-  XOR; SRMI DUP; @c_FN_EXEC $h2
+  XOR; SRMI DUP; @c_XSTATE $h2
 
   // also check for state.EXEC which overrides both
   .2 FTMI; @c_STATE $h2    @hasExec $c_CNL

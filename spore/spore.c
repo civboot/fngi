@@ -1084,7 +1084,7 @@ void compileStr(U8* s) {
   assert(INSTR_W_SZ(0, SzI2) == fetch(mem, heapStart+6, 2));
 }
 
-/*test*/ void testExecuteInstr() { // test ^
+/*test*/ void testExecuteInstr() {
   printf("## testExecuteInstr\n"); SMALL_ENV;
   compileStr(".4 @Sz2");
   assert(0x00C00040 == WS_POP());
@@ -1103,7 +1103,7 @@ void compileStr(U8* s) {
   assert(0x04 == WS_POP());
 }
 
-/*test*/ void testAsm2() { // test ^
+/*test*/ void testAsm2() {
   printf("## testAsm2\n"); SMALL_ENV;
   compileFile("spore/asm2.sa");
   assert(!compile());
@@ -1120,6 +1120,12 @@ void compileStr(U8* s) {
   compileStr("#2 $testIf");  assert(0x42 == WS_POP());
 }
 
+/*test*/ void testBoot() {
+  printf("## testBoot\n"); SMALL_ENV;
+  compileFile("spore/asm2.sa");
+  compileFile("spore/boot.sa");
+}
+
 
 /*test*/ void tests() {
   testHex();
@@ -1129,6 +1135,7 @@ void compileStr(U8* s) {
   testWriteHeap();
   testExecuteInstr();
   testAsm2();
+  testBoot();
 
   assert(0 == WS_LEN);
 }
