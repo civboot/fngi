@@ -30,7 +30,7 @@ $loc XSTATE .2 #0, // Execution state of a fn
 #0100 =EXEC_MASK // 1=everything is always instant.
 #0200 =QUIT_MASK // 1=quit compLoop.
 
-.4
+.2
 $loc c_stateClr // {mask}
   NOT; FTMI AND; @STATE $h2
   SRMI RET; @STATE $h2
@@ -57,14 +57,48 @@ $loc c_stateSuperIns
   @XSTATE $c_FTMI2  @c_maskIns $c_CNL
   AND RET;
 
+$hAlign4
+$loc c_rFN #0 .4, // dict ref of currently compiling fn.
+$loc c_fnDictHeap #0 .4, // dict heap after defining current fn.
 
-// Force execute a metaFn
-$loc c_forceExec // {metaFn}
-  .4 DUP;  @c_toMeta $c_CNL  @c_maskLcl $c_CNL // get meta
-  SWP;  .4 FTMI AND; @rFN_PTR_MASK $h2 SWP; // get masked fn ptr
-  JZ; $jloc j_call  .4 CALL; RET;
-  $jset j_call      .4 CNL; RET;
-$dForget j_call
+// ******************
+// * Core Syntax: define fns for the core syntax tokens.
+$assertWsEmpty
+
+// usage: $floc <fn-name>
+// Set location of spore fn. This is ultra-basic. The syntax is still assembly.
+$loc c_floc
+  #00FF $c_IM  @c_stateClr $c_CNL // clear toggle bits
+  .2 SRMI ZERO; @XSTATE $h2       // clear XSTATE
+  @loc $c_CNL // set location of next token
+  .4 IMWS DVL; @D_rdict $h2 // get dictionary reference of current token
+  SRMI; @c_rFN $h2 // store to c_rFN
+
+  @c_rDictHeap $c_FTMI2
+  .2 SRMI RET; @c_fnDictHeap $h2 // update fnDictHeap
+
+$c_floc c_fnClean
+  @assertWsEmpty $c_CNL
+  @c_fnDictHeap $c_FTMI2 // fetch dict heap after current fn
+  .2 SRMI RET; @c_rDictHeap $h2 // store to rDictHeap (forget keys after fn)
+
+// {8bit mask} apply an 8-bit mask to the c_rFN (current fn ref)
+$c_floc c_fnMask
+  IMWS SHL; #18 $h2 // shift mask left by 0x18 (24)
+  FTMI FT; @c_rFN $h2 // double fetch of rFN (get metaFn)
+  SRMI OR RET; @c_rFN $h2 // bitwise-or mask and store.
+
+$c_floc INSTANT          @TNT_MASK $c_IM  @c_fnMask $c_JMP // make INSTANT
+                $INSTANT // make INSTANT an instant fn
+$c_floc ALI     $INSTANT @ALI_MASK $c_IM  @c_fnMask $c_JMP // make ALI
+$c_floc PRE     $INSTANT @PRE_MASK $c_IM  @c_fnMask $c_JMP // make PRE
+$c_floc $       $INSTANT @TNT_MASK $c_IM  @c_stateSet $c_JMP  // toggle next INSTANT
+$c_floc '       $INSTANT @PRE_MASK $c_IM  @c_stateSet $c_JMP  // toggle next PRE
+$c_floc %%      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
+$c_floc ASM_BEG          @QUIT_MASK $c_IM  @c_stateSet $c_JMP // begin assembly syntax
+
+// Note: this actually isn't a comment. It's defining comments for spore.
+$c_floc //      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
 
 $loc c_compMaskInstr // {maskInstr:4}
   @getSz $c_CNL  SWP; // cache sz {sz maskInstr}
@@ -75,6 +109,25 @@ $loc c_compMaskInstr // {maskInstr:4}
   // Clear current instr but with cached size
   .4 FTMI ADD; @rI_CLR $h2
   IMWS DVS RET; @D_instr $h2
+
+$c_floc #       $ALI // Immediate Value (hex constant)
+  .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.
+  // If we are "super instant" simply return to keep number on stack.
+  @c_stateSuperIns $c_CNL  NOT JZ; $jloc j_ret
+  FTMI; @rI_IM $h2   @c_compMaskInstr $c_CNL // compile TNT instr
+  @h2 $c_CNL // Compile the immediate value.
+  $jset j_ret   RET
+$c_fnClean   $c_dRef j_ret $tAssertNot // assert j_ret is deleted
+
+
+
+// Force execute a metaFn
+$loc c_forceExec // {metaFn}
+  .4 DUP;  @c_toMeta $c_CNL  @c_maskLcl $c_CNL // get meta
+  SWP;  .4 FTMI AND; @rFN_PTR_MASK $h2 SWP; // get masked fn ptr
+  JZ; $jloc j_call  .4 CALL; RET;
+  $jset j_call      .4 CNL; RET;
+$dForget j_call
 
 // Force compile a metaFn to a value.
 $loc c_forceComp // {metaFn}
@@ -144,57 +197,6 @@ $loc ASM_END // spore compilation loop. Calling will end ASM syntax.
   $jset j_quit RET;
 $dForget j_loop
 
-// ******************
-// * Core Syntax: define fns for the core syntax tokens.
-$assertWsEmpty
-
-$hAlign4
-$loc c_rFN #0 .4, // dict ref of currently compiling fn.
-$loc c_fnDictHeap #0 .4, // dict heap after defining current fn.
-
-// usage: $floc <fn-name>
-// Set location of spore fn. This is ultra-basic. The syntax is still assembly.
-$loc c_floc
-  #00FF $c_IM  @c_stateClr $c_CNL // clear toggle bits
-  .2 SRMI ZERO; @XSTATE $h2       // clear XSTATE
-  @loc $c_CNL // set location of next token
-  .4 IMWS DVL; @D_rdict $h2 // get dictionary reference of current token
-  SRMI; @c_rFN $h2 // store to c_rFN
-
-  @c_rDictHeap $c_FTMI2
-  .2 SRMI RET; @c_fnDictHeap $h2 // update fnDictHeap
-
-$c_floc c_fnClean
-  @assertWsEmpty $c_CNL
-  @c_fnDictHeap $c_FTMI2 // fetch dict heap after current fn
-  .2 SRMI RET; @c_rDictHeap $h2 // store to rDictHeap (forget keys after fn)
-
-// {8bit mask} apply an 8-bit mask to the c_rFN (current fn ref)
-$c_floc c_fnMask
-  IMWS SHL; #18 $h2 // shift mask left by 0x18 (24)
-  FTMI FT; @c_rFN $h2 // double fetch of rFN (get metaFn)
-  SRMI OR RET; @c_rFN $h2 // bitwise-or mask and store.
-
-$c_floc INSTANT          @TNT_MASK $c_IM  @c_fnMask $c_JMP // make INSTANT
-                $INSTANT // make INSTANT an instant fn
-$c_floc ALI     $INSTANT @ALI_MASK $c_IM  @c_fnMask $c_JMP // make ALI
-$c_floc PRE     $INSTANT @PRE_MASK $c_IM  @c_fnMask $c_JMP // make PRE
-$c_floc $       $INSTANT @TNT_MASK $c_IM  @c_stateSet $c_JMP  // toggle next INSTANT
-$c_floc '       $INSTANT @PRE_MASK $c_IM  @c_stateSet $c_JMP  // toggle next PRE
-$c_floc %%      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
-$c_floc ASM_BEG          @QUIT_MASK $c_IM  @c_stateSet $c_JMP // begin assembly syntax
-
-// Note: this actually isn't a comment. It's defining comments for spore.
-$c_floc //      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
-
-$c_floc #       $ALI // Immediate Value (hex constant)
-  .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.
-  // If we are "super instant" simply return to keep number on stack.
-  @c_stateSuperIns $c_CNL  NOT JZ; $jloc j_ret
-  FTMI; @rI_IM $h2   @c_compMaskInstr $c_CNL // compile TNT instr
-  @h2 $c_CNL // Compile the immediate value.
-  $jset j_ret   RET
-$c_fnClean   $c_dRef j_ret $tAssertNot // assert j_ret is deleted
-
 
 $assertWsEmpty
+@EXEC_MASK $c_stateSet

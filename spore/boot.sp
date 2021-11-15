@@ -1,5 +1,5 @@
 // Spore bootsrap. Requires boot.sa.
+$ASM_END // Start spore syntax
 
 // Starts with a small amount of ASM
-@EXEC_MASK $c_stateSet
-$ASM_END
+#0 #42 assert

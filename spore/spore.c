@@ -6,9 +6,6 @@
 #include <unistd.h>
 #include <string.h>
 
-// Debugging
-void dbgEnv();
-
 // ********************************************
 // ** Core Types
 
@@ -144,6 +141,10 @@ typedef enum {
   T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
 } TokenGroup;
 
+// Debugging
+void dbgEnv();
+void dbgInstr(Instr i);
+
 // ********************************************
 // ** Globals
 
@@ -216,12 +217,6 @@ Instr splitInstr(U16 instr) {
   instr = instr & mask;
   instr = instr | setInstr;
 }
-
-void dbgInstr(Instr i) {
-  U8 sz = szIToSz(i.szI);
-  printf("sz:%X mem:%X jmp:%X op:%X ", sz, i.mem, i.jmp, i.op);
-}
-
 
 /*fn*/ void* alignSys(void* p, U8 sz) {
   U8 mod = (size_t)p % sz;
@@ -966,6 +961,87 @@ void compileFile(U8* s) {
 // ********************************************
 // ** Main
 void tests();
+
+U8* memName(MemI m) {
+  return (U8*[]) {
+  "WS  ",   "IMWS",   "FTLI",   "FTMI",
+  "FTOI",   "SRLI",   "SRMI",   "SROI",
+  }[m];
+}
+
+U8* jmpName(JmpI j) {
+  return (U8*[]) {
+  "NOJ ",         "JZ  ",         "JTBL",         "JMP ",
+  "_JR0",         "CALL",         "CNL ",         "RET ",
+  }[j];
+}
+
+U8* opName(U8 op) {
+  switch (op >> 4) {
+    // Special    [0x0 - 0x10)
+    case 0:
+      switch (op) {
+        case 0x0:  return "NOP  ";
+        case 0x1:  return "SWP  ";
+        case 0x2:  return "DRP  ";
+        case 0x3:  return "DRP2 ";
+        case 0x4:  return "DUP  ";
+        case 0x5:  return "DUPN ";
+        case 0x6:  return "DVL  ";
+        case 0x7:  return "DVS  ";
+        case 0x8:  return "RGL  ";
+        case 0x9:  return "RGS  ";
+        case 0xA:  return "FT   ";
+        case 0xB:  return "SR   ";
+        case 0xC:  return "ZERO ";
+        default:   return "UNK0 ";
+      }
+
+    // Single Arg [0x10 - 0x20)
+    case 1:
+      switch (op - OPI1_START) {
+        case 0:    return "INC  ";
+        case 1:    return "INC2 ";
+        case 2:    return "INC4 ";
+        case 3:    return "INV  ";
+        case 4:    return "NEG  ";
+        case 5:    return "NOT  ";
+        case 6:    return "CI1  ";
+        case 7:    return "CI2  ";
+        default:   return "UNK1 ";
+      }
+
+    // Two Arg    [0x20 - 0x3F)
+    case 2:
+      switch (op - OPI2_START) {
+        case 0x0:  return "ADD  ";
+        case 0x1:  return "SUB  ";
+        case 0x2:  return "MOD  ";
+        case 0x3:  return "SHL  ";
+        case 0x4:  return "SHR  ";
+        case 0x5:  return "AND  ";
+        case 0x6:  return "OR   ";
+        case 0x7:  return "XOR  ";
+        case 0x8:  return "LAND ";
+        case 0x9:  return "LOR  ";
+        case 0xA:  return "EQ   ";
+        case 0xB:  return "NEQ  ";
+        case 0xC:  return "GE_U ";
+        case 0xD:  return "LT_U ";
+        case 0xE:  return "GE_S ";
+        case 0xF:  return "LT_S ";
+        case 0x10: return "MUL  ";
+        case 0x11: return "DIV_U";
+        case 0x12: return "DIV_S";
+        default: return "UNK2";
+      }
+  }
+}
+
+void dbgInstr(Instr i) {
+  U8 sz = szIToSz(i.szI);
+  printf("sz:%X mem:%s jmp:%s op:%s ", sz, memName(i.mem), jmpName(i.jmp), opName(i.op));
+}
 
 /*fn*/ int main() {
   printf("compiling spore...:\n");
