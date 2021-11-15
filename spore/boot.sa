@@ -30,7 +30,6 @@ $loc XSTATE .2 #0, // Execution state of a fn
 #0100 =EXEC_MASK // 1=everything is always instant.
 #0200 =QUIT_MASK // 1=quit compLoop.
 
-
 .4
 $loc c_stateClr // {mask}
   NOT; FTMI AND; @STATE $h2

@@ -120,6 +120,7 @@ typedef struct {
 } ExecuteResult;
 
 typedef struct {
+  APtr buf;  // buffer of dicts
   U16 heap;  // heap offset
   U16 end;   // end offset
 } Dict;
@@ -133,10 +134,10 @@ typedef struct {
 #define TOKEN_BUF 0x7D
 
 typedef struct {
-  U8 group;
+  APtr buf; // buffer.
   U8 len;   // length of token
   U8 size;  // characters buffered
-  U8 buf[]; // size=TOKEN_BUF
+  U8 group;
 } TokenState;
 
 typedef enum {
@@ -536,7 +537,7 @@ APtr toAPtr(U32 v, U8 sz) {
 // ** Spore Dict
 // key/value map (not hashmap) wherey is a cstr and value is U32.
 
-#define Dict_key(OFFSET)  ((Key*) (((U8*)dict) + sizeof(Dict) + OFFSET))
+#define Dict_key(OFFSET)  ((Key*) (mem + dict->buf + (OFFSET)))
 // Given ptr to key, get pointer to the value.
 #define Key_vptr(KEY) ((U32*) alignSys(((U8*)KEY) + KEY->len + 1, 4))
 
@@ -600,7 +601,7 @@ APtr toAPtr(U32 v, U8 sz) {
 // ** Scanner
 #define tokenBufSize (tokenState->size)
 #define tokenLen tokenState->len
-#define tokenBuf tokenState->buf
+#define tokenBuf (mem + tokenState->buf)
 
 /*fn*/ TokenGroup toTokenGroup(U8 c) {
   if(c <= ' ') return T_WHITE;
@@ -920,15 +921,25 @@ ssize_t readSrc(size_t nbyte) {
   *env.heap = 16;                         \
   *env.topHeap = MS;                      \
   *env.topMem = MS;                       \
-  /* put Local Stack, Dict on topheap */  \
-  *env.topHeap -= LS;                     \
-  env.ls.mem = mem + *env.topHeap;        \
-  *env.topHeap -= sizeof(TokenState) + TOKEN_BUF; \
-  tokenState = (TokenState*) (mem + *env.topHeap); \
-  *env.topHeap -= DS;                      \
+  /* Dict is right at the top */          \
+  *env.topHeap -= sizeof(Dict);           \
   dict = (Dict*) (mem + *env.topHeap);    \
   dict->heap = 0;                         \
-  dict->end = DS;
+  dict->end = DS;                         \
+  /* Then Token State*/                   \
+  *env.topHeap -= sizeof(TokenState);     \
+  tokenState = (TokenState*) (mem + *env.topHeap); \
+  /* First reserve space for local stack*/ \
+  *env.topHeap -= LS;                     \
+  env.ls.mem = mem + *env.topHeap;        \
+  /* Then dictionary */                   \
+  *env.topHeap -= DS;                     \
+  dict->buf = *env.topHeap;               \
+  /* Then Token Buf*/                     \
+  *env.topHeap -= TOKEN_BUF;              \
+  tokenState->buf = *env.topHeap;
+
+
 
 #define SMALL_ENV_BARE \
   /*      MS      WS     RS     LS     DICT */    \
@@ -1102,13 +1113,19 @@ void compileStr(U8* s) {
   compileStr(".1 #01 #02  ADD^");
   assert(0x03 == WS_POP());
 
+  compileStr(".4 #8 #5 SUB^");
+  assert(0x03 == WS_POP());
+
+  compileStr(".4 #8000 #4 SUB^");
+  assert(0x7FFC == WS_POP());
+
   compileStr(".A @D_sz DVL^");
   assert(0x04 == WS_POP());
 
-  U32 expectDictHeap = (U8*)dict - mem;
+  U32 expectDictHeap = (U8*)dict - mem + 4;
   compileStr("@rTopHeap FT^");  assert(*env.topHeap == WS_POP());
+  printf("%u  %X\n", sizeof(Dict), *env.topMem);
   compileStr("@c_rDictHeap");   assert(expectDictHeap == WS_POP());
-  compileStr("@c_dictStart");   assert(expectDictHeap + 4 == WS_POP());
 }
 
 /*test*/ void testAsm2() {
