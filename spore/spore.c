@@ -1041,6 +1041,8 @@ void compileStr(U8* s) {
   compileStr(".2 #1002_3004");
   result = WS_POP();
   assert(0x10023004 == result);
+  printf("%X\n", tokenLen);
+  assert(FALSE);
 }
 
 /*test*/ void testQuotes() {
