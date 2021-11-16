@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <string.h>
 
+char dbgMode = 1;
+
 // ********************************************
 // ** Core Types
 
@@ -144,6 +146,8 @@ typedef enum {
 // Debugging
 void dbgEnv();
 void dbgInstr(Instr i);
+void dbgWs();
+void dbgJmpI(JmpI j);
 
 // ********************************************
 // ** Globals
@@ -348,7 +352,6 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
   ExecuteResult res = {};
   Instr i = splitInstr(instr);
-  printf("??? executeInstr: \t0x%X \t", instr); dbgInstr(i); dbgEnv();
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
 
@@ -375,6 +378,10 @@ APtr toAPtr(U32 v, U8 sz) {
       WS_PUSH(fetch(mem, l, sz));
       break;
     default: fail("unknown mem");
+  }
+
+  if(dbgMode) {
+    printf("^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs();
   }
 
   switch (i.op >> 4) {
@@ -476,6 +483,11 @@ APtr toAPtr(U32 v, U8 sz) {
   APtr aptr;
   U16 growLs;
 
+  if(dbgMode) {
+    dbgJmpI(i.jmp);
+    dbgEnv();
+  }
+
   // *************
   // * Jmp: perform the jump
   switch(i.jmp) {
@@ -530,7 +542,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
 // ********************************************
 // ** Spore Dict
-// key/value map (not hashmap) wherey is a cstr and value is U32.
+// key/value map (not hashmap) where key is a cstr and value is U32.
 
 #define Dict_key(OFFSET)  ((Key*) (mem + dict->buf + (OFFSET)))
 // Given ptr to key, get pointer to the value.
@@ -962,16 +974,40 @@ void compileFile(U8* s) {
 // ** Main
 void tests();
 
+/*fn*/ int main() {
+  printf("compiling spore...:\n");
+
+  tests();
+  return OK;
+}
+
+
+// ********************************************
+// ** Testing
+
+#include <string.h>
+
+void printCStr(U8 len, U8* s) { printf("%.*s", tokenLen, tokenBuf); }
+
+void dbgEnv() {
+  printf("  line=%u token[%u, %u]=", line, tokenLen, tokenBufSize);
+  printCStr(tokenLen, tokenBuf);
+  printf("stklen:%u ", WS_LEN);
+  printf("tokenGroup=%u  ", tokenState->group);
+  printf("instr=0x%X ", instr);
+  printf("sz=%u\n", szIToSz(CUR_SZI));
+}
+
 U8* memName(MemI m) {
   return (U8*[]) {
-  "WS  ",   "IMWS",   "FTLI",   "FTMI",
+  "    ",   "IMWS",   "FTLI",   "FTMI",
   "FTOI",   "SRLI",   "SRMI",   "SROI",
   }[m];
 }
 
 U8* jmpName(JmpI j) {
   return (U8*[]) {
-  "NOJ ",         "JZ  ",         "JTBL",         "JMP ",
+  "    ",         "JZ  ",         "JTBL",         "JMP ",
   "_JR0",         "CALL",         "CNL ",         "RET ",
   }[j];
 }
@@ -981,7 +1017,7 @@ U8* opName(U8 op) {
     // Special    [0x0 - 0x10)
     case 0:
       switch (op) {
-        case 0x0:  return "NOP  ";
+        case 0x0:  return "     ";
         case 0x1:  return "SWP  ";
         case 0x2:  return "DRP  ";
         case 0x3:  return "DRP2 ";
@@ -1038,30 +1074,51 @@ U8* opName(U8 op) {
   }
 }
 
+Key keyDNE = {.len = 3, .s = "???" };
+
+Key* Dict_findFn(U32 value) {
+  Key* key = Dict_key(0);
+  U16 offset = 0;
+
+  while(offset < dict->heap) {
+    U32* keyVPtr = Key_vptr(key);
+    if(value = 0xFFFFFFFFFFFF & *keyVPtr) return key;
+    U16 entrySz = align(key->len + 1 + 4, 4);
+    key += entrySz;
+    offset += entrySz;
+  }
+
+  assert(offset == dict->heap);
+  return &keyDNE;
+}
+
+void dbgJmpI(JmpI j) {
+  U32 jloc = 0;
+
+  switch (j) {
+    case JZ: jloc = fetch(mem, env.ep, 2); break;
+    case CALL:
+    case CNL: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
+  }
+  if(!jloc) return;
+  Key* k = Dict_findFn(jloc);
+  printf(" [[ ");
+  printCStr(k->len, k->s);
+  printf(" ]] ");
+}
+
+void dbgWs() {
+  printf("WS %u:", WS_LEN);
+  if(WS_LEN > 0) printf("%+8X|", fetch(env.ws.mem, env.ws.sp, ASIZE));
+  if(WS_LEN > 1) printf("%+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, ASIZE));
+}
+
+
 void dbgInstr(Instr i) {
   U8 sz = szIToSz(i.szI);
-  printf("sz:%X mem:%s jmp:%s op:%s ", sz, memName(i.mem), jmpName(i.jmp), opName(i.op));
+  printf(".%X %s %s %s; ", sz, memName(i.mem), jmpName(i.jmp), opName(i.op));
 }
 
-/*fn*/ int main() {
-  printf("compiling spore...:\n");
-
-  tests();
-  return OK;
-}
-
-// ********************************************
-// ** Tests
-#include <string.h>
-
-void dbgEnv() {
-  printf("  \t-DBG- line=%u token[%u, %u]=%.*s  ", line, tokenLen, tokenBufSize, tokenLen, tokenBuf);
-  printf("ep:0x%X ", env.ep);
-  printf("stklen:%u ", WS_LEN);
-  printf("tokenGroup=%u  ", tokenState->group);
-  printf("instr=0x%X ", instr);
-  printf("sz=%u\n", szIToSz(CUR_SZI));
-}
 
 #define TEST_ENV_BARE \
   instr = INSTR_DEFAULT; \
@@ -1097,6 +1154,9 @@ void compileStr(U8* s) {
   readAppend = &testingRead;
   assert(!compile());
 }
+
+// ********************************************
+// ** Tests
 
 /*test*/ void testHex() {
   printf("## testHex #01...\n"); TEST_ENV_BARE;
