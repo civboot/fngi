@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 1;
+char dbgMode = 0;
 
 // ********************************************
 // ** Core Types
@@ -1260,7 +1260,6 @@ void compileStr(U8* s) {
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
   compileStr("@rTopHeap FT^");  assert(*env.topHeap == WS_POP());
-  printf("%u  %X\n", sizeof(Dict), *env.topMem);
   compileStr("@c_rDictHeap");   assert(expectDictHeap == WS_POP());
 }
 
