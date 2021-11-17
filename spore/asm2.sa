@@ -86,10 +86,10 @@ $loc dForget  @c_scan $c_UCAL  .4 LIT DVS RET; @D_rdict $h2
 $dForget j_to
 
 .4
-#00 =E_Unknown
-#01 =E_WsNotEmpty
-#02 =E_DictDNE
-#03 =E_Test
+#E000_E000 =E_Unknown
+#E000_E001 =E_Test
+#E000_E002 =E_WsNotEmpty
+#E000_E003 =E_DictDNE
 
 .4
 $loc assertWsEmpty @getWsLen $c_UCAL @E_WsNotEmpty $c_LIT // fallthrough
