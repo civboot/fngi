@@ -136,13 +136,13 @@ updated by the below:
 
 Example to add a byte to 42 and return
 ```
-S1 IMWS ADD RET; #0042 ,2
+S1 LIT ADD RET; #0042 ,2
 ```
 
 Example forward jump if zero.
 ```
 // if top=0 will jump to where "if" label is set.
-JZ;       // jump-if-zero instruction
+JZL;       // jump-if-zero instruction
 &2        // push current location (2 bytes)
 =2 if     // store in if
 #0000 ,2  // push 0x0000 on stack and compile it (initial jump location)
@@ -157,7 +157,7 @@ JZ;       // jump-if-zero instruction
 
 That looks like a lot, let's reduce it to what it would normally look like:
 ```
-JZ;  &2 =2if  #0000,2
+JZL;  &2 =2if  #0000,2
 
 // ... code if not zero ...
 
@@ -196,7 +196,7 @@ further information.
 --------------------------------------------------------------
 
 0 000 WS      WS0       WS1     WS        Working Stack
-1 001 IMWS    IM        WS0     WS        IMmediate Working Stack
+1 001 LIT    IM        WS0     WS        IMmediate Working Stack
 2 010 SRLI    WS0       WS1     ST(LP+IM) StoRe LocalsPtr offset
 3 011 SRMI    WS0       WS1     ST(MP+IM) StoRe to ModulePtr offset
 4 100 SROI    IM        WS1     ST(WS0)   StoRe Operate Immediate
@@ -209,7 +209,7 @@ The Mem bits define how memory is used for the operation. There are 8
 possibilities, describing them in reverse order (simplest to most complex):
 - WS: WS means "Working Stack". All values are gotten from the WS and values
   are pushed to the working stack.
-- IMWS: IM means "IMmediate". IMWS uses the 16bit immedaite value (after the
+- LIT: IM means "IMmediate". LIT uses the 16bit immedaite value (after the
   current operation) as the "top" value and the working stack as the "second".
   It stores it's value on the working stack.
 - FTOI: means "FeTch Operate Immediate". It fetches the value at the address
@@ -263,7 +263,7 @@ Calls work a little different in spore than in many languages:
 
 The following Jump modes are possible:
 - 0 NOJ: No Jump, do not perform jump (but do the rest of the operation)
-- 1 JZ: Jump to Immediate if store=zero
+- 1 JZL: Jump to Immediate if store=zero
 - 2 JTBL: consume StoRe and jump to the jump table which uses the IMM for
   it's size.
 - 3 JST: Jump to STore. Consumes store.
@@ -290,9 +290,9 @@ Some constraints on jump modes:
 - All others must have mem.Store=WS so they can consume it.
   - TODO: It's possible they could consume Second in this case, more thought
     must be aplied.
-- JZ and JTBL can ONLY be used with mem=WS as they require the IMM for their
+- JZL and JTBL can ONLY be used with mem=WS as they require the IMM for their
   offset/table-meta (all mem operations besides WS use an IMM)
-- CALL can ONLY be used with mem={WS, IMWS}. It also can't be used with
+- CALL can ONLY be used with mem={WS, LIT}. It also can't be used with
   operations FT or SR as it must perform a fetch (only one memory operation
   allowed).
 
@@ -323,8 +323,8 @@ also will always pull a ptr for their ptr argument.
 - `FT {addr: Ptr} -> value` fetch.
   - Can only be used with mem of {WS} and size=ptrSize
 - `SR {addr: Ptr, value}` store. Note that the address is Second,
-  allowing for storing an IMM value with IMWS.
-  - Can only be used with mem of {WS; IMWS}
+  allowing for storing an IMM value with LIT.
+  - Can only be used with mem of {WS; LIT}
 
 Device operations can only work with size=U16. They will update the stack
 differently per operation, ignoring the size bits. See **Device Operations**
@@ -387,7 +387,7 @@ hosting.
 
 When device operation command is called it always pulls {dvId:1 port:1} from
 the stack. These values do not have alignment requirements. In addition,
-if IMWS is used, then the dvId is the high order byte and the port is the low
+if LIT is used, then the dvId is the high order byte and the port is the low
 order byte.
 
 In the future, the assembly will be able to register/override dvIds by simply
@@ -431,7 +431,7 @@ Byte layout:
 size | 6b operation
 ```
 
-Like spore16, all immediates must be 16bit EXCEPT mem.IMWS with size=8, which can be
+Like spore16, all immediates must be 16bit EXCEPT mem.LIT with size=8, which can be
 an 8 bit immediate. 32bit immediates are still not allowed, as they would
 diverge from spore16 and make peephole optimization impossible.
 
@@ -448,13 +448,13 @@ Below is the spore16 description and what it instead does in spore8.
 - FTLI: Fetch value at `LP+IM` onto WS
 - FTMI: Fetch value at `MP+IM` onto WS
 - FTOI: causes trap in spore8
-- IMWS: push IMM onto WS
+- LIT: push IMM onto WS
 - WS: causes NOOP in spore8
 
 ### Jump
 Unlike spore16, there are no restrictions on jump instructions in spore8
 
-- JZ: jumps to IMM if store=zero
+- JZL: jumps to IMM if store=zero
 - CALL: calls WS, updating LP appropriately
 - JST: jumps to WS
 - CNL: calls WS without update to local stack growth.
@@ -497,13 +497,13 @@ the system.
 
 ```
 ( Result: 12 since 34 is dropped )
-IMWS 1234
+LIT 1234
 DRP8 // Drops 34
 
 ( Result: 1234 + 5678 = 6912 )
-IMWS8 12
-IMWS8 34
-IMWS16 5678 ADD16
+LIT8 12
+LIT8 34
+LIT16 5678 ADD16
 ```
 
 ## Some thoughts on future direction of spore (notes)
@@ -523,7 +523,7 @@ IMWS16 5678 ADD16
     able to compile blobs that have references to other blobs... Or not allow
     references inside of const blobs...
 
-- For the non-IMWS and nonLocal immeditates, the immediate can encode it's
+- For the non-LIT and nonLocal immeditates, the immediate can encode it's
   index type in the high bits as import/module global/fn/jumpBlock. Leaves 13
   bits for 8192 indexes. Then the operation ALWAYS gets converted to an APtr or
   the specified ty by the machine.
