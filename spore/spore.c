@@ -399,7 +399,7 @@ APtr toAPtr(U32 v, U8 sz) {
         case 0x3: /*DRP2*/ WS_POP(); WS_POP(); break;
         case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
-        case 0x6: /*DVL */ deviceOp(TRUE, i.szI, szMask, sz); break;
+        case 0x6: /*DVF */ deviceOp(TRUE, i.szI, szMask, sz); break;
         case 0x7: /*DVS */ deviceOp(FALSE, i.szI, szMask, sz); break;
         case 0x8: /*RGL */ fail("RGL not impl"); break;
         case 0x9: /*RGS */ fail("RGS not impl"); break;
@@ -1023,7 +1023,7 @@ U8* opName(U8 op) {
         case 0x3:  return "DRP2 ";
         case 0x4:  return "DUP  ";
         case 0x5:  return "DUPN ";
-        case 0x6:  return "DVL  ";
+        case 0x6:  return "DVF  ";
         case 0x7:  return "DVS  ";
         case 0x8:  return "RGL  ";
         case 0x9:  return "RGS  ";
@@ -1255,7 +1255,7 @@ void compileStr(U8* s) {
   compileStr(".4 #8000 #4 SUB^");
   assert(0x7FFC == WS_POP());
 
-  compileStr(".A @D_sz DVL^");
+  compileStr(".A @D_sz DVF^");
   assert(0x04 == WS_POP());
 
   U32 expectDictHeap = (U8*)dict - mem + 4;

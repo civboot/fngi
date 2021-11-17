@@ -48,7 +48,7 @@
 #003F_0003 =DRP2  // {l r -> }  drop 2
 #003F_0004 =DUP   // {l -> l l} duplicate
 #003F_0005 =DUPN  // {l -> l l==0} DUP then NOT
-#003F_0006 =DVL   // Device Operation Load
+#003F_0006 =DVF   // Device Operation Load
 #003F_0007 =DVS   // Device Operation Store
 #003F_0008 =RGL   // Register Load
 #003F_0009 =RGS   // Register Store
