@@ -28,7 +28,7 @@ $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
 
-.2 $loc c_LIT // compile an immediate from the stack {v:2}
+.2 $loc c_LIT // compile an literal from the stack {v:2}
   LIT;  @Sz2 @LIT ADD^, // push `.2 LIT` instruction to stack
   LIT CNL; @h2, // compile it
   LIT JMP; @h2, // compile value
@@ -43,12 +43,12 @@ $loc getWsLen    LIT DVF RET; @D_wslen $h2
   @h2 $c_CNL // compile it
   LIT JMP; @h2 $h2 // compile the loc
 
-.4 $loc c_FTML4 / {loc} compile a fetch immediate sz=4
+.4 $loc c_FTML4 / {loc} compile a fetch literal sz=4
   @Sz4 @FTML ADD^ $c_LIT // push .4 FTML instr
   @h2 $c_CNL // compile it
   LIT JMP; @h2 $h2 // compile the loc
 
-.4 $loc c_FTML2 / {loc} compile a fetch immediate sz=2
+.4 $loc c_FTML2 / {loc} compile a fetch literal sz=2
   @Sz2 @FTML ADD^ $c_LIT // push .2 FTML instr
   @h2 $c_CNL // compile it
   LIT JMP; @h2 $h2 // compile the loc

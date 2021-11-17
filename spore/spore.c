@@ -327,23 +327,23 @@ APtr toAPtr(U32 v, U8 sz) {
 // ********************************************
 // ** Executing Instructions
 
-/*fn*/ U16 popImm() {
+/*fn*/ U16 popLit() {
     U16 out = fetch(mem, env.ep, 2);
     env.ep += 2;
     return out;
 }
 
 /* Takes the 16bit instruction and executes it as follows:
- * - mem: perform load/popImm. set srPtr if it is a SR Mem instruction (not
+ * - mem: perform load/popLit. set srPtr if it is a SR Mem instruction (not
  *   related to SR op).
  * - operation: perform the operation.
  * - If srPtr is set (from mem), pop a value and store it at srPtr.
- * - jmp: Perform jmp/call instruction. If an imm is required pull it.
+ * - jmp: Perform jmp/call instruction. If an literal is required pull it.
  *   - RET has special handling if the callstak is empty where it returns to
  *     native execution handling.
  *
  * A few notes:
- * - It's legal to use two immediates (one for MEM and one for JMP).
+ * - It's legal to use two literals (one for MEM and one for JMP).
  * - It's legal to do multiple memory operations in one instriction, i.e. read
  *   from and address using MEM and then use SR op.
  * - CALL can be done after an operation. Useful for LoaDing an address then
@@ -360,21 +360,21 @@ APtr toAPtr(U32 v, U8 sz) {
 
   switch(i.mem) {
     case WS: break;
-    case LIT: WS_PUSH(szMask & popImm());    break;
+    case LIT: WS_PUSH(szMask & popLit());    break;
     case SRLL:
-      srPtr = env.ls.sp + popImm();
+      srPtr = env.ls.sp + popLit();
       if(!srPtr) fail("SRLL at NULL");
       break;
     case SRML:
-      srPtr = env.mp + popImm();
+      srPtr = env.mp + popLit();
       if(!srPtr) fail("SRML at NULL");
       break;
-    case SROL: WS_PUSH(szMask & popImm());    break;
-    case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popImm(), sz)); break;
-    case FTML: WS_PUSH(fetch(mem, env.mp    + popImm(), sz)); break;
+    case SROL: WS_PUSH(szMask & popLit());    break;
+    case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit(), sz)); break;
+    case FTML: WS_PUSH(fetch(mem, env.mp    + popLit(), sz)); break;
     case FTOL:
       l = WS_POP();       // Address
-      WS_PUSH(popImm());  // Second
+      WS_PUSH(popLit());  // Second
       WS_PUSH(fetch(mem, l, sz));
       break;
     default: fail("unknown mem");
@@ -493,7 +493,7 @@ APtr toAPtr(U32 v, U8 sz) {
   switch(i.jmp) {
     case NOJ: break;
     case JZL:
-      l = popImm();
+      l = popLit();
       r = WS_POP();
       if(!r) { env.ep = toAPtr(l, 2); }
       break;
@@ -536,7 +536,7 @@ APtr toAPtr(U32 v, U8 sz) {
     ExecuteResult res = executeInstr(exInstr);
     if(res.err) return res.err;
     if(res.escape) return OK;
-    exInstr = popImm();
+    exInstr = popLit();
   }
 }
 

@@ -17,8 +17,8 @@
 // * Instructions
 // # Jmp          // Description
 #E000_0000 =NOJ   // No Jump
-#E000_2000 =JZL   // Jmp to Imm if store==0
-#E000_4000 =JTBL  // JTBL consume store and jump to table using size=Imm
+#E000_2000 =JZL   // Jmp to Literal if store==0
+#E000_4000 =JTBL  // JTBL consume store and jump to table using size=Literal
 #E000_6000 =JMP   // Jump to store.
 //   _8000 =res   // reserved
 #E000_A000 =CALL  // Call, fetching LS size at address.

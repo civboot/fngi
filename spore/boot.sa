@@ -110,12 +110,12 @@ $loc c_compMaskInstr // {maskInstr:4}
   .4 FTML ADD; @rI_CLR $h2
   LIT DVS RET; @D_instr $h2
 
-$c_floc #       $ALI // Immediate Value (hex constant)
+$c_floc #       $ALI // Literal Value (hex constant)
   .4 LIT DVF; @D_comp $h2 // assemble the '#' token with number.
   // If we are "super instant" simply return to keep number on stack.
   @c_stateSuperIns $c_CNL  NOT JZL; $jloc j_ret
   FTML; @rI_LIT $h2   @c_compMaskInstr $c_CNL // compile TNT instr
-  @h2 $c_CNL // Compile the immediate value.
+  @h2 $c_CNL // Compile the literal value.
   $jset j_ret   RET
 $c_fnClean   $c_dRef j_ret $tAssertNot // assert j_ret is deleted
 
