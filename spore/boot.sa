@@ -98,7 +98,7 @@ $c_floc %%      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compi
 $c_floc ASM_BEG          @QUIT_MASK $c_IM  @c_stateSet $c_JMP // begin assembly syntax
 
 // Note: this actually isn't a comment. It's defining comments for spore.
-$c_floc //      $INSTANT @scan $c_CNL  .4 IMWS DVL RET; @D_comp $h2 // asm compile
+$c_floc //      $INSTANT .4 IMWS DVL RET; @D_comp $h2 // asm compile
 
 $loc c_compMaskInstr // {maskInstr:4}
   @getSz $c_CNL  SWP; // cache sz {sz maskInstr}
@@ -111,7 +111,7 @@ $loc c_compMaskInstr // {maskInstr:4}
   IMWS DVS RET; @D_instr $h2
 
 $c_floc #       $ALI // Immediate Value (hex constant)
-  .4 IMWS DVL RET; @D_comp $h2 // assemble the '#' token with number.
+  .4 IMWS DVL; @D_comp $h2 // assemble the '#' token with number.
   // If we are "super instant" simply return to keep number on stack.
   @c_stateSuperIns $c_CNL  NOT JZ; $jloc j_ret
   FTMI; @rI_IM $h2   @c_compMaskInstr $c_CNL // compile TNT instr
