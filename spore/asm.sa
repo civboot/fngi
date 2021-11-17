@@ -17,7 +17,7 @@
 // * Instructions
 // # Jmp          // Description
 #E000_0000 =NOJ   // No Jump
-#E000_2000 =JZ    // Jmp to Imm if store==0
+#E000_2000 =JZL   // Jmp to Imm if store==0
 #E000_4000 =JTBL  // JTBL consume store and jump to table using size=Imm
 #E000_6000 =JMP   // Jump to store.
 //   _8000 =res   // reserved
@@ -27,7 +27,7 @@
 
 // # Mem          // Top       Second  Store     Description
 #0700_0000 =WS    // WS0       WS1     WS        Working Stack
-#0700_0100 =IMWS  // IM        WS0     WS        IMmediate Working Stack
+#0700_0100 =LIT   // IM        WS0     WS        IMmediate Working Stack
 #0700_0200 =FTLL  // WS0       WS1     ST(LP+IM) FeTch LocalsPtr offset
 #0700_0300 =FTML  // WS0       WS1     ST(MP+IM) FeTch to ModulePtr offset
 #0700_0400 =FTOL  // IM        WS1     ST(WS0)   FeTch Operate Immediate

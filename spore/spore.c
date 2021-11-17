@@ -54,13 +54,13 @@ typedef enum { SzI1, SzI2, SzI4 } SzI;
 
 // Mem
 typedef enum {
-  WS,     IMWS,   FTLL,   FTML,
+  WS,     LIT,   FTLL,   FTML,
   FTOL,   SRLL,   SRML,   SROL,
 } MemI;
 
 // Jmp
 typedef enum {
-  NOJ,          JZ,           JTBL,         JMP,
+  NOJ,          JZL,           JTBL,         JMP,
   _JR0,         CALL,         CNL,          RET,
 } JmpI;
 
@@ -360,7 +360,7 @@ APtr toAPtr(U32 v, U8 sz) {
 
   switch(i.mem) {
     case WS: break;
-    case IMWS: WS_PUSH(szMask & popImm());    break;
+    case LIT: WS_PUSH(szMask & popImm());    break;
     case SRLL:
       srPtr = env.ls.sp + popImm();
       if(!srPtr) fail("SRLL at NULL");
@@ -492,7 +492,7 @@ APtr toAPtr(U32 v, U8 sz) {
   // * Jmp: perform the jump
   switch(i.jmp) {
     case NOJ: break;
-    case JZ:
+    case JZL:
       l = popImm();
       r = WS_POP();
       if(!r) { env.ep = toAPtr(l, 2); }
@@ -1000,14 +1000,14 @@ void dbgEnv() {
 
 U8* memName(MemI m) {
   return (U8*[]) {
-  "    ",   "IMWS",   "FTLL",   "FTML",
+  "    ",   "LIT",   "FTLL",   "FTML",
   "FTOL",   "SRLL",   "SRML",   "SROL",
   }[m];
 }
 
 U8* jmpName(JmpI j) {
   return (U8*[]) {
-  "    ",         "JZ  ",         "JTBL",         "JMP ",
+  "    ",         "JZL  ",         "JTBL",         "JMP ",
   "_JR0",         "CALL",         "CNL ",         "RET ",
   }[j];
 }
@@ -1096,7 +1096,7 @@ void dbgJmpI(JmpI j) {
   U32 jloc = 0;
 
   switch (j) {
-    case JZ: jloc = fetch(mem, env.ep, 2); break;
+    case JZL: jloc = fetch(mem, env.ep, 2); break;
     case CALL:
     case CNL: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
   }
@@ -1272,10 +1272,10 @@ void compileStr(U8* s) {
   printf("## testAsm2... testIf\n");
   compileStr(
     ".4 $loc testIf / converts 1->10 else: 42 \n"
-    "  IMWS EQ JZ; #1 $h2  $jloc jmpTo        \n"
-    "    IMWS RET; #10 $h2                    \n"
+    "  LIT EQ JZL; #1 $h2  $jloc jmpTo        \n"
+    "    LIT RET; #10 $h2                    \n"
     "  $jset jmpTo                             \n"
-    "  IMWS RET; #42 $h2                      \n"
+    "  LIT RET; #42 $h2                      \n"
     "$assertWsEmpty                           \n");
   compileStr("#1 $testIf");  assert(0x10 == WS_POP());
   compileStr("#2 $testIf");  assert(0x42 == WS_POP());
@@ -1302,7 +1302,7 @@ void compileStr(U8* s) {
   testWriteHeap();
   testExecuteInstr();
   testAsm2();
-  testBoot();
+  // testBoot();
 
   assert(0 == WS_LEN);
 }

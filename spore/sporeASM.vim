@@ -9,8 +9,8 @@ endif
 
 syn match elAlpha    '[_a-zA-Z0-9]\+' nextGroup=elInstr
 syn keyword elInstr
-      \ NOJ   JZ    JTBL  JMP   CALL  CNL   RET
-      \ WS    IMWS  FTLL  FTML  FTOL  SRLL  SRML  SROL
+      \ NOJ   JZL    JTBL  JMP   CALL  CNL   RET
+      \ WS    LIT  FTLL  FTML  FTOL  SRLL  SRML  SROL
       \ Sz1   Sz2   Sz4   SzA
       \ NOP   SWP   DRP   DRP2  DUP   DUPN  DVF   DVS
       \ RGL   RGS   FT    SR    ZERO

@@ -5,10 +5,10 @@
 
 
 $c_floc testingIf // converts 1->10 else: 42 \n"
-  IMWS EQ JZ; #1 $h2 $jloc j_to
-     IMWS RET; #10 $h2
+  LIT EQ JZL; #1 $h2 $jloc j_to
+     LIT RET; #10 $h2
   $jset j_to
-  IMWS RET; #42 $h2
+  LIT RET; #42 $h2
 $c_fnClean
 $assertWsEmpty
 
@@ -16,11 +16,11 @@ $assertWsEmpty
 #123 $testingIf #42 EQ^ $tAssert $assertWsEmpty
 
 $c_floc fib // calculate the nth fibronacci
-  DUP; IMWS LT_U JZ; #2 $h2 $jloc j_notOne // if < 2: return 0
-    DRP; IMWS RET; #1 $h2
+  DUP; LIT LT_U JZL; #2 $h2 $jloc j_notOne // if < 2: return 0
+    DRP; LIT RET; #1 $h2
   $jset j_notOne
-  DUP;  IMWS SUB; #1 $h2  @fib $c_CNL
-  SWP;  IMWS SUB; #2 $h2  @fib $c_CNL
+  DUP;  LIT SUB; #1 $h2  @fib $c_CNL
+  SWP;  LIT SUB; #2 $h2  @fib $c_CNL
   ADD RET;
 $c_fnClean
 
