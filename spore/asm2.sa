@@ -67,13 +67,13 @@ $loc getWsLen    LIT DVF RET; @D_wslen $h2
 // **********
 // * Utilities
 .4
-$loc scan     .4 LIT DVF RET; @D_scan $h2
+$loc c_scan     .4 LIT DVF RET; @D_scan $h2
 
 // Get next token dict reference
-$loc c_dRef     @scan $c_UCAL  .4 LIT DVF RET; @D_rdict $h2
+$loc c_dRef     @c_scan $c_UCAL  .4 LIT DVF RET; @D_rdict $h2
 
 // Forget dict until and including next token
-$loc dForget  @scan $c_UCAL  .4 LIT DVS RET; @D_rdict $h2
+$loc dForget  @c_scan $c_UCAL  .4 LIT DVS RET; @D_rdict $h2
 
 .4 $loc hAlign4 // align heap
   @getHeap $c_UCAL DUP;

@@ -94,7 +94,7 @@ $c_floc ALI     $INSTANT @ALI_MASK $c_LIT  @c_fnMask $c_JMP // make ALI
 $c_floc PRE     $INSTANT @PRE_MASK $c_LIT  @c_fnMask $c_JMP // make PRE
 $c_floc $       $INSTANT @TNT_MASK $c_LIT  @c_stateSet $c_JMP  // toggle next INSTANT
 $c_floc '       $INSTANT @PRE_MASK $c_LIT  @c_stateSet $c_JMP  // toggle next PRE
-$c_floc %%      $INSTANT @scan $c_UCAL  .4 LIT DVF RET; @D_comp $h2 // asm compile
+$c_floc %%      $INSTANT @c_scan $c_UCAL  .4 LIT DVF RET; @D_comp $h2 // asm compile
 $c_floc ASM_BEG          @QUIT_MASK $c_LIT  @c_stateSet $c_JMP // begin assembly syntax
 
 // Note: this actually isn't a comment. It's defining comments for spore.
