@@ -19,10 +19,10 @@
 #E000_0000 =NOJ   // No Jump
 #E000_2000 =JZL   // Jmp to Literal if store==0
 #E000_4000 =JTBL  // JTBL consume store and jump to table using size=Literal
-#E000_6000 =JMP   // Jump to store.
+#E000_6000 =JMPW   // Jump
 //   _8000 =res   // reserved
-#E000_A000 =CALL  // Call, fetching LS size at address.
-#E000_C000 =UCAL  // "Micro" call, does not fetch LS size at address.
+#E000_A000 =XW    // Execute from WS, updating LS using size at address.
+#E000_C000 =XSW   // "Micro" (u) call from WS, no LS size at address.
 #E000_E000 =RET   // Return
 
 // # Mem          // Top         Store    Description
@@ -54,7 +54,8 @@
 #003F_0009 =RGS   // Register Store
 #003F_000A =FT    // Fetch
 #003F_000B =SR    // Store
-#003F_000C =ZERO  // { -> 0} push zero onto WS
+#003F_000C =LIT4  // { -> U4} push 4byte literal
+#003F_000D =ZERO  // { -> 0} push zero onto WS
 
 // # Operations: One Inp {l} -> One Out
 #003F_0010 =INC   // {l+1}  increment 1
@@ -111,7 +112,31 @@
 // **********
 // * Compiler Constants
 .4
-@rTopMem FT^    #8 SUB^   =c_rDictArray
+@rTopMem FT^    #8 SUB^   =c_rDictArray  // Dict struct
 @c_rDictArray   INC4^     =c_rDictHeap
-@c_rDictArray   #8 SUB^   =c_rTokenBuf
+@c_rDictArray   #8 SUB^   =c_rTokenBuf   // TokenBuf struct
 @c_rTokenBuf    INC4^     =c_rTokenLen
+
+// **********
+// * Global Constants
+.4
+#8000 =C_CMP_EQ   // Comparison was equal. Was less if LT this, vice-versa.
+
+// Errors:
+#E000 =E_Unknown // unknown error
+#E001 =E_Test    // test failure
+
+// [E010-E020) Input/Output errors
+#E010 =E_IO // unknown IO
+
+// [E020-E030) General purpose errors
+#E0C1 =E_WsNotEmpty
+
+// [E0C0-E0C0) Compiler errors
+#E0C0 =E_C // unknown compiler
+#E0C1 =E_CDictDNE
+
+// Errors [E000 - E100): reserved for built-in errors.
+// E100: device-specific hardware errors
+// [E200-E800): reserved
+// E800+: application errors

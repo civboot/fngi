@@ -58,8 +58,8 @@ typedef enum {
 
 // Jmp
 typedef enum {
-  NOJ,          JZL,           JTBL,         JMP,
-  _JR0,         CALL,          UCAL,          RET,
+  NOJ,          JZL,           JTBL,         JMPW,
+  _JR0,         XW,          XSW,          RET,
 } JmpI;
 
 typedef struct {
@@ -343,7 +343,7 @@ APtr toAPtr(U32 v, U8 sz) {
  * - It's legal to use two literals (one for MEM and one for JMP).
  * - It's legal to do multiple memory operations in one instriction, i.e. read
  *   from and address using MEM and then use SR op.
- * - CALL can be done after an operation. Useful for LoaDing an address then
+ * - XW can be done after an operation. Useful for LoaDing an address then
  *   calling it.
  */
 /*fn*/ ExecuteResult executeInstr(U16 instr) {
@@ -407,7 +407,8 @@ APtr toAPtr(U32 v, U8 sz) {
           srPtr = WS_POP();
           WS_PUSH(l);
           break;
-        case 0xC: /*ZERO*/ WS_PUSH(0);
+        case 0xC: /*LIT4*/ WS_PUSH((popLit2() << 16) + popLit2());
+        case 0xD: /*ZERO*/ WS_PUSH(0);
       }
       break;
 
@@ -495,9 +496,9 @@ APtr toAPtr(U32 v, U8 sz) {
       if(!r) { env.ep = toAPtr(l, 2); }
       break;
     case JTBL: fail("not implemented"); break;
-    case JMP: env.ep = WS_POP(); break;
+    case JMPW: env.ep = WS_POP(); break;
     case _JR0: fail("JR0");
-    case CALL:
+    case XW:
       aptr = toAPtr(WS_POP(), sz);
       growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
       Stk_grow(&env.ls, growLs << APO2);
@@ -506,7 +507,7 @@ APtr toAPtr(U32 v, U8 sz) {
       env.mp = MOD_HIGH_MASK & aptr;
       env.ep = aptr + 2;
       break;
-    case UCAL: // call no locals
+    case XSW: // call no locals
       aptr = toAPtr(WS_POP(), sz);
       Stk_push(&env.callStk, env.ep);
       env.mp = MOD_HIGH_MASK & aptr;
@@ -788,7 +789,7 @@ APtr toAPtr(U32 v, U8 sz) {
 /*fn*/ ErrCode cExecute() { // $
   OP_CHECK(scan(), "$ scan");
   U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "$: no name");
-  U32 i = INSTR(SzI4, JMP, WS, 0);
+  U32 i = INSTR(SzI4, JMPW, WS, 0);
   WS_PUSH(value);
   return execute(i);
 }
@@ -1004,8 +1005,8 @@ U8* memName(MemI m) {
 
 U8* jmpName(JmpI j) {
   return (U8*[]) {
-  "    ",         "JZL  ",         "JTBL",         "JMP ",
-  "_JR0",         "CALL",          "UCAL ",         "RET ",
+  "    ",         "JZL  ",         "JTBL",         "JMPW ",
+  "_JR0",         "XW  ",          "XSW ",         "RET ",
   }[j];
 }
 
@@ -1094,8 +1095,8 @@ void dbgJmpI(JmpI j) {
 
   switch (j) {
     case JZL: jloc = fetch(mem, env.ep, 2); break;
-    case CALL:
-    case UCAL: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
+    case XW:
+    case XSW: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
   }
   if(!jloc) return;
   Key* k = Dict_findFn(jloc);
