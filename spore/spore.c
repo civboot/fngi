@@ -54,8 +54,8 @@ typedef enum { SzI1, SzI2, SzI4 } SzI;
 
 // Mem
 typedef enum {
-  WS,     IMWS,   FTLI,   FTMI,
-  FTOI,   SRLI,   SRMI,   SROI,
+  WS,     IMWS,   FTLL,   FTML,
+  FTOL,   SRLL,   SRML,   SROL,
 } MemI;
 
 // Jmp
@@ -361,18 +361,18 @@ APtr toAPtr(U32 v, U8 sz) {
   switch(i.mem) {
     case WS: break;
     case IMWS: WS_PUSH(szMask & popImm());    break;
-    case SRLI:
+    case SRLL:
       srPtr = env.ls.sp + popImm();
-      if(!srPtr) fail("SRLI at NULL");
+      if(!srPtr) fail("SRLL at NULL");
       break;
-    case SRMI:
+    case SRML:
       srPtr = env.mp + popImm();
-      if(!srPtr) fail("SRMI at NULL");
+      if(!srPtr) fail("SRML at NULL");
       break;
-    case SROI: WS_PUSH(szMask & popImm());    break;
-    case FTLI: WS_PUSH(fetch(mem, env.ls.sp + popImm(), sz)); break;
-    case FTMI: WS_PUSH(fetch(mem, env.mp    + popImm(), sz)); break;
-    case FTOI:
+    case SROL: WS_PUSH(szMask & popImm());    break;
+    case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popImm(), sz)); break;
+    case FTML: WS_PUSH(fetch(mem, env.mp    + popImm(), sz)); break;
+    case FTOL:
       l = WS_POP();       // Address
       WS_PUSH(popImm());  // Second
       WS_PUSH(fetch(mem, l, sz));
@@ -1000,8 +1000,8 @@ void dbgEnv() {
 
 U8* memName(MemI m) {
   return (U8*[]) {
-  "    ",   "IMWS",   "FTLI",   "FTMI",
-  "FTOI",   "SRLI",   "SRMI",   "SROI",
+  "    ",   "IMWS",   "FTLL",   "FTML",
+  "FTOL",   "SRLL",   "SRML",   "SROL",
   }[m];
 }
 

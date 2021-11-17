@@ -2,7 +2,7 @@
 
 // Define $loc
 .4@rHeap FT^ =loc // fetch current heap and set to loc
-  FTMI        ; .2@rHeap,  // fetch heap {heap:4}
+  FTML        ; .2@rHeap,  // fetch heap {heap:4}
   .4 IMWS DVF    ; .2@D_scan,   // scan next token into tokenBuf {heap}
   .4 IMWS DVS RET; .2@D_dict,   // set dict key(tokenBuf) to current heap
 
@@ -14,16 +14,16 @@ $loc dictGet / { -> v}
   .4 IMWS DVF RET; .2@D_dict,
 
 $loc h2  // {val:2} push 2bytes from stack to heap
-  .4 FTMI SWP; .2@rHeap,  // fetch heap and swap {heap, val}
+  .4 FTML SWP; .2@rHeap,  // fetch heap and swap {heap, val}
   .2      SR;             // store 2 byte value at heap
-  .4 FTMI INC2; .2@rHeap, // fetch heap and increment by 2
-  .4 SRMI  RET; .2@rHeap, // store new heap and return
+  .4 FTML INC2; .2@rHeap, // fetch heap and increment by 2
+  .4 SRML  RET; .2@rHeap, // store new heap and return
 
 .4
-$loc getHeap     FTMI RET; @rHeap $h2
-$loc setHeap     SRMI RET; @rHeap $h2
-$loc getTopHeap  FTMI RET; @rTopHeap $h2
-$loc setTopHeap  SRMI RET; @rTopHeap $h2
+$loc getHeap     FTML RET; @rHeap $h2
+$loc setHeap     SRML RET; @rHeap $h2
+$loc getTopHeap  FTML RET; @rTopHeap $h2
+$loc setTopHeap  SRML RET; @rTopHeap $h2
 $loc getSz       IMWS DVF RET; @D_sz $h2
 $loc setSz       IMWS DVS RET; @D_sz $h2
 $loc getWsLen    IMWS DVF RET; @D_wslen $h2
@@ -43,13 +43,13 @@ $loc getWsLen    IMWS DVF RET; @D_wslen $h2
   @h2 $c_CNL // compile it
   IMWS JMP; @h2 $h2 // compile the loc
 
-.4 $loc c_FTMI4 / {loc} compile a fetch immediate sz=4
-  @Sz4 @FTMI ADD^ $c_IM // push .4 FTMI instr
+.4 $loc c_FTML4 / {loc} compile a fetch immediate sz=4
+  @Sz4 @FTML ADD^ $c_IM // push .4 FTML instr
   @h2 $c_CNL // compile it
   IMWS JMP; @h2 $h2 // compile the loc
 
-.4 $loc c_FTMI2 / {loc} compile a fetch immediate sz=2
-  @Sz2 @FTMI ADD^ $c_IM // push .2 FTMI instr
+.4 $loc c_FTML2 / {loc} compile a fetch immediate sz=2
+  @Sz2 @FTML ADD^ $c_IM // push .2 FTML instr
   @h2 $c_CNL // compile it
   IMWS JMP; @h2 $h2 // compile the loc
 
