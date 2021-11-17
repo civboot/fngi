@@ -22,7 +22,7 @@
 #E000_6000 =JMP   // Jump to store.
 //   _8000 =res   // reserved
 #E000_A000 =CALL  // Call, fetching LS size at address.
-#E000_C000 =CNL   // Call, not fetching LS size at address.
+#E000_C000 =UCAL  // "Micro" call, does not fetch LS size at address.
 #E000_E000 =RET   // Return
 
 // # Mem          // Top         Store    Description

@@ -12,8 +12,8 @@
 // 4 byte globals
 $hAlign4
 $loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
-$loc rI_LIT       .4 @CNL  @LIT ADD^,
-$loc rI_CNL_LIT   .4 @CNL  @LIT ADD^,
+$loc rI_LIT       .4 @UCAL  @LIT ADD^,
+$loc rI_UCAL_LIT   .4 @UCAL  @LIT ADD^,
 $loc rI_CALL_LIT  .4 @CALL @LIT ADD^,
 $loc rI_CLR      .4 #FFFF_0000, // instr clear
 
@@ -53,8 +53,8 @@ $loc c_maskQuit  LIT AND RET; @QUIT_MASK $h2
 // been asked to be "super" instant. Supper instant happens
 // when `$` flips ALI's TNT bit or compiler state is EXEC
 $loc c_stateSuperIns
-  @STATE $c_FTML2   @c_maskExec $c_CNL
-  @XSTATE $c_FTML2  @c_maskIns $c_CNL
+  @STATE $c_FTML2   @c_maskExec $c_UCAL
+  @XSTATE $c_FTML2  @c_maskIns $c_UCAL
   AND RET;
 
 $hAlign4
@@ -68,9 +68,9 @@ $assertWsEmpty
 // usage: $floc <fn-name>
 // Set location of spore fn. This is ultra-basic. The syntax is still assembly.
 $loc c_floc
-  #00FF $c_LIT  @c_stateClr $c_CNL // clear toggle bits
+  #00FF $c_LIT  @c_stateClr $c_UCAL // clear toggle bits
   .2 SRML ZERO; @XSTATE $h2       // clear XSTATE
-  @loc $c_CNL // set location of next token
+  @loc $c_UCAL // set location of next token
   .4 LIT DVF; @D_rdict $h2 // get dictionary reference of current token
   SRML; @c_rFN $h2 // store to c_rFN
 
@@ -78,7 +78,7 @@ $loc c_floc
   .2 SRML RET; @c_fnDictHeap $h2 // update fnDictHeap
 
 $c_floc c_fnClean
-  @assertWsEmpty $c_CNL
+  @assertWsEmpty $c_UCAL
   @c_fnDictHeap $c_FTML2 // fetch dict heap after current fn
   .2 SRML RET; @c_rDictHeap $h2 // store to rDictHeap (forget keys after fn)
 
@@ -94,17 +94,17 @@ $c_floc ALI     $INSTANT @ALI_MASK $c_LIT  @c_fnMask $c_JMP // make ALI
 $c_floc PRE     $INSTANT @PRE_MASK $c_LIT  @c_fnMask $c_JMP // make PRE
 $c_floc $       $INSTANT @TNT_MASK $c_LIT  @c_stateSet $c_JMP  // toggle next INSTANT
 $c_floc '       $INSTANT @PRE_MASK $c_LIT  @c_stateSet $c_JMP  // toggle next PRE
-$c_floc %%      $INSTANT @scan $c_CNL  .4 LIT DVF RET; @D_comp $h2 // asm compile
+$c_floc %%      $INSTANT @scan $c_UCAL  .4 LIT DVF RET; @D_comp $h2 // asm compile
 $c_floc ASM_BEG          @QUIT_MASK $c_LIT  @c_stateSet $c_JMP // begin assembly syntax
 
 // Note: this actually isn't a comment. It's defining comments for spore.
 $c_floc //      $INSTANT .4 LIT DVF RET; @D_comp $h2 // asm compile
 
 $loc c_compMaskInstr // {maskInstr:4}
-  @getSz $c_CNL  SWP; // cache sz {sz maskInstr}
+  @getSz $c_UCAL  SWP; // cache sz {sz maskInstr}
   .4 LIT DVS; @D_instr $h2 // use mask on instr
   .4 LIT DVF; @D_instr $h2 // get instr
-  @h2 $c_CNL // compile instr to heap
+  @h2 $c_UCAL // compile instr to heap
 
   // Clear current instr but with cached size
   .4 FTML ADD; @rI_CLR $h2
@@ -113,9 +113,9 @@ $loc c_compMaskInstr // {maskInstr:4}
 $c_floc #       $ALI // Literal Value (hex constant)
   .4 LIT DVF; @D_comp $h2 // assemble the '#' token with number.
   // If we are "super instant" simply return to keep number on stack.
-  @c_stateSuperIns $c_CNL  NOT JZL; $jloc j_ret
-  FTML; @rI_LIT $h2   @c_compMaskInstr $c_CNL // compile TNT instr
-  @h2 $c_CNL // Compile the literal value.
+  @c_stateSuperIns $c_UCAL  NOT JZL; $jloc j_ret
+  FTML; @rI_LIT $h2   @c_compMaskInstr $c_UCAL // compile TNT instr
+  @h2 $c_UCAL // Compile the literal value.
   $jset j_ret   RET
 $c_fnClean   $c_dRef j_ret $tAssertNot // assert j_ret is deleted
 
@@ -123,10 +123,10 @@ $c_fnClean   $c_dRef j_ret $tAssertNot // assert j_ret is deleted
 
 // Force execute a metaFn
 $loc c_forceExec // {metaFn}
-  .4 DUP;  @c_toMeta $c_CNL  @c_maskLcl $c_CNL // get meta
+  .4 DUP;  @c_toMeta $c_UCAL  @c_maskLcl $c_UCAL // get meta
   SWP;  .4 FTML AND; @rFN_PTR_MASK $h2 SWP; // get masked fn ptr
   JZL; $jloc j_call  .4 CALL; RET;
-  $jset j_call      .4 CNL; RET;
+  $jset j_call       .4 UCAL; RET;
 $dForget j_call
 
 // Force compile a metaFn to a value.
@@ -134,14 +134,14 @@ $loc c_forceComp // {metaFn}
   // TODO: make sure token is in same module.
 
   // Check if Fn is LCL or not
-  .4 DUP;  @c_toMeta $c_CNL  @c_maskLcl $c_CNL
+  .4 DUP;  @c_toMeta $c_UCAL  @c_maskLcl $c_UCAL
   JZL; $jloc j_cnl
     @rI_CALL_LIT $c_FTML4 // (has locals) fetch CALL mask+instr
     LIT JMP; $jloc j_end
   $jset j_cnl
-    .4 FTML; @rI_CNL_LIT $h2 // fetch CNL mask+instr
+    .4 FTML; @rI_UCAL_LIT $h2 // fetch UCAL mask+instr
   $jset j_end
-  @c_compMaskInstr $c_CNL  // mask and compile them mask+instr
+  @c_compMaskInstr $c_UCAL  // mask and compile them mask+instr
   @h2 $c_JMP // Compile the fn ptr.
 $dForget j_cnl
 
@@ -149,26 +149,26 @@ $dForget j_cnl
 // function, checking for PRE, TNT, ALI and LCL bits appropriately.
 $loc c_compMetaFn // {metaFn} compile the meta fn
   // Check the meta for PRE. XOR with preBit to toggle
-  .4 DUP;  @c_toMeta $c_CNL  @c_maskPre $c_CNL
-  @STATE $c_FTML2     @c_maskPre $c_CNL
-  @PRE_MASK $c_LIT     @c_stateClr $c_CNL // clear state.PRE
+  .4 DUP;  @c_toMeta $c_UCAL  @c_maskPre $c_UCAL
+  @STATE $c_FTML2    @c_maskPre $c_UCAL
+  @PRE_MASK $c_LIT   @c_stateClr $c_UCAL // clear state.PRE
 
   XOR JZL; $jloc j_to // Checking for PRE.
     // Pre: simply compile next token.
     // Note: this is a forward call (c_comp not yet defined)
-    LIT CNL; $jloc j_c_comp
+    LIT UCAL; $jloc j_c_comp
   $jset j_to
 
   // Check the meta for TNT or EXEC mode
-  .4 DUP;  @c_toMeta $c_CNL   @c_maskIns $c_CNL
-  @STATE $c_FTML2             @c_maskIns $c_CNL
+  .4 DUP;  @c_toMeta $c_UCAL   @c_maskIns $c_UCAL
+  @STATE $c_FTML2             @c_maskIns $c_UCAL
   // xor to toggle. We store it in XSTATE so an ALI fn can selected state.
   XOR; SRML DUP; @XSTATE $h2
 
   // also check for state.EXEC which overrides both
-  @STATE $c_FTML2             @c_maskExec $c_CNL
+  @STATE $c_FTML2             @c_maskExec $c_UCAL
 
-  @PRE_MASK $c_LIT  @c_stateClr $c_CNL // clear state.TNT
+  @PRE_MASK $c_LIT  @c_stateClr $c_UCAL // clear state.TNT
   LOR JZL; $jloc j_to
     @c_forceExec $c_JMP // instant: forge execute
   $jset j_to
@@ -183,15 +183,15 @@ $loc c_comp
 
   .4 LIT DVF; @D_rdict $h2 // {rValue}
   // Make sure token exists
-  .4 DUP;  @E_DictDNE $c_LIT  @assert $c_CNL
+  .4 DUP;  @E_DictDNE $c_LIT  @assert $c_UCAL
   FT; // fetch it {metaFn}
   @c_compMetaFn $c_JMP
 
 $loc ASM_END // spore compilation loop. Calling will end ASM syntax.
-  @QUIT_MASK $c_LIT  @c_stateClr $c_CNL
+  @QUIT_MASK $c_LIT  @c_stateClr $c_UCAL
   $loc j_loop
-    @c_comp $c_CNL
-    @STATE $c_FTML2   @c_maskQuit $c_CNL
+    @c_comp $c_UCAL
+    @STATE $c_FTML2   @c_maskQuit $c_UCAL
     JZL; $jloc j_quit
     LIT JMP; @j_loop $h2
   $jset j_quit RET;

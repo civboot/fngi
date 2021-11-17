@@ -19,8 +19,8 @@ $c_floc fib // calculate the nth fibronacci
   DUP; LIT LT_U JZL; #2 $h2 $jloc j_notOne // if < 2: return 0
     DRP; LIT RET; #1 $h2
   $jset j_notOne
-  DUP;  LIT SUB; #1 $h2  @fib $c_CNL
-  SWP;  LIT SUB; #2 $h2  @fib $c_CNL
+  DUP;  LIT SUB; #1 $h2  @fib $c_UCAL
+  SWP;  LIT SUB; #2 $h2  @fib $c_UCAL
   ADD RET;
 $c_fnClean
 

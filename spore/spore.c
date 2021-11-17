@@ -44,8 +44,6 @@ typedef CSz CPtr;
 #define OP_CHECK(COND, MSG) \
   if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 
-
-
 typedef U8 ErrCode;
 
 // Size
@@ -61,7 +59,7 @@ typedef enum {
 // Jmp
 typedef enum {
   NOJ,          JZL,           JTBL,         JMP,
-  _JR0,         CALL,         CNL,          RET,
+  _JR0,         CALL,          UCAL,          RET,
 } JmpI;
 
 typedef struct {
@@ -88,7 +86,6 @@ typedef struct {
 #define INSTR_DEFAULT (SzI4 << SZI_SHIFT)
 #define INSTR_W_SZ(INSTR, SZI)    (((~SZI_MASK) & INSTR) | (SZI  << SZI_SHIFT))
 #define INSTR_W_JMP(INSTR, JMPI)  (((~JMP_MASK) & INSTR) | (JMPI << JMP_SHIFT))
-
 
 #define OPI1_START 0x10
 #define OPI2_START 0x20
@@ -327,14 +324,14 @@ APtr toAPtr(U32 v, U8 sz) {
 // ********************************************
 // ** Executing Instructions
 
-/*fn*/ U16 popLit() {
+/*fn*/ U16 popLit2() {
     U16 out = fetch(mem, env.ep, 2);
     env.ep += 2;
     return out;
 }
 
 /* Takes the 16bit instruction and executes it as follows:
- * - mem: perform load/popLit. set srPtr if it is a SR Mem instruction (not
+ * - mem: perform load/popLit2. set srPtr if it is a SR Mem instruction (not
  *   related to SR op).
  * - operation: perform the operation.
  * - If srPtr is set (from mem), pop a value and store it at srPtr.
@@ -360,21 +357,21 @@ APtr toAPtr(U32 v, U8 sz) {
 
   switch(i.mem) {
     case WS: break;
-    case LIT: WS_PUSH(szMask & popLit());    break;
+    case LIT: WS_PUSH(szMask & popLit2());    break;
     case SRLL:
-      srPtr = env.ls.sp + popLit();
+      srPtr = env.ls.sp + popLit2();
       if(!srPtr) fail("SRLL at NULL");
       break;
     case SRML:
-      srPtr = env.mp + popLit();
+      srPtr = env.mp + popLit2();
       if(!srPtr) fail("SRML at NULL");
       break;
-    case SROL: WS_PUSH(szMask & popLit());    break;
-    case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit(), sz)); break;
-    case FTML: WS_PUSH(fetch(mem, env.mp    + popLit(), sz)); break;
+    case SROL: WS_PUSH(szMask & popLit2());    break;
+    case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit2(), sz)); break;
+    case FTML: WS_PUSH(fetch(mem, env.mp    + popLit2(), sz)); break;
     case FTOL:
       l = WS_POP();       // Address
-      WS_PUSH(popLit());  // Second
+      WS_PUSH(popLit2());  // Second
       WS_PUSH(fetch(mem, l, sz));
       break;
     default: fail("unknown mem");
@@ -493,7 +490,7 @@ APtr toAPtr(U32 v, U8 sz) {
   switch(i.jmp) {
     case NOJ: break;
     case JZL:
-      l = popLit();
+      l = popLit2();
       r = WS_POP();
       if(!r) { env.ep = toAPtr(l, 2); }
       break;
@@ -509,7 +506,7 @@ APtr toAPtr(U32 v, U8 sz) {
       env.mp = MOD_HIGH_MASK & aptr;
       env.ep = aptr + 2;
       break;
-    case CNL: // call no locals
+    case UCAL: // call no locals
       aptr = toAPtr(WS_POP(), sz);
       Stk_push(&env.callStk, env.ep);
       env.mp = MOD_HIGH_MASK & aptr;
@@ -536,7 +533,7 @@ APtr toAPtr(U32 v, U8 sz) {
     ExecuteResult res = executeInstr(exInstr);
     if(res.err) return res.err;
     if(res.escape) return OK;
-    exInstr = popLit();
+    exInstr = popLit2();
   }
 }
 
@@ -1008,7 +1005,7 @@ U8* memName(MemI m) {
 U8* jmpName(JmpI j) {
   return (U8*[]) {
   "    ",         "JZL  ",         "JTBL",         "JMP ",
-  "_JR0",         "CALL",         "CNL ",         "RET ",
+  "_JR0",         "CALL",          "UCAL ",         "RET ",
   }[j];
 }
 
@@ -1098,7 +1095,7 @@ void dbgJmpI(JmpI j) {
   switch (j) {
     case JZL: jloc = fetch(mem, env.ep, 2); break;
     case CALL:
-    case CNL: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
+    case UCAL: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
   }
   if(!jloc) return;
   Key* k = Dict_findFn(jloc);
