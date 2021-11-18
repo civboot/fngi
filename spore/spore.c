@@ -38,7 +38,9 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
+#define SET_ERRV(E)    if(TRUE) { *env.err = E; return; }
 #define CHK_ERR(V)    if(*env.err) { return V; }
+#define ASSERT_NO_ERR() assert(!*env.err)
 
 #define ASM_ASSERTV(C, E) /*Assert return void*/  \
   if(!(C)) { *env.err = E; return; }
@@ -46,30 +48,34 @@ typedef CSz CPtr;
   if(!(C)) { *env.err = E; return V; }
 
 // Error classes
-#define E_OK           0 // no error
-#define E_General 0xE000 // general errors [E000-E010)
-#define E_IO      0xE010 // IO error class
-#define E_ASM     0xE0A0 // assembly error class (cause in asm).
-#define E_COMP    0xE0C0 // compiler error class (cause in comp).
-#define E_Test    0xA000 // [AXXX] (assert) test case error.
+#define E_ok           0 // no error
+#define E_general 0xE000 // general errors [E000-E010)
+#define E_io      0xE010 // IO error class
+#define E_asm     0xE0A0 // assembly error class (cause in asm).
+#define E_comp    0xE0C0 // compiler error class (cause in comp).
+#define E_test    0xA000 // [AXXX] (assert) test case error.
 
-#define E_Intern  0xE001 // internal (undefined) error
-#define E_Undef   0xE002 // undefined error
-#define E_Unreach 0xE003 // unreachable code
-#define E_Todo    0xE004 // executed incomplete (to do) code
-#define E_WsEmpty 0xE005 // the WS was expected empty
+#define E_intern  0xE001 // internal (undefined) error
+#define E_undef   0xE002 // undefined error
+#define E_unreach 0xE003 // unreachable code
+#define E_todo    0xE004 // executed incomplete (to do) code
+#define E_wsEmpty 0xE005 // the WS was expected empty
 
 #define E_NULL    0xE0A1 // null access
-#define E_StkUnd  0xE002 // Stack underflow
-#define E_StkOvr  0xE003 // Stack overflow
-#define E_ALIGN2  0xE0A4 // access off 2byte allign
-#define E_ALIGN4  0xE0A5 // access off 4byte align
-#define E_ZERODIV 0xE0A6 // invalid instr
+#define E_stkUnd  0xE0A2 // Stack underflow
+#define E_stkOvr  0xE0A3 // Stack overflow
+#define E_align2  0xE0A4 // access off 2byte allign
+#define E_align4  0xE0A5 // access off 4byte align
+#define E_zeroDiv 0xE0A6 // invalid instr
 
-#define E_COMP    0xE0C0 // compiler error class
-#define E_INSTR   0xE0C1 // invalid instr
-#define E_TOKEN   0xE0C2 // token invalid
-#define E_DKEY    0xE0C3 // dict key not found
+// Compiler (i.e. syntax) errors
+#define E_cInstr 0xE0C1 // invalid instr
+#define E_cToken 0xE0C2 // token invalid
+#define E_cTLen  0xE0C3 // token invalid
+#define E_cDKey  0xE0C4 // dict key not found
+#define E_cHex   0xE0C5 // non-hex number
+#define E_cSz    0xE0C6 // invalid Sz selected
+#define E_cRet   0xE0C7 // invalid RET
 
 // Global Constants
 #define C_CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
@@ -79,8 +85,6 @@ typedef CSz CPtr;
   if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 #define OP_CHECK(COND, MSG) \
   if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
-
-typedef U8 ErrCode;
 
 // Size
 typedef enum { SzI1, SzI2, SzI4 } SzI;
@@ -150,7 +154,6 @@ typedef struct {
 #define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
 
 typedef struct {
-  ErrCode err;
   U8 escape; // True if RET but no more stack.
 } ExecuteResult;
 
@@ -276,8 +279,9 @@ Instr splitInstr(U16 instr) {
   if(c <= 9) return c;
   c = c - ('A' - '0');
   if(c <= 5) return c + 10;
-  c = c - ('a' - 'A');
-  return c + 10;
+  c = c - ('a' - 'A') + 10;
+  ASM_ASSERT(c < 16, E_cHex, 0xFF);
+  return c;
 }
 
 /*fn*/ void store(U8* mem, APtr aptr, U32 value, U8 sz) {
@@ -315,11 +319,7 @@ Instr splitInstr(U16 instr) {
 #define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
 #define _CHK_GROW(SP, SZ) \
-  ASM_ASSERTV(SP - SZ >= 0, E_StkOvr)
-
-void _chk_shrink(Stk* stk, U16 sz) {
-  if(stk->sp + sz > stk->size ) { fail("stack underflow"); };
-}
+  ASM_ASSERTV(SP - SZ >= 0, E_stkOvr)
 
 #define WS_PUSH(VALUE)  Stk_push(&env.ws, VALUE)
 /*fn*/ void Stk_push(Stk* stk, U32 value) {
@@ -330,7 +330,7 @@ void _chk_shrink(Stk* stk, U16 sz) {
 
 #define WS_POP()  Stk_pop(&env.ws)
 /*fn*/ U32 Stk_pop(Stk* stk) {
-  _chk_shrink(stk, ASIZE);
+  ASM_ASSERT(stk->sp + ASIZE <= stk->size, E_stkUnd, 0);
   U32 out = fetch(stk->mem, stk->sp, ASIZE);
   stk->sp += ASIZE;
   return out;
@@ -342,7 +342,7 @@ void _chk_shrink(Stk* stk, U16 sz) {
 }
 
 /*fn*/ void Stk_shrink(Stk* stk, U16 sz) {
-  _chk_shrink(stk, sz);
+  ASM_ASSERTV(stk->sp + sz <= stk->size, E_stkUnd);
   stk->sp += sz;
 }
 
@@ -422,9 +422,10 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit2(), sz)); break;
     case FTML: WS_PUSH(fetch(mem, env.mp    + popLit2(), sz)); break;
     case FTOL:
-      l = WS_POP();       // Address
-      WS_PUSH(popLit2());  // Second
-      WS_PUSH(fetch(mem, l, sz));
+      l = WS_POP(); CHK_ERR(res);       // Address
+      WS_PUSH(popLit2()); CHK_ERR(res); // Second
+      l = fetch(mem, l, sz); CHK_ERR(res);
+      WS_PUSH(l);
       break;
     default: fail("unknown mem");
   }
@@ -634,7 +635,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ U32 Dict_get(U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
-  ASM_ASSERT(offset != dict->heap, E_DKEY, 0);
+  ASM_ASSERT(offset != dict->heap, E_cDKey, 0);
   Key* key = Dict_key(offset);
   return *Key_vptr(key);
 }
@@ -687,12 +688,12 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 }
 
 // Scan next token;
-/*fn*/ ErrCode scan() {
+/*fn*/ void scan() {
 
   // Skip whitespace
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew();
-    if(tokenBufSize == 0) return OK;
+    if(tokenLen >= tokenBufSize) { readNew(); CHK_ERR(); }
+    if(tokenBufSize == 0) return;
     if (toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
       shiftBuf();
       break;
@@ -700,7 +701,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     if(tokenBuf[tokenLen] == '\n') line += 1;
     tokenLen += 1;
   }
-  if(tokenBufSize < MAX_TOKEN) readAppend();
+  if(tokenBufSize < MAX_TOKEN) { readAppend(); CHK_ERR(); }
 
   U8 c = tokenBuf[tokenLen];
   tokenState->group = (U8) toTokenGroup(c);
@@ -708,7 +709,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
-    OP_ASSERT(tokenLen < MAX_TOKEN, "token too large");
+    ASM_ASSERTV(tokenLen < MAX_TOKEN, E_cTLen);
     c = tokenBuf[tokenLen];
 
     TokenGroup tg = toTokenGroup(c);
@@ -717,13 +718,11 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     else break;
     tokenLen += 1;
   }
-
-  return OK;
 }
 
-/*fn*/ ErrCode cSz() { // '.': change sz
-  if(tokenLen >= tokenBufSize) readAppend();
-  U8 sz = charToHex(tokenBuf[tokenLen]);
+/*fn*/ void cSz() { // '.': change sz
+  if(tokenLen >= tokenBufSize) { readAppend(); CHK_ERR(); }
+  U8 sz = charToHex(tokenBuf[tokenLen]); CHK_ERR();
   tokenLen += 1;
 
   SzI szI;
@@ -732,43 +731,38 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case 2: szI = SzI2; break;
     case 4: szI = SzI4; break;
     case 0xA: szI = SzIA; break;
-    default: fail("cSz invalid");
+    default: SET_ERRV(E_cSz);
   }
   instr = INSTR_W_SZ(instr, szI);
-  return OK;
 }
 
-/*fn*/ ErrCode cComment() {
+/*fn*/ void cComment() {
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew();
-    if (tokenBufSize == 0) return OK;
-    if (tokenBuf[tokenLen] == '\n') return OK;
+    if(tokenLen >= tokenBufSize) { readNew(); CHK_ERR(); }
+    if (tokenBufSize == 0) return;
+    if (tokenBuf[tokenLen] == '\n') return;
     tokenLen += 1;
   }
-  return OK;
 }
 
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
-/*fn*/ ErrCode cHex() {
+/*fn*/ void cHex() {
   U32 v = 0;
   for(U8 i = 0; i < tokenLen; i += 1) {
     U8 c = tokenBuf[i];
     if (c == '_') continue;
-    OP_ASSERT(toTokenGroup(c) <= T_HEX, "non-hex number");
-    v = (v << 4) + charToHex(c);
+    ASM_ASSERTV(toTokenGroup(c) <= T_HEX, E_cHex);
+    v = (v << 4) + charToHex(c); CHK_ERR();
   }
-  WS_PUSH(v);
+  WS_PUSH(v); CHK_ERR();
   shiftBuf();
-  return OK;
 }
 
-/*fn*/ ErrCode cDictSet() { // `=`
-  U32 value = WS_POP();
-
-  OP_CHECK(scan(), "cDictSet.scan"); // load name token
-  Dict_set(tokenLen, tokenBuf, value);
-  return OK;
+/*fn*/ void cDictSet() { // `=`
+  U32 value = WS_POP(); CHK_ERR();
+  scan(); CHK_ERR(); // load name token
+  Dict_set(tokenLen, tokenBuf, value); CHK_ERR();
 }
 
 /*fn*/ void cDictGet() { // `@`
@@ -777,19 +771,17 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   WS_PUSH(value); CHK_ERR();
 }
 
-/*fn*/ ErrCode cWriteHeap() { // `,`
-  U8 sz = szIToSz(CUR_SZI);
-  U32 value = WS_POP();
-  store(mem, *env.heap, value, sz);
+/*fn*/ void cWriteHeap() { // `,`
+  U8 sz = szIToSz(CUR_SZI); CHK_ERR();
+  U32 value = WS_POP(); CHK_ERR();
+  store(mem, *env.heap, value, sz); CHK_ERR();
   *env.heap += sz;
-  return OK;
 }
 
-/*fn*/ ErrCode cWriteInstr() { // `;`
-  store(mem, *env.heap, instr, 2);
+/*fn*/ void cWriteInstr() { // `;`
+  store(mem, *env.heap, instr, 2); CHK_ERR();
   instr = SZI_MASK & instr;
   *env.heap += 2;
-  return OK;
 }
 
 /*fn*/ void cExecuteInstr() { // ^
@@ -803,7 +795,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   U32 value = Dict_get(tokenLen, tokenBuf); CHK_ERR();
   U32 i = INSTR(SzI4, JMPW, WS, 0);
   WS_PUSH(value); CHK_ERR();
-  execute(i); CHK_ERR();
+  execute(i);
 }
 
 /*fn*/ ExecuteResult compileOne() {
@@ -831,19 +823,17 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case '$': cExecute(); break;
     default:
       printf("!! invalid token: %c\n", tokenBuf[0]);
-      *env.err = E_TOKEN;
+      *env.err = E_cToken;
   }
   return result;
 }
 
-/*fn*/ ErrCode compile() {
+/*fn*/ void compile() {
   while(TRUE) {
-    scan();
-    ExecuteResult r = compileOne();
-    OP_CHECK(r.err, "compile");
+    scan(); CHK_ERR();
+    ExecuteResult r = compileOne(); CHK_ERR();
     if(r.escape) break;
   }
-  return OK;
 }
 
 // Device Operations
@@ -855,7 +845,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   ExecuteResult result;
   switch(op) {
     case 0: /*D_read*/ readAppend(); break;
-    case 1: /*D_scan*/ assert(!scan()); break;
+    case 1: /*D_scan*/ scan(); break;
     case 2: /*D_dict*/
       if(isFetch) {
         tmp = Dict_get(tokenLen, tokenBuf);
@@ -886,12 +876,11 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
       break;
     case 6: /*D_comp*/
-      result = compileOne();
-      assert(!result.escape);
-      assert(!result.err);
+      result = compileOne(); CHK_ERR();
+      ASM_ASSERTV(!result.escape, E_cRet);
       break;
     case 7: /*D_assert*/ 
-      tmp = WS_POP();
+      tmp = WS_POP(); CHK_ERR();
       if(!WS_POP()) {
         printf("fail code=0x%x ", tmp);
         fail("D_assert failed");
@@ -969,7 +958,7 @@ void compileFile(U8* s) {
   readAppend = &readSrc;
   srcFile = fopen(s, "rb");
   if(srcFile <= 0) fail("could not open file");
-  assert(!compile());
+  compile(); ASSERT_NO_ERR();
 }
 
 #define NEW_ENV(MS, WS, RS, LS, DS) \
@@ -1163,7 +1152,7 @@ void compileStr(U8* s) {
   testBufIdx = 0;
   line = 1;
   readAppend = &testingRead;
-  assert(!compile());
+  compile(); ASSERT_NO_ERR();
 }
 
 // ********************************************
@@ -1269,7 +1258,7 @@ void compileStr(U8* s) {
 /*test*/ void testAsm2() {
   printf("## testAsm2\n"); SMALL_ENV;
   compileFile("spore/asm2.sa");
-  assert(!compile());
+  compile(); ASSERT_NO_ERR();
 
   printf("## testAsm2... testIf\n");
   compileStr(
