@@ -748,34 +748,6 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   return OK;
 }
 
-/*fn*/ ErrCode linestr() {
-  while(TRUE) {
-    if (tokenLen >= tokenBufSize) readNew();
-    if (tokenBufSize == 0) return OK;
-    char c = tokenBuf[tokenLen];
-
-    if (c == '\n') {
-      tokenLen += 1;
-      return shiftBuf();
-    }
-
-    if(c == '\\') {
-      tokenLen += 1;
-      OP_ASSERT(tokenLen < tokenBufSize, "Hanging \\");
-      c = tokenBuf[tokenLen];
-      if(c == '\\') {}
-      else if(c == 'n') c = '\n';
-      else if(c == 't') c = '\t';
-      else if(c == '0') c = '\0';
-      else OP_ASSERT(FALSE, "invalid escaped char");
-    }
-    store(mem, *env.heap, c, 1);
-    *env.heap += 1;
-    tokenLen += 1;
-  }
-  return OK;
-}
-
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 /*fn*/ ErrCode cHex() {
@@ -857,8 +829,6 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case ';': cWriteInstr(); break;
     case '^': cExecuteInstr(); break;
     case '$': cExecute(); break;
-    // remove?
-    case '"': linestr(); break;
     default:
       printf("!! invalid token: %c\n", tokenBuf[0]);
       *env.err = E_TOKEN;
@@ -1220,13 +1190,6 @@ void compileStr(U8* s) {
   assert(0x10023004 == result);
 }
 
-/*test*/ void testQuotes() {
-  printf("## testQuotes...\n"); TEST_ENV_BARE;
-  compileStr("\"foo bar\" baz\\0\n");
-
-  assert(0 == strcmp(mem + heapStart, "foo bar\" baz"));
-}
-
 /*test*/ void testDictDeps() {
   printf("## testDictDeps... cstr\n"); TEST_ENV_BARE;
   assert(cstrEq(1, 1, "a", "a"));
@@ -1335,7 +1298,6 @@ void compileStr(U8* s) {
 
 /*test*/ void tests() {
   testHex();
-  testQuotes();
   testDictDeps();
   testDict();
   testWriteHeap();
