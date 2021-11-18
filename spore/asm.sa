@@ -134,29 +134,36 @@
 // [E200-E800): reserved
 //  E800+: application errors
 //  AXXX_EXXX: test case assertion error.
-#0    =E_OK       // no error
-#E000 =E_General  // general errors [E000-E010)
-#E010 =E_IO       // IO error class
-#E0A0 =E_ASM      // assembly error class (cause in asm).
-#E0C0 =E_COMP     // compiler error class (cause in comp).
-#A000_0000 =E_Test// [AXXX_EXXX] (assert) test case error.
 
-// General
-#E001 =E_Intern   // internal (undefined) error
-#E002 =E_Undef    // undefined error
-#E003 =E_Unreach  // unreachable code
-#E004 =E_Todo     // executed incomplete (to do) code
-#E005 =E_WsEmpty  // the WS was expected empty
+#0     =E_ok      // no error
+#E000  =E_general // general errors [E000-E010)
+#E010  =E_io      // IO error class
+#E0A0  =E_asm     // assembly error class (cause in asm).
+#E0C0  =E_comp    // compiler error class (cause in comp).
+#A000  =E_test    // [AXXX] (assert) test case error.
 
-// ASM
-#E0A1 =E_NULL     // null access
-#E002 =E_StkUnd   // Stack underflow
-#E003 =E_StkOvr   // Stack overflow
-#E0A4 =E_ALIGN2   // access off 2byte allign
-#E0A5 =E_ALIGN4   // access off 4byte align
-#E0A6 =E_ZERODIV  // invalid instr
+#E001  =E_intern  // internal (undefined) error
+#E002  =E_undef   // undefined error
+#E003  =E_unreach // unreachable code
+#E004  =E_todo    // executed incomplete (to do) code
+#E005  =E_wsEmpty // the WS was expected empty
 
-// COMP
-#E0C1 =E_INSTR    // invalid instr
-#E0C2 =E_TOKEN    // token invalid
-#E0C3 =E_DKEY     // Dict Key not found.
+#E0A1  =E_null    // null access
+#E0A2  =E_oob     // out of bounds access
+#E0A3  =E_stkUnd  // Stack underflow
+#E0A4  =E_stkOvr  // Stack overflow
+#E0A5  =E_align2  // access off 2byte allign
+#E0A6  =E_align4  // access off 4byte align
+#E0A7  =E_divZero // divide by zero
+
+#E0C1  =E_cInstr  // invalid instr
+#E0C2  =E_cToken  // token invalid
+#E0C3  =E_cTLen   // token invalid
+#E0C4  =E_cDKey   // dict key not found
+#E0C5  =E_cHex    // non-hex number
+#E0C6  =E_cSz     // invalid Sz selected
+#E0C7  =E_cSzAPtr // invalid Sz for aptr
+#E0C8  =E_cRet    // invalid RET
+#E0C9  =E_cDblSr  // Double store
+#E0CA  =E_cDevOp  // device op not impl
+#E0CB  =E_DictOvr // dict overflow

@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 0;
+char dbgMode = 1;
 
 // ********************************************
 // ** Core Types
@@ -189,6 +189,7 @@ void dbgEnv();
 void dbgInstr(Instr i);
 void dbgWs();
 void dbgJmpI(JmpI j);
+void printToken();
 
 // ********************************************
 // ** Globals
@@ -426,7 +427,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   }
 
   if(dbgMode) {
-    printf("^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs();
+    printf("  ^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs();
   }
   CHK_ERR(res);
 
@@ -534,8 +535,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   APtr aptr;
 
   if(dbgMode) {
-    dbgJmpI(i.jmp);
-    dbgEnv();
+    dbgJmpI(i.jmp); printf("\n");
   }
 
   // *************
@@ -745,6 +745,8 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
+  scan(); CHK_ERR();
+  if (dbgMode) { printf("# "); printToken(); printf("\n"); }
   U32 v = 0;
   for(U8 i = 0; i < tokenLen; i += 1) {
     U8 c = tokenBuf[i];
@@ -757,13 +759,15 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 }
 
 /*fn*/ void cDictSet() { // `=`
-  U32 value = WS_POP(); CHK_ERR();
   scan(); CHK_ERR(); // load name token
+  if (dbgMode) { printf("= "); printToken(); printf("\n"); }
+  U32 value = WS_POP(); CHK_ERR();
   Dict_set(tokenLen, tokenBuf, value); CHK_ERR();
 }
 
 /*fn*/ void cDictGet() { // `@`
-  scan();
+  scan(); CHK_ERR();
+  if (dbgMode) { printf("@ "); printToken(); printf("\n"); }
   U32 value = Dict_get(tokenLen, tokenBuf); CHK_ERR();
   WS_PUSH(value); CHK_ERR();
 }
@@ -771,6 +775,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 /*fn*/ void cWriteHeap() { // `,`
   U8 sz = szIToSz(CUR_SZI); CHK_ERR();
   U32 value = WS_POP(); CHK_ERR();
+  if (dbgMode) { printf(", #%X\n sz=%u", value, sz); }
   store(mem, *env.heap, value, sz); CHK_ERR();
   *env.heap += sz;
 }
@@ -778,17 +783,20 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 /*fn*/ void cWriteInstr() { // `;`
   store(mem, *env.heap, instr, 2); CHK_ERR();
   instr = SZI_MASK & instr;
+  if (dbgMode) { printf("; "); dbgInstr(splitInstr(instr)); printf("\n"); }
   *env.heap += 2;
 }
 
 /*fn*/ void cExecuteInstr() { // ^
   U16 i = INSTR_W_JMP(instr, RET);
   instr = SZI_MASK & instr;
+  if (dbgMode) { printf("^ (cExecuteInstr)\n"); }
   execute(i);
 }
 
 /*fn*/ void cExecute() { // $
   scan(); CHK_ERR();
+  if(dbgMode) { printf("$ "); printToken(); printf("\n"); }
   U32 value = Dict_get(tokenLen, tokenBuf); CHK_ERR();
   U32 i = INSTR(SzI4, JMPW, WS, 0);
   WS_PUSH(value); CHK_ERR();
@@ -810,7 +818,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   switch (tokenBuf[0]) {
     case '.': cSz(); break;
     case '/': cComment(); break;
-    case '#': scan(); cHex(); break;
+    case '#': cHex(); break;
     case '=': cDictSet(); break;
     case '@': cDictGet(); break;
     case ',': cWriteHeap(); break;
@@ -826,9 +834,12 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ void compile() {
   while(TRUE) {
-    scan(); CHK_ERR();
-    ExecuteResult r = compileOne(); CHK_ERR();
+    scan(); if(*env.err) break;
+    ExecuteResult r = compileOne(); if(*env.err) break;
     if(r.escape) return;
+  }
+  if(*env.err) {
+    printf("\n!!! ERROR #%X  test=#%X\n", *env.err, *env.testIdx);
   }
 }
 
@@ -986,28 +997,30 @@ void tests();
 
 #include <string.h>
 
-void printCStr(U8 len, U8* s) { printf("%.*s", tokenLen, tokenBuf); }
+void printCStr(U8 len, U8* s) { printf("%.*s", len, s); }
+void printToken() { printCStr(tokenLen, tokenBuf); }
 
 void dbgEnv() {
   printf("  line=%u token[%u, %u]=\"", line, tokenLen, tokenBufSize);
-  printCStr(tokenLen, tokenBuf);
+  printToken();
   printf("\" stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
-  printf("instr=0x%X ", instr);
+  printf("instr=#%X ", instr);
   printf("sz=%u\n", szIToSz(CUR_SZI));
 }
 
 U8* memName(MemI m) {
   return (U8*[]) {
-  "    ",   "LIT",   "FTLL",   "FTML",
+  "    ",   "LIT ",   "FTLL",   "FTML",
   "FTOL",   "SRLL",   "SRML",   "SROL",
   }[m];
 }
 
 U8* jmpName(JmpI j) {
   return (U8*[]) {
-    "NOJ ", "RET ", "JMPL", "JMPW",
-    "JZL ", "JTBL", "EXL ", "EXW ",
+  "NOJ ", "RET ", "JMPL", "JMPW",
+  "JZL ", "JTBL",
+  "XL  ", "XW  ", "XSL ", "XSW ",
   }[j];
 }
 
@@ -1094,10 +1107,15 @@ Key* Dict_findFn(U32 value) {
 void dbgJmpI(JmpI j) {
   U32 jloc = 0;
 
+
   switch (j) {
-    case JZL: jloc = fetch(mem, env.ep, 2); break;
+    case JMPL:
+    case XL:
+    case XSL: jloc = toAPtr(fetch(mem, env.ep, 2), 2); break;
+
+    case JMPW:
     case XW:
-    case XSW: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE);
+    case XSW: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE); break;
   }
   if(!jloc) return;
   Key* k = Dict_findFn(jloc);
@@ -1106,10 +1124,19 @@ void dbgJmpI(JmpI j) {
   printf(" ]] ");
 }
 
+U32 max(I32 a, I32 b) {
+  if (a > b) return a;
+  return b;
+}
+
 void dbgWs() {
-  printf("WS %u:", WS_LEN);
-  if(WS_LEN > 0) printf("%+8X|", fetch(env.ws.mem, env.ws.sp, ASIZE));
-  if(WS_LEN > 1) printf("%+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, ASIZE));
+  printf("WS", WS_LEN);
+  if(WS_LEN > 0) {
+    printf("%+8X|", fetch(env.ws.mem, env.ws.sp, ASIZE));
+    if(WS_LEN == 1) printf("        |");
+    else printf("%+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, ASIZE));
+  } else printf("|       |       |");
+  printf(" ...%u more", max(0, ((I32) WS_LEN) - 2));
 }
 
 
