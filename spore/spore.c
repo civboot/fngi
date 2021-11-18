@@ -38,6 +38,42 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
+#define CHK_ERR(V)    if(*env.err) { return V; }
+
+#define ASM_ASSERTV(C, E) /*Assert return void*/  \
+  if(!(C)) { *env.err = E; return; }
+#define ASM_ASSERT(C, E, V) \
+  if(!(C)) { *env.err = E; return V; }
+
+// Error classes
+#define E_OK           0 // no error
+#define E_General 0xE000 // general errors [E000-E010)
+#define E_IO      0xE010 // IO error class
+#define E_ASM     0xE0A0 // assembly error class (cause in asm).
+#define E_COMP    0xE0C0 // compiler error class (cause in comp).
+#define E_Test    0xA000 // [AXXX] (assert) test case error.
+
+#define E_Intern  0xE001 // internal (undefined) error
+#define E_Undef   0xE002 // undefined error
+#define E_Unreach 0xE003 // unreachable code
+#define E_Todo    0xE004 // executed incomplete (to do) code
+#define E_WsEmpty 0xE005 // the WS was expected empty
+
+#define E_NULL    0xE0A1 // null access
+#define E_StkUnd  0xE002 // Stack underflow
+#define E_StkOvr  0xE003 // Stack overflow
+#define E_ALIGN2  0xE0A4 // access off 2byte allign
+#define E_ALIGN4  0xE0A5 // access off 4byte align
+#define E_ZERODIV 0xE0A6 // invalid instr
+
+#define E_COMP    0xE0C0 // compiler error class
+#define E_INSTR   0xE0C1 // invalid instr
+#define E_TOKEN   0xE0C2 // token invalid
+#define E_DKEY    0xE0C3 // dict key not found
+
+// Global Constants
+#define C_CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
+
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 #define OP_ASSERT(COND, MSG) \
   if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
@@ -101,6 +137,8 @@ typedef struct {
   APtr* heap;
   APtr* topHeap;
   APtr* topMem;
+  U32* err;
+  U32* state;
   Stk ls;
 
   // Separate from mem
@@ -233,7 +271,7 @@ Instr splitInstr(U16 instr) {
 }
 
 // Return value of ASCII hex char.
-/*fn*/ ErrCode charToHex(U8 c) {
+/*fn*/ U8 charToHex(U8 c) {
   c = c - '0';
   if(c <= 9) return c;
   c = c - ('A' - '0');
@@ -276,20 +314,18 @@ Instr splitInstr(U16 instr) {
 
 #define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
-void _chk_grow(Stk* stk, U16 sz) {
-  if(stk->sp < sz) { fail("stack overflow"); };
-}
+#define _CHK_GROW(SP, SZ) \
+  ASM_ASSERTV(SP - SZ >= 0, E_StkOvr)
 
 void _chk_shrink(Stk* stk, U16 sz) {
   if(stk->sp + sz > stk->size ) { fail("stack underflow"); };
 }
 
 #define WS_PUSH(VALUE)  Stk_push(&env.ws, VALUE)
-/*fn*/ ErrCode Stk_push(Stk* stk, U32 value) {
-  _chk_grow(stk, ASIZE);
+/*fn*/ void Stk_push(Stk* stk, U32 value) {
+  _CHK_GROW(stk, ASIZE);
   store(stk->mem, stk->sp - ASIZE, value, ASIZE);
   stk->sp -= ASIZE;
-  return OK;
 }
 
 #define WS_POP()  Stk_pop(&env.ws)
@@ -301,7 +337,7 @@ void _chk_shrink(Stk* stk, U16 sz) {
 }
 
 /*fn*/ void Stk_grow(Stk* stk, U16 sz) {
-  _chk_grow(stk, sz);
+  _CHK_GROW(stk, sz);
   stk->sp -= sz;
 }
 
@@ -335,13 +371,13 @@ void xImpl(APtr aptr) { // impl for "execute"
   U16 growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
   Stk_grow(&env.ls, growLs << APO2);
   // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
-  Stk_push(&env.callStk, (growLs << 24) + env.ep);
+  Stk_push(&env.callStk, (growLs << 24) + env.ep); CHK_ERR();
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr + 2;
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
-  Stk_push(&env.callStk, env.ep);
+  Stk_push(&env.callStk, env.ep); CHK_ERR();
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr;
 }
@@ -373,7 +409,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
   switch(i.mem) {
     case WS: break;
-    case LIT: WS_PUSH(szMask & popLit2());    break;
+    case LIT: WS_PUSH(szMask & popLit2());  break;
     case SRLL:
       srPtr = env.ls.sp + popLit2();
       if(!srPtr) fail("SRLL at NULL");
@@ -396,6 +432,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   if(dbgMode) {
     printf("^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs();
   }
+  CHK_ERR(res);
 
   switch (i.op >> 4) {
     // Special    [0x0 - 0x10)
@@ -489,6 +526,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
       }
       WS_PUSH(szMask & r);
   }
+  CHK_ERR(res);
 
   // *************
   // * Store Result (if selected in Mem)
@@ -500,6 +538,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     dbgJmpI(i.jmp);
     dbgEnv();
   }
+  CHK_ERR(res);
 
   // *************
   // * Jmp: perform the jump
@@ -529,17 +568,16 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case XSW: xsImpl(toAPtr(WS_POP(), 4)); break;
     default: fail("unknown JMP");
   }
-
+  CHK_ERR(res);
   return res;
 }
 
-/*fn*/ ErrCode execute(U16 exInstr) {
+/*fn*/ void execute(U16 exInstr) {
   env.ep = 0;
   while(TRUE) {
-    ExecuteResult res = executeInstr(exInstr);
-    if(res.err) return res.err;
-    if(res.escape) return OK;
-    exInstr = popLit2();
+    ExecuteResult res = executeInstr(exInstr); CHK_ERR();
+    if(res.escape) return;
+    exInstr = popLit2(); CHK_ERR();
   }
 }
 
@@ -594,12 +632,11 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   return offset;
 }
 
-/*fn*/ ErrCode Dict_get(U32* out, U8 slen, U8 *s) {
+/*fn*/ U32 Dict_get(U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
-  OP_ASSERT(offset != dict->heap, "key not found");
+  ASM_ASSERT(offset != dict->heap, E_DKEY, 0);
   Key* key = Dict_key(offset);
-  *out = *Key_vptr(key);
-  return OK;
+  return *Key_vptr(key);
 }
 
 /*fn*/ void Dict_forget(U8 slen, U8* s) {
@@ -635,9 +672,9 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   readAppend();
 }
 
-/*fn*/ ErrCode shiftBuf() {
+/*fn*/ void shiftBuf() {
   // Shift buffer left from end of token
-  if(tokenLen == 0) return OK;
+  if(tokenLen == 0) return;
   U8 newStart = tokenLen;
   U8 i = 0;
   while(tokenLen < tokenBufSize) {
@@ -647,7 +684,6 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   }
   tokenBufSize = tokenBufSize - newStart;
   tokenLen = 0;
-  return OK;
 }
 
 // Scan next token;
@@ -763,11 +799,10 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   return OK;
 }
 
-/*fn*/ ErrCode cDictGet() { // `@`
-  OP_CHECK(scan(), "@ scan"); // load name token
-  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "@ no name");
-  OP_CHECK(WS_PUSH(value), "& push");
-  return OK;
+/*fn*/ void cDictGet() { // `@`
+  scan();
+  U32 value = Dict_get(tokenLen, tokenBuf); CHK_ERR();
+  WS_PUSH(value); CHK_ERR();
 }
 
 /*fn*/ ErrCode cWriteHeap() { // `,`
@@ -785,18 +820,18 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   return OK;
 }
 
-/*fn*/ ErrCode cExecuteInstr() { // ^
+/*fn*/ void cExecuteInstr() { // ^
   U16 i = INSTR_W_JMP(instr, RET);
   instr = SZI_MASK & instr;
-  return execute(i);
+  execute(i);
 }
 
-/*fn*/ ErrCode cExecute() { // $
-  OP_CHECK(scan(), "$ scan");
-  U32 value; OP_CHECK(Dict_get(&value, tokenLen, tokenBuf), "$: no name");
+/*fn*/ void cExecute() { // $
+  scan(); CHK_ERR();
+  U32 value = Dict_get(tokenLen, tokenBuf); CHK_ERR();
   U32 i = INSTR(SzI4, JMPW, WS, 0);
-  WS_PUSH(value);
-  return execute(i);
+  WS_PUSH(value); CHK_ERR();
+  execute(i); CHK_ERR();
 }
 
 /*fn*/ ExecuteResult compileOne() {
@@ -806,27 +841,27 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     return result;
   }
   if(tokenState->group <= T_ALPHA) {
-    U32 maskSet;
-    assert(!Dict_get(&maskSet, tokenLen, tokenBuf));
+    U32 maskSet = Dict_get(tokenLen, tokenBuf);
+    CHK_ERR(result);
     updateInstr(maskSet);
     return result;
   }
   tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
   switch (tokenBuf[0]) {
-    case '.': result.err = cSz(); break;
-    case '/': result.err = cComment(); break;
-    case '#': scan(); result.err = cHex(); break;
-    case '=': result.err = cDictSet(); break;
-    case '@': result.err = cDictGet(); break;
-    case ',': result.err = cWriteHeap(); break;
-    case ';': result.err = cWriteInstr(); break;
-    case '^': result.err = cExecuteInstr(); break;
-    case '$': result.err = cExecute(); break;
+    case '.': cSz(); break;
+    case '/': cComment(); break;
+    case '#': scan(); cHex(); break;
+    case '=': cDictSet(); break;
+    case '@': cDictGet(); break;
+    case ',': cWriteHeap(); break;
+    case ';': cWriteInstr(); break;
+    case '^': cExecuteInstr(); break;
+    case '$': cExecute(); break;
     // remove?
-    case '"': result.err = linestr(); break;
+    case '"': linestr(); break;
     default:
       printf("!! invalid token: %c\n", tokenBuf[0]);
-      result.err = 1;
+      *env.err = E_TOKEN;
   }
   return result;
 }
@@ -853,7 +888,8 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case 1: /*D_scan*/ assert(!scan()); break;
     case 2: /*D_dict*/
       if(isFetch) {
-        assert(!Dict_get(&tmp, tokenLen, tokenBuf));
+        tmp = Dict_get(tokenLen, tokenBuf);
+        CHK_ERR();
         WS_PUSH(szMask & tmp);
       } else {
         Dict_set(tokenLen, tokenBuf, szMask & WS_POP());
@@ -922,13 +958,15 @@ ssize_t readSrc(size_t nbyte) {
     .heap = (APtr*) (mem + 4),            \
     .topHeap = (APtr*) (mem + 8),         \
     .topMem = (APtr*) (mem + 12),         \
+    .err = (U32*) (mem + 16),             \
+    .state = (U32*) (mem + 20),           \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
     .callStk = \
     { .size = RS, .sp = RS, .mem = callStkMem },     \
   };                                      \
   /* configure heap+topheap */            \
-  *env.heap = 16;                         \
+  *env.heap = 24;                         \
   *env.topHeap = MS;                      \
   *env.topMem = MS;                       \
   /* Dict is right at the top */          \
@@ -993,9 +1031,9 @@ void tests();
 void printCStr(U8 len, U8* s) { printf("%.*s", tokenLen, tokenBuf); }
 
 void dbgEnv() {
-  printf("  line=%u token[%u, %u]=", line, tokenLen, tokenBufSize);
+  printf("  line=%u token[%u, %u]=\"", line, tokenLen, tokenBufSize);
   printCStr(tokenLen, tokenBuf);
-  printf("stklen:%u ", WS_LEN);
+  printf("\" stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=0x%X ", instr);
   printf("sz=%u\n", szIToSz(CUR_SZI));
@@ -1205,17 +1243,16 @@ void compileStr(U8* s) {
   assert(0 == Dict_set(3, "foo", 0xF00));
 
   // get
-  U32 result;
-  assert(!Dict_get(&result, 3, "foo"));
+  U32 result = Dict_get(3, "foo");
   assert(result == 0xF00);
 
   assert(8 == Dict_set(5, "bazaa", 0xBA2AA));
-  assert(!Dict_get(&result, 5, "bazaa"));
+  result = Dict_get(5, "bazaa");
   assert(result == 0xBA2AA);
 
   // reset
   assert(0 == Dict_set(3, "foo", 0xF00F));
-  assert(!Dict_get(&result, 3, "foo"));
+  result = Dict_get(3, "foo");
   assert(result == 0xF00F);
 }
 

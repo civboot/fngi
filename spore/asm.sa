@@ -12,6 +12,8 @@
 #0000_0004 =rHeap // heap reference
 #0000_0008 =rTopHeap
 #0000_000C =rTopMem
+#0000_0010 =vErr
+#0000_0014 =vState
 
 // **********
 // * Instructions
@@ -125,21 +127,35 @@
 .4
 #8000 =C_CMP_EQ   // Comparison was equal. Was less if LT this, vice-versa.
 
-// Errors:
-#E000 =E_Unknown // unknown error
-#E001 =E_Test    // test failure
-
-// [E010-E020) Input/Output errors
-#E010 =E_IO // unknown IO
-
-// [E020-E030) General purpose errors
-#E0C1 =E_WsNotEmpty
-
-// [E0C0-E0C0) Compiler errors
-#E0C0 =E_C // unknown compiler
-#E0C1 =E_CDictDNE
-
-// Errors [E000 - E100): reserved for built-in errors.
-// E100: device-specific hardware errors
+// Error Classes
+// [E000 - E100): built-in errors.
+//  E100: device-specific hardware errors
 // [E200-E800): reserved
-// E800+: application errors
+//  E800+: application errors
+//  AXXX_EXXX: test case assertion error.
+#0    =E_OK       // no error
+#E000 =E_General  // general errors [E000-E010)
+#E010 =E_IO       // IO error class
+#E0A0 =E_ASM      // assembly error class (cause in asm).
+#E0C0 =E_COMP     // compiler error class (cause in comp).
+#A000_0000 =E_Test// [AXXX_EXXX] (assert) test case error.
+
+// General
+#E001 =E_Intern   // internal (undefined) error
+#E002 =E_Undef    // undefined error
+#E003 =E_Unreach  // unreachable code
+#E004 =E_Todo     // executed incomplete (to do) code
+#E005 =E_WsEmpty  // the WS was expected empty
+
+// ASM
+#E0A1 =E_NULL     // null access
+#E002 =E_StkUnd   // Stack underflow
+#E003 =E_StkOvr   // Stack overflow
+#E0A4 =E_ALIGN2   // access off 2byte allign
+#E0A5 =E_ALIGN4   // access off 4byte align
+#E0A6 =E_ZERODIV  // invalid instr
+
+// COMP
+#E0C1 =E_INSTR    // invalid instr
+#E0C2 =E_TOKEN    // token invalid
+#E0C3 =E_DKEY     // Dict Key not found.
