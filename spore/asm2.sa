@@ -60,10 +60,10 @@ $loc getWsLen    LIT DVF RET; @D_wslen $h2
   DUP;   LIT SHR; #10 $h2   @h2 $c_XSW // Compile high bits
   @h2 $c_JMPW // compile low bits
 
-.2 $loc c_LIT4 // compile a LIT4 from the stack {v:4}
-  LIT;  @Sz4 @LIT4 ADD^, // push `.4 LIT4` instruction to stack
+.4 $loc c_LIT4 // compile a LIT4 from the stack {v:4}
+  @Sz4 @LIT4 ADD^ $c_LIT // push `.4 LIT4` instruction to stack
   @h2 $c_XSW // compile it
-  @h2 $c_JMPW hL4
+  @hL4 $c_JMPW // compile the 4byte value
 
 // **********
 // * Jump location setup and update
@@ -108,4 +108,3 @@ $loc tAssertEq   EQ;            @tAssert $c_JMPW
 $loc tAssertNe   NEQ;           @tAssert $c_JMPW
 
 $assertWsEmpty
-#1 $tAssert

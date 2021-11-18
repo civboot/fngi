@@ -1,0 +1,31 @@
+#1 $tAssert
+
+#0              $tAssertNot
+ZERO^           $tAssertNot
+#1              $tAssert
+
+#400 #1 ADD^    #401 $tAssertEq
+#400 #1 SUB^    #3FF $tAssertEq
+#400 #1 SHR^    #200 $tAssertEq
+#400 #1 SHL^    #800 $tAssertEq
+$assertWsEmpty
+
+.1 $loc testLit  #42 $c_LIT RET; .4
+$testLit      #42         $tAssertEq
+$assertWsEmpty
+
+.1 $loc testLit4 #4200_0042 $c_LIT4 RET; .4
+$testLit4     #4200_0042  $tAssertEq
+
+
+
+.4 $loc testIf // converts 1->10 else: 42
+  LIT EQ JZL; #1 $h2  $jloc jmpTo
+    LIT RET; #10 $h2
+  $jset jmpTo
+  LIT RET; #42 $h2
+$assertWsEmpty
+
+#1 $testIf      #10 $tAssertEq
+#2 $testIf      #42 $tAssertEq
+

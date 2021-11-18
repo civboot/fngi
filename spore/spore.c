@@ -534,9 +534,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   if (srPtr) { store(mem, srPtr, WS_POP(), sz); CHK_ERR(res); }
   APtr aptr;
 
-  if(dbgMode) {
-    dbgJmpI(i.jmp); printf("\n");
-  }
+  if(dbgMode) { dbgJmpI(i.jmp); printf("\n"); }
 
   // *************
   // * Jmp: perform the jump
@@ -745,6 +743,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
+  printf("??? cHex START "); dbgWs(); printf("\n");
   scan(); CHK_ERR();
   if (dbgMode) { printf("# "); printToken(); printf("\n"); }
   U32 v = 0;
@@ -755,6 +754,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     v = (v << 4) + charToHex(c); CHK_ERR();
   }
   WS_PUSH(v); CHK_ERR();
+  printf("??? cHex END "); dbgWs(); printf("\n");
   shiftBuf();
 }
 
@@ -998,12 +998,16 @@ void tests();
 #include <string.h>
 
 void printCStr(U8 len, U8* s) { printf("%.*s", len, s); }
-void printToken() { printCStr(tokenLen, tokenBuf); }
+void printToken() {
+  printf("\"");
+  printCStr(tokenLen, tokenBuf);
+  printf("\" line=%u ", line);
+}
 
 void dbgEnv() {
-  printf("  line=%u token[%u, %u]=\"", line, tokenLen, tokenBufSize);
+  printf("  token[%u, %u]=\"", tokenLen, tokenBufSize);
   printToken();
-  printf("\" stklen:%u ", WS_LEN);
+  printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=#%X ", instr);
   printf("sz=%u\n", szIToSz(CUR_SZI));
@@ -1094,7 +1098,7 @@ Key* Dict_findFn(U32 value) {
 
   while(offset < dict->heap) {
     U32* keyVPtr = Key_vptr(key);
-    if(value = 0xFFFFFFFFFFFF & *keyVPtr) return key;
+    if(value == (0xFFFFFFFFFFFF & *keyVPtr)) return key;
     U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
     key += entrySz;
     offset += entrySz;
@@ -1106,7 +1110,6 @@ Key* Dict_findFn(U32 value) {
 
 void dbgJmpI(JmpI j) {
   U32 jloc = 0;
-
 
   switch (j) {
     case JMPL:
@@ -1131,12 +1134,12 @@ U32 max(I32 a, I32 b) {
 
 void dbgWs() {
   printf("WS", WS_LEN);
+  printf(" [%u...]", max(0, ((I32) WS_LEN) - 2));
   if(WS_LEN > 0) {
-    printf("%+8X|", fetch(env.ws.mem, env.ws.sp, ASIZE));
-    if(WS_LEN == 1) printf("        |");
-    else printf("%+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, ASIZE));
-  } else printf("|       |       |");
-  printf(" ...%u more", max(0, ((I32) WS_LEN) - 2));
+    if(WS_LEN == 1) printf("   ----  |");
+    else printf(" %+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, ASIZE));
+    printf(" %+8X|", fetch(env.ws.mem, env.ws.sp, ASIZE));
+  } else printf("   ----  |   ----  |");
 }
 
 
@@ -1283,17 +1286,7 @@ void compileStr(U8* s) {
   printf("## testAsm2\n"); SMALL_ENV;
   compileFile("spore/asm2.sa");
   compile(); ASSERT_NO_ERR();
-
-  printf("## testAsm2... testIf\n");
-  compileStr(
-    ".4 $loc testIf / converts 1->10 else: 42 \n"
-    "  LIT EQ JZL; #1 $h2  $jloc jmpTo        \n"
-    "    LIT RET; #10 $h2                    \n"
-    "  $jset jmpTo                             \n"
-    "  LIT RET; #42 $h2                      \n"
-    "$assertWsEmpty                           \n");
-  compileStr("#1 $testIf");  assert(0x10 == WS_POP());
-  compileStr("#2 $testIf");  assert(0x42 == WS_POP());
+  compileFile("spore/testAsm2.sa");
 }
 
 /*test*/ void testBoot() {
