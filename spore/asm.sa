@@ -16,14 +16,17 @@
 // **********
 // * Instructions
 // # Jmp          // Description
-#E000_0000 =NOJ   // No Jump
-#E000_2000 =JZL   // Jmp to Literal if store==0
-#E000_4000 =JTBL  // JTBL consume store and jump to table using size=Literal
-#E000_6000 =JMPW   // Jump
-//   _8000 =res   // reserved
-#E000_A000 =XW    // Execute from WS, updating LS using size at address.
-#E000_C000 =XSW   // "Micro" (u) call from WS, no LS size at address.
-#E000_E000 =RET   // Return
+#F000_0000 =NOJ   // No Jump
+#F000_1000 =RET   // Return
+#F000_2000 =JMPL  // Jmp to Literal
+#F000_3000 =JMPW  // Jmp to WS
+#F000_4000 =JZL   // Jmp to Literal if store==0
+#F000_5000 =JTBL  // Jump to Table index using size=Literal
+#F000_6000 =XL    // Execute Literal (mPtr)
+#F000_7000 =XW    // Execute WS (aPtr)
+#F000_8000 =XSL   // Execute Small Literal (no LS update)
+#F000_9000 =XSW   // Execute Small WS (no LS update)
+
 
 // # Mem          // Top         Store    Description
 #0700_0000 =WS    // WS          WS       Working Stack

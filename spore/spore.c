@@ -58,8 +58,9 @@ typedef enum {
 
 // Jmp
 typedef enum {
-  NOJ,          JZL,           JTBL,         JMPW,
-  _JR0,         XW,          XSW,          RET,
+  NOJ , RET , JMPL, JMPW,
+  JZL , JTBL,
+  XL  , XW  , XSL , XSW ,
 } JmpI;
 
 typedef struct {
@@ -70,11 +71,11 @@ typedef struct {
 } Instr;
 
 // Operations
-#define JMP_SHIFT      13
+#define JMP_SHIFT      12
 #define MEM_SHIFT      8
 #define SZI_SHIFT      6
 
-#define JMP_MASK       0xE000
+#define JMP_MASK       0xF000
 #define SZI_MASK       0x00C0
 
 #define INSTR(SZ, JMP, MEM, OP) \
@@ -207,7 +208,7 @@ Instr splitInstr(U16 instr) {
     .op =     (U8 )  (0x3F & instr),
     .szI =    (SzI)  (0x3  & (instr >> SZI_SHIFT)),
     .mem =    (MemI) (0x7  & (instr >> MEM_SHIFT)),
-    .jmp =    (JmpI) (0x7  & (instr >> JMP_SHIFT)),
+    .jmp =    (JmpI) (0xF  & (instr >> JMP_SHIFT)),
   };
   return i;
 }
@@ -328,6 +329,21 @@ APtr toAPtr(U32 v, U8 sz) {
     U16 out = fetch(mem, env.ep, 2);
     env.ep += 2;
     return out;
+}
+
+void xImpl(APtr aptr) { // impl for "execute"
+  U16 growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
+  Stk_grow(&env.ls, growLs << APO2);
+  // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
+  Stk_push(&env.callStk, (growLs << 24) + env.ep);
+  env.mp = MOD_HIGH_MASK & aptr;
+  env.ep = aptr + 2;
+}
+
+void xsImpl(APtr aptr) { // impl for "execute small"
+  Stk_push(&env.callStk, env.ep);
+  env.mp = MOD_HIGH_MASK & aptr;
+  env.ep = aptr;
 }
 
 /* Takes the 16bit instruction and executes it as follows:
@@ -479,7 +495,6 @@ APtr toAPtr(U32 v, U8 sz) {
   if (srPtr) store(mem, srPtr, WS_POP(), sz);
 
   APtr aptr;
-  U16 growLs;
 
   if(dbgMode) {
     dbgJmpI(i.jmp);
@@ -490,29 +505,6 @@ APtr toAPtr(U32 v, U8 sz) {
   // * Jmp: perform the jump
   switch(i.jmp) {
     case NOJ: break;
-    case JZL:
-      l = popLit2();
-      r = WS_POP();
-      if(!r) { env.ep = toAPtr(l, 2); }
-      break;
-    case JTBL: fail("not implemented"); break;
-    case JMPW: env.ep = WS_POP(); break;
-    case _JR0: fail("JR0");
-    case XW:
-      aptr = toAPtr(WS_POP(), sz);
-      growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
-      Stk_grow(&env.ls, growLs << APO2);
-      // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
-      Stk_push(&env.callStk, (growLs << 24) + env.ep);
-      env.mp = MOD_HIGH_MASK & aptr;
-      env.ep = aptr + 2;
-      break;
-    case XSW: // call no locals
-      aptr = toAPtr(WS_POP(), sz);
-      Stk_push(&env.callStk, env.ep);
-      env.mp = MOD_HIGH_MASK & aptr;
-      env.ep = aptr;
-      break;
     case RET:
       if(Stk_len(env.callStk) == 0) {
         res.escape = TRUE;
@@ -523,6 +515,19 @@ APtr toAPtr(U32 v, U8 sz) {
         env.ep = MAX_APTR & callMeta;
       }
       break;
+    case JMPL: env.ep = toAPtr(popLit2(), 2); break;
+    case JMPW: env.ep = toAPtr(WS_POP(), 4); break;
+    case JZL:
+      l = popLit2();
+      r = WS_POP();
+      if(!r) { env.ep = toAPtr(l, 2); }
+      break;
+    case JTBL: assert(FALSE); break; // TODO: not impl
+    case XL: xImpl(toAPtr(popLit2(), 2)); break;
+    case XW: xImpl(toAPtr(WS_POP(), 4)); break;
+    case XSL: xsImpl(toAPtr(popLit2(), 2)); break;
+    case XSW: xsImpl(toAPtr(WS_POP(), 4)); break;
+    default: fail("unknown JMP");
   }
 
   return res;
@@ -1005,8 +1010,8 @@ U8* memName(MemI m) {
 
 U8* jmpName(JmpI j) {
   return (U8*[]) {
-  "    ",         "JZL  ",         "JTBL",         "JMPW ",
-  "_JR0",         "XW  ",          "XSW ",         "RET ",
+    "NOJ ", "RET ", "JMPL", "JMPW",
+    "JZL ", "JTBL", "EXL ", "EXW ",
   }[j];
 }
 
