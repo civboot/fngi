@@ -39,13 +39,16 @@ typedef CSz CPtr;
 #endif
 
 #define SET_ERRV(E)    if(TRUE) { *env.err = E; return; }
+#define SET_ERR(E, V)  if(TRUE) { *env.err = E; return V; }
 #define CHK_ERR(V)    if(*env.err) { return V; }
 #define ASSERT_NO_ERR() assert(!*env.err)
-
-#define ASM_ASSERTV(C, E) /*Assert return void*/  \
+#define ASM_ASSERTV(C, E) /* Assert return void */  \
   if(!(C)) { *env.err = E; return; }
 #define ASM_ASSERT(C, E, V) \
   if(!(C)) { *env.err = E; return V; }
+
+// Global Constants
+#define C_CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
 
 // Error classes
 #define E_ok           0 // no error
@@ -61,30 +64,28 @@ typedef CSz CPtr;
 #define E_todo    0xE004 // executed incomplete (to do) code
 #define E_wsEmpty 0xE005 // the WS was expected empty
 
-#define E_NULL    0xE0A1 // null access
-#define E_stkUnd  0xE0A2 // Stack underflow
-#define E_stkOvr  0xE0A3 // Stack overflow
-#define E_align2  0xE0A4 // access off 2byte allign
-#define E_align4  0xE0A5 // access off 4byte align
-#define E_zeroDiv 0xE0A6 // invalid instr
+#define E_null    0xE0A1 // null access
+#define E_oob     0xE0A2 // out of bounds access
+#define E_stkUnd  0xE0A3 // Stack underflow
+#define E_stkOvr  0xE0A4 // Stack overflow
+#define E_align2  0xE0A5 // access off 2byte allign
+#define E_align4  0xE0A6 // access off 4byte align
+#define E_divZero 0xE0A7 // divide by zero
 
 // Compiler (i.e. syntax) errors
-#define E_cInstr 0xE0C1 // invalid instr
-#define E_cToken 0xE0C2 // token invalid
-#define E_cTLen  0xE0C3 // token invalid
-#define E_cDKey  0xE0C4 // dict key not found
-#define E_cHex   0xE0C5 // non-hex number
-#define E_cSz    0xE0C6 // invalid Sz selected
-#define E_cRet   0xE0C7 // invalid RET
-
-// Global Constants
-#define C_CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
+#define E_cInstr  0xE0C1 // invalid instr
+#define E_cToken  0xE0C2 // token invalid
+#define E_cTLen   0xE0C3 // token invalid
+#define E_cDKey   0xE0C4 // dict key not found
+#define E_cHex    0xE0C5 // non-hex number
+#define E_cSz     0xE0C6 // invalid Sz selected
+#define E_cSzAPtr 0xE0C7 // invalid Sz for aptr
+#define E_cRet    0xE0C8 // invalid RET
+#define E_cDblSr  0xE0C9 // Double store
+#define E_cDevOp  0xE0CA // device op not impl
+#define E_cDictOvr 0xE0CB // dict overflow
 
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
-#define OP_ASSERT(COND, MSG) \
-  if(!(COND)) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
-#define OP_CHECK(COND, MSG) \
-  if(COND) { printf("!A! "); printf(MSG); dbgEnv(); return 1; }
 
 // Size
 typedef enum { SzI1, SzI2, SzI4 } SzI;
@@ -143,6 +144,7 @@ typedef struct {
   APtr* topMem;
   U32* err;
   U32* state;
+  U32* testIdx;
   Stk ls;
 
   // Separate from mem
@@ -206,14 +208,6 @@ U32 line = 1;
 // ********************************************
 // ** Utilities
 
-/*fn*/ void fail(U8* cstr) {
-  printf("!!FAIL!! ");
-  printf(cstr);
-  printf("\n");
-  dbgEnv();
-  exit(1);
-}
-
 // Bitmask for SZ in bytes. Note: <<3 is same as times 8
 #define CUR_SZI         ((instr & SZI_MASK) >> SZI_SHIFT)
 
@@ -222,7 +216,7 @@ U32 szIToMask(SzI szI) {
     case 0: return 0xFF;
     case 1: return 0xFFFF;
     case 2: return 0xFFFFFFFF;
-    default: printf("szI=0x%X ", szI); fail("invalid szI");
+    default: SET_ERR(E_cSz, 0);
   }
 }
 
@@ -231,7 +225,7 @@ U8 szIToSz(SzI szI) {
     case 0: return 1;
     case 1: return 2;
     case 2: return 4;
-    default: fail("invalid szI");
+    default: SET_ERR(E_cSz, 0);
   }
 }
 
@@ -240,18 +234,17 @@ SzI szToSzI(U8 sz) {
     case 1: return SzI1;
     case 2: return SzI2;
     case 4: return SzI4;
-    default: fail("invalid sz");
+    default: SET_ERR(E_cSz, 0);
   }
 }
 
 Instr splitInstr(U16 instr) {
-  Instr i = {
+  return (Instr) {
     .op =     (U8 )  (0x3F & instr),
     .szI =    (SzI)  (0x3  & (instr >> SZI_SHIFT)),
     .mem =    (MemI) (0x7  & (instr >> MEM_SHIFT)),
     .jmp =    (JmpI) (0xF  & (instr >> JMP_SHIFT)),
   };
-  return i;
 }
 
 /*fn*/ void updateInstr(U32 maskSet) {
@@ -261,13 +254,13 @@ Instr splitInstr(U16 instr) {
   instr = instr | setInstr;
 }
 
-/*fn*/ void* alignSys(void* p, U8 sz) {
+/*fn*/ void* align(void* p, U8 sz) {
   U8 mod = (size_t)p % sz;
   if(mod == 0) return p;
   return p + (sz - mod);
 }
 
-/*fn*/ APtr align(APtr aPtr, U8 sz) {
+/*fn*/ APtr alignAPtr(APtr aPtr, U8 sz) {
   U8 mod = aPtr % sz;
   if(mod == 0) return aPtr;
   return aPtr + (sz - mod);
@@ -290,29 +283,29 @@ Instr splitInstr(U16 instr) {
       *(mem+aptr) = (U8)value;
       break;
     case 2: 
-      assert(aptr % 2 == 0);
+      ASM_ASSERTV(aptr % 2 == 0, E_align2);
       *((U16*) (mem+aptr)) = (U16)value;
       break;
     case 4:
-      assert(aptr % 4 == 0);
+      ASM_ASSERTV(aptr % 2 == 0, E_align4);
       *((U32*) (mem+aptr)) = value;
       break;
-    default: fail("store: invalid Sz");
+    default: SET_ERRV(E_cSz);
   }
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
-  if(aptr == 0) fail("null access");
+  ASM_ASSERT(aptr, E_null, 0);
   switch (sz) {
     case 1:
       return (U32) *((U8*) (mem+aptr));
     case 2:
-      assert(aptr % 2 == 0);
+      ASM_ASSERT(aptr % 2 == 0, E_align2, 0);
       return (U32) *((U16*) (mem+aptr));
     case 4:
-      assert(aptr % 4 == 0);
+      ASM_ASSERT(aptr % 2 == 0, E_align4, 0);
       return (U32) *((U32*) (mem+aptr));
-    default: fail("fetch: invalid Sz");
+    default: SET_ERR(E_cSz, 0);
   }
 }
 
@@ -324,14 +317,14 @@ Instr splitInstr(U16 instr) {
 #define WS_PUSH(VALUE)  Stk_push(&env.ws, VALUE)
 /*fn*/ void Stk_push(Stk* stk, U32 value) {
   _CHK_GROW(stk, ASIZE);
-  store(stk->mem, stk->sp - ASIZE, value, ASIZE);
+  store(stk->mem, stk->sp - ASIZE, value, ASIZE); CHK_ERR();
   stk->sp -= ASIZE;
 }
 
 #define WS_POP()  Stk_pop(&env.ws)
 /*fn*/ U32 Stk_pop(Stk* stk) {
   ASM_ASSERT(stk->sp + ASIZE <= stk->size, E_stkUnd, 0);
-  U32 out = fetch(stk->mem, stk->sp, ASIZE);
+  U32 out = fetch(stk->mem, stk->sp, ASIZE); CHK_ERR(0);
   stk->sp += ASIZE;
   return out;
 }
@@ -348,12 +341,10 @@ Instr splitInstr(U16 instr) {
 
 APtr toAPtr(U32 v, U8 sz) {
   switch (sz) {
-    case 1: fail("APtr.sz=U8");
+    case 1: SET_ERR(E_cSzAPtr, 0);
     case 2: return ENV_MOD_HIGH() + v;
-    case 4:
-      assert(v <= MAX_APTR);
-      return v;
-    default: assert(FALSE);
+    case 4: ASM_ASSERT(v <= MAX_APTR, E_oob, 0); return v;
+    default: SET_ERR(E_cSz, 0);
   }
 }
 
@@ -362,14 +353,16 @@ APtr toAPtr(U32 v, U8 sz) {
 // ** Executing Instructions
 
 /*fn*/ U16 popLit2() {
-    U16 out = fetch(mem, env.ep, 2);
+    U16 out = fetch(mem, env.ep, 2); CHK_ERR(0);
     env.ep += 2;
     return out;
 }
 
 void xImpl(APtr aptr) { // impl for "execute"
-  U16 growLs = fetch(mem, aptr, 2); // amount to grow, must be multipled by APtr size.
-  Stk_grow(&env.ls, growLs << APO2);
+  CHK_ERR();
+  // get amount to grow, must be multipled by APtr size .
+  U16 growLs = fetch(mem, aptr, 2); CHK_ERR();
+  Stk_grow(&env.ls, growLs << APO2); CHK_ERR();
   // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
   Stk_push(&env.callStk, (growLs << 24) + env.ep); CHK_ERR();
   env.mp = MOD_HIGH_MASK & aptr;
@@ -377,6 +370,7 @@ void xImpl(APtr aptr) { // impl for "execute"
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
+  CHK_ERR();
   Stk_push(&env.callStk, env.ep); CHK_ERR();
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr;
@@ -403,6 +397,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   Instr i = splitInstr(instr);
   U8 sz = szIToSz(i.szI);
   U32 szMask = szIToMask(i.szI);
+  CHK_ERR(res);
 
   APtr srPtr = 0;
   U32 l; U32 r;
@@ -412,11 +407,11 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case LIT: WS_PUSH(szMask & popLit2());  break;
     case SRLL:
       srPtr = env.ls.sp + popLit2();
-      if(!srPtr) fail("SRLL at NULL");
+      ASM_ASSERT(srPtr, E_null, res);
       break;
     case SRML:
       srPtr = env.mp + popLit2();
-      if(!srPtr) fail("SRML at NULL");
+      ASM_ASSERT(srPtr, E_null, res);
       break;
     case SROL: WS_PUSH(szMask & popLit2());    break;
     case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit2(), sz)); break;
@@ -427,7 +422,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
       l = fetch(mem, l, sz); CHK_ERR(res);
       WS_PUSH(l);
       break;
-    default: fail("unknown mem");
+    default: SET_ERR(E_cInstr, res);
   }
 
   if(dbgMode) {
@@ -443,6 +438,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         case 0x1: /*SWP */
           r = szMask & WS_POP();
           l = szMask & WS_POP();
+          CHK_ERR(res);
           WS_PUSH(r);
           WS_PUSH(l);
           break;
@@ -452,13 +448,14 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
         case 0x6: /*DVF */ deviceOp(TRUE, i.szI, szMask, sz); break;
         case 0x7: /*DVS */ deviceOp(FALSE, i.szI, szMask, sz); break;
-        case 0x8: /*RGL */ fail("RGL not impl"); break;
-        case 0x9: /*RGS */ fail("RGS not impl"); break;
+        case 0x8: /*RGL */ assert(FALSE); // not impl
+        case 0x9: /*RGS */ assert(FALSE); // not impl
         case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
         case 0xB: /*SR  */
-          if(srPtr) fail("SR double store");
+          ASM_ASSERT(!srPtr, E_cDblSr, res);
           l = WS_POP(); // value
           srPtr = WS_POP();
+          CHK_ERR(res);
           WS_PUSH(l);
           break;
         case 0xC: /*LIT4*/ WS_PUSH((popLit2() << 16) + popLit2());
@@ -486,6 +483,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case 2:
       r = WS_POP();
       l = WS_POP();
+      CHK_ERR(res);
       switch (i.op - OPI2_START) {
         case 0x0: /*ADD */ r = l + r; break;
         case 0x1: /*SUB */ r = l - r; break;
@@ -518,6 +516,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         case 0x10: /*MUL  */ r = l * r; break;
         case 0x11: /*DIV_U*/ r = l / r; break;
         case 0x12: /*DIV_S*/
+          ASM_ASSERT(r, E_divZero, res);
           switch (i.szI) {
             case SzI1: r = (I8)  l / (I8)  r; break;
             case SzI2: r = (I16) l / (I16) r; break;
@@ -531,15 +530,13 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
   // *************
   // * Store Result (if selected in Mem)
-  if (srPtr) store(mem, srPtr, WS_POP(), sz);
-
+  if (srPtr) { store(mem, srPtr, WS_POP(), sz); CHK_ERR(res); }
   APtr aptr;
 
   if(dbgMode) {
     dbgJmpI(i.jmp);
     dbgEnv();
   }
-  CHK_ERR(res);
 
   // *************
   // * Jmp: perform the jump
@@ -555,19 +552,19 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         env.ep = MAX_APTR & callMeta;
       }
       break;
-    case JMPL: env.ep = toAPtr(popLit2(), 2); break;
-    case JMPW: env.ep = toAPtr(WS_POP(), 4); break;
+    case JMPL: l = WS_POP(); CHK_ERR(res); env.ep = toAPtr(l, 2); break;
+    case JMPW: l = WS_POP(); CHK_ERR(res); env.ep = toAPtr(l, 4); break;
     case JZL:
-      l = popLit2();
-      r = WS_POP();
+      l = popLit2(); CHK_ERR(res);
+      r = WS_POP(); CHK_ERR(res);
       if(!r) { env.ep = toAPtr(l, 2); }
       break;
-    case JTBL: assert(FALSE); break; // TODO: not impl
-    case XL: xImpl(toAPtr(popLit2(), 2)); break;
-    case XW: xImpl(toAPtr(WS_POP(), 4)); break;
-    case XSL: xsImpl(toAPtr(popLit2(), 2)); break;
-    case XSW: xsImpl(toAPtr(WS_POP(), 4)); break;
-    default: fail("unknown JMP");
+    case JTBL: assert(FALSE); // TODO: not impl
+    case XL: l = popLit2(); CHK_ERR(res); xImpl(toAPtr(l, 2)); break;
+    case XW: l = WS_POP(); CHK_ERR(res); xImpl(toAPtr(l, 4)); break;
+    case XSL: l = popLit2(); CHK_ERR(res); xsImpl(toAPtr(l, 2)); break;
+    case XSW: l = WS_POP(); CHK_ERR(res); xsImpl(toAPtr(l, 4)); break;
+    default: SET_ERR(E_cInstr, res);
   }
   CHK_ERR(res);
   return res;
@@ -588,7 +585,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 #define Dict_key(OFFSET)  ((Key*) (mem + dict->buf + (OFFSET)))
 // Given ptr to key, get pointer to the value.
-#define Key_vptr(KEY) ((U32*) alignSys(((U8*)KEY) + KEY->len + 1, 4))
+#define Key_vptr(KEY) ((U32*) align(((U8*)KEY) + KEY->len + 1, 4))
 
 /*fn*/ U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
   if(slen0 != slen1) return FALSE;
@@ -607,7 +604,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     if(cstrEq(key->len, slen, key->s, s)) {
       return offset;
     }
-    U16 entrySz = align(key->len + 1 + 4, 4);
+    U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
     key += entrySz;
     offset += entrySz;
   }
@@ -622,11 +619,11 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   Key* key = Dict_key(offset);
   if(offset == dict->heap) {
     // new key
-    U16 addedSize = align(1 + slen + 4, 4);
-    assert(dict->heap + addedSize <= dict->end);
+    U16 addedSize = alignAPtr(1 + slen + 4, 4);
+    ASM_ASSERT(dict->heap + addedSize <= dict->end, E_cDictOvr, dict->heap);
     key->len = slen;
     memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
-    dict->heap += align(1 + slen + 4, 4);
+    dict->heap += alignAPtr(1 + slen + 4, 4);
   }
   U32* v = Key_vptr(key);
   *v = value;
@@ -805,8 +802,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     return result;
   }
   if(tokenState->group <= T_ALPHA) {
-    U32 maskSet = Dict_get(tokenLen, tokenBuf);
-    CHK_ERR(result);
+    U32 maskSet = Dict_get(tokenLen, tokenBuf); CHK_ERR(result);
     updateInstr(maskSet);
     return result;
   }
@@ -823,7 +819,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case '$': cExecute(); break;
     default:
       printf("!! invalid token: %c\n", tokenBuf[0]);
-      *env.err = E_cToken;
+      SET_ERR(E_cSz, result);
   }
   return result;
 }
@@ -832,14 +828,14 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   while(TRUE) {
     scan(); CHK_ERR();
     ExecuteResult r = compileOne(); CHK_ERR();
-    if(r.escape) break;
+    if(r.escape) return;
   }
 }
 
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
-  U32 op = WS_POP();
+  U32 op = WS_POP(); CHK_ERR();
   U32 tmp;
   U32* tmpR;
   ExecuteResult result;
@@ -848,11 +844,11 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case 1: /*D_scan*/ scan(); break;
     case 2: /*D_dict*/
       if(isFetch) {
-        tmp = Dict_get(tokenLen, tokenBuf);
-        CHK_ERR();
+        tmp = Dict_get(tokenLen, tokenBuf); CHK_ERR();
         WS_PUSH(szMask & tmp);
       } else {
-        Dict_set(tokenLen, tokenBuf, szMask & WS_POP());
+        tmp = WS_POP(); CHK_ERR();
+        Dict_set(tokenLen, tokenBuf, szMask & tmp);
       }
       break;
       // FT=get SR=set dict key=tokenBuf, value of sz
@@ -873,7 +869,10 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       break;
     case 5: /*D_sz*/
       if(isFetch) WS_PUSH(sz);
-      else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
+      else {
+        tmp = WS_POP(); CHK_ERR();
+        instr = INSTR_W_SZ(instr, szToSzI(tmp));
+      }
       break;
     case 6: /*D_comp*/
       result = compileOne(); CHK_ERR();
@@ -881,17 +880,13 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       break;
     case 7: /*D_assert*/ 
       tmp = WS_POP(); CHK_ERR();
-      if(!WS_POP()) {
-        printf("fail code=0x%x ", tmp);
-        fail("D_assert failed");
-      }
+      if(!WS_POP()) SET_ERRV(tmp);
       break;
     case 8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
     case 9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
-    default: fail("device op not impl");
+    default: SET_ERRV(E_cDevOp);
   }
 }
-
 
 // ********************************************
 // ** Initialization
@@ -914,18 +909,19 @@ ssize_t readSrc(size_t nbyte) {
   U8 callStkMem[RS];                      \
   mem = localMem; \
   env = (Env) {                           \
-    .heap = (APtr*) (mem + 4),            \
-    .topHeap = (APtr*) (mem + 8),         \
-    .topMem = (APtr*) (mem + 12),         \
-    .err = (U32*) (mem + 16),             \
-    .state = (U32*) (mem + 20),           \
+    .heap =    (APtr*) (mem + 0x4),       \
+    .topHeap = (APtr*) (mem + 0x8),       \
+    .topMem =  (APtr*) (mem + 0xC),       \
+    .err =     (U32*) (mem + 0x10),       \
+    .state =   (U32*) (mem + 0x14),       \
+    .testIdx = (U32*) (mem + 0x18),       \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
     .callStk = \
     { .size = RS, .sp = RS, .mem = callStkMem },     \
   };                                      \
   /* configure heap+topheap */            \
-  *env.heap = 24;                         \
+  *env.heap = 0x18 + 4;                   \
   *env.topHeap = MS;                      \
   *env.topMem = MS;                       \
   /* Dict is right at the top */          \
@@ -946,8 +942,6 @@ ssize_t readSrc(size_t nbyte) {
   *env.topHeap -= TOKEN_BUF;              \
   tokenState->buf = *env.topHeap;
 
-
-
 #define SMALL_ENV_BARE \
   /*      MS      WS     RS     LS     DICT */    \
   NEW_ENV_BARE(0x8000, 0x100, 0x100, 0x200, 0x1000)
@@ -957,7 +951,7 @@ void compileFile(U8* s) {
   line = 1;
   readAppend = &readSrc;
   srcFile = fopen(s, "rb");
-  if(srcFile <= 0) fail("could not open file");
+  assert(srcFile > 0);
   compile(); ASSERT_NO_ERR();
 }
 
@@ -975,15 +969,20 @@ void compileFile(U8* s) {
 void tests();
 
 /*fn*/ int main() {
-  printf("compiling spore...:\n");
+  // printf("compiling spore...:\n");
 
   tests();
   return OK;
 }
 
-
 // ********************************************
 // ** Testing
+
+// void dbgEnv() {}
+// void dbgWs() {}
+// void dbgInstr(Instr i) {}
+// void dbgJmpI(JmpI i) {}
+// void tests() {}
 
 #include <string.h>
 
@@ -1083,7 +1082,7 @@ Key* Dict_findFn(U32 value) {
   while(offset < dict->heap) {
     U32* keyVPtr = Key_vptr(key);
     if(value = 0xFFFFFFFFFFFF & *keyVPtr) return key;
-    U16 entrySz = align(key->len + 1 + 4, 4);
+    U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
     key += entrySz;
     offset += entrySz;
   }
@@ -1159,12 +1158,11 @@ void compileStr(U8* s) {
 // ** Tests
 
 /*test*/ void testHex() {
-  printf("## testHex #01...\n"); TEST_ENV_BARE;
+  printf("## testHex...\n"); TEST_ENV_BARE;
 
   compileStr(".1 #10");
   assert(WS_POP() == 0x10);
 
-  printf("## testHex #10AF...\n");
   compileStr("/comment\n.2 #10AF");
   U32 result = WS_POP();
   assert(result == 0x10AF);
@@ -1180,7 +1178,7 @@ void compileStr(U8* s) {
 }
 
 /*test*/ void testDictDeps() {
-  printf("## testDictDeps... cstr\n"); TEST_ENV_BARE;
+  printf("## testDictDeps...\n"); TEST_ENV_BARE;
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
 
@@ -1188,7 +1186,6 @@ void compileStr(U8* s) {
   assert(!cstrEq(2, 1, "aa", "a"));
   assert(!cstrEq(2, 2, "aa", "ab"));
 
-  printf("## testDictDeps... dict\n");
   assert(0 == Dict_find(3, "foo"));
 
   // set
@@ -1251,7 +1248,7 @@ void compileStr(U8* s) {
   assert(0x04 == WS_POP());
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
-  compileStr("@rTopHeap FT^");  assert(*env.topHeap == WS_POP());
+  compileStr("@vTopHeap FT^");  assert(*env.topHeap == WS_POP());
   compileStr("@c_rDictHeap");   assert(expectDictHeap == WS_POP());
 }
 

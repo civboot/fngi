@@ -8,12 +8,13 @@
 .4
 // **********
 // * Memory Locations
-#0000_0000 =rNull
-#0000_0004 =rHeap // heap reference
-#0000_0008 =rTopHeap
-#0000_000C =rTopMem
+#0000_0000 =null
+#0000_0004 =vHeap // heap reference
+#0000_0008 =vTopHeap
+#0000_000C =vTopMem
 #0000_0010 =vErr
 #0000_0014 =vState
+#0000_0018 =vTestIdx
 
 // **********
 // * Instructions
@@ -117,7 +118,7 @@
 // **********
 // * Compiler Constants
 .4
-@rTopMem FT^    #8 SUB^   =c_rDictArray  // Dict struct
+@vTopMem FT^    #8 SUB^   =c_rDictArray  // Dict struct
 @c_rDictArray   INC4^     =c_rDictHeap
 @c_rDictArray   #8 SUB^   =c_rTokenBuf   // TokenBuf struct
 @c_rTokenBuf    INC4^     =c_rTokenLen

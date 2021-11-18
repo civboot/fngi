@@ -1,8 +1,8 @@
 // This file creates some essential assembly utilities including
 
 // Define $loc
-.4@rHeap FT^ =loc // fetch current heap and set to loc
-  FTML        ; .2@rHeap,  // fetch heap {heap:4}
+.4@vHeap FT^ =loc // fetch current heap and set to loc
+  FTML        ; .2@vHeap,  // fetch heap {heap:4}
   .4 LIT DVF    ; .2@D_scan,   // scan next token into tokenBuf {heap}
   .4 LIT DVS RET; .2@D_dict,   // set dict key(tokenBuf) to current heap
 
@@ -14,16 +14,16 @@ $loc dictGet / { -> v}
   .4 LIT DVF RET; .2@D_dict,
 
 $loc h2  // {val:2} push 2bytes from stack to heap
-  .4 FTML SWP; .2@rHeap,  // fetch heap and swap {heap, val}
+  .4 FTML SWP; .2@vHeap,  // fetch heap and swap {heap, val}
   .2      SR;             // store 2 byte value at heap
-  .4 FTML INC2; .2@rHeap, // fetch heap and increment by 2
-  .4 SRML  RET; .2@rHeap, // store new heap and return
+  .4 FTML INC2; .2@vHeap, // fetch heap and increment by 2
+  .4 SRML  RET; .2@vHeap, // store new heap and return
 
 .4
-$loc getHeap     FTML RET; @rHeap $h2
-$loc setHeap     SRML RET; @rHeap $h2
-$loc getTopHeap  FTML RET; @rTopHeap $h2
-$loc setTopHeap  SRML RET; @rTopHeap $h2
+$loc getHeap     FTML RET; @vHeap $h2
+$loc setHeap     SRML RET; @vHeap $h2
+$loc getTopHeap  FTML RET; @vTopHeap $h2
+$loc setTopHeap  SRML RET; @vTopHeap $h2
 $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
