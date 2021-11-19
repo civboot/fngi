@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 0x10;
+char dbgMode = 0x00;
 
 // ********************************************
 // ** Core Types
@@ -48,7 +48,8 @@ typedef CSz CPtr;
   if(!(C)) { *env.err = E; return V; }
 
 // Global Constants
-#define C_CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
+#define CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
+#define ALLOW_PANIC_MASK 0x00010000
 
 // Error classes
 #define E_ok           0 // no error
@@ -1299,7 +1300,7 @@ void compileStr(U8* s) {
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
   compileStr("@vTopHeap FT^");  assert(*env.topHeap == WS_POP());
-  compileStr("@c_rDictHeap");   assert(expectDictHeap == WS_POP());
+  compileStr("@c_vDictHeap");   assert(expectDictHeap == WS_POP());
 }
 
 /*test*/ void testAsm2() {

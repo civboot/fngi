@@ -13,6 +13,7 @@ $loc dictGet / { -> v}
   .4 LIT DVF    ; .2@D_scan,
   .4 LIT DVF RET; .2@D_dict,
 
+// TODO: rename to c_h*
 $loc h2  // {val:2} push 2bytes from stack to heap
   .4 FTML SWP; .2@vHeap,  // fetch heap and swap {heap, val}
   .2      SR;             // store 2 byte value at heap
@@ -64,11 +65,11 @@ $loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
 // These are combined with the current instruction, using whatever size it is.
 //   Ex: `ADD $xsl foo`         -> `ADD XSL; @foo $h2`
 // The l2_* variants also include a 2byte literal:
-//   Ex: `ADD #021 $l2_xsl foo` -> `LIT ADD XSL; #021 $h2 @foo $h2`
+//   Ex: `ADD #321 $l2_xsl foo` -> `LIT ADD XSL; #321 $h2 @foo $h2`
 //
-// Additionally, `$L` or `$retL` can be used to only push literals (they ignore
-// current instr). retL also executes RET. They are smart and use LIT or LIT4
-// depending on the size of the value:
+// Additionally, `$L` or `$retL` can be used to only push literals. They are
+// smart and use LIT or LIT4 depending on the size of the value. Note: they
+// ignore current instr since LIT4 is an operation.
 //   Ex: $L@myVar   $L#1234_5678   $retL#3
 
 .4 $loc xsl // compile instr with XSL, see docs on core macros.

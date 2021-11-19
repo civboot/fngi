@@ -20,6 +20,15 @@
 // * Instructions
 #FF3F_0000 =CLR_INSTR   // Clear instr except Size bits
 
+// Jmps:
+// - Jumps can be to either a literal (L) or to an item on the working stack (W).
+// - X means "execute" and is a call.
+// - XS is an "execute small" and means that the function has no local stack.
+// - XL/XW will execute a function that has a local stack. The size of the
+//   local stack is stored in the first 16bits at the function's address, which
+//   are loaded by the execute instr and stored in the highest byte in the
+//   callstack (which RET uses to shrink the local stack on return).
+
 // # Jmp          // Description
 #F000_0000 =NOJ   // No Jump
 #F000_1000 =RET   // Return
@@ -118,17 +127,18 @@
 #09 =D_cslen  // call stk len
 
 // **********
-// * Compiler Constants
+// * Top Heap Compiler structs.
 .4
-@vTopMem FT^    #8 SUB^   =c_rDictArray  // Dict struct
-@c_rDictArray   INC4^     =c_rDictHeap
-@c_rDictArray   #8 SUB^   =c_rTokenBuf   // TokenBuf struct
-@c_rTokenBuf    INC4^     =c_rTokenLen
+@vTopMem FT^    #8 SUB^   =c_vDictArray  // Dict struct
+@c_vDictArray   INC4^     =c_vDictHeap
+@c_vDictArray   #8 SUB^   =c_vTokenBuf   // TokenBuf struct
+@c_vTokenBuf    INC4^     =c_vTokenLen
 
 // **********
 // * Global Constants
 .4
-#8000 =C_CMP_EQ   // Comparison was equal. Was less if LT this, vice-versa.
+#8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
+#0001_0000 =cAllowPanicMask
 
 // Error Classes
 // [E000 - E100): built-in errors.

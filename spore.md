@@ -69,6 +69,9 @@ on how the parser/compiler stays extremely minimal:
 
 
 ## Spore Assembly
+> Note: improved macros are currently being defined in `spore/asm2.sa`. Stay
+> tuned.
+
 Spore has a 16bit bytecode and a very primitive assembler, from which it
 bootstraps itself into a more "full featured" stack based language.
 
@@ -84,11 +87,11 @@ like this:
 
 ```
 $loc add1
-  .2 IMWS ADD RET; #1,
+  .2 LIT ADD RET; #1,
 
 $loc add2
-  .2 IMWS CALL; @add1,
-  .2 IMWS CALL; @add1,
+  .2 XSL; @add1,
+  .2 XSL; @add1,
   RET;
 ```
 
@@ -98,41 +101,45 @@ Pushing and setting stack values:
 - `/` starts a line comment.
 - `.N` sets the size to N bytes, i.e. `.4` set's the global instruction size to
   4 bytes.
-- `#NN` pushes a hex number to the stack. The size is controlld by `.`. For
-  instance `.2 #12345` would be the hex number `0x2345` (2 bytes/16bit value).
+- `#NN` pushes a 4 byte unsigned hex number to the stack. Ex: `#1_2345` pushes 0x12345.
 - `=<token>` set's the dictionary entry for `<token>` to the value on the stack.
   i.e. `#42 =foo` would set `foo` to 0x42.
 - `@<token>` get's the dictionary entry for <token>`. I.e. `@foo` would put 0x42
-  on the stack (with above set).
-- `~<token>` forget all items in dictionary until and including `<token>`.
-- `,` pops a value of size controlled by `.` and writes it to the heap.
+  on the stack (assuming it had been set like above).
+- `,` pops a value from stack and writes it to heap. The size is controlled by `.`
 
 Compiling an executing instructions:
 - `<non-native token>` any non-native token is interpreted as a dictionary
   lookup to mask and sets the global instruction register. Asm instructions are
-  defined with a 16bit mask in the high two bytes and 16bit instruction in the
-  low 16bits, i.e. `#003F_0020 =ADD`. Using just a plain `ADD` will mask and set
-  the instruction.
+  defined with a 16bit mask in the high 2bytes and 16bit instruction in the
+  low 2bytes, i.e. `#003F_0020 =ADD`. Using just a plain `ADD` will mask and set
+  the current instruction.
 - `;` compile the current instruction register to heap and clear it (but don't
   clear size bits).
-- `^` run the current instruction register. This ignores JMP. This is useful for
-  doing small bits of algebra and stack manipulation in the assembly.
+- `^` run the current instruction register then clear it. This ignores JMP. This
+  is useful for doing small bits of algebra and stack manipulation in the
+  assembly. Does not clear size bits.
 - `$<token>` gets `<token>` from dictionary and immediately begins executing it.
-  This is the assembly's "macro" language.
+  This is an assembly "macro", which must have been previously compiled to the
+  heap at the location in asm.
 
 From the above we can now break down this code:
 ```
 $loc add1
-  .2 IMWS ADD RET; #1,
+  .2 LIT ADD RET; #1,
 ```
 
-- `$loc add1` is a macro defined in `asm2.sa`. It simply sets add1 to the
-  current heap location.
-- `.2 IMWS ADD RET` is the components of our instruction. `.2` is the size in
-  bytes, `IMWS` is the memory (immediate working stack), `ADD` is the operation
-  and `RET` causes a return. They update the global instruction.
+- `$loc add1` is a macro defined in `asm2.sa`. It simply sets dictionary entry
+  "add1" to the current heap location.
+- `.2 LIT ADD RET` is the components of our instruction. `.2` is the size in
+  bytes, `LIT` is the memory (literal), `ADD` is the operation and `RET` causes
+  a return. They update the global instruction.
 - `;` compiles the global instruction (writes to heap) and then clears it (but
   does not change sz).
 - `#1,` pushes the hex value `1` to the stack and `,` compiles it to the heap.
-  It's the immediate value referenced by the `IMWS` in the previous instruction.
+  It's the immediate value referenced by the `LIT` in the previous instruction.
+
+For `add2` `XSL` means "eXecute Small Literal". It looks up the address to
+execute as a literal. "Small" means the function has no locals stack. (read more
+about that in the docs for XL vs XSL) in `spore/asm.sa`).
 
