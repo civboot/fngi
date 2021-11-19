@@ -25,6 +25,14 @@ $loc h4  // {val:4} push 4bytes from stack to heap
   .4 FTML INC4; .2@vHeap, // ft heap and +4
   .4 SRML  RET; .2@vHeap, // sr new heap
 
+// {v:4} compile a LIT4 (value-only) to the heap for LIT4.
+// Note: compiled as two U2 values with largest first.
+.4 $loc hL4
+  // Duplicate, then call h2(v>>0x10)
+  DUP;   LIT SHR XSL; #10 $h2  @h2 $h2 // Compile high bits
+  JMPL; @h2 $h2
+
+
 .4
 $loc getHeap     FTML RET; @vHeap $h2
 $loc setHeap     SRML RET; @vHeap $h2
@@ -34,13 +42,23 @@ $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
 
+.4 $loc c_compMaskInstr // {maskInstr:4}
+  LIT DVS; @D_instr $h2 // use mask on instr
+  LIT DVF; @D_instr $h2 // get instr
+  XSL; @h2 $h2 // compile instr to heap
+
+  // Clear current instr (preserves sz)
+  LIT4; @CLR_INSTR $h4
+  LIT DVS RET; @D_instr $h2
+
+
 // ex: $xsl h2
 // Compile an "execute small literal" of next token.
 // This overrides the JMP bits of the current instr
 // and compiles it.
-// $loc xsl
-//   XSL; @getDict $h2
-//   TODO working on this
+$loc xsl
+
+  XSL; @dictGet $h2
 
 .2 $loc c_LIT // compile an literal from the stack {v:2}
   LIT;  @Sz2 @LIT ADD^, // push `.2 LIT` instruction to stack
@@ -67,16 +85,12 @@ $loc getWsLen    LIT DVF RET; @D_wslen $h2
   @h2 $c_XSW // compile it
   LIT JMPW; @h2 $h2 // compile the loc
 
-// {v:4} compile a LIT4 (value-only) to the heap for LIT4.
-// Note: compiled as two U2 values with biggest U2 to the left.
-.4 $loc hL4
-  DUP;   LIT SHR; #10 $h2   @h2 $c_XSW // Compile high bits
-  @h2 $c_JMPW // compile low bits
-
 .4 $loc c_LIT4 // compile a LIT4 from the stack {v:4}
   @Sz4 @LIT4 ADD^ $c_LIT // push `.4 LIT4` instruction to stack
   @h2 $c_XSW // compile it
   @hL4 $c_JMPW // compile the 4byte value
+
+
 
 // **********
 // * Jump location setup and update

@@ -18,6 +18,8 @@
 
 // **********
 // * Instructions
+#FF3F_0000 =CLR_INSTR   // Clear instr except Size bits
+
 // # Jmp          // Description
 #F000_0000 =NOJ   // No Jump
 #F000_1000 =RET   // Return

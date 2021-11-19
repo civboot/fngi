@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 0x0;
+char dbgMode = 0x10;
 
 // ********************************************
 // ** Core Types
@@ -185,6 +185,7 @@ typedef enum {
 } TokenGroup;
 
 // Debugging
+void dbgIndent();
 void dbgEnv();
 void dbgInstr(Instr i);
 void dbgWs();
@@ -313,6 +314,7 @@ Instr splitInstr(U16 instr) {
 
 #define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
+#define X_DEPTH       Stk_len(env.callStk)
 #define _CHK_GROW(SP, SZ) \
   ASM_ASSERTV(SP - SZ >= 0, E_stkOvr)
 
@@ -404,6 +406,9 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   APtr srPtr = 0;
   U32 l; U32 r;
 
+  if(dbgMode >= 0x10) { dbgIndent(); }
+  if(dbgMode >= 0x5) { printf("  ^ ep:0x%-8X ", env.ep, instr); dbgInstr(i); }
+
   switch(i.mem) {
     case WS: break;
     case LIT: WS_PUSH(szMask & popLit2());  break;
@@ -427,7 +432,8 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     default: SET_ERR(E_cInstr, res);
   }
 
-  if(dbgMode >= 0x5) { printf("  ^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs(); }
+  if(dbgMode >= 0x5) { dbgWs(); }
+
   CHK_ERR(res);
 
   switch (i.op >> 4) {
@@ -552,7 +558,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         env.ep = MAX_APTR & callMeta;
       }
       break;
-    case JMPL: l = WS_POP(); CHK_ERR(res); env.ep = toAPtr(l, 2); break;
+    case JMPL: l = popLit2(); CHK_ERR(res); env.ep = toAPtr(l, 2); break;
     case JMPW: l = WS_POP(); CHK_ERR(res); env.ep = toAPtr(l, 4); break;
     case JZL:
       l = popLit2(); CHK_ERR(res);
@@ -1005,6 +1011,10 @@ void printToken() {
   printf("\" line=%u ", line);
 }
 
+void dbgIndent() {
+  for(U16 i = 0; i < X_DEPTH; i += 1) printf("  ");
+}
+
 void dbgEnv() {
   printf("  token[%u, %u]=\"", tokenLen, tokenBufSize);
   printToken();
@@ -1023,7 +1033,7 @@ U8* memName(MemI m) {
 
 U8* jmpName(JmpI j) {
   return (U8*[]) {
-  "NOJ ", "RET ", "JMPL", "JMPW",
+  "    ", "RET ", "JMPL", "JMPW",
   "JZL ", "JTBL",
   "XL  ", "XW  ", "XSL ", "XSW ",
   }[j];
@@ -1154,7 +1164,7 @@ void dbgWsFull() {
 
 void dbgInstr(Instr i) {
   U8 sz = szIToSz(i.szI);
-  printf(".%X %s %s %s; ", sz, memName(i.mem), jmpName(i.jmp), opName(i.op));
+  printf("%%%%.%X %s %s %s; ", sz, memName(i.mem), jmpName(i.jmp), opName(i.op));
 }
 
 
