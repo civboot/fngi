@@ -44,12 +44,9 @@ $assertWsEmpty
 $assertWsEmpty
 
 // Test fetching/storing
-
 $hAlign4 $loc testVal #12345 $h4
-
 @testVal FT^  #12345 $tAssertEq
 @testVal #2 SR^   @testVal FT^  #2 $tAssertEq
-
 
 // Test dict commands
 #0 =dictVal @dictVal    $tAssertNot

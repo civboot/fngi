@@ -34,17 +34,25 @@ $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
 
+// ex: $xsl h2
+// Compile an "execute small literal" of next token.
+// This overrides the JMP bits of the current instr
+// and compiles it.
+// $loc xsl
+//   XSL; @getDict $h2
+//   TODO working on this
+
 .2 $loc c_LIT // compile an literal from the stack {v:2}
   LIT;  @Sz2 @LIT ADD^, // push `.2 LIT` instruction to stack
-  LIT XSW; @h2, // compile it
-  LIT JMPW; @h2,  // compile value
+  LIT XSW; @h2 $h2 // compile it
+  LIT JMPW; @h2 $h2  // compile value
 
 .4 $loc c_XSW / {loc} compile a cnl
   @Sz4 @LIT @XSW ADD^ ADD^ $c_LIT // push .4 LIT XSW instr
   LIT XSW; @h2 $h2 // compile it.
   LIT JMPW; @h2 $h2  // compile the loc
 
-.4 $loc c_JMPW / {loc} compile a jmp
+.4 $loc c_JMPW / {loc} compile a jmp along with current instr
   @Sz4 @LIT @JMPW ADD^ ADD^ $c_LIT // push .4 LIT JMPW instr
   @h2 $c_XSW // compile it
   LIT JMPW; @h2 $h2 // compile the loc

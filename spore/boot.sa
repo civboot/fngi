@@ -11,11 +11,11 @@
 
 // 4 byte globals
 $hAlign4
-$loc rFN_PTR_MASK  .4 #FFFF_FFFF_FFFF,
-$loc rI_LIT       .4 @XSW  @LIT ADD^,
-$loc rI_XSW_LIT   .4 @XSW  @LIT ADD^,
-$loc rI_XW_LIT  .4 @XW @LIT ADD^,
-$loc rI_CLR      .4 #FFFF_0000, // instr clear
+$loc rFN_PTR_MASK .4 #FFFF_FFFF_FFFF,
+$loc rI_LIT       .4 @XSW @LIT ADD^,
+$loc rI_XSW_LIT   .4 @XSW @LIT ADD^,
+$loc rI_XW_LIT    .4 @XW  @LIT ADD^,
+$loc rI_CLR       .4 #FFFF_0000, // instr clear
 
 // State Globals
 $loc STATE .2 #0,   // compiler state ` global-bits | fn-meta-bits `

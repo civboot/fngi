@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 0x1;
+char dbgMode = 0x0;
 
 // ********************************************
 // ** Core Types
@@ -839,6 +839,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     if(r.escape) return;
   }
   if(*env.err) {
+    dbgEnv();
     printf("\n!!! ERROR #%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
   }
 }
@@ -1302,11 +1303,11 @@ void compileStr(U8* s) {
   compileFile("spore/asm2.sa");
   compileFile("spore/boot.sa");
 
-  printf("## testBoot... testBoot.sa\n");
-  compileFile("spore/testBoot.sa");
+  // printf("## testBoot... testBoot.sa\n");
+  // compileFile("spore/testBoot.sa");
 
-  printf("## testBoot... boot.sp\n");
-  compileFile("spore/boot.sp");
+  // printf("## testBoot... boot.sp\n");
+  // compileFile("spore/boot.sp");
 }
 
 
