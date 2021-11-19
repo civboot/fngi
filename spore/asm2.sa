@@ -19,6 +19,12 @@ $loc h2  // {val:2} push 2bytes from stack to heap
   .4 FTML INC2; .2@vHeap, // fetch heap and increment by 2
   .4 SRML  RET; .2@vHeap, // store new heap and return
 
+$loc h4  // {val:4} push 4bytes from stack to heap
+  .4 FTML SWP; .2@vHeap,  // ft heap
+  .4      SR;             // sr 4byte value
+  .4 FTML INC4; .2@vHeap, // ft heap and +4
+  .4 SRML  RET; .2@vHeap, // sr new heap
+
 .4
 $loc getHeap     FTML RET; @vHeap $h2
 $loc setHeap     SRML RET; @vHeap $h2
@@ -32,7 +38,6 @@ $loc getWsLen    LIT DVF RET; @D_wslen $h2
   LIT;  @Sz2 @LIT ADD^, // push `.2 LIT` instruction to stack
   LIT XSW; @h2, // compile it
   LIT JMPW; @h2,  // compile value
-
 
 .4 $loc c_XSW / {loc} compile a cnl
   @Sz4 @LIT @XSW ADD^ ADD^ $c_LIT // push .4 LIT XSW instr

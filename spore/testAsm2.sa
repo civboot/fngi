@@ -1,40 +1,57 @@
 #1 $tAssert
 
+
+// Test assert
 #0              $tAssertNot
 ZERO^           $tAssertNot
 #1              $tAssert
 
+// Test operations
 #400 #1 ADD^    #401 $tAssertEq
 #400 #1 SUB^    #3FF $tAssertEq
 #400 #1 SHR^    #200 $tAssertEq
 #400 #1 SHL^    #800 $tAssertEq
 $assertWsEmpty
 
-$loc testH2 .4 LIT RET; #1234_5678 $h2
-$testH2 #5678 $tAssertEq
+// Test core macros
+$loc test_h2 .4 LIT RET; #1234_5678 $h2
+$test_h2 #5678 $tAssertEq
 
-$loc testLIT4 .4 LIT4 RET; #1234 $h2 #5678 $h2
-$testLIT4 #1234_5678 $tAssertEq
+$loc test_LIT4 .4 LIT4 RET; #1234 $h2 #5678 $h2
+$test_LIT4 #1234_5678 $tAssertEq
 
-$loc testHL4 .4 LIT4 RET; #1234_5678 $hL4
-$testHL4 #1234_5678 $tAssertEq
+$loc test_HL4 .4 LIT4 RET; #1234_5678 $hL4
+$test_HL4 #1234_5678 $tAssertEq
 
-
-.1 $loc testLit  #42 $c_LIT RET; .4
-.1 $loc testLitBig  #FFFF_0042 $c_LIT RET; .4
-$testLit      #42         $tAssertEq
-$testLitBig   #42         $tAssertEq
+.1 $loc test_cLit  #42 $c_LIT RET; .4
+.1 $loc test_cLitBig  #FFFF_0042 $c_LIT RET; .4
+$test_cLit      #42         $tAssertEq
+$test_cLitBig   #42         $tAssertEq
 $assertWsEmpty
 
+.1 $loc test_cLit4 #4200_0042 $c_LIT4 RET; .4
+$test_cLit4        #4200_0042  $tAssertEq
 
-/ 
-/ .4 $loc testIf // converts 1->10 else: 42
-/   LIT EQ JZL; #1 $h2  $jloc jmpTo
-/     LIT RET; #10 $h2
-/   $jset jmpTo
-/   LIT RET; #42 $h2
-/ $assertWsEmpty
-/ 
-/ #1 $testIf      #10 $tAssertEq
-/ #2 $testIf      #42 $tAssertEq
-/ 
+// Test control flow
+.4 $loc testIf // converts 1->10 else: 42
+  LIT EQ JZL; #1 $h2  $jloc j_to
+    LIT RET; #10 $h2
+  $jset j_to
+  LIT RET; #42 $h2
+$assertWsEmpty
+#1 $testIf      #10 $tAssertEq
+#2 $testIf      #42 $tAssertEq
+$assertWsEmpty
+
+// Test fetching/storing
+
+$hAlign4 $loc testVal #12345 $h4
+
+@testVal FT^  #12345 $tAssertEq
+@testVal #2 SR^   @testVal FT^  #2 $tAssertEq
+
+
+// Test dict commands
+#0 =dictVal @dictVal    $tAssertNot
+#42 $dictSet dictVal    @dictVal #42 $tAssertEq
+$dictGet dictVal        #42 $tAssertEq

@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 0x5;
+char dbgMode = 0x1;
 
 // ********************************************
 // ** Core Types
