@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-char dbgMode = 1;
+char dbgMode = 0x5;
 
 // ********************************************
 // ** Core Types
@@ -188,6 +188,7 @@ typedef enum {
 void dbgEnv();
 void dbgInstr(Instr i);
 void dbgWs();
+void dbgWsFull();
 void dbgJmpI(JmpI j);
 void printToken();
 
@@ -426,9 +427,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     default: SET_ERR(E_cInstr, res);
   }
 
-  if(dbgMode) {
-    printf("  ^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs();
-  }
+  if(dbgMode >= 0x5) { printf("  ^ ep:0x%-8X i:0x%-8X ", env.ep, instr); dbgInstr(i); dbgWs(); }
   CHK_ERR(res);
 
   switch (i.op >> 4) {
@@ -459,7 +458,10 @@ void xsImpl(APtr aptr) { // impl for "execute small"
           CHK_ERR(res);
           WS_PUSH(l);
           break;
-        case 0xC: /*LIT4*/ WS_PUSH((popLit2() << 16) + popLit2());
+        case 0xC: /*LIT4*/ 
+          l = popLit2(); r = popLit2();
+          WS_PUSH((l<<16) + r);
+          break;
         case 0xD: /*ZERO*/ WS_PUSH(0);
       }
       break;
@@ -534,7 +536,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   if (srPtr) { store(mem, srPtr, WS_POP(), sz); CHK_ERR(res); }
   APtr aptr;
 
-  if(dbgMode) { dbgJmpI(i.jmp); printf("\n"); }
+  if(dbgMode >= 0x5) { dbgJmpI(i.jmp); printf("\n"); }
 
   // *************
   // * Jmp: perform the jump
@@ -564,7 +566,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case XSW: l = WS_POP(); CHK_ERR(res); xsImpl(toAPtr(l, 4)); break;
     default: SET_ERR(E_cInstr, res);
   }
-  CHK_ERR(res);
+  if(dbgMode > 0x10) { dbgWsFull(); }
   return res;
 }
 
@@ -743,7 +745,6 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
-  printf("??? cHex START "); dbgWs(); printf("\n");
   scan(); CHK_ERR();
   if (dbgMode) { printf("# "); printToken(); printf("\n"); }
   U32 v = 0;
@@ -754,7 +755,6 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     v = (v << 4) + charToHex(c); CHK_ERR();
   }
   WS_PUSH(v); CHK_ERR();
-  printf("??? cHex END "); dbgWs(); printf("\n");
   shiftBuf();
 }
 
@@ -839,7 +839,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     if(r.escape) return;
   }
   if(*env.err) {
-    printf("\n!!! ERROR #%X  test=#%X\n", *env.err, *env.testIdx);
+    printf("\n!!! ERROR #%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
   }
 }
 
@@ -1045,8 +1045,9 @@ U8* opName(U8 op) {
         case 0x9:  return "RGS  ";
         case 0xA:  return "FT   ";
         case 0xB:  return "SR   ";
-        case 0xC:  return "ZERO ";
-        default:   return "UNK0 ";
+        case 0xC:  return "LIT4 ";
+        case 0xD:  return "ZERO ";
+        default:   return "?????";
       }
 
     // Single Arg [0x10 - 0x20)
@@ -1115,7 +1116,6 @@ void dbgJmpI(JmpI j) {
     case JMPL:
     case XL:
     case XSL: jloc = toAPtr(fetch(mem, env.ep, 2), 2); break;
-
     case JMPW:
     case XW:
     case XSW: jloc = fetch(env.ws.mem, env.ws.sp, ASIZE); break;
@@ -1140,6 +1140,14 @@ void dbgWs() {
     else printf(" %+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, ASIZE));
     printf(" %+8X|", fetch(env.ws.mem, env.ws.sp, ASIZE));
   } else printf("   ----  |   ----  |");
+}
+
+void dbgWsFull() {
+  printf("  {{ ");
+  for(I8 i = WS_LEN - 1; i >= 0; i -= 1) {
+    printf("%X, ", fetch(env.ws.mem, env.ws.sp + (i << APO2), ASIZE));
+  }
+  printf("}}\n");
 }
 
 

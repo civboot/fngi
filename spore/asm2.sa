@@ -104,7 +104,7 @@ $loc assert        LIT DVF RET; @D_assert $h2
 
 $loc tAssert     @E_test $c_LIT  @assert $c_JMPW
 $loc tAssertNot  @E_test $c_LIT  @assertNot $c_JMPW
-$loc tAssertEq   EQ;            @tAssert $c_JMPW
-$loc tAssertNe   NEQ;           @tAssert $c_JMPW
+$loc tAssertEq   .4 EQ;          @tAssert $c_JMPW
+$loc tAssertNe   .4 NEQ;         @tAssert $c_JMPW
 
 $assertWsEmpty
