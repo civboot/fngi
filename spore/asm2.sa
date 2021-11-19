@@ -32,7 +32,6 @@ $loc h4  // {val:4} push 4bytes from stack to heap
   DUP;   LIT SHR XSL; #10 $h2  @h2 $h2 // Compile high bits
   JMPL; @h2 $h2
 
-
 .4
 $loc getHeap     FTML RET; @vHeap $h2
 $loc setHeap     SRML RET; @vHeap $h2
@@ -41,6 +40,11 @@ $loc setTopHeap  SRML RET; @vTopHeap $h2
 $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
+$loc c_scan      LIT DVF RET; @D_scan $h2
+$loc c_asemble   LIT DVS RET; @D_comp $h2
+$loc c_assembleNext // scan and assemble
+  LIT DVF; @D_scan $h2
+  LIT DVS RET; @D_comp $h2
 
 .4 $loc c_compMaskInstr // {maskInstr:4}
   LIT DVS; @D_instr $h2 // use mask on instr
@@ -48,20 +52,32 @@ $loc getWsLen    LIT DVF RET; @D_wslen $h2
   XSL; @h2 $h2 // compile instr to heap
 
   // Clear current instr (preserves sz)
-  LIT4; @CLR_INSTR $h4
+  LIT4; @CLR_INSTR $hL4
   LIT DVS RET; @D_instr $h2
 
+// ex: #1 $l2 #2 $l2 ADD $xsl foo // adds 1 and 2, then execs foo
+.4 $loc xsl
+  LIT4 XSL; @XSL $hL4  @c_compMaskInstr $h2 // compile with XSL
+  XSL; @dictGet $h2 // get next token's ptr
+  JMPL; @h2 $h2 // put on stack
 
-// ex: $xsl h2
-// Compile an "execute small literal" of next token.
-// This overrides the JMP bits of the current instr
-// and compiles it.
-$loc xsl
+.4 $loc jmpl // like xsl
+  LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
+  $xsl dictGet // get next token's ptr
+  JMPL; @h2 $h2 // put on stack
 
-  XSL; @dictGet $h2
+// ex: LIT; #1$h2  ADD #2 $l2_xsl foo
+// Single instr that uses literal and calls.
+.4 $loc l2_xsl
+  LIT4; @LIT $hL4 // get LIT instr
+  LIT DVS; @D_instr $h2 // use mask on instr
+  LIT4 XSL; @XSL $hL4 @c_compMaskInstr $h2
+  $xsl h2 // compile literal
+  $xsl dictGet // get next token value
+  $jmpl h2 // compile it
 
-.2 $loc c_LIT // compile an literal from the stack {v:2}
-  LIT;  @Sz2 @LIT ADD^, // push `.2 LIT` instruction to stack
+.2 $loc c_LIT // compile a literal from the stack {v:2}
+  LIT;  @Sz2 @LIT ADD^ $h2 // push `.2 LIT` instruction to stack
   LIT XSW; @h2 $h2 // compile it
   LIT JMPW; @h2 $h2  // compile value
 
@@ -105,8 +121,6 @@ $loc xsl
 
 // **********
 // * Utilities
-.4
-$loc c_scan     .4 LIT DVF RET; @D_scan $h2
 
 // Get next token dict reference
 $loc c_dRef     @c_scan $c_XSW  .4 LIT DVF RET; @D_rdict $h2

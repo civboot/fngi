@@ -112,7 +112,7 @@
 #03 =D_rdict  // FT=get reference to val  SR=forget including key
 #04 =D_instr  // get/set cached instr. Set uses `mask | instr` like asm.
 #05 =D_sz     // get/set current sz in bytes
-#06 =D_comp   // compile the token in tokenBuf
+#06 =D_comp   // compile (assemble) the token in tokenBuf
 #07 =D_assert // error if != 0
 #08 =D_wslen  // working stk len
 #09 =D_cslen  // call stk len
