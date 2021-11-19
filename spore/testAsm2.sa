@@ -17,6 +17,20 @@ $assertWsEmpty
 $loc test_h2 .4 LIT RET; #1234_5678 $h2
 $test_h2 #5678 $tAssertEq
 
+.4 $loc one   LIT RET; #1 $h2
+.4 $loc add   ADD RET;
+
+$loc test_xslJmpl $xsl one   $xsl one   $jmpl add
+$test_xslJmpl  #2 $tAssertEq
+
+$loc test_l2_xslJmpl
+  #5 $l2_xsl one // {5, 1}
+  #10 ADD $l2_jmpl add // add({5, 1+10})
+$test_l2_xslJmpl   #16 $tAssertEq $assertWsEmpty
+
+$loc test_l $l #420   $l @DUP   RET;
+$test_l  @DUP $tAssertEq   #420 $tAssertEq
+
 $loc test_LIT4 .4 LIT4 RET; #1234 $h2 #5678 $h2
 $test_LIT4 #1234_5678 $tAssertEq
 

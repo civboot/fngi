@@ -845,8 +845,9 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     if(r.escape) return;
   }
   if(*env.err) {
+    printf("\n!!! ERROR\n!!! Env:");
     dbgEnv();
-    printf("\n!!! ERROR #%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
+    printf("!!! code=#%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
   }
 }
 

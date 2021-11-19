@@ -45,6 +45,7 @@ $loc c_asemble   LIT DVS RET; @D_comp $h2
 $loc c_assembleNext // scan and assemble
   LIT DVF; @D_scan $h2
   LIT DVS RET; @D_comp $h2
+$loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
 
 .4 $loc c_compMaskInstr // {maskInstr:4}
   LIT DVS; @D_instr $h2 // use mask on instr
@@ -54,6 +55,11 @@ $loc c_assembleNext // scan and assemble
   // Clear current instr (preserves sz)
   LIT4; @CLR_INSTR $hL4
   LIT DVS RET; @D_instr $h2
+
+// **********
+// * Core macros
+// These are used for executing code with combined instructions and literals,
+// as well as setting up forward jumps.
 
 // ex: #1 $l2 #2 $l2 ADD $xsl foo // adds 1 and 2, then execs foo
 .4 $loc xsl
@@ -69,13 +75,45 @@ $loc c_assembleNext // scan and assemble
 // ex: LIT; #1$h2  ADD #2 $l2_xsl foo
 // Single instr that uses literal and calls.
 .4 $loc l2_xsl
-  LIT4; @LIT $hL4 // get LIT instr
+  LIT4; @LIT $hL4 // get LIT maskInstr
   LIT DVS; @D_instr $h2 // use mask on instr
-  LIT4 XSL; @XSL $hL4 @c_compMaskInstr $h2
+  LIT4 XSL; @XSL $hL4 @c_compMaskInstr $h2 // compile w/XSL
   $xsl h2 // compile literal
   $xsl dictGet // get next token value
   $jmpl h2 // compile it
 
+.4 $loc l2_jmpl // like l2_xsl
+  LIT4; @LIT $hL4 // get LIT maskInstr
+  LIT DVS; @D_instr $h2 // use mask on instr
+  LIT4 XSL; @JMPL $hL4 @c_compMaskInstr $h2 // compile w/JMPL
+  $xsl h2 // compile literal
+  $xsl dictGet // get next token value
+  $jmpl h2 // compile it
+
+// Jump location setup and update
+.2 $loc jloc // declare a jump location. ex: $jloc jmpTo
+  $xsl getHeap      $xsl dictSet // set dict of next token to heap
+  #BAD $l2_jmpl h2 // set asside space to update
+
+.4 $loc jset // Update jloc with current 2byte heap. ex: $jset jmpTo
+  $xsl dictGet    $xsl getHeap // {addr curHeap}
+  .2 SR RET; // store curHeap at addr
+
+ // ex: $l @myVal // compile a 2 or 4 byte literal.
+ // Note: This does NOT use the current instruction, since LIT4 is an op.
+.4 $loc l
+  $xsl c_assembleNext // assemble next token (i.e. @myVal)
+  // Check if it is >= #10000 and use LIT4, else LIT
+  DUP;  LIT INC; #FFFF $h2  GE_U JZL; $jloc j_2byte
+    @Sz4 @LIT4 ADD^  $l2_xsl h2 // compile {.4 LIT4}
+    $jmpl hL4 // compile 4byte literal value.
+  $jset j_2byte
+    @Sz2 @LIT ADD^   $l2_xsl h2 // compile {.2 LIT}
+    $jmpl h2 // compile the literal.
+$dForget j_2byte
+
+// **********
+// * TODO: remove these
 .2 $loc c_LIT // compile a literal from the stack {v:2}
   LIT;  @Sz2 @LIT ADD^ $h2 // push `.2 LIT` instruction to stack
   LIT XSW; @h2 $h2 // compile it
@@ -106,27 +144,11 @@ $loc c_assembleNext // scan and assemble
   @h2 $c_XSW // compile it
   @hL4 $c_JMPW // compile the 4byte value
 
-
-
-// **********
-// * Jump location setup and update
-.2 $loc jloc // declare a jump location. ex: $jloc jmpTo
-  @getHeap $c_XSW   @dictSet $c_XSW // set dict of token to heap
-  #BAD $c_LIT        @h2 $c_JMPW       // set asside space to update
-
-// Update jloc with current 2byte heap. ex: $jset jmpTo
-.4 $loc jset
-  @dictGet $c_XSW  @getHeap $c_XSW // {addr curHeap}
-  .2 SR RET; // store curHeap
-
 // **********
 // * Utilities
 
 // Get next token dict reference
 $loc c_dRef     @c_scan $c_XSW  .4 LIT DVF RET; @D_rdict $h2
-
-// Forget dict until and including next token
-$loc dForget  @c_scan $c_XSW  .4 LIT DVS RET; @D_rdict $h2
 
 .4 $loc hAlign4 // align heap
   @getHeap $c_XSW DUP;
