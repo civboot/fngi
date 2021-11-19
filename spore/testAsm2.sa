@@ -28,8 +28,8 @@ $loc test_l2_xslJmpl
   #10 ADD $l2_jmpl add // add({5, 1+10})
 $test_l2_xslJmpl   #16 $tAssertEq $assertWsEmpty
 
-$loc test_l $l #420   $l @DUP   RET;
-$test_l  @DUP $tAssertEq   #420 $tAssertEq
+$loc test_l  $L#420        $retL@DUP
+$test_l  SWP^  #420 $tAssertEq  @DUP $tAssertEq
 
 $loc test_LIT4 .4 LIT4 RET; #1234 $h2 #5678 $h2
 $test_LIT4 #1234_5678 $tAssertEq
