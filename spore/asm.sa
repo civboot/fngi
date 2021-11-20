@@ -9,7 +9,7 @@
 // **********
 // * Memory Locations
 #0000_0000 =null
-#0000_0004 =vHeap // heap reference
+#0000_0004 =vHeap
 #0000_0008 =vTopHeap
 #0000_000C =vTopMem
 #0000_0010 =vErr
@@ -125,6 +125,11 @@
 #07 =D_assert // error if != 0
 #08 =D_wslen  // working stk len
 #09 =D_cslen  // call stk len
+#09 =D_cslen  // call stk len
+// {-> err} D_xsCatch executes small function from WS but catches a panic.
+// Note: caches and restores ep, call stack and local stack state and clears
+// working stack (besides the returned err).
+#0A =D_xsCatch
 
 // **********
 // * Top Heap Compiler structs.

@@ -41,6 +41,7 @@ $loc setTopHeap  SRML RET; @vTopHeap $h2
 $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
+$loc c_xsCatch   LIT DVF RET; @D_xsCatch $h2
 $loc c_scan      LIT DVF RET; @D_scan $h2
 $loc c_asemble   LIT DVS RET; @D_comp $h2
 $loc c_assembleNext // scan and assemble
@@ -177,13 +178,14 @@ $loc c_dRef     @c_scan $c_XSW  .4 LIT DVF RET; @D_rdict $h2
 $dForget j_to
 
 .4
-$loc assertWsEmpty @getWsLen $c_XSW @E_wsEmpty $c_LIT // fallthrough
-$loc assertNot     SWP; NOT; SWP; // fallthrough
+// ex: <some check> #E_myError assert
+$loc assertNot     SWP; NOT; SWP;               // fallthrough
 $loc assert        LIT DVF RET; @D_assert $h2
 
-$loc tAssert     @E_test $c_LIT  @assert $c_JMPW
-$loc tAssertNot  @E_test $c_LIT  @assertNot $c_JMPW
-$loc tAssertEq   .4 EQ;          @tAssert $c_JMPW
-$loc tAssertNe   .4 NEQ;         @tAssert $c_JMPW
+$loc assertWsEmpty $xsl getWsLen  $L @E_wsEmpty  $jmpl assertNot
+$loc tAssert     @E_test $l2_jmpl assert
+$loc tAssertNot  @E_test $l2_jmpl assertNot
+$loc tAssertEq   .4 EQ  $jmpl tAssert
+$loc tAssertNe   .4 NEQ $jmpl tAssert
 
 $assertWsEmpty

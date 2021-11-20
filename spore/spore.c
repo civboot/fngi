@@ -49,7 +49,6 @@ typedef CSz CPtr;
 
 // Global Constants
 #define CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
-#define ALLOW_PANIC_MASK 0x00010000
 
 // Error classes
 #define E_ok           0 // no error
@@ -104,6 +103,8 @@ typedef enum {
   JZL , JTBL,
   XL  , XW  , XSL , XSW ,
 } JmpI;
+
+#define NOOP 0
 
 typedef struct {
   U8 op;
@@ -805,7 +806,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   scan(); CHK_ERR();
   if(dbgMode) { printf("$ "); printToken(); printf("\n"); }
   U32 value = Dict_get(tokenLen, tokenBuf); CHK_ERR();
-  U32 i = INSTR(SzI4, JMPW, WS, 0);
+  U32 i = INSTR(SzI4, JMPW, WS, NOOP);
   WS_PUSH(value); CHK_ERR();
   execute(i);
 }
@@ -857,6 +858,8 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   U32 op = WS_POP(); CHK_ERR();
   U32 tmp;
+  U32 tmp2;
+  U32 tmp3;
   U32* tmpR;
   ExecuteResult result;
   switch(op) {
@@ -902,8 +905,24 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       tmp = WS_POP(); CHK_ERR();
       if(!WS_POP()) SET_ERRV(tmp);
       break;
-    case 8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
-    case 9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
+    case 0x8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
+    case 0x9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
+    case 0xA: /*D_xsCatch*/
+      // cache ep, call and local stack.
+      tmp = env.ep;
+      tmp2 = env.callStk.sp;
+      tmp3 = env.ls.sp;
+      execute(INSTR(SzI4, JMPW, WS, NOOP));
+      // Reset ep, call, and local stack and clear WS.
+      env.ep = tmp;
+      env.callStk.sp = tmp2;
+      env.ls.sp = tmp3;
+      env.ws.sp = env.ws.size; // clear WS
+      // Push current error to WS and clear it.
+      tmp = *env.err;
+      *env.err = 0;
+      WS_PUSH(tmp);
+      break;
     default: SET_ERRV(E_cDevOp);
   }
 }

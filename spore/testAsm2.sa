@@ -66,3 +66,16 @@ $hAlign4 $loc testVal #12345 $h4
 #0 =dictVal @dictVal    $tAssertNot
 #42 $dictSet dictVal    @dictVal #42 $tAssertEq
 $dictGet dictVal        #42 $tAssertEq
+
+$loc failNow NOP; NOP; #0 $l2_jmpl tAssert
+
+$assertWsEmpty
+
+#1 #2 // these will be discarded
+@failNow $c_xsCatch
+@E_test $tAssertEq
+
+
+/ #0
+/ .4 @cAllowPanicMask  @vState FT^OR^ @vState SWP^SR^
+/ $tAssert

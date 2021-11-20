@@ -141,5 +141,5 @@ $loc add1
 
 For `add2` `XSL` means "eXecute Small Literal". It looks up the address to
 execute as a literal. "Small" means the function has no locals stack. (read more
-about that in the docs for XL vs XSL) in `spore/asm.sa`).
+about that in the docs for XL vs XSL in `spore/asm.sa`).
 
