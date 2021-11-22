@@ -863,6 +863,19 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   err_jmp = prev_err_jmp;
 }
 
+void deviceOpRDict(Bool isFetch) {
+  DictRef d = DEFAULT_DICT;
+  if(isFetch) {
+    U32 offset = Dict_find(d, tokenLen, tokenBuf);
+    if(offset == dict->heap) {
+      WS_PUSH(0);
+      return; // not found
+    }
+    U32* offsetR = Key_vptr(Dict_key(d, offset));
+    WS_PUSH((U8*)offsetR - mem);
+  } else Dict_forget(tokenLen, tokenBuf);
+}
+
 void deviceOpCatch() {
   // cache ep, call and local stack.
   U32 ep = env.ep;
@@ -891,55 +904,35 @@ void deviceOpCatch() {
   WS_PUSH(out);
 }
 
+void deviceOpCompile() {
+  ExecuteResult result = compile();
+  ASM_ASSERTV(!result.escape, E_cRet);
+}
+
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   DictRef d = DEFAULT_DICT;
   U32 op = WS_POP();
   U32 tmp;
-  U32 tmp2;
-  U32 tmp3;
-  U32* tmpR;
-  ExecuteResult result;
   switch(op) {
     case 0: /*D_read*/ readAppend(); break;
     case 1: /*D_scan*/ scan(); break;
     case 2: /*D_dict*/
-      if(isFetch) {
-        tmp = Dict_get(d, tokenLen, tokenBuf);
-        WS_PUSH(szMask & tmp);
-      } else {
-        tmp = WS_POP();
-        Dict_set(d, tokenLen, tokenBuf, szMask & tmp);
-      }
+      if(isFetch) WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
+      else        Dict_set(d, tokenLen, tokenBuf, WS_POP());
       break;
       // FT=get SR=set dict key=tokenBuf, value of sz
-    case 3: /*D_rdict*/
-      if(isFetch) {
-        tmp = Dict_find(d, tokenLen, tokenBuf);
-        if(tmp == dict->heap) {
-          WS_PUSH(0);
-          break; // not found
-        }
-        tmpR = Key_vptr(Dict_key(d, tmp));
-        WS_PUSH((U8*)tmpR - mem);
-      } else Dict_forget(tokenLen, tokenBuf);
-      break;
+    case 3: /*D_rdict*/ deviceOpRDict(isFetch); break;
     case 4: /*D_instr*/
       if(isFetch) WS_PUSH(instr);
       else updateInstr(WS_POP());
       break;
     case 5: /*D_sz*/
       if(isFetch) WS_PUSH(sz);
-      else {
-        tmp = WS_POP();
-        instr = INSTR_W_SZ(instr, szToSzI(tmp));
-      }
+      else instr = INSTR_W_SZ(instr, szToSzI(WS_POP()));
       break;
-    case 6: /*D_comp*/
-      result = compile();
-      ASM_ASSERTV(!result.escape, E_cRet);
-      break;
+    case 6: /*D_comp*/ deviceOpCompile(); break;
     case 7: /*D_assert*/ 
       tmp = WS_POP();
       if(!WS_POP()) SET_ERRV(tmp);
