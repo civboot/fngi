@@ -169,6 +169,12 @@ typedef struct {
 } Dict;
 
 typedef struct {
+  APtr buf;
+  U16 end;
+  U16* heap;
+} DictRef;
+
+typedef struct {
   U8 len;
   U8 s[];
 } Key;
@@ -592,7 +598,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // ** Spore Dict
 // key/value map (not hashmap) where key is a cstr and value is U32.
 
-#define Dict_key(OFFSET)  ((Key*) (mem + dict->buf + (OFFSET)))
+#define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
 // Given ptr to key, get pointer to the value.
 #define Key_vptr(KEY) ((U32*) align(((U8*)KEY) + KEY->len + 1, 4))
 
@@ -605,14 +611,12 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 }
 
 // find key offset from dict. Else return dict.heap
-/*fn*/ U16 Dict_find(U8 slen, U8* s) {
-  Key* key = Dict_key(0);
+/*fn*/ U16 Dict_find(DictRef d, U8 slen, U8* s) {
   U16 offset = 0;
+  Key* key = Dict_key(d, offset);
 
-  while(offset < dict->heap) {
-    if(cstrEq(key->len, slen, key->s, s)) {
-      return offset;
-    }
+  while(offset < *d.heap) {
+    if(cstrEq(key->len, slen, key->s, s)) return offset;
     U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
     key += entrySz;
     offset += entrySz;
@@ -624,28 +628,31 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ U16 Dict_set(U8 slen, U8* s, U32 value) {
   // Set a key to a value, returning the offset
-  U16 offset = Dict_find(slen, s);
-  ASM_ASSERT(offset == dict->heap, E_cKey, 0)
-  Key* key = Dict_key(offset);
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
+  U16 offset = Dict_find(d, slen, s);
+  ASM_ASSERT(offset == *d.heap, E_cKey, 0)
+  Key* key = Dict_key(d, offset);
   U16 addedSize = alignAPtr(1 + slen + 4, 4);
-  ASM_ASSERT(dict->heap + addedSize <= dict->end, E_cDictOvr, dict->heap);
+  ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr, *d.heap);
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
-  dict->heap += alignAPtr(1 + slen + 4, 4);
+  *d.heap += alignAPtr(1 + slen + 4, 4);
   U32* v = Key_vptr(key);
   *v = value;
   return offset;
 }
 
 /*fn*/ U32 Dict_get(U8 slen, U8 *s) {
-  U16 offset = Dict_find(slen, s);
-  ASM_ASSERT(offset != dict->heap, E_cNoKey, 0);
-  Key* key = Dict_key(offset);
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
+  U16 offset = Dict_find(d, slen, s);
+  ASM_ASSERT(offset != *d.heap, E_cNoKey, 0);
+  Key* key = Dict_key(d, offset);
   return *Key_vptr(key);
 }
 
 /*fn*/ void Dict_forget(U8 slen, U8* s) {
-  dict->heap = Dict_find(slen, s);
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
+  dict->heap = Dict_find(d, slen, s);
 }
 
 
@@ -855,6 +862,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
   U32 op = WS_POP(); CHK_ERR();
   U32 tmp;
   U32 tmp2;
@@ -876,12 +884,12 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       // FT=get SR=set dict key=tokenBuf, value of sz
     case 3: /*D_rdict*/
       if(isFetch) {
-        tmp = Dict_find(tokenLen, tokenBuf);
+        tmp = Dict_find(d, tokenLen, tokenBuf);
         if(tmp == dict->heap) {
           WS_PUSH(0);
           break; // not found
         }
-        tmpR = Key_vptr(Dict_key(tmp));
+        tmpR = Key_vptr(Dict_key(d, tmp));
         WS_PUSH((U8*)tmpR - mem);
       } else Dict_forget(tokenLen, tokenBuf);
       break;
@@ -1125,7 +1133,8 @@ U8* opName(U8 op) {
 Key keyDNE = {.len = 3, .s = "???" };
 
 Key* Dict_findFn(U32 value) {
-  Key* key = Dict_key(0);
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
+  Key* key = Dict_key(d, 0);
   U16 offset = 0;
 
   while(offset < dict->heap) {
@@ -1248,6 +1257,7 @@ void compileStr(U8* s) {
 
 /*test*/ void testDictDeps() {
   printf("## testDictDeps...\n"); TEST_ENV_BARE;
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
 
@@ -1255,7 +1265,7 @@ void compileStr(U8* s) {
   assert(!cstrEq(2, 1, "aa", "a"));
   assert(!cstrEq(2, 2, "aa", "ab"));
 
-  assert(0 == Dict_find(3, "foo"));
+  assert(0 == Dict_find(d, 3, "foo"));
 
   // set
   assert(0 == Dict_set(3, "foo", 0xF00));
