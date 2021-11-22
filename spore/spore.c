@@ -73,17 +73,18 @@ typedef CSz CPtr;
 #define E_divZero 0xE0A7 // divide by zero
 
 // Compiler (i.e. syntax) errors
-#define E_cInstr  0xE0C1 // invalid instr
-#define E_cToken  0xE0C2 // token invalid
-#define E_cTLen   0xE0C3 // token invalid
-#define E_cDKey   0xE0C4 // dict key not found
-#define E_cHex    0xE0C5 // non-hex number
-#define E_cSz     0xE0C6 // invalid Sz selected
-#define E_cSzAPtr 0xE0C7 // invalid Sz for aptr
-#define E_cRet    0xE0C8 // invalid RET
-#define E_cDblSr  0xE0C9 // Double store
-#define E_cDevOp  0xE0CA // device op not impl
-#define E_cDictOvr 0xE0CB // dict overflow
+#define E_cInstr    0xE0C1 // invalid instr
+#define E_cToken    0xE0C2 // token invalid
+#define E_cTLen     0xE0C3 // token invalid
+#define E_cKey      0xE0C4 // key already exists
+#define E_cNoKey    0xE0C5 // key not found
+#define E_cHex      0xE0C6 // non-hex number
+#define E_cSz       0xE0C7 // invalid Sz selected
+#define E_cSzAPtr   0xE0C8 // invalid Sz for aptr
+#define E_cRet      0xE0C9 // invalid RET
+#define E_cDblSr    0xE0CA // Double store
+#define E_cDevOp    0xE0CB // device op not impl
+#define E_cDictOvr  0xE0CC // dict overflow
 
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 
@@ -624,15 +625,13 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 /*fn*/ U16 Dict_set(U8 slen, U8* s, U32 value) {
   // Set a key to a value, returning the offset
   U16 offset = Dict_find(slen, s);
+  ASM_ASSERT(offset == dict->heap, E_cKey, 0)
   Key* key = Dict_key(offset);
-  if(offset == dict->heap) {
-    // new key
-    U16 addedSize = alignAPtr(1 + slen + 4, 4);
-    ASM_ASSERT(dict->heap + addedSize <= dict->end, E_cDictOvr, dict->heap);
-    key->len = slen;
-    memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
-    dict->heap += alignAPtr(1 + slen + 4, 4);
-  }
+  U16 addedSize = alignAPtr(1 + slen + 4, 4);
+  ASM_ASSERT(dict->heap + addedSize <= dict->end, E_cDictOvr, dict->heap);
+  key->len = slen;
+  memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
+  dict->heap += alignAPtr(1 + slen + 4, 4);
   U32* v = Key_vptr(key);
   *v = value;
   return offset;
@@ -640,7 +639,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ U32 Dict_get(U8 slen, U8 *s) {
   U16 offset = Dict_find(slen, s);
-  ASM_ASSERT(offset != dict->heap, E_cDKey, 0);
+  ASM_ASSERT(offset != dict->heap, E_cNoKey, 0);
   Key* key = Dict_key(offset);
   return *Key_vptr(key);
 }
@@ -1268,11 +1267,6 @@ void compileStr(U8* s) {
   assert(8 == Dict_set(5, "bazaa", 0xBA2AA));
   result = Dict_get(5, "bazaa");
   assert(result == 0xBA2AA);
-
-  // reset
-  assert(0 == Dict_set(3, "foo", 0xF00F));
-  result = Dict_get(3, "foo");
-  assert(result == 0xF00F);
 }
 
 /*test*/ void testDict() {

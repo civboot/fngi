@@ -125,7 +125,6 @@
 #07 =D_assert // error if != 0
 #08 =D_wslen  // working stk len
 #09 =D_cslen  // call stk len
-#09 =D_cslen  // call stk len
 // {-> err} D_xsCatch executes small function from WS but catches a panic.
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
@@ -176,11 +175,13 @@
 #E0C1  =E_cInstr  // invalid instr
 #E0C2  =E_cToken  // token invalid
 #E0C3  =E_cTLen   // token invalid
-#E0C4  =E_cDKey   // dict key not found
-#E0C5  =E_cHex    // non-hex number
-#E0C6  =E_cSz     // invalid Sz selected
-#E0C7  =E_cSzAPtr // invalid Sz for aptr
-#E0C8  =E_cRet    // invalid RET
-#E0C9  =E_cDblSr  // Double store
-#E0CA  =E_cDevOp  // device op not impl
-#E0CB  =E_DictOvr // dict overflow
+#E0C4  =E_cKey    // key already exists
+#E0C5  =E_cNoKey  // dict key not found
+#E0C6  =E_cHex    // non-hex number
+#E0C7  =E_cSz     // invalid Sz selected
+#E0C8  =E_cSzAPtr // invalid Sz for aptr
+#E0C9  =E_cRet    // invalid RET
+#E0CA  =E_cDblSr  // Double store
+#E0CB  =E_cDevOp  // device op not impl
+#E0CC  =E_DictOvr // dict overflow
+
