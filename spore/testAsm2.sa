@@ -81,7 +81,7 @@ $loc testVal #12345 $h4
 #0 =dictVal @dictVal    $tAssertNot
 
 // Test catch
-$loc failNow NOP; NOP; LIT #0 $mem_jmpl tAssert
+$loc failNow NOP; NOP;  LIT #0 $mem_jmpl tAssert
 
 $assertWsEmpty #1 #2 // these will be discarded
 @failNow $c_xsCatch    @E_test $tAssertEq

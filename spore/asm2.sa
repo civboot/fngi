@@ -129,7 +129,10 @@ $loc AGAIN
   LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
   $jmpl h2 // compile location to jmp to
 
-// Literals
+// **********
+// * Literals
+// $L @myValue allows for easier pushing of literals. It automatically handles
+// 2 or 4 byte literals.
 
 .4 $loc L // compile next value as literal
   $xsl c_assembleNext // assemble next token (i.e. @myVal)
@@ -156,7 +159,7 @@ $loc AGAIN
 
 // $X: instantly execute non-small function.
 // Ex: $X foo, where foo has local variables.
-$loc X $xsl dictGet  XW; RET; 
+$loc X $xsl dictGet  XW; RET;
 
 // Get next token dict reference
 $loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
@@ -170,14 +173,17 @@ $loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
   $END  DRP2 RET;
 
 .4
-// ex: <some check> #E_myError assert
-$loc assertNot     SWP; NOT; SWP;               // fallthrough
-$loc assert        LIT DVF RET; @D_assert $h2
 
-$loc assertWsEmpty $xsl getWsLen  $L @E_wsEmpty  $jmpl assertNot
-$loc tAssert     LIT @E_test $mem_jmpl assert
-$loc tAssertNot  LIT @E_test $mem_jmpl assertNot
-$loc tAssertEq   .4 EQ  $jmpl tAssert
-$loc tAssertNe   .4 NEQ $jmpl tAssert
+// Assert checks a condition or panics with an error
+// ex: <some check> @E_myError assert
+$loc assertNot SWP; NOT; SWP; // ... intentional fallthrough
+$loc assert    LIT DVF RET; @D_assert $h2
+$loc panic     SWP LIT #0 $mem_jmpl assert // Panic with an error code
+
+$loc assertWsEmpty  $xsl getWsLen  $L @E_wsEmpty  $jmpl assertNot
+$loc tAssert        LIT @E_test $mem_jmpl assert
+$loc tAssertNot     LIT @E_test $mem_jmpl assertNot
+$loc tAssertEq      .4 EQ  $jmpl tAssert
+$loc tAssertNe      .4 NEQ $jmpl tAssert
 
 $assertWsEmpty
