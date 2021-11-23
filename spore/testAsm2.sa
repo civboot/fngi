@@ -44,10 +44,18 @@ $test_HL4 #1234_5678 $tAssertEq
 #1 $testIF      #10 $tAssertEq
 #2 $testIF      #42 $tAssertEq
 
+
+#200 #2 $X alignSz  #200 $tAssertEq
+#201 #2 $X alignSz  #202 $tAssertEq
+#201 #4 $X alignSz  #204 $tAssertEq
+
 $loc badMultiply // {a b -- a*b} uses loop to implement multiply
-  #1 $h2 // locals (4bytes)
-  .2 SRLL; #0 $h2 // l0=b
-  .2 SRLL; #2 $h2 // l2=a
+  #2 $decl_lo b
+  #2 $decl_lo a
+  $end_lo
+  .2 SRLL; $lo b $h2
+  .2 SRLL; $lo a $h2
+
   ZERO; // out = 0
   $LOOP
     // if(!l0) break

@@ -7,7 +7,7 @@
 #include <string.h>
 #include <setjmp.h>
 
-char dbgMode = 0x00;
+char dbgMode = 0x10;
 
 // ********************************************
 // ** Core Types
@@ -163,6 +163,7 @@ typedef struct {
   APtr buf;  // buffer of dicts
   U16 heap;  // heap offset
   U16 end;   // end offset
+  U16 lheap; // local heap
 } Dict;
 
 typedef struct {
@@ -616,7 +617,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     offset += entrySz;
   }
 
-  assert(offset == dict->heap);
+  assert(offset == *d.heap);
   return offset;
 }
 
@@ -766,7 +767,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
-  if (dbgMode) { printf("= "); printToken(); printf("\n"); }
+  if (dbgMode) { printf("= "); printToken(); dbgWs(); printf("\n"); }
   U32 value = WS_POP();
   DictRef d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value);
@@ -804,7 +805,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ void cExecute() { // $
   scan();
-  if(dbgMode) { printf("$ "); printToken(); printf("\n"); }
+  if(dbgMode) { printf("$ "); printToken(); dbgWs(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
   U32 i = INSTR(SzI4, JMPW, WS, NOOP);
@@ -879,7 +880,7 @@ void deviceOpRDict(Bool isFetch) {
   DictRef d = DEFAULT_DICT;
   if(isFetch) {
     U32 offset = Dict_find(d, tokenLen, tokenBuf);
-    if(offset == dict->heap) {
+    if(offset == *d.heap) {
       WS_PUSH(0);
       return; // not found
     }
@@ -1163,7 +1164,7 @@ Key* Dict_findFn(U32 value) {
     offset += entrySz;
   }
 
-  assert(offset == dict->heap);
+  assert(offset == *d.heap);
   return &keyDNE;
 }
 

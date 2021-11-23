@@ -133,8 +133,10 @@
 // **********
 // * Top Heap Compiler structs.
 .4
-@vTopMem FT^  #8 SUB^   =c_vDictBuf  // Dict struct start
+@vTopMem FT^  #C SUB^   =c_vDictBuf  // Dict struct start
 @c_vDictBuf   INC4^     =c_vDictHeap
+@c_vDictHeap  INC2^     =c_vDictEnd
+@c_vDictEnd   INC2^     =c_vDictLHeap
 @c_vDictBuf   #8 SUB^   =c_vTokenBuf   // TokenBuf struct
 @c_vTokenBuf  INC4^     =c_vTokenLen
 
