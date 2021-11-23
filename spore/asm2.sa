@@ -33,21 +33,25 @@
   .4 XSL; @_dict $h2
   .4 LIT DVS RET; .2@D_dict,
 
-@vHeap .4 FT^ =c_vLocalOffset #0 $h2 // Local offset (tracking locals)
-
 // Define $loc for cleaner function/etc names.
 // This creates a name and sets up for local variables.
 @vHeap .4 FT^ =loc
+  // update rKey
+  .4 LIT4; @c_vDictBuf $hL4  .4 FT; // dict.buf
+  .4 LIT4; @c_vDictHeap $hL4 .2 FT; // dict.heap
+  .4 ADD SRML; @c_vRKey $h2 // rKey=dict.buf + dict.heap
+
+  // Set dict[nextToken] = heap
   .4 FTML XSL; @vHeap $h2 @dictSet $h2
+
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   .2 SRML ZERO; @c_vLocalOffset $h2 // zero localOffset
   .4 LIT4; @c_vDictLHeap $hL4    // get address of localDict.heap
   .2 LIT SR RET; #0 $h2 // zero it.
 
-$loc dictGet / { -> v}
+$loc dictGet   // { -> v}
   .4 XSL; @_dict $h2
   .4 LIT DVF RET; @D_dict $h2
-
 
 .4
 $loc getHeap     FTML RET; @vHeap $h2
@@ -63,7 +67,6 @@ $loc c_asemble   LIT DVS RET; @D_comp $h2
 $loc c_assembleNext // scan and assemble
   LIT DVF; @D_scan $h2
   LIT DVS RET; @D_comp $h2
-$loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
 
 .4 $loc c_maskInstr
   LIT DVS RET; @D_instr $h2 // use mask on instr
@@ -76,6 +79,12 @@ $loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
   // Clear current instr (preserves sz)
   LIT4; @CLR_INSTR $hL4
   LIT DVS RET; @D_instr $h2
+
+// Assert checks a condition or panics with an error
+// ex: <some check> @E_myError assert
+$loc assertNot SWP; NOT; SWP; // ... intentional fallthrough
+$loc assert    LIT DVF RET; @D_assert $h2
+$loc panic     LIT SWP JMPL; #0 $h2 @assert $h2 // Panic with an error code
 
 // **********
 // * Core macros:
@@ -92,32 +101,57 @@ $loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
 // ignore current instr since LIT4 is an operation.
 //   Ex: $L@myVar   $L#1234_5678   $retL#3
 
+$loc topU4And // {v:U4 mask:U1} mask upper 8bits of U4
+  .4 LIT SHL; #18 $h2 // mask=mask << 24
+  .4 AND RET;
+
+$loc chkXNoLocals // {metaFnAddr -> fnAddr}
+  // Assert is not local
+  .4 DUP; // {metaFnAddr, metaFnAddr}
+  .4 LIT XSL; @IS_LOCAL $h2  @topU4And $h2 // {metaFnAddr isLocal}
+  .4 LIT XSL; @E_cXHasL $h2  @assertNot $h2  // {metaFnAddr}
+  .4 LIT4; #FF_FFFF $hL4
+  .4 AND RET;
+
 .4 $loc xsl // compile instr with XSL, see docs on core macros.
-  LIT4 XSL; @XSL $hL4  @c_compMaskInstr $h2 // compile with XSL
   XSL; @dictGet $h2 // get next token's ptr
+  XSL; @chkXNoLocals $h2 // check that it's valid
+  LIT4 XSL; @XSL $hL4  @c_compMaskInstr $h2 // compile instr with XSL
   JMPL; @h2 $h2 // put on stack
 
 .4 $loc jmpl // compile instr with JMPL, see docs on core macros.
-  LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
   $xsl dictGet // get next token's ptr
+  $xsl chkXNoLocals // check that it's valid
+  LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
   JMPL; @h2 $h2 // put on stack
 
 .4 $loc mem_xsl // compile instr with a LIT XSL, see docs on core macros.
   LIT4 XSL; @XSL $hL4 @c_compMaskInstr $h2 // compile w/XSL
   $xsl h2 // compile lit
   $xsl dictGet // get next token value
-  $jmpl h2 // compile it
-
-.4 $loc mem_xl // compile instr with a LIT XL, see docs on core macros.
-  LIT4 XSL; @XL $hL4 @c_compMaskInstr $h2 // compile w/XL
-  $xsl h2 // compile lit
-  $xsl dictGet // get next token value
+  $xsl chkXNoLocals // check that it's valid
   $jmpl h2 // compile it
 
 .4 $loc mem_jmpl // compile instr with a LIT JMPL, see docs on core macros.
   LIT4 XSL; @JMPL $hL4 @c_compMaskInstr $h2 // compile w/JMPL
   $xsl h2 // compile literal
   $xsl dictGet // get next token value
+  $xsl chkXNoLocals // check that it's valid
+  $jmpl h2 // compile it
+
+$loc chkXLocals // {metaFnAddr -> fnAddr}
+  // Assert is not local
+  .4 DUP; // {metaFnAddr metaFnAddr}
+  .4 LIT @IS_LOCAL $mem_xsl topU4And // {metaFnAddr isLocal}
+  .4 LIT @E_cXNoL $mem_xsl assert // {metaFnAddr}
+  LIT4; #FF_FFFF $hL4 // {metaFnAddr fnAddrMask}
+  AND RET;
+
+.4 $loc mem_xl // compile instr with a LIT XL, see docs on core macros.
+  LIT4 XSL; @XL $hL4 @c_compMaskInstr $h2 // compile w/XL
+  $xsl h2 // compile lit
+  $xsl dictGet // get next token value
+  $xsl chkXLocals // check that it's valid
   $jmpl h2 // compile it
 
 // **********
@@ -180,7 +214,7 @@ $loc AGAIN
 
 // $X: instantly execute non-small function.
 // Ex: $X foo, where foo has local variables.
-$loc X $xsl dictGet  XW; RET;
+$loc X $xsl dictGet  $xsl chkXLocals  XW; RET;
 
 // Get next token dict reference
 $loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
@@ -194,12 +228,6 @@ $loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
   $END  DRP2 RET;
 
 .4
-
-// Assert checks a condition or panics with an error
-// ex: <some check> @E_myError assert
-$loc assertNot SWP; NOT; SWP; // ... intentional fallthrough
-$loc assert    LIT DVF RET; @D_assert $h2
-$loc panic     SWP LIT #0 $mem_jmpl assert // Panic with an error code
 
 $loc assertWsEmpty  $xsl getWsLen  $L @E_wsEmpty  $jmpl assertNot
 $loc tAssert        LIT @E_test $mem_jmpl assert
@@ -217,6 +245,18 @@ $loc tAssertNe      .4 NEQ $jmpl tAssert
 //   $end_lo
 //   SRLL ZERO; $lo a $h2 // a = 0
 
+$loc c_setRKeyMeta // {mask:U1} mask upper 8bits of dict rKey
+  .4 LIT SHL; #18 $h2 // mask=mask << 24
+  .4 FTML FT; @c_vRKey $h2 // double fetch {mask key.value}
+  .4 OR; // { maskedValue }
+  FTML SWP; @c_vRKey $h2 // { &key newValue }
+  .4 SR RET;
+
+$loc c_rKeyMeta // {mask:U1 -> maskedMeta} get rkey AND'd with mask
+  .4 FTML; @c_vRKey $h2 // {mask metaFn}
+  .4 LIT SHR; #18 $h2   // {mask meta}
+  AND RET; // {maskedMeta}
+
 $loc _lDict
   .4 LIT DVF    ; .2@D_scan,
   // localDict.buf = dict.buf + dict.heap
@@ -231,6 +271,7 @@ $loc lDictSet
 
 
 $loc alignSz // {value sz -> aligned} align value by sz bytes
+  @IS_LOCAL $c_setRKeyMeta
   #1 $h2 // locals (4bytes)
   .2 SRLL; #0 $h2 // l0=sz
   .4 DUP; FTLL MOD; #0 $h2 // {value value%sz}
@@ -250,6 +291,7 @@ $loc decl_lo
   .2 ADD SRML RET; @c_vLocalOffset $h2 // add together and update vLocalOffset
 
 $loc end_lo // use the current declared local offsets to define the locals size
+  LIT @IS_LOCAL $mem_xsl c_setRKeyMeta // make it a locals fn
   .2 FTML; @c_vLocalOffset $h2
   LIT #4 $mem_xl alignSz
   SHR LIT #2 $mem_jmpl h2 // shift right 2 (divide by 4) and store.

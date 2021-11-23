@@ -39,7 +39,7 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
-#define SET_ERR(E)  if(TRUE) { *env.err = E; longjmp(*err_jmp, 1); }
+#define SET_ERR(E)  if(TRUE) { assert(E); *env.err = E; longjmp(*err_jmp, 1); }
 #define ASSERT_NO_ERR() assert(!*env.err)
 #define ASM_ASSERT(C, E) /* Assert return void */  \
   if(!(C)) SET_ERR(E);
@@ -82,6 +82,9 @@ typedef CSz CPtr;
 #define E_cDblSr    0xE0CA // Double store
 #define E_cDevOp    0xE0CB // device op not impl
 #define E_cDictOvr  0xE0CC // dict overflow
+#define E_cXHasL    0xE0CD // xs/jmp to non-small
+#define E_cXNoL     0xE0CE // x to non-locals
+#define E_cErr      0xE0CF // D_assert err code invalid
 
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 
@@ -164,6 +167,7 @@ typedef struct {
   U16 heap;  // heap offset
   U16 end;   // end offset
   U16 lheap; // local heap
+  U16 _align;
 } Dict;
 
 typedef struct {
@@ -176,6 +180,7 @@ typedef struct {
   {.buf = dict->buf, .end = dict->end, .heap = &dict->heap}
 
 typedef struct {
+  U32 value;
   U8 len;
   U8 s[];
 } Key;
@@ -298,7 +303,7 @@ Instr splitInstr(U16 instr) {
     case 1: 
       *(mem+aptr) = (U8)value;
       break;
-    case 2: 
+    case 2:
       ASM_ASSERT(aptr % 2 == 0, E_align2);
       *((U16*) (mem+aptr)) = (U16)value;
       break;
@@ -594,8 +599,6 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // key/value map (not hashmap) where key is a cstr and value is U32.
 
 #define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
-// Given ptr to key, get pointer to the value.
-#define Key_vptr(KEY) ((U32*) align(((U8*)KEY) + KEY->len + 1, 4))
 
 /*fn*/ U8 cstrEq(U8 slen0, U8 slen1, U8* s0, U8* s1) {
   if(slen0 != slen1) return FALSE;
@@ -609,12 +612,11 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 /*fn*/ U16 Dict_find(DictRef d, U8 slen, U8* s) {
   U16 offset = 0;
   assert(*d.heap < d.end);
-  Key* key = Dict_key(d, offset);
 
   while(offset < *d.heap) {
+    Key* key = Dict_key(d, offset);
     if(cstrEq(key->len, slen, key->s, s)) return offset;
     U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
-    key += entrySz;
     offset += entrySz;
   }
 
@@ -629,19 +631,17 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   Key* key = Dict_key(d, offset);
   U16 addedSize = alignAPtr(1 + slen + 4, 4);
   ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
+  key->value = value;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
   *d.heap += alignAPtr(1 + slen + 4, 4);
-  U32* v = Key_vptr(key);
-  *v = value;
   return offset;
 }
 
 /*fn*/ U32 Dict_get(DictRef d, U8 slen, U8 *s) {
   U16 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset != *d.heap, E_cNoKey);
-  Key* key = Dict_key(d, offset);
-  return *Key_vptr(key);
+  return Dict_key(d, offset)->value;
 }
 
 /*fn*/ void Dict_forget(U8 slen, U8* s) {
@@ -872,8 +872,11 @@ void deviceOp_dict(Bool isFetch) {
     .buf = buf,
     .end = dict->end,
   };
-  if(isFetch) WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
-  else        Dict_set(d, tokenLen, tokenBuf, WS_POP());
+  if(isFetch) {
+    WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
+  } else {
+    Dict_set(d, tokenLen, tokenBuf, WS_POP());
+  }
 
 }
 
@@ -885,8 +888,7 @@ void deviceOpRDict(Bool isFetch) {
       WS_PUSH(0);
       return; // not found
     }
-    U32* offsetR = Key_vptr(Dict_key(d, offset));
-    WS_PUSH((U8*)offsetR - mem);
+    WS_PUSH(d.buf + offset);
   } else Dict_forget(tokenLen, tokenBuf);
 }
 
@@ -945,6 +947,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case 6: /*D_comp*/ deviceOpCompile(); break;
     case 7: /*D_assert*/ 
       tmp = WS_POP();
+      if(!tmp) SET_ERR(E_cErr);
       if(!WS_POP()) SET_ERR(tmp);
       break;
     case 0x8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
@@ -1043,12 +1046,6 @@ void tests();
 
 // ********************************************
 // ** Testing
-
-// void dbgEnv() {}
-// void dbgWs() {}
-// void dbgInstr(Instr i) {}
-// void dbgJmpI(JmpI i) {}
-// void tests() {}
 
 #include <string.h>
 
@@ -1154,14 +1151,12 @@ Key keyDNE = {.len = 3, .s = "???" };
 
 Key* Dict_findFn(U32 value) {
   DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
-  Key* key = Dict_key(d, 0);
   U16 offset = 0;
 
   while(offset < dict->heap) {
-    U32* keyVPtr = Key_vptr(key);
-    if(value == (0xFFFFFFFFFFFF & *keyVPtr)) return key;
+    Key* key = Dict_key(d, offset);
+    if(value == (0xFFFFFFFFFFFF & key->value)) return key;
     U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
-    key += entrySz;
     offset += entrySz;
   }
 
@@ -1349,6 +1344,7 @@ void compileStr(U8* s) {
 /*test*/ void testAsm2() {
   printf("## testAsm2\n"); SMALL_ENV;
   compileFile("spore/asm2.sa");
+  assert(!WS_LEN);
   compileLoop(); ASSERT_NO_ERR();
   compileFile("spore/testAsm2.sa");
 }

@@ -16,6 +16,7 @@
 #0000_0014 =vState
 #0000_0018 =vTestIdx
 
+
 // **********
 // * Instructions
 #FF3F_0000 =CLR_INSTR   // Clear instr except Size bits
@@ -131,7 +132,12 @@
 #0A =D_xsCatch
 
 // **********
-// * Top Heap Compiler structs.
+// * Global Compiler Variables
+@vHeap .4 FT^ =c_vRKey        #0 .4, // rKey, ref to current dict key.
+@vHeap .4 FT^ =c_vLocalOffset #0 .2, // Local Offset (for local var setup)
+
+// **********
+// * Compiler Structs (initialzed down from topMem)
 .4
 @vTopMem FT^  #C SUB^   =c_vDictBuf  // Dict struct start
 @c_vDictBuf   INC4^     =c_vDictHeap
@@ -145,6 +151,11 @@
 .4
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
 #0001_0000 =cAllowPanicMask
+
+#0001 =IS_LOCAL // 1=has local stack (XL/XW instead of XSL/XSW)
+#0002 =IS_PRE // 1=is prefix
+#0004 =IS_INSTANT // 1=is instant
+#0008 =IS_ALI // 1=always instant ($ may alter behavior)
 
 // Error Classes
 // [E000 - E100): built-in errors.
@@ -186,4 +197,7 @@
 #E0CA  =E_cDblSr  // Double store
 #E0CB  =E_cDevOp  // device op not impl
 #E0CC  =E_DictOvr // dict overflow
+#E0CD  =E_cXHasL  // small-execute to fn w/locals
+#E0CE  =E_cXNoL   // large-execute to fn wo/locals
+#E0CF  =E_cErr    // D_assert err code invalid
 
