@@ -1063,7 +1063,7 @@ void dbgIndent() {
 }
 
 void dbgEnv() {
-  printf("  token[%u, %u]=\"", tokenLen, tokenBufSize);
+  printf("  token[%u, %u]=", tokenLen, tokenBufSize);
   printToken();
   printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);

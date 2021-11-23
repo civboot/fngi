@@ -25,16 +25,15 @@
   .4 LIT4; @c_vDictHeap $hL4     // &dict.heap
   .4 LIT DVS RET; .2@D_dict,
 
-// Define $loc
+// Define $loc for cleaner function/etc names.
 .4@vHeap FT^ =loc // fetch current heap and set to loc
-  FTML JMPL; @vHeap $h2 @dictSet $h2 // fetch heap {heap:4}
+  FTML JMPL; @vHeap $h2 @dictSet $h2
 
 $loc dictGet / { -> v}
   .4 LIT DVF    ; .2@D_scan,
   .4 LIT4; @c_vDictBuf $hL4  FT; // dict.buf
   .4 LIT4; @c_vDictHeap $hL4     // &dict.heap
   .4 LIT DVF RET; .2@D_dict,
-
 
 .4
 $loc getHeap     FTML RET; @vHeap $h2
@@ -133,49 +132,17 @@ $dForget j_2byte
 $dForget j_2byte
 
 // **********
-// * TODO: remove these
-.2 $loc c_LIT // compile a literal from the stack {v:2}
-  LIT;  @Sz2 @LIT ADD^ $h2 // push `.2 LIT` instruction to stack
-  LIT XSW; @h2 $h2 // compile it
-  LIT JMPW; @h2 $h2  // compile value
-
-.4 $loc c_XSW / {loc} compile a cnl
-  @Sz4 @LIT @XSW ADD^ ADD^ $c_LIT // push .4 LIT XSW instr
-  LIT XSW; @h2 $h2 // compile it.
-  LIT JMPW; @h2 $h2  // compile the loc
-
-.4 $loc c_JMPW / {loc} compile a jmp along with current instr
-  @Sz4 @LIT @JMPW ADD^ ADD^ $c_LIT // push .4 LIT JMPW instr
-  @h2 $c_XSW // compile it
-  LIT JMPW; @h2 $h2 // compile the loc
-
-.4 $loc c_FTML4 / {loc} compile a fetch literal sz=4
-  @Sz4 @FTML ADD^ $c_LIT // push .4 FTML instr
-  @h2 $c_XSW // compile it
-  LIT JMPW; @h2 $h2 // compile the loc
-
-.4 $loc c_FTML2 / {loc} compile a fetch literal sz=2
-  @Sz2 @FTML ADD^ $c_LIT // push .2 FTML instr
-  @h2 $c_XSW // compile it
-  LIT JMPW; @h2 $h2 // compile the loc
-
-.4 $loc c_LIT4 // compile a LIT4 from the stack {v:4}
-  @Sz4 @LIT4 ADD^ $c_LIT // push `.4 LIT4` instruction to stack
-  @h2 $c_XSW // compile it
-  @hL4 $c_JMPW // compile the 4byte value
-
-// **********
 // * Utilities
 
 // Get next token dict reference
-$loc c_dRef     @c_scan $c_XSW  .4 LIT DVF RET; @D_rdict $h2
+$loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
 
 .4 $loc hAlign4 // align heap
-  @getHeap $c_XSW DUP;
+  $xsl getHeap  DUP;
   LIT MOD; #4 $h2 // {heap heap%4}
   DUP JZL; $jloc j_to
-    SUB; LIT ADD; #4 $h2  // heap - (heap%4) + 4
-    @setHeap $c_JMPW
+    SUB;
+    ADD #4 $l2_jmpl setHeap // heap =heap - (heap%4) + 4
   $jset j_to
     DRP2 RET;
 $dForget j_to

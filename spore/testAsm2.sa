@@ -37,15 +37,6 @@ $test_LIT4 #1234_5678 $tAssertEq
 $loc test_HL4 .4 LIT4 RET; #1234_5678 $hL4
 $test_HL4 #1234_5678 $tAssertEq
 
-.1 $loc test_cLit  #42 $c_LIT RET; .4
-.1 $loc test_cLitBig  #FFFF_0042 $c_LIT RET; .4
-$test_cLit      #42         $tAssertEq
-$test_cLitBig   #42         $tAssertEq
-$assertWsEmpty
-
-.1 $loc test_cLit4 #4200_0042 $c_LIT4 RET; .4
-$test_cLit4        #4200_0042  $tAssertEq
-
 // Test control flow
 .4 $loc testIf // converts 1->10 else: 42
   LIT EQ JZL; #1 $h2  $jloc j_to
