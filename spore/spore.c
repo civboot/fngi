@@ -7,7 +7,7 @@
 #include <string.h>
 #include <setjmp.h>
 
-char dbgMode = 0x10;
+char dbgMode = 0x00;
 
 // ********************************************
 // ** Core Types
@@ -608,6 +608,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 // find key offset from dict. Else return dict.heap
 /*fn*/ U16 Dict_find(DictRef d, U8 slen, U8* s) {
   U16 offset = 0;
+  assert(*d.heap < d.end);
   Key* key = Dict_key(d, offset);
 
   while(offset < *d.heap) {

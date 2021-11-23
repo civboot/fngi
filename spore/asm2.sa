@@ -37,13 +37,12 @@
 
 // Define $loc for cleaner function/etc names.
 // This creates a name and sets up for local variables.
-.4@vHeap FT^ =loc
+@vHeap .4 FT^ =loc
   .4 FTML XSL; @vHeap $h2 @dictSet $h2
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   .2 SRML ZERO; @c_vLocalOffset $h2 // zero localOffset
   .4 LIT4; @c_vDictLHeap $hL4    // get address of localDict.heap
-  .4 LIT4; @c_vDictHeap $hL4 .2 FT; // fetch dict.heap
-  .2 SR RET; 
+  .2 LIT SR RET; #0 $h2 // zero it.
 
 $loc dictGet / { -> v}
   .4 XSL; @_dict $h2
@@ -248,15 +247,15 @@ $loc decl_lo
   .4 DUP; // {sz sz}
   .2 FTML SWP @c_vLocalOffset $mem_xl alignSz // {sz alignedOffset}
   .4 DUP $xsl lDictSet // set next token to alignedOffset {sz alignedOffset}
-  ADD SRML RET; @c_vLocalOffset $h2 // add together and update vLocalOffset
+  .2 ADD SRML RET; @c_vLocalOffset $h2 // add together and update vLocalOffset
 
 $loc end_lo // use the current declared local offsets to define the locals size
   .2 FTML; @c_vLocalOffset $h2
   LIT #4 $mem_xl alignSz
-  SHR LIT #2 $mem_jmpl h2 // shift right by 2 (divide by 4) and store.
+  SHR LIT #2 $mem_jmpl h2 // shift right 2 (divide by 4) and store.
 
 $loc lo // get a local variable offset. Ex: `$lo foo`
   .4 XSL; @_lDict $h2
-  .4 LIT DVF RET; .2@D_dict,
+  .4 LIT DVF RET; @D_dict $h2
 
 $assertWsEmpty
