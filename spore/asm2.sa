@@ -1,26 +1,12 @@
 // This file creates some essential assembly utilities including
 
-// Define $loc
-.4@vHeap FT^ =loc // fetch current heap and set to loc
-  FTML        ; .2@vHeap,  // fetch heap {heap:4}
-  .4 LIT DVF    ; .2@D_scan,   // scan next token into tokenBuf {heap}
-  .4 LIT DVS RET; .2@D_dict,   // set dict key(tokenBuf) to current heap
-
-.4 $loc dictSet / {v}
-  .4 LIT DVF    ; .2@D_scan,
-  .4 LIT DVS RET; .2@D_dict,
-$loc dictGet / { -> v}
-  .4 LIT DVF    ; .2@D_scan,
-  .4 LIT DVF RET; .2@D_dict,
-
-// TODO: rename to c_h*
-$loc h2  // {val:2} push 2bytes from stack to heap
+@vHeap .4 FT^ =h2  // h2: {val:2} push 2bytes from stack to heap
   .4 FTML SWP; .2@vHeap,  // fetch heap and swap {heap, val}
   .2      SR;             // store 2 byte value at heap
   .4 FTML INC2; .2@vHeap, // fetch heap and increment by 2
   .4 SRML  RET; .2@vHeap, // store new heap and return
 
-$loc h4  // {val:4} push 4bytes from stack to heap
+@vHeap .4 FT^ =h4  // h4: {val:4} push 4bytes from stack to heap
   .4 FTML SWP; .2@vHeap,  // ft heap
   .4      SR;             // sr 4byte value
   .4 FTML INC4; .2@vHeap, // ft heap and +4
@@ -28,10 +14,27 @@ $loc h4  // {val:4} push 4bytes from stack to heap
 
 // {v:4} compile a LIT4 (value-only) to the heap for LIT4.
 // Note: compiled as two U2 values with largest first.
-.4 $loc hL4
+@vHeap .4 FT^ =hL4
   // Duplicate, then call h2(v>>0x10)
   DUP;   LIT SHR XSL; #10 $h2  @h2 $h2 // Compile high bits
   JMPL; @h2 $h2
+
+@vHeap .4 FT^ =dictSet // dctSet: Set "standard" dictionary to next token.
+  .4 LIT DVF; @D_scan $h2
+  .4 LIT4; @c_vDictBuf $hL4  FT; // dict.buf
+  .4 LIT4; @c_vDictHeap $hL4     // &dict.heap
+  .4 LIT DVS RET; .2@D_dict,
+
+// Define $loc
+.4@vHeap FT^ =loc // fetch current heap and set to loc
+  FTML JMPL; @vHeap $h2 @dictSet $h2 // fetch heap {heap:4}
+
+$loc dictGet / { -> v}
+  .4 LIT DVF    ; .2@D_scan,
+  .4 LIT4; @c_vDictBuf $hL4  FT; // dict.buf
+  .4 LIT4; @c_vDictHeap $hL4     // &dict.heap
+  .4 LIT DVF RET; .2@D_dict,
+
 
 .4
 $loc getHeap     FTML RET; @vHeap $h2

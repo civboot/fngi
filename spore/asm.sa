@@ -133,10 +133,10 @@
 // **********
 // * Top Heap Compiler structs.
 .4
-@vTopMem FT^    #8 SUB^   =c_vDictArray  // Dict struct
-@c_vDictArray   INC4^     =c_vDictHeap
-@c_vDictArray   #8 SUB^   =c_vTokenBuf   // TokenBuf struct
-@c_vTokenBuf    INC4^     =c_vTokenLen
+@vTopMem FT^  #8 SUB^   =c_vDictBuf  // Dict struct start
+@c_vDictBuf   INC4^     =c_vDictHeap
+@c_vDictBuf   #8 SUB^   =c_vTokenBuf   // TokenBuf struct
+@c_vTokenBuf  INC4^     =c_vTokenLen
 
 // **********
 // * Global Constants

@@ -39,13 +39,10 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
-#define SET_ERRV(E)    if(TRUE) { *env.err = E; longjmp(*err_jmp, 1); }
-#define SET_ERR(E, V)  if(TRUE) { *env.err = E; return V; }
+#define SET_ERR(E)  if(TRUE) { *env.err = E; longjmp(*err_jmp, 1); }
 #define ASSERT_NO_ERR() assert(!*env.err)
-#define ASM_ASSERTV(C, E) /* Assert return void */  \
-  if(!(C)) { *env.err = E; return; }
-#define ASM_ASSERT(C, E, V) \
-  if(!(C)) { *env.err = E; return V; }
+#define ASM_ASSERT(C, E) /* Assert return void */  \
+  if(!(C)) SET_ERR(E);
 
 // Global Constants
 #define CMP_EQ  0x8000 // Comparison was equal. Was less if LT this, etc
@@ -232,7 +229,7 @@ U32 szIToMask(SzI szI) {
     case 0: return 0xFF;
     case 1: return 0xFFFF;
     case 2: return 0xFFFFFFFF;
-    default: SET_ERR(E_cSz, 0);
+    default: SET_ERR(E_cSz);
   }
 }
 
@@ -241,7 +238,7 @@ U8 szIToSz(SzI szI) {
     case 0: return 1;
     case 1: return 2;
     case 2: return 4;
-    default: SET_ERR(E_cSz, 0);
+    default: SET_ERR(E_cSz);
   }
 }
 
@@ -250,7 +247,7 @@ SzI szToSzI(U8 sz) {
     case 1: return SzI1;
     case 2: return SzI2;
     case 4: return SzI4;
-    default: SET_ERR(E_cSz, 0);
+    default: SET_ERR(E_cSz);
   }
 }
 
@@ -289,39 +286,42 @@ Instr splitInstr(U16 instr) {
   c = c - ('A' - '0');
   if(c <= 5) return c + 10;
   c = c - ('a' - 'A') + 10;
-  ASM_ASSERT(c < 16, E_cHex, 0xFF);
+  ASM_ASSERT(c < 16, E_cHex);
   return c;
 }
 
 /*fn*/ void store(U8* mem, APtr aptr, U32 value, U8 sz) {
+  ASM_ASSERT(aptr, E_null);
+  ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (sz) {
     case 1: 
       *(mem+aptr) = (U8)value;
       break;
     case 2: 
-      ASM_ASSERTV(aptr % 2 == 0, E_align2);
+      ASM_ASSERT(aptr % 2 == 0, E_align2);
       *((U16*) (mem+aptr)) = (U16)value;
       break;
     case 4:
-      ASM_ASSERTV(aptr % 2 == 0, E_align4);
+      ASM_ASSERT(aptr % 2 == 0, E_align4);
       *((U32*) (mem+aptr)) = value;
       break;
-    default: SET_ERRV(E_cSz);
+    default: SET_ERR(E_cSz);
   }
 }
 
 /*fn*/ U32 fetch(U8* mem, APtr aptr, U8 sz) {
-  ASM_ASSERT(aptr, E_null, 0);
+  ASM_ASSERT(aptr, E_null);
+  ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (sz) {
     case 1:
       return (U32) *((U8*) (mem+aptr));
     case 2:
-      ASM_ASSERT(aptr % 2 == 0, E_align2, 0);
+      ASM_ASSERT(aptr % 2 == 0, E_align2);
       return (U32) *((U16*) (mem+aptr));
     case 4:
-      ASM_ASSERT(aptr % 2 == 0, E_align4, 0);
+      ASM_ASSERT(aptr % 2 == 0, E_align4);
       return (U32) *((U32*) (mem+aptr));
-    default: SET_ERR(E_cSz, 0);
+    default: SET_ERR(E_cSz);
   }
 }
 
@@ -329,7 +329,7 @@ Instr splitInstr(U16 instr) {
 #define WS_LEN        Stk_len(env.ws)
 #define X_DEPTH       Stk_len(env.callStk)
 #define _CHK_GROW(SP, SZ) \
-  ASM_ASSERTV(SP - SZ >= 0, E_stkOvr)
+  ASM_ASSERT(SP - SZ >= 0, E_stkOvr)
 
 #define WS_PUSH(VALUE)  Stk_push(&env.ws, VALUE)
 /*fn*/ void Stk_push(Stk* stk, U32 value) {
@@ -340,7 +340,7 @@ Instr splitInstr(U16 instr) {
 
 #define WS_POP()  Stk_pop(&env.ws)
 /*fn*/ U32 Stk_pop(Stk* stk) {
-  ASM_ASSERT(stk->sp + ASIZE <= stk->size, E_stkUnd, 0);
+  ASM_ASSERT(stk->sp + ASIZE <= stk->size, E_stkUnd);
   U32 out = fetch(stk->mem, stk->sp, ASIZE);
   stk->sp += ASIZE;
   return out;
@@ -352,16 +352,16 @@ Instr splitInstr(U16 instr) {
 }
 
 /*fn*/ void Stk_shrink(Stk* stk, U16 sz) {
-  ASM_ASSERTV(stk->sp + sz <= stk->size, E_stkUnd);
+  ASM_ASSERT(stk->sp + sz <= stk->size, E_stkUnd);
   stk->sp += sz;
 }
 
 APtr toAPtr(U32 v, U8 sz) {
   switch (sz) {
-    case 1: SET_ERR(E_cSzAPtr, 0);
+    case 1: SET_ERR(E_cSzAPtr);
     case 2: return ENV_MOD_HIGH() + v;
-    case 4: ASM_ASSERT(v <= MAX_APTR, E_oob, 0); return v;
-    default: SET_ERR(E_cSz, 0);
+    case 4: ASM_ASSERT(v <= MAX_APTR, E_oob); return v;
+    default: SET_ERR(E_cSz);
   }
 }
 
@@ -424,11 +424,11 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case LIT: WS_PUSH(szMask & popLit2());  break;
     case SRLL:
       srPtr = env.ls.sp + popLit2();
-      ASM_ASSERT(srPtr, E_null, res);
+      ASM_ASSERT(srPtr, E_null);
       break;
     case SRML:
       srPtr = env.mp + popLit2();
-      ASM_ASSERT(srPtr, E_null, res);
+      ASM_ASSERT(srPtr, E_null);
       break;
     case SROL: WS_PUSH(szMask & popLit2());    break;
     case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit2(), sz)); break;
@@ -439,7 +439,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
       l = fetch(mem, l, sz);
       WS_PUSH(l);
       break;
-    default: SET_ERR(E_cInstr, res);
+    default: SET_ERR(E_cInstr);
   }
 
   if(dbgMode >= 0x5) { dbgWs(); }
@@ -465,7 +465,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         case 0x9: /*RGS */ assert(FALSE); // not impl
         case 0xA: /*FT  */ WS_PUSH(fetch(mem, WS_POP(), sz)); break;
         case 0xB: /*SR  */
-          ASM_ASSERT(!srPtr, E_cDblSr, res);
+          ASM_ASSERT(!srPtr, E_cDblSr);
           l = WS_POP(); // value
           srPtr = WS_POP();
           WS_PUSH(l);
@@ -530,7 +530,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         case 0x10: /*MUL  */ r = l * r; break;
         case 0x11: /*DIV_U*/ r = l / r; break;
         case 0x12: /*DIV_S*/
-          ASM_ASSERT(r, E_divZero, res);
+          ASM_ASSERT(r, E_divZero);
           switch (i.szI) {
             case SzI1: r = (I8)  l / (I8)  r; break;
             case SzI2: r = (I16) l / (I16) r; break;
@@ -574,7 +574,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case XW: xImpl(toAPtr(WS_POP(), 4)); break;
     case XSL: xsImpl(toAPtr(popLit2(), 2)); break;
     case XSW: xsImpl(toAPtr(WS_POP(), 4)); break;
-    default: SET_ERR(E_cInstr, res);
+    default: SET_ERR(E_cInstr);
   }
   if(dbgMode > 0x10) { dbgWsFull(); }
   return res;
@@ -624,10 +624,10 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 /*fn*/ U16 Dict_set(DictRef d, U8 slen, U8* s, U32 value) {
   // Set a key to a value, returning the offset
   U16 offset = Dict_find(d, slen, s);
-  ASM_ASSERT(offset == *d.heap, E_cKey, 0)
+  ASM_ASSERT(offset == *d.heap, E_cKey)
   Key* key = Dict_key(d, offset);
   U16 addedSize = alignAPtr(1 + slen + 4, 4);
-  ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr, *d.heap);
+  ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
   *d.heap += alignAPtr(1 + slen + 4, 4);
@@ -638,7 +638,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
 /*fn*/ U32 Dict_get(DictRef d, U8 slen, U8 *s) {
   U16 offset = Dict_find(d, slen, s);
-  ASM_ASSERT(offset != *d.heap, E_cNoKey, 0);
+  ASM_ASSERT(offset != *d.heap, E_cNoKey);
   Key* key = Dict_key(d, offset);
   return *Key_vptr(key);
 }
@@ -713,7 +713,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
-    ASM_ASSERTV(tokenLen < MAX_TOKEN, E_cTLen);
+    ASM_ASSERT(tokenLen < MAX_TOKEN, E_cTLen);
     c = tokenBuf[tokenLen];
 
     TokenGroup tg = toTokenGroup(c);
@@ -735,7 +735,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case 2: szI = SzI2; break;
     case 4: szI = SzI4; break;
     case 0xA: szI = SzIA; break;
-    default: SET_ERRV(E_cSz);
+    default: SET_ERR(E_cSz);
   }
   instr = INSTR_W_SZ(instr, szI);
 }
@@ -758,7 +758,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   for(U8 i = 0; i < tokenLen; i += 1) {
     U8 c = tokenBuf[i];
     if (c == '_') continue;
-    ASM_ASSERTV(toTokenGroup(c) <= T_HEX, E_cHex);
+    ASM_ASSERT(toTokenGroup(c) <= T_HEX, E_cHex);
     v = (v << 4) + charToHex(c);
   }
   WS_PUSH(v);
@@ -838,7 +838,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case '$': cExecute(); break;
     default:
       printf("!! invalid token: %c\n", tokenBuf[0]);
-      SET_ERR(E_cSz, result);
+      SET_ERR(E_cSz);
   }
   return result;
 }
@@ -861,6 +861,19 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   }
 
   err_jmp = prev_err_jmp;
+}
+
+void deviceOp_dict(Bool isFetch) {
+  U32 rHeap = WS_POP();
+  U32 buf = WS_POP();
+  DictRef d = {
+    .heap = (U16*) (mem + rHeap),
+    .buf = buf,
+    .end = dict->end,
+  };
+  if(isFetch) WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
+  else        Dict_set(d, tokenLen, tokenBuf, WS_POP());
+
 }
 
 void deviceOpRDict(Bool isFetch) {
@@ -906,7 +919,7 @@ void deviceOpCatch() {
 
 void deviceOpCompile() {
   ExecuteResult result = compile();
-  ASM_ASSERTV(!result.escape, E_cRet);
+  ASM_ASSERT(!result.escape, E_cRet);
 }
 
 // Device Operations
@@ -918,11 +931,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   switch(op) {
     case 0: /*D_read*/ readAppend(); break;
     case 1: /*D_scan*/ scan(); break;
-    case 2: /*D_dict*/
-      if(isFetch) WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
-      else        Dict_set(d, tokenLen, tokenBuf, WS_POP());
-      break;
-      // FT=get SR=set dict key=tokenBuf, value of sz
+    case 2: /*D_dict*/ deviceOp_dict(isFetch); break;
     case 3: /*D_rdict*/ deviceOpRDict(isFetch); break;
     case 4: /*D_instr*/
       if(isFetch) WS_PUSH(instr);
@@ -935,12 +944,12 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case 6: /*D_comp*/ deviceOpCompile(); break;
     case 7: /*D_assert*/ 
       tmp = WS_POP();
-      if(!WS_POP()) SET_ERRV(tmp);
+      if(!WS_POP()) SET_ERR(tmp);
       break;
     case 0x8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
     case 0x9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
     case 0xA: /*D_xsCatch*/ deviceOpCatch(); break;
-    default: SET_ERRV(E_cDevOp);
+    default: SET_ERR(E_cDevOp);
   }
 }
 
