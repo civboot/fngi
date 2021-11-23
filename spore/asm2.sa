@@ -51,6 +51,9 @@ $loc c_assembleNext // scan and assemble
   LIT DVS RET; @D_comp $h2
 $loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
 
+.4 $loc c_maskInstr
+  LIT DVS RET; @D_instr $h2 // use mask on instr
+
 .4 $loc c_compMaskInstr // {maskInstr:4}
   LIT DVS; @D_instr $h2 // use mask on instr
   LIT DVF; @D_instr $h2 // get instr
@@ -94,12 +97,33 @@ $loc dForget LIT DVF; @D_scan $h2 LIT DVS RET; @D_rdict $h2 // $dForget f
   $jmpl h2 // compile it
 
 .4 $loc l2_jmpl // compile instr with a LIT JMPL, see docs on core macros.
-  LIT4; @LIT $hL4 // get LIT maskInstr
-  LIT DVS; @D_instr $h2 // use mask on instr
+  LIT4 XSL; @LIT $hL4  @c_maskInstr $h2 // mask instr w/LIT
   LIT4 XSL; @JMPL $hL4 @c_compMaskInstr $h2 // compile w/JMPL
   $xsl h2 // compile literal
   $xsl dictGet // get next token value
   $jmpl h2 // compile it
+
+
+.4 $loc IF
+  LIT4 XSL; @JZL $hL4  @c_compMaskInstr $h2 // compile with JZL
+  $xsl getHeap // push location for END
+  #1BAD $l2_jmpl h2 // compile 1BAD to jmp location
+
+.4 $loc lit_IF
+  LIT4 XSL; @JZL $hL4  @c_compMaskInstr $h2 // compile with JZL
+  $xsl h2 // compile literal
+  $xsl getHeap // push location for END
+  #1BAD $l2_jmpl h2 // compile 1BAD to jmp location
+
+.4 $loc END $xsl getHeap   .2 SR RET;
+
+// $LOOP ... $BREAK0 ... $AGAIN $END
+$loc LOOP   $jmpl getHeap // push location for AGAIN
+$loc BREAK0 $xsl IF   SWP RET;
+$loc lit_BREAK0 $xsl lit_IF   SWP RET;
+$loc AGAIN
+  LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
+  $jmpl h2 // compile location to jmp to
 
 // Jump location creation and update
 .2 $loc jloc // declare a jump location. ex: $jloc j_to
@@ -134,18 +158,20 @@ $dForget j_2byte
 // **********
 // * Utilities
 
+// $X: instantly execute non-small function.
+// Ex: $X foo, where foo has local variables.
+$loc X $xsl dictGet  XW; RET; 
+
 // Get next token dict reference
 $loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
 
 .4 $loc hAlign4 // align heap
   $xsl getHeap  DUP;
   LIT MOD; #4 $h2 // {heap heap%4}
-  DUP JZL; $jloc j_to
+  DUP $IF
     SUB;
-    ADD #4 $l2_jmpl setHeap // heap =heap - (heap%4) + 4
-  $jset j_to
-    DRP2 RET;
-$dForget j_to
+    ADD #4 $l2_jmpl setHeap // heap = heap - (heap%4) + 4
+  $END  DRP2 RET;
 
 .4
 // ex: <some check> #E_myError assert

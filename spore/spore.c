@@ -152,7 +152,7 @@ typedef struct {
   Stk callStk;
 } Env;
 
-#define LS_OFFSET() ((size_t)mem - (size_t)env.ls.mem)
+#define LS_OFFSET() (env.ls.mem - mem)
 #define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
 
 typedef struct {
@@ -423,16 +423,15 @@ void xsImpl(APtr aptr) { // impl for "execute small"
     case WS: break;
     case LIT: WS_PUSH(szMask & popLit2());  break;
     case SRLL:
-      srPtr = env.ls.sp + popLit2();
-      ASM_ASSERT(srPtr, E_null);
+      srPtr = LS_OFFSET() + env.ls.sp + popLit2();
       break;
     case SRML:
-      srPtr = env.mp + popLit2();
+      srPtr = (MOD_HIGH_MASK & env.mp) + popLit2();
       ASM_ASSERT(srPtr, E_null);
       break;
     case SROL: WS_PUSH(szMask & popLit2());    break;
-    case FTLL: WS_PUSH(fetch(mem, env.ls.sp + popLit2(), sz)); break;
-    case FTML: WS_PUSH(fetch(mem, env.mp    + popLit2(), sz)); break;
+    case FTLL: WS_PUSH(fetch(mem, LS_OFFSET() + env.ls.sp  + popLit2(), sz)); break;
+    case FTML: WS_PUSH(fetch(mem, (MOD_HIGH_MASK & env.mp) + popLit2(), sz)); break;
     case FTOL:
       l = WS_POP();       // Address
       WS_PUSH(popLit2()); // Second
@@ -972,7 +971,7 @@ ssize_t readSrc(size_t nbyte) {
   U8 localMem[MS] = {0};                  \
   U8 wsMem[WS];                           \
   U8 callStkMem[RS];                      \
-  mem = localMem; \
+  mem = localMem;                         \
   env = (Env) {                           \
     .heap =    (APtr*) (mem + 0x4),       \
     .topHeap = (APtr*) (mem + 0x8),       \
@@ -997,7 +996,7 @@ ssize_t readSrc(size_t nbyte) {
   /* Then Token State*/                   \
   *env.topHeap -= sizeof(TokenState);     \
   tokenState = (TokenState*) (mem + *env.topHeap); \
-  /* First reserve space for local stack*/ \
+  /* Reserve space for local stack*/      \
   *env.topHeap -= LS;                     \
   env.ls.mem = mem + *env.topHeap;        \
   /* Then dictionary */                   \

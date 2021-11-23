@@ -38,6 +38,14 @@ $loc test_HL4 .4 LIT4 RET; #1234_5678 $hL4
 $test_HL4 #1234_5678 $tAssertEq
 
 // Test control flow
+.4 $loc testIF // converts 1->10 else: 42
+  LIT EQ #1 $lit_IF  $retL #10
+           $END  $retL #42
+#1 $testIF      #10 $tAssertEq
+#2 $testIF      #42 $tAssertEq
+
+
+
 .4 $loc testIf // converts 1->10 else: 42
   LIT EQ JZL; #1 $h2  $jloc j_to
     LIT RET; #10 $h2
@@ -48,10 +56,38 @@ $assertWsEmpty
 #2 $testIf      #42 $tAssertEq
 $assertWsEmpty
 
+$loc badMultiply // {a b -- a*b} uses loop to implement multiply
+  #1 $h2 // locals (4bytes)
+  .2 SRLL; #0 $h2 // l0=b
+  .2 SRLL; #2 $h2 // l2=a
+  ZERO; // out = 0
+  $LOOP
+    // if(!l0) break
+    .2 FTLL #0 $lit_BREAK0
+
+    // out = out + l2
+    .2 FTLL ADD; #2 $h2
+
+    // l0 = l0 - 1
+    .2 FTLL; #0 $h2
+    LIT SUB; #1 $h2
+    .2 SRLL; #0 $h2
+  $AGAIN
+  $END // for BREAK0
+  RET;
+
+#0 #0 $X badMultiply        $tAssertNot
+#5 #1 $X badMultiply   #5   $tAssertEq
+#5 #0 $X badMultiply   #0   $tAssertEq
+#8 #8 $X badMultiply   #40  $tAssertEq
+#5 #5 $X badMultiply   #19  $tAssertEq
+
+
 // Test fetching/storing
-$hAlign4 $loc testVal #12345 $h4
-@testVal FT^  #12345 $tAssertEq
-@testVal #2 SR^   @testVal FT^  #2 $tAssertEq
+$hAlign4
+$loc testVal #12345 $h4
+.4 @testVal FT^  #12345 $tAssertEq
+.4 @testVal #2 SR^   @testVal FT^  #2 $tAssertEq
 
 // Test dict commands
 #0 =dictVal @dictVal    $tAssertNot
