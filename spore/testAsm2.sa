@@ -23,10 +23,10 @@ $test_h2 #5678 $tAssertEq
 $loc test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
-$loc test_l2_xslJmpl
-  #5 $l2_xsl one // {5, 1}
-  #10 ADD $l2_jmpl add // add({5, 1+10})
-$test_l2_xslJmpl   #16 $tAssertEq $assertWsEmpty
+$loc test_mem_xslJmpl
+  LIT #5 $mem_xsl one // {5, 1}
+  ADD LIT #10 $mem_jmpl add // add({5, 1+10})
+$test_mem_xslJmpl   #16 $tAssertEq $assertWsEmpty
 
 $loc test_l  $L#420        $retL@DUP
 $test_l  SWP^  #420 $tAssertEq  @DUP $tAssertEq
@@ -39,22 +39,10 @@ $test_HL4 #1234_5678 $tAssertEq
 
 // Test control flow
 .4 $loc testIF // converts 1->10 else: 42
-  LIT EQ #1 $lit_IF  $retL #10
+  LIT EQ #1 $mem_IF  $retL #10
            $END  $retL #42
 #1 $testIF      #10 $tAssertEq
 #2 $testIF      #42 $tAssertEq
-
-
-
-.4 $loc testIf // converts 1->10 else: 42
-  LIT EQ JZL; #1 $h2  $jloc j_to
-    LIT RET; #10 $h2
-  $jset j_to
-  LIT RET; #42 $h2
-$assertWsEmpty
-#1 $testIf      #10 $tAssertEq
-#2 $testIf      #42 $tAssertEq
-$assertWsEmpty
 
 $loc badMultiply // {a b -- a*b} uses loop to implement multiply
   #1 $h2 // locals (4bytes)
@@ -63,7 +51,7 @@ $loc badMultiply // {a b -- a*b} uses loop to implement multiply
   ZERO; // out = 0
   $LOOP
     // if(!l0) break
-    .2 FTLL #0 $lit_BREAK0
+    .2 FTLL #0 $mem_BREAK0
 
     // out = out + l2
     .2 FTLL ADD; #2 $h2
@@ -93,7 +81,7 @@ $loc testVal #12345 $h4
 #0 =dictVal @dictVal    $tAssertNot
 
 // Test catch
-$loc failNow NOP; NOP; #0 $l2_jmpl tAssert
+$loc failNow NOP; NOP; LIT #0 $mem_jmpl tAssert
 
 $assertWsEmpty #1 #2 // these will be discarded
 @failNow $c_xsCatch    @E_test $tAssertEq
