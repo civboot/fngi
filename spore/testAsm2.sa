@@ -45,39 +45,37 @@ $test_HL4 #1234_5678 $tAssertEq
 #2 $testIF      #42 $tAssertEq
 
 
-#200 #2 $X alignSz  #200 $tAssertEq
-#201 #2 $X alignSz  #202 $tAssertEq
-#201 #4 $X alignSz  #204 $tAssertEq
+#200 #2 $XX alignSz  #200 $tAssertEq
+#201 #2 $XX alignSz  #202 $tAssertEq
+#201 #4 $XX alignSz  #204 $tAssertEq
 
 $loc badMultiply // {a b -- a*b} uses loop to implement multiply
   #2 $decl_lo b
   #2 $decl_lo a
   $end_lo
-  .2 SRLL; $lo b $h2
-  .2 SRLL; $lo a $h2
+  .2 $setl b
+  .2 $setl a
 
   ZERO; // out = 0
   $LOOP
-    // if(!l0) break
-    .2 FTLL #0 $mem_BREAK0
+    // if(!b) break
+    .2 FTLL $lo b $mem_BREAK0
 
     // out = out + l2
-    .2 FTLL ADD; #2 $h2
+    .2 ADD $getl a
 
     // l0 = l0 - 1
-    .2 FTLL; #0 $h2
-    LIT SUB; #1 $h2
-    .2 SRLL; #0 $h2
+    .2 $getl b   LIT SUB; #1 $h2
+    .2 $setl b
   $AGAIN
   $END // for BREAK0
   RET;
 
-#0 #0 $X badMultiply        $tAssertNot
-#5 #1 $X badMultiply   #5   $tAssertEq
-#5 #0 $X badMultiply   #0   $tAssertEq
-#8 #8 $X badMultiply   #40  $tAssertEq
-#5 #5 $X badMultiply   #19  $tAssertEq
-
+#0 #0 $XX badMultiply        $tAssertNot
+#5 #1 $XX badMultiply   #5   $tAssertEq
+#5 #0 $XX badMultiply   #0   $tAssertEq
+#8 #8 $XX badMultiply   #40  $tAssertEq
+#5 #5 $XX badMultiply   #19  $tAssertEq
 
 // Test fetching/storing
 $hAlign4

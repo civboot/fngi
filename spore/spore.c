@@ -877,7 +877,6 @@ void deviceOp_dict(Bool isFetch) {
   } else {
     Dict_set(d, tokenLen, tokenBuf, WS_POP());
   }
-
 }
 
 void deviceOpRDict(Bool isFetch) {

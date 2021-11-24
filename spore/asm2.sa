@@ -114,25 +114,25 @@ $loc chkXNoLocals // {metaFnAddr -> fnAddr}
   .4 AND RET;
 
 .4 $loc xsl // compile instr with XSL, see docs on core macros.
+  LIT4 XSL; @XSL $hL4  @c_compMaskInstr $h2 // compile instr with XSL
   XSL; @dictGet $h2 // get next token's ptr
   XSL; @chkXNoLocals $h2 // check that it's valid
-  LIT4 XSL; @XSL $hL4  @c_compMaskInstr $h2 // compile instr with XSL
   JMPL; @h2 $h2 // put on stack
 
 .4 $loc jmpl // compile instr with JMPL, see docs on core macros.
+  LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
   $xsl dictGet // get next token's ptr
   $xsl chkXNoLocals // check that it's valid
-  LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
   JMPL; @h2 $h2 // put on stack
 
-.4 $loc mem_xsl // compile instr with a LIT XSL, see docs on core macros.
+.4 $loc mem_xsl // compile mem+instr with XSL, see docs on core macros.
   LIT4 XSL; @XSL $hL4 @c_compMaskInstr $h2 // compile w/XSL
   $xsl h2 // compile lit
   $xsl dictGet // get next token value
   $xsl chkXNoLocals // check that it's valid
   $jmpl h2 // compile it
 
-.4 $loc mem_jmpl // compile instr with a LIT JMPL, see docs on core macros.
+.4 $loc mem_jmpl // compile mem+instr with JMPL, see docs on core macros.
   LIT4 XSL; @JMPL $hL4 @c_compMaskInstr $h2 // compile w/JMPL
   $xsl h2 // compile literal
   $xsl dictGet // get next token value
@@ -147,7 +147,13 @@ $loc chkXLocals // {metaFnAddr -> fnAddr}
   LIT4; #FF_FFFF $hL4 // {metaFnAddr fnAddrMask}
   AND RET;
 
-.4 $loc mem_xl // compile instr with a LIT XL, see docs on core macros.
+.4 $loc xl // compile instr with XL, see docs on core macros.
+  LIT4 XSL; @XL $hL4 @c_compMaskInstr $h2 // compile w/XL
+  $xsl dictGet // get next token value
+  $xsl chkXLocals // check that it's valid
+  $jmpl h2 // compile it
+
+.4 $loc mem_xl // compile mem+instr with XL, see docs on core macros.
   LIT4 XSL; @XL $hL4 @c_compMaskInstr $h2 // compile w/XL
   $xsl h2 // compile lit
   $xsl dictGet // get next token value
@@ -155,7 +161,7 @@ $loc chkXLocals // {metaFnAddr -> fnAddr}
   $jmpl h2 // compile it
 
 // **********
-// * Flow Control
+// * ASM Flow Control
 // - `$IF ... $END` for if blocks
 // - `$LOOP ... $BREAK0 ... $AGAIN $END` for infiinte loops with breaks.
 //
@@ -212,9 +218,9 @@ $loc AGAIN
 // **********
 // * Utilities
 
-// $X: instantly execute non-small function.
-// Ex: $X foo, where foo has local variables.
-$loc X $xsl dictGet  $xsl chkXLocals  XW; RET;
+// $XX: instantly execute non-small function.
+// Ex: $XX foo, where foo has local variables.
+$loc XX $xsl dictGet  $xsl chkXLocals  XW; RET;
 
 // Get next token dict reference
 $loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
@@ -265,10 +271,8 @@ $loc _lDict
   ADD;
   .4 LIT4 RET; @c_vDictLHeap $hL4    // &localDict.heap
 
-$loc lDictSet
-  .4 XSL; @_lDict $h2
-  .4 LIT DVS RET; .2@D_dict,
-
+$loc lDictSet $xsl _lDict   .4 LIT DVS RET; @D_dict $h2 // {value}
+$loc lo $xsl _lDict   .4 LIT DVF RET; @D_dict $h2 // {-> value}
 
 $loc alignSz // {value sz -> aligned} align value by sz bytes
   @IS_LOCAL $c_setRKeyMeta
@@ -296,8 +300,14 @@ $loc end_lo // use the current declared local offsets to define the locals size
   LIT #4 $mem_xl alignSz
   SHR LIT #2 $mem_jmpl h2 // shift right 2 (divide by 4) and store.
 
-$loc lo // get a local variable offset. Ex: `$lo foo`
-  .4 XSL; @_lDict $h2
-  .4 LIT DVF RET; @D_dict $h2
+$loc getl // get a local variable
+  LIT4 XSL; @FTLL $hL4 @c_compMaskInstr $h2
+  $xsl lo // get next local token value (offset)
+  JMPL; @h2 $h2 // put on stack (literal)
+
+$loc setl // set a local variable
+  LIT4 XSL; @SRLL $hL4 @c_compMaskInstr $h2
+  $xsl lo // get next local token value (offset)
+  JMPL; @h2 $h2 // put on stack (literal)
 
 $assertWsEmpty
