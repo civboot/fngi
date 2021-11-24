@@ -181,10 +181,11 @@ typedef struct {
 
 typedef struct {
   U32 value;
+  U8 meta;
   U8 len;
   U8 s[];
 } Key;
-#define keySizeWLen(LEN)  (4 + 1 + (LEN))
+#define keySizeWLen(LEN)  (4 + 1 + 1 + (LEN))
 
 #define MAX_TOKEN 32
 #define TOKEN_BUF 0x7D
@@ -1291,7 +1292,7 @@ void compileStr(U8* s) {
   U32 result = Dict_get(d, 3, "foo");
   assert(result == 0xF00);
 
-  assert(8 == Dict_set(d, 5, "bazaa", 0xBA2AA));
+  assert(12 == Dict_set(d, 5, "bazaa", 0xBA2AA));
   result = Dict_get(d, 5, "bazaa");
   assert(result == 0xBA2AA);
 }
