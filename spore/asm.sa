@@ -79,11 +79,12 @@
 #003F_0010 =INC   // {l+1}  increment 1
 #003F_0011 =INC2  // {l+2}  increment 2
 #003F_0012 =INC4  // {l+4}  increment 4
-#003F_0013 =INV   // {~l}   Bitwise Inversion
-#003F_0014 =NEG   // {-l}   Negate (2's compliment)
-#003F_0015 =NOT   // {l==0} Logical NOT
-#003F_0016 =CI1   // {ISz}  Convert I1 to ISz
-#003F_0017 =CI2   // {ISz}  Convert I2 to ISz
+#003F_0013 =DEC   // {l-4}  decrement 1
+#003F_0014 =INV   // {~l}   Bitwise Inversion
+#003F_0015 =NEG   // {-l}   Negate (2's compliment)
+#003F_0016 =NOT   // {l==0} Logical NOT
+#003F_0017 =CI1   // {ISz}  Convert I1 to ISz
+#003F_0018 =CI2   // {ISz}  Convert I2 to ISz
 // future: leading 0's, trailing 0's, count of 1's
 // Some single-arg extension commands might be:
 // (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt

@@ -490,11 +490,12 @@ void xsImpl(APtr aptr) { // impl for "execute small"
         case 0: /*INC */ r = r + 1; break;
         case 1: /*INC2*/ r = r + 2; break;
         case 2: /*INC4*/ r = r + 4; break;
-        case 3: /*INV */ r = ~r; break;
-        case 4: /*NEG */ r = -r; break;
-        case 5: /*NOT */ r = 0==r; break;
-        case 6: /*CI1 */ r = (I32) ((I8) r); break;
-        case 7: /*CI2 */ r = (I32) ((I16) r); break;
+        case 3: /*DEC */ r = r - 1; break;
+        case 4: /*INV */ r = ~r; break;
+        case 5: /*NEG */ r = -r; break;
+        case 6: /*NOT */ r = 0==r; break;
+        case 7: /*CI1 */ r = (I32) ((I8) r); break;
+        case 8: /*CI2 */ r = (I32) ((I16) r); break;
       }
       WS_PUSH(szMask & r);
       break;
@@ -1111,11 +1112,12 @@ U8* opName(U8 op) {
         case 0:    return "INC  ";
         case 1:    return "INC2 ";
         case 2:    return "INC4 ";
-        case 3:    return "INV  ";
-        case 4:    return "NEG  ";
-        case 5:    return "NOT  ";
-        case 6:    return "CI1  ";
-        case 7:    return "CI2  ";
+        case 3:    return "DEC  ";
+        case 4:    return "INV  ";
+        case 5:    return "NEG  ";
+        case 6:    return "NOT  ";
+        case 7:    return "CI1  ";
+        case 8:    return "CI2  ";
         default:   return "UNK1 ";
       }
 

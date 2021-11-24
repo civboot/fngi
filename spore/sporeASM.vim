@@ -14,7 +14,7 @@ syn keyword elInstr
       \ Sz1   Sz2   Sz4   SzA
       \ NOP   SWP   DRP   DRP2  DUP   DUPN  DVF   DVS
       \ RGL   RGS   FT    SR    LIT4  ZERO
-      \ INC   INC2  INC4  INV   NEG   NOT   CI1   CI2
+      \ INC   INC2  INC4  DEC   INV   NEG   NOT   CI1   CI2
       \ ADD   SUB   MOD   SHL   SHR   AND   OR    XOR   LAND  LOR
       \ EQ    NEQ   GE_U  LT_U  GE_S  LT_S
       \ MUL   DIV_U DIV_S ;

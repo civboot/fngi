@@ -60,18 +60,15 @@ $loc badMultiply // {a b -- a*b} uses loop to implement multiply
   $LOOP
     // if(!b) break
     .2 FTLL $lo b $mem_BREAK0
-
     // out = out + l2
     .2 ADD $getl a
-
     // l0 = l0 - 1
-    .2 $getl b   LIT SUB; #1 $h2
-    .2 $setl b
+    .2 DEC $getl b   .2 $setl b
   $AGAIN
   $END // for BREAK0
   RET;
 
-#0 #0 $XX badMultiply        $tAssertNot
+#0 #0 $XX badMultiply   #0   $tAssertEq
 #5 #1 $XX badMultiply   #5   $tAssertEq
 #5 #0 $XX badMultiply   #0   $tAssertEq
 #8 #8 $XX badMultiply   #40  $tAssertEq
