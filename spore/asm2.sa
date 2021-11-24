@@ -222,7 +222,7 @@ $loc AGAIN
 $loc XX $xsl dictGet  $xsl chkXLocals  XW; RET;
 
 // Get next token dict reference
-$loc c_dRef     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
+$loc dictGetR     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
 
 .4 $loc hAlign4 // align heap
   $xsl getHeap  DUP;
@@ -250,17 +250,12 @@ $loc tAssertNe      .4 NEQ $jmpl tAssert
 //   $end_lo
 //   SRLL ZERO; $lo a $h2 // a = 0
 
-$loc c_setRKeyMeta // {mask:U1} mask upper 8bits of dict rKey
+$loc c_setRKeyFnMeta // {mask:U1} mask upper 8bits of dict rKey
   .4 LIT SHL; #18 $h2 // mask=mask << 24
   .4 FTML FT; @c_vRKey $h2 // double fetch {mask key.value}
   .4 OR; // { maskedValue }
   FTML SWP; @c_vRKey $h2 // { &key newValue }
   .4 SR RET;
-
-$loc c_rKeyMeta // {mask:U1 -> maskedMeta} get rkey AND'd with mask
-  .4 FTML; @c_vRKey $h2 // {mask metaFn}
-  .4 LIT SHR; #18 $h2   // {mask meta}
-  AND RET; // {maskedMeta}
 
 $loc _lDict
   .4 LIT DVF    ; .2@D_scan,
@@ -274,7 +269,7 @@ $loc lDictSet $xsl _lDict   .4 LIT DVS RET; @D_dict $h2 // {value}
 $loc lo $xsl _lDict   .4 LIT DVF RET; @D_dict $h2 // {-> value}
 
 $loc alignSz // {value sz -> aligned} align value by sz bytes
-  @IS_LOCAL $c_setRKeyMeta
+  @IS_LOCAL $c_setRKeyFnMeta
   #1 $h2 // locals (4bytes)
   .2 SRLL; #0 $h2 // l0=sz
   .4 DUP; FTLL MOD; #0 $h2 // {value value%sz}
@@ -294,7 +289,7 @@ $loc decl_lo
   .2 ADD SRML RET; @c_vLocalOffset $h2 // add together and update vLocalOffset
 
 $loc end_lo // use the current declared local offsets to define the locals size
-  LIT @IS_LOCAL $mem_xsl c_setRKeyMeta // make it a locals fn
+  LIT @IS_LOCAL $mem_xsl c_setRKeyFnMeta // make it a locals fn
   .2 FTML; @c_vLocalOffset $h2
   LIT #4 $mem_xl alignSz
   SHR LIT #2 $mem_jmpl h2 // shift right 2 (divide by 4) and store.

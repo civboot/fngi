@@ -7,7 +7,24 @@
 // - Assembler (D_comp)
 
 
+// **********
+// * Dictionary Entry Metadata
+// The following modify the current function's metadata, which is used by the
+// compiler to determine how to compile tokens it encounteres.
+//
+// In addition, MODIFY can be used to change the "current function", allowing
+// modificaitons on past functions.
+//
+// - INSTANT: make an instant function (run immediately by default)
+// - ALI: make an always-instant function (always run immediately)
+// - PRE: make a prefixed function (run after parsing next by default)
 
+
+$loc MODIFY             $xsl dictGetR  SRML RET; @c_vRKey $h2
+$loc INSTANT            @IS_INSTANT $mem_jmpl c_setRKeyFnMeta
+              $INSTANT // for INSTANT itself
+$loc SUPER    $INSTANT  @IS_SUPER $mem_jmpl c_setRKeyFnMeta
+$loc PRE      $INSTANT  @IS_PRE $mem_jmpl c_setRKeyFnMeta
 
 // ******************
 // * Compiler:

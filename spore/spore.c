@@ -7,7 +7,7 @@
 #include <string.h>
 #include <setjmp.h>
 
-char dbgMode = 0x00;
+char dbgMode = 0x10;
 
 // ********************************************
 // ** Core Types
@@ -184,6 +184,7 @@ typedef struct {
   U8 len;
   U8 s[];
 } Key;
+#define keySizeWLen(LEN)  (4 + 1 + (LEN))
 
 #define MAX_TOKEN 32
 #define TOKEN_BUF 0x7D
@@ -617,7 +618,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   while(offset < *d.heap) {
     Key* key = Dict_key(d, offset);
     if(cstrEq(key->len, slen, key->s, s)) return offset;
-    U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
+    U16 entrySz = alignAPtr(keySizeWLen(key->len), 4);
     offset += entrySz;
   }
 
@@ -630,12 +631,12 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   U16 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset == *d.heap, E_cKey)
   Key* key = Dict_key(d, offset);
-  U16 addedSize = alignAPtr(1 + slen + 4, 4);
+  U16 addedSize = alignAPtr(keySizeWLen(slen), 4);
   ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
   key->value = value;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
-  *d.heap += alignAPtr(1 + slen + 4, 4);
+  *d.heap += alignAPtr(keySizeWLen(slen), 4);
   return offset;
 }
 
@@ -1157,7 +1158,7 @@ Key* Dict_findFn(U32 value) {
   while(offset < dict->heap) {
     Key* key = Dict_key(d, offset);
     if(value == (0xFFFFFFFFFFFF & key->value)) return key;
-    U16 entrySz = alignAPtr(key->len + 1 + 4, 4);
+    U16 entrySz = alignAPtr(keySizeWLen(key->len), 4);
     offset += entrySz;
   }
 
