@@ -6,15 +6,6 @@
 //   | high byte |  low byte |
 
 .4
-// **********
-// * Memory Locations
-#0000_0000 =null
-#0000_0004 =vHeap
-#0000_0008 =vTopHeap
-#0000_000C =vTopMem
-#0000_0010 =vErr
-#0000_0014 =vState
-#0000_0018 =vTestIdx
 
 
 // **********
@@ -132,20 +123,43 @@
 // working stack (besides the returned err).
 #0A =D_xsCatch
 
+
+// **********
+// * Memory Locations
+#0000_0000 =null
+#0000_0004 =vHeap
+#0000_0008 =vTopHeap
+#0000_000C =vTopMem
+#0000_0010 =vErr
+#0000_0014 =vState
+#0000_0018 =vTestIdx
+
+// Dictionary Struct
+#0000_001C =c_vDictBuf
+#0000_0020 =c_vDictHeap
+#0000_0022 =c_vDictEnd
+#0000_0024 =c_vDictLHeap
+
+// TokenBuf Struct
+#0000_0028 =c_vTokenBuf   // TokenBuf struct
+#0000_002C =c_vTokenLen
+
+
+
+// .4
+// @vTestIdx     INC4^     =c_vDictBuf  // Dict struct start
+// @c_vDictBuf   INC4^     =c_vDictHeap
+// @c_vDictHeap  INC2^     =c_vDictEnd
+// @c_vDictEnd   INC2^     =c_vDictLHeap
+// @c_vDictBuf   #8 ADD^   =c_vTokenBuf   // TokenBuf struct
+// @c_vTokenBuf  INC4^     =c_vTokenLen
+
 // **********
 // * Global Compiler Variables
 @vHeap .4 FT^ =c_vRKey        #0 .4, // rKey, ref to current dict key.
 @vHeap .4 FT^ =c_vLocalOffset #0 .2, // Local Offset (for local var setup)
 
-// **********
-// * Compiler Structs (initialzed down from topMem)
-.4
-@vTopMem FT^  #C SUB^   =c_vDictBuf  // Dict struct start
-@c_vDictBuf   INC4^     =c_vDictHeap
-@c_vDictHeap  INC2^     =c_vDictEnd
-@c_vDictEnd   INC2^     =c_vDictLHeap
-@c_vDictBuf   #8 SUB^   =c_vTokenBuf   // TokenBuf struct
-@c_vTokenBuf  INC4^     =c_vTokenLen
+
 
 // **********
 // * Global Constants

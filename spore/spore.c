@@ -991,16 +991,16 @@ ssize_t readSrc(size_t nbyte) {
   };                                      \
   /* configure heap+topheap */            \
   *env.heap = 0x18 + 4;                   \
-  *env.topHeap = MS;                      \
-  *env.topMem = MS;                       \
-  /* Dict is right at the top */          \
-  *env.topHeap -= sizeof(Dict);           \
-  dict = (Dict*) (mem + *env.topHeap);    \
+  dict = (Dict*) (mem + *env.heap);       \
   dict->heap = 0;                         \
   dict->end = DS;                         \
+  *env.heap += sizeof(Dict);              \
   /* Then Token State*/                   \
-  *env.topHeap -= sizeof(TokenState);     \
-  tokenState = (TokenState*) (mem + *env.topHeap); \
+  tokenState = (TokenState*) (mem + *env.heap); \
+  *env.heap += sizeof(TokenState);        \
+  /* Configure topHeap */                 \
+  *env.topHeap = MS;                      \
+  *env.topMem = MS;                       \
   /* Reserve space for local stack*/      \
   *env.topHeap -= LS;                     \
   env.ls.mem = mem + *env.topHeap;        \
@@ -1338,6 +1338,7 @@ void compileStr(U8* s) {
   assert(0x04 == WS_POP());
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
+  compileStr("@c_vTokenBuf FT^"); assert(tokenState->buf == WS_POP());
   compileStr("@vTopHeap FT^");  assert(*env.topHeap == WS_POP());
   compileStr("@c_vDictHeap");   assert(expectDictHeap == WS_POP());
 }
