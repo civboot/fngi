@@ -5,35 +5,35 @@
 // These macros must be defined in pure ASM. They build on eachother
 // to make the syntax much more readable.
 
-@vHeap .4 FT^ =h2  // h2: {val:2} push 2bytes from stack to heap
-  .4 FTML SWP; .2@vHeap,  // fetch heap and swap {heap, val}
+@heap .4 FT^ =h2  // h2: {val:2} push 2bytes from stack to heap
+  .4 FTML SWP; .2@heap,  // fetch heap and swap {heap, val}
   .2      SR;             // store 2 byte value at heap
-  .4 FTML INC2; .2@vHeap, // fetch heap and increment by 2
-  .4 SRML  RET; .2@vHeap, // store new heap and return
+  .4 FTML INC2; .2@heap, // fetch heap and increment by 2
+  .4 SRML  RET; .2@heap, // store new heap and return
 
-@vHeap .4 FT^ =h4  // h4: {val:4} push 4bytes from stack to heap
-  .4 FTML SWP; .2@vHeap,  // ft heap
+@heap .4 FT^ =h4  // h4: {val:4} push 4bytes from stack to heap
+  .4 FTML SWP; .2@heap,  // ft heap
   .4      SR;             // sr 4byte value
-  .4 FTML INC4; .2@vHeap, // ft heap and +4
-  .4 SRML  RET; .2@vHeap, // sr new heap
+  .4 FTML INC4; .2@heap, // ft heap and +4
+  .4 SRML  RET; .2@heap, // sr new heap
 
 // {v:4} compile a LIT4 (value-only) to the heap for LIT4.
 // Note: compiled as two U2 values with largest first.
-@vHeap .4 FT^ =hL4
+@heap .4 FT^ =hL4
   // Duplicate, then call h2(v>>0x10)
   DUP;   LIT SHR XSL; #10 $h2  @h2 $h2 // Compile high bits
   JMPL; @h2 $h2
 
-@vHeap .4 FT^ =_dict // setup for dict
+@heap .4 FT^ =_dict // setup for dict
   .4 LIT DVF; @D_scan $h2
   .4 FTML; @c_dictBuf $h2 // dict.buf
   .2 LIT RET; @c_dictHeap $h2 // &dict.heap
 
-@vHeap .4 FT^ =dictSet // dctSet: Set "standard" dictionary to next token.
+@heap .4 FT^ =dictSet // dctSet: Set "standard" dictionary to next token.
   .4 XSL; @_dict $h2
   .4 LIT DVS RET; .2@D_dict,
 
-@vHeap .4 FT^ =c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
+@heap .4 FT^ =c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
   .4 FTML INC4; @c_vRKey $h2 // fetch {mask &key.meta}
   .1 FT; // fetch 1 byte {mask meta}
   .1 OR;
@@ -42,7 +42,7 @@
 
 // Define $loc for cleaner function/etc names.
 // This creates a name and sets up for local variables.
-@vHeap .4 FT^ =loc
+@heap .4 FT^ =loc
   // update rKey
   .4 FTML; @c_dictBuf $h2 // dict.buf
   .2 FTML; @c_dictHeap $h2 // dict.heap
@@ -52,7 +52,7 @@
   .4 LIT XSL; @IS_FN $h2 @c_setRKeyMeta $h2
 
   // Set dict[nextToken] = heap
-  .4 FTML XSL; @vHeap $h2 @dictSet $h2
+  .4 FTML XSL; @heap $h2 @dictSet $h2
 
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   .2 SRML ZERO; @c_vLocalOffset $h2   // zero localDict.offset
@@ -63,8 +63,8 @@ $loc dictGet   // { -> v}
   .4 LIT DVF RET; @D_dict $h2
 
 .4
-$loc getHeap     FTML RET; @vHeap $h2
-$loc setHeap     SRML RET; @vHeap $h2
+$loc getHeap     FTML RET; @heap $h2
+$loc setHeap     SRML RET; @heap $h2
 $loc getTopHeap  FTML RET; @topHeap $h2
 $loc setTopHeap  SRML RET; @topHeap $h2
 $loc getSz       LIT DVF RET; @D_sz $h2

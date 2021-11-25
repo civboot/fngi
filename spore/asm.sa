@@ -127,7 +127,7 @@
 // **********
 // * Memory Locations
 #0000_0000 =null
-#0000_0004 =vHeap
+#0000_0004 =heap
 #0000_0008 =topHeap
 #0000_000C =topMem
 #0000_0010 =err
@@ -146,8 +146,8 @@
 
 // **********
 // * Global Compiler Variables
-@vHeap .4 FT^ =c_vRKey        #0 .4, // rKey, ref to current dict key.
-@vHeap .4 FT^ =c_vLocalOffset #0 .2, // Local Offset (for local var setup)
+@heap .4 FT^ =c_vRKey        #0 .4, // rKey, ref to current dict key.
+@heap .4 FT^ =c_vLocalOffset #0 .2, // Local Offset (for local var setup)
 
 // **********
 // * Global Constants
