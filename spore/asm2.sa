@@ -26,8 +26,8 @@
 
 @vHeap .4 FT^ =_dict // setup for dict
   .4 LIT DVF; @D_scan $h2
-  .4 FTML; @c_vDictBuf $h2 // dict.buf
-  .2 LIT RET; @c_vDictHeap $h2 // &dict.heap
+  .4 FTML; @c_dictBuf $h2 // dict.buf
+  .2 LIT RET; @c_dictHeap $h2 // &dict.heap
 
 @vHeap .4 FT^ =dictSet // dctSet: Set "standard" dictionary to next token.
   .4 XSL; @_dict $h2
@@ -44,8 +44,8 @@
 // This creates a name and sets up for local variables.
 @vHeap .4 FT^ =loc
   // update rKey
-  .4 FTML; @c_vDictBuf $h2 // dict.buf
-  .2 FTML; @c_vDictHeap $h2 // dict.heap
+  .4 FTML; @c_dictBuf $h2 // dict.buf
+  .2 FTML; @c_dictHeap $h2 // dict.heap
   .4 ADD SRML; @c_vRKey $h2 // rKey=dict.buf + dict.heap
 
   // // set rKey as fn type
@@ -56,7 +56,7 @@
 
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   .2 SRML ZERO; @c_vLocalOffset $h2   // zero localDict.offset
-  .2 SRML ZERO RET; @c_vDictLHeap $h2 // zero localDict.heap
+  .2 SRML ZERO RET; @c_dictLHeap $h2 // zero localDict.heap
 
 $loc dictGet   // { -> v}
   .4 XSL; @_dict $h2
@@ -65,8 +65,8 @@ $loc dictGet   // { -> v}
 .4
 $loc getHeap     FTML RET; @vHeap $h2
 $loc setHeap     SRML RET; @vHeap $h2
-$loc getTopHeap  FTML RET; @vTopHeap $h2
-$loc setTopHeap  SRML RET; @vTopHeap $h2
+$loc getTopHeap  FTML RET; @topHeap $h2
+$loc setTopHeap  SRML RET; @topHeap $h2
 $loc getSz       LIT DVF RET; @D_sz $h2
 $loc setSz       LIT DVS RET; @D_sz $h2
 $loc getWsLen    LIT DVF RET; @D_wslen $h2
@@ -270,10 +270,10 @@ $loc c_setRKeyFnMeta // {mask:U1} mask upper 8bits (fn meta) of current key's va
 $loc _lDict
   .4 LIT DVF    ; .2@D_scan,
   // localDict.buf = dict.buf + dict.heap
-  .4 LIT4; @c_vDictBuf $hL4  .4 FT;
-  .4 LIT4; @c_vDictHeap $hL4 .2 FT;
+  .4 LIT4; @c_dictBuf $hL4  .4 FT;
+  .4 LIT4; @c_dictHeap $hL4 .2 FT;
   ADD;
-  .4 LIT4 RET; @c_vDictLHeap $hL4    // &localDict.heap
+  .4 LIT4 RET; @c_dictLHeap $hL4    // &localDict.heap
 
 $loc lDictSet $xsl _lDict   .4 LIT DVS RET; @D_dict $h2 // {value}
 $loc lo $xsl _lDict   .4 LIT DVF RET; @D_dict $h2 // {-> value}

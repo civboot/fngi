@@ -92,5 +92,5 @@ $assertWsEmpty
 
 
 / #0
-/ .4 @cAllowPanicMask  @vState FT^OR^ @vState SWP^SR^
+/ .4 @cAllowPanicMask  @state FT^OR^ @state SWP^SR^
 / $tAssert

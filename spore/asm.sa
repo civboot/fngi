@@ -128,31 +128,21 @@
 // * Memory Locations
 #0000_0000 =null
 #0000_0004 =vHeap
-#0000_0008 =vTopHeap
-#0000_000C =vTopMem
-#0000_0010 =vErr
-#0000_0014 =vState
-#0000_0018 =vTestIdx
+#0000_0008 =topHeap
+#0000_000C =topMem
+#0000_0010 =err
+#0000_0014 =state
+#0000_0018 =testIdx
 
 // Dictionary Struct
-#0000_001C =c_vDictBuf
-#0000_0020 =c_vDictHeap
-#0000_0022 =c_vDictEnd
-#0000_0024 =c_vDictLHeap
+#0000_001C =c_dictBuf
+#0000_0020 =c_dictHeap
+#0000_0022 =c_dictEnd
+#0000_0024 =c_dictLHeap
 
 // TokenBuf Struct
-#0000_0028 =c_vTokenBuf   // TokenBuf struct
-#0000_002C =c_vTokenLen
-
-
-
-// .4
-// @vTestIdx     INC4^     =c_vDictBuf  // Dict struct start
-// @c_vDictBuf   INC4^     =c_vDictHeap
-// @c_vDictHeap  INC2^     =c_vDictEnd
-// @c_vDictEnd   INC2^     =c_vDictLHeap
-// @c_vDictBuf   #8 ADD^   =c_vTokenBuf   // TokenBuf struct
-// @c_vTokenBuf  INC4^     =c_vTokenLen
+#0000_0028 =c_tokenBuf   // TokenBuf struct
+#0000_002C =c_tokenLen
 
 // **********
 // * Global Compiler Variables

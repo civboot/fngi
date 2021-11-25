@@ -1340,9 +1340,9 @@ void compileStr(U8* s) {
   assert(0x04 == WS_POP());
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
-  compileStr("@c_vTokenBuf FT^"); assert(tokenState->buf == WS_POP());
-  compileStr("@vTopHeap FT^");  assert(*env.topHeap == WS_POP());
-  compileStr("@c_vDictHeap");   assert(expectDictHeap == WS_POP());
+  compileStr("@c_tokenBuf FT^"); assert(tokenState->buf == WS_POP());
+  compileStr("@topHeap FT^");  assert(*env.topHeap == WS_POP());
+  compileStr("@c_dictHeap");   assert(expectDictHeap == WS_POP());
 }
 
 /*test*/ void testAsm2() {

@@ -102,13 +102,13 @@ $MODIFY loc             $c_makeFn
 //   .4 LIT DVF; @D_rdict $h2 // get dictionary reference of current token
 //   SRML; @c_rFN $h2 // store to c_rFN
 // 
-//   @c_vDictHeap $c_FTML2
+//   @c_dictHeap $c_FTML2
 //   .2 SRML RET; @c_fnDictHeap $h2 // update fnDictHeap
 // 
 // $c_floc c_fnClean
 //   @assertWsEmpty $c_XSW
 //   @c_fnDictHeap $c_FTML2 // fetch dict heap after current fn
-//   .2 SRML RET; @c_vDictHeap $h2 // store to vDictHeap (forget keys after fn)
+//   .2 SRML RET; @c_dictHeap $h2 // store to dictHeap (forget keys after fn)
 // 
 // // {8bit mask} apply an 8-bit mask to the c_rFN (current fn ref)
 // $c_floc c_fnMask
