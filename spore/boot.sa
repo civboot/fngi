@@ -20,11 +20,20 @@
 // - PRE: make a prefixed function (run after parsing next by default)
 
 
-$loc MODIFY             $xsl dictGetR  SRML RET; @c_vRKey $h2
-$loc INSTANT            @IS_INSTANT $mem_jmpl c_setRKeyFnMeta
-              $INSTANT // for INSTANT itself
-$loc SUPER    $INSTANT  @IS_SUPER $mem_jmpl c_setRKeyFnMeta
-$loc PRE      $INSTANT  @IS_PRE $mem_jmpl c_setRKeyFnMeta
+$loc MODIFY   $xsl dictGetR  SRML RET; @c_vRKey $h2
+$loc INSTANT  LIT @IS_INSTANT $mem_jmpl c_setRKeyFnMeta
+$loc SUPER    LIT @IS_SUPER $mem_jmpl c_setRKeyFnMeta
+$loc PRE      LIT @IS_PRE $mem_jmpl c_setRKeyFnMeta
+
+$loc c_makeFn LIT @IS_FN $mem_jmpl c_setRKeyMeta
+
+// These were defined in asm2.sa before loc
+$MODIFY h2              $c_makeFn
+$MODIFY h4              $c_makeFn
+$MODIFY hL4             $c_makeFn
+$MODIFY dictSet         $c_makeFn
+$MODIFY c_setRKeyMeta   $c_makeFn
+$MODIFY loc             $c_makeFn
 
 // ******************
 // * Compiler:

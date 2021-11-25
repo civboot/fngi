@@ -1373,7 +1373,7 @@ void compileStr(U8* s) {
   testWriteHeap();
   testExecuteInstr();
   testAsm2();
-  // testBoot();
+  testBoot();
 
   assert(0 == WS_LEN);
 }

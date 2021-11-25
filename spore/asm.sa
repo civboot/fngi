@@ -159,19 +159,27 @@
 @vHeap .4 FT^ =c_vRKey        #0 .4, // rKey, ref to current dict key.
 @vHeap .4 FT^ =c_vLocalOffset #0 .2, // Local Offset (for local var setup)
 
-
-
 // **********
 // * Global Constants
 .4
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
 #0001_0000 =cAllowPanicMask
 
-// The following are 1-byte masks for function metadata
-#01 =IS_LOCAL // 1=has local stack (XL/XW instead of XSL/XSW)
+// 1-byte masks for fnMeta (upper byte of dict value)
+#01 =IS_LARGE_FN // 1=has local stack (XL/XW instead of XSL/XSW)
 #02 =IS_INSTANT // 1=is instant
 #04 =IS_SUPER // 1=super always instant fn ($ may alter behavior)
 #08 =IS_PRE // 1=is prefix
+
+// masks for varMeta (same position as fnMeta)
+#C0 =VAR_SZ_MASK // sz instr to use for var.
+
+// The following are byte masks for meta (byte following dict value)
+#07 =META_TY_MASK // # Lower three bits determine type
+#00 =IS_CONST // constant value, should be compiled as a literal
+#01 =IS_FN    // function, can be called and has an fnMeta
+#02 =IS_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
+#03 =IS_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
 
 // Error Classes
 // [E000 - E100): built-in errors.
