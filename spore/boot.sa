@@ -26,14 +26,32 @@ $loc SUPER    LIT @IS_SUPER $mem_jmpl c_setRKeyFnMeta
 $loc PRE      LIT @IS_PRE $mem_jmpl c_setRKeyFnMeta
 
 $loc c_makeFn LIT @IS_FN $mem_jmpl c_setRKeyMeta
+$loc c_makeGlobal LIT @IS_GLOBAL $mem_jmpl c_setRKeyMeta
 
 // These were defined in asm2.sa before loc
-$MODIFY h2              $c_makeFn
-$MODIFY h4              $c_makeFn
-$MODIFY hL4             $c_makeFn
-$MODIFY dictSet         $c_makeFn
-$MODIFY c_setRKeyMeta   $c_makeFn
-$MODIFY loc             $c_makeFn
+$MODIFY c_setRKeyMeta $c_makeFn
+$MODIFY h2      $c_makeFn
+$MODIFY h4      $c_makeFn
+$MODIFY hL4     $c_makeFn
+$MODIFY dictSet $c_makeFn
+$MODIFY loc     $c_makeFn
+
+// Global Variables
+$MODIFY heap $c_makeGlobal
+$MODIFY heap $c_makeGlobal
+$MODIFY topHeap $c_makeGlobal
+$MODIFY topMem $c_makeGlobal
+$MODIFY err $c_makeGlobal
+$MODIFY state $c_makeGlobal
+$MODIFY testIdx $c_makeGlobal
+
+$MODIFY c_dictBuf $c_makeGlobal
+$MODIFY c_dictHeap $c_makeGlobal
+$MODIFY c_dictEnd $c_makeGlobal
+$MODIFY c_dictLHeap $c_makeGlobal
+$MODIFY c_tokenBuf $c_makeGlobal
+$MODIFY c_tokenLen $c_makeGlobal
+
 
 // ******************
 // * Compiler:
