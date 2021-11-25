@@ -25,40 +25,44 @@
   JMPL; @h2 $h2
 
 @heap .4 FT^ =_dict // setup for dict
-  .4 LIT DVF; @D_scan $h2
   .4 FTML; @c_dictBuf $h2 // dict.buf
   .2 LIT RET; @c_dictHeap $h2 // &dict.heap
 
 @heap .4 FT^ =dictSet // dctSet: Set "standard" dictionary to next token.
+  .4 LIT DVF; @D_scan $h2
   .4 XSL; @_dict $h2
   .4 LIT DVS RET; .2@D_dict,
 
 @heap .4 FT^ =c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
-  .4 FTML INC4; @c_vRKey $h2 // fetch {mask &key.meta}
+  .4 FTML INC4; @c_rKey $h2 // fetch {mask &key.meta}
   .1 FT; // fetch 1 byte {mask meta}
   .1 OR;
-  .4 FTML INC4; @c_vRKey $h2
+  .4 FTML INC4; @c_rKey $h2
   .1 SR RET;
 
-// Define $loc for cleaner function/etc names.
-// This creates a name and sets up for local variables.
-@heap .4 FT^ =loc
+@heap .4 FT^ =locSetup
   // update rKey
   .4 FTML; @c_dictBuf $h2 // dict.buf
   .2 FTML; @c_dictHeap $h2 // dict.heap
-  .4 ADD SRML; @c_vRKey $h2 // rKey=dict.buf + dict.heap
+  .4 ADD SRML RET; @c_rKey $h2 // rKey=dict.buf + dict.heap
 
-  // // set rKey as fn type
-  .4 LIT XSL; @IS_FN $h2 @c_setRKeyMeta $h2
+// Define $loc for cleaner function/etc names.
+// This creates a name and sets up for local variables.
+@heap .4 FT^ =loc  // rename locFn or something
+  .4 XSL; @locSetup $h2
 
   // Set dict[nextToken] = heap
   .4 FTML XSL; @heap $h2 @dictSet $h2
 
+  // // set rKey as fn type
+  .4 LIT XSL; @IS_FN $h2 @c_setRKeyMeta $h2
+
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
-  .2 SRML ZERO; @c_vLocalOffset $h2   // zero localDict.offset
+  .2 SRML ZERO; @c_localOffset $h2   // zero localDict.offset
   .2 SRML ZERO RET; @c_dictLHeap $h2 // zero localDict.heap
 
 $loc dictGet   // { -> v}
+  .4 LIT DVF; @D_scan $h2
   .4 XSL; @_dict $h2
   .4 LIT DVF RET; @D_dict $h2
 
@@ -232,7 +236,9 @@ $loc AGAIN
 $loc XX $xsl dictGet  $xsl chkXLocals  XW; RET;
 
 // Get next token dict reference
-$loc dictGetR     $xsl c_scan  .4 LIT DVF RET; @D_rdict $h2
+$loc dictGetR
+  $xsl c_scan
+  .4 LIT DVF RET; @D_rdict $h2
 
 .4 $loc hAlign4 // align heap
   $xsl getHeap  DUP;
@@ -262,9 +268,9 @@ $loc tAssertNe      .4 NEQ $jmpl tAssert
 
 $loc c_setRKeyFnMeta // {mask:U1} mask upper 8bits (fn meta) of current key's value
   .4 LIT SHL; #18 $h2 // mask=mask << 24
-  .4 FTML FT; @c_vRKey $h2 // double fetch {mask key.value}
+  .4 FTML FT; @c_rKey $h2 // double fetch {mask key.value}
   .4 OR; // { maskedValue }
-  FTML SWP; @c_vRKey $h2 // { &key newValue }
+  FTML SWP; @c_rKey $h2 // { &key newValue }
   .4 SR RET;
 
 $loc _lDict
@@ -294,13 +300,13 @@ $loc alignSz // {value sz -> aligned} align value by sz bytes
 // It is the job of the programmer to ensure they are aligned.
 $loc decl_lo
   .4 DUP; // {sz sz}
-  .2 FTML SWP @c_vLocalOffset $mem_xl alignSz // {sz alignedOffset}
+  .2 FTML SWP @c_localOffset $mem_xl alignSz // {sz alignedOffset}
   .4 DUP $xsl lDictSet // set next token to alignedOffset {sz alignedOffset}
-  .2 ADD SRML RET; @c_vLocalOffset $h2 // add together and update vLocalOffset
+  .2 ADD SRML RET; @c_localOffset $h2 // add together and update vLocalOffset
 
 $loc end_lo // use the current declared local offsets to define the locals size
   LIT @IS_LARGE_FN $mem_xsl c_setRKeyFnMeta // make it a locals fn
-  .2 FTML; @c_vLocalOffset $h2
+  .2 FTML; @c_localOffset $h2
   LIT #4 $mem_xl alignSz
   SHR LIT #2 $mem_jmpl h2 // shift right 2 (divide by 4) and store.
 

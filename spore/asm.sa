@@ -131,7 +131,7 @@
 #0000_0008 =topHeap
 #0000_000C =topMem
 #0000_0010 =err
-#0000_0014 =state
+#0000_0014 =c_state
 #0000_0018 =testIdx
 
 // Dictionary Struct
@@ -146,8 +146,8 @@
 
 // **********
 // * Global Compiler Variables
-@heap .4 FT^ =c_vRKey        #0 .4, // rKey, ref to current dict key.
-@heap .4 FT^ =c_vLocalOffset #0 .2, // Local Offset (for local var setup)
+@heap .4 FT^ =c_rKey        #0 .4, // rKey, ref to current dict key.
+@heap .4 FT^ =c_localOffset #0 .2, // Local Offset (for local var setup)
 
 // **********
 // * Global Constants
@@ -214,4 +214,5 @@
 #E0CD  =E_cXHasL  // small-execute to fn w/locals
 #E0CE  =E_cXNoL   // large-execute to fn wo/locals
 #E0CF  =E_cErr    // D_assert err code invalid
+#E0CF  =E_cNotGlobal // using a non-global as global
 
