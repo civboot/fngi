@@ -4,45 +4,21 @@
 
 If we want to build an entirely understandable tech stack (as part of
 civboot.org or bootstrappable.org) we need a language which can be
-implemented easily, has excellent expressiveness and readability, and can
-modify itself one expression at a time. The language has to be able to
-unroll from simple beginnings (implemented in a hex editor or Forth) to be
-full-featured that we can build a Civboot, with all the software complexity
-that entails, on top of it.
+implemented easily, has excellent expressiveness and readability, can
+modify itself one expression at a time, and has a simple security model built in
+that at least prevents us from shooting _ourselves_ in the foot. The language
+has to be able to unroll from simple beginnings (implemented in a hex editor or
+similar) to a full-featured language that we can build a Civboot, with all the
+software complexity that entails, on top of it.
 
-That language is Fngi, a language inspired primarily by FORTH, C and Rust. It
-is designed to be able to be bootstrapped from Forth ([Why
-Forth?](notes/why_forth.md)) with relatively minimal code and the intent of
-being fully self-hosting on memory constrained systems with less than 2MiB of
-total memory (and hopefully less, the real target is more like 32KiB).
+That language is Fngi, a language inspired primarily by FORTH and C. It is
+self-bootstrapped at runtime from Spor: an assembly bytecode, interpreter and
+syntax. Spor itself is self-bootstrapped from an extremely lean native
+implementation (~1000-2000 lines of C).
 
-Fngi targets a somewhat familiar C-like syntax, except it values consistency
-and understandability above all-else. This means that parens `()` are always an
-expression, `{}` is always an initialized concrete data type and `[]` is
-always a type declaration or type name. Fngi also allows expressions to more
-easily compose than in most languages: many constructs such as blocks and
-if-statements are expressions that can return a value. See
-[example.fn](notes/example.fn) for example syntax.
+Read more about Spor at [spor.md](./spor.md).
 
-Fngi is a strongly typed language that can be run dynamically at compile time.
-Along with the powerful macro system, large parts of the fngi language are
-written in fngi without the need for a binary bootstraping executable. TODO:
-add document with more info.
-
-Fngi targets a C-like runtime without a system allocator. It has C-like
-structs, Rust-like traits/interfaces and Rust-like enums. It has C-like memory
-management with a few different standards for its API (no global allocator
-except heap grow/shrink, arena/GC/application-specific allocators encouraged).
-It is designed to seamlessly compile directly into wasm or to a physical or
-virtual machine.
-
-# Spore
-Fngi is implemented in spore, a virtual machine bytecode, assembly and
-stack-based language. Spore starts as a very primitive assembler and 16bit
-bytecode. The bytecode is sophisticated enough to implement a general-purpose
-language in (fngi) but simple enough to implement in a few thousand lines
-of C or assembly.
-
+Read more about Fngi at [fngi.md](./fngi.md)
 
 
 # Hacking
@@ -55,18 +31,6 @@ in your commit message. This is only required for your first commit:
 I <author> assent to license this contribution under the dual licenses of
 the UNLICENSE or MIT license listed in the `UNLICENSE` and `README.md` files of
 this repository.
-```
-
-To setup the python environment do the below. 
-
-> Note: `requirements.txt` dependencies are only used for testing purposes.
-
-```
-python3 -m venv venv/
-source venv/bin/activate
-pip install -r requirements.txt
-# Run tests
-pytest -vvv fnpy/* tests/*
 ```
 
 # LICENSING
