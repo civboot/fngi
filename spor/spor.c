@@ -1028,7 +1028,7 @@ void compileFile(U8* s) {
 
 #define NEW_ENV(MS, WS, RS, LS, DS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS); \
-  compileFile("spor/asm.sa");
+  compileFile("spor/asm.sp");
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
@@ -1347,22 +1347,22 @@ void compileStr(U8* s) {
 
 /*test*/ void testAsm2() {
   printf("## testAsm2\n"); SMALL_ENV;
-  compileFile("spor/asm2.sa");
+  compileFile("spor/asm2.sp");
   assert(!WS_LEN);
   compileLoop(); ASSERT_NO_ERR();
-  compileFile("spor/testAsm2.sa");
+  compileFile("spor/testAsm2.sp");
 }
 
 /*test*/ void testBoot() {
   printf("## testBoot\n"); SMALL_ENV;
-  compileFile("spor/asm2.sa");
-  compileFile("spor/boot.sa");
+  compileFile("spor/asm2.sp");
+  compileFile("spor/boot.sp");
 
-  // printf("## testBoot... testBoot.sa\n");
-  // compileFile("spor/testBoot.sa");
+  // printf("## testBoot... testBoot.sp\n");
+  // compileFile("spor/testBoot.sp");
 
-  // printf("## testBoot... boot.sp\n");
-  // compileFile("spor/boot.sp");
+  // printf("## testBoot... boot.fn\n");
+  // compileFile("spor/boot.fn");
 }
 
 
