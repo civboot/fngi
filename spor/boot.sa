@@ -1,8 +1,8 @@
-// Bootstrap outselves outside of spore assembly and into spore proper.
+// Bootstrap outselves outside of spor assembly and into fngi.
 // Requires: asm*.sa
 //
 // Main items we already have through device ports:
-// - Token scanner (D_scan). Tokens are the same for spore asm as spore proper.
+// - Token scanner (D_scan). Tokens are the same for spor and fngi
 // - Local offset and location store (D_dict)
 // - Assembler (D_comp)
 
@@ -150,7 +150,7 @@ $loc getg // compile a global variable fetch.
 // $assertWsEmpty
 // 
 // // usage: $floc <fn-name>
-// // Set location of spore fn. This is ultra-basic. The syntax is still assembly.
+// // Set location of fngi fn. This is ultra-basic. The syntax is still assembly.
 // $loc c_floc
 //   #00FF $c_LIT  @c_stateClr $c_XSW // clear toggle bits
 //   .2 SRML ZERO; @XSTATE $h2       // clear XSTATE
@@ -181,7 +181,7 @@ $loc getg // compile a global variable fetch.
 // $c_floc %%      $INSTANT @c_scan $c_XSW  .4 LIT DVF RET; @D_comp $h2 // asm compile
 // $c_floc ASM_BEG          @QUIT_MASK $c_LIT  @c_stateSet $c_JMPW // begin assembly syntax
 // 
-// // Note: this actually isn't a comment. It's defining comments for spore.
+// // Note: this actually isn't a comment. It's defining comments for fngi.
 // $c_floc //      $INSTANT .4 LIT DVF RET; @D_comp $h2 // asm compile
 // 
 // $loc c_compMaskInstr // {maskInstr:4}
@@ -229,7 +229,7 @@ $loc getg // compile a global variable fetch.
 //   @h2 $c_JMPW // Compile the fn ptr.
 // $dForget j_cnl
 // 
-// // Core Spore compiler function. Compiles the metaFn passed to it as a spore
+// // Core Spore compiler function. Compiles the metaFn passed to it as a fngi
 // // function, checking for PRE, TNT, ALI and LCL bits appropriately.
 // $loc c_compMetaFn // {metaFn} compile the meta fn
 //   // Check the meta for PRE. XOR with preBit to toggle
@@ -271,7 +271,7 @@ $loc getg // compile a global variable fetch.
 //   FT; // fetch it {metaFn}
 //   @c_compMetaFn $c_JMPW
 // 
-// $loc ASM_END // spore compilation loop. Calling will end ASM syntax.
+// $loc ASM_END // fngi compilation loop. Calling will end ASM syntax.
 //   @QUIT_MASK $c_LIT  @c_stateClr $c_XSW
 //   $loc j_loop
 //     @c_comp $c_XSW
