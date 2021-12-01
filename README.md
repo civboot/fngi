@@ -1,47 +1,56 @@
 # Fngi: the language that grows on the silicone
 
-> **NOTICE:** in development and currently unusable
+> **NOTICE:** in development. Spore is somewhat usable (albeit without even file
+> handling support), with a line-of-sight for boostrapping into fngi.
 
 If we want to build an entirely understandable tech stack (as part of
 civboot.org or bootstrappable.org) we need a language which can be
 implemented easily, has excellent expressiveness and readability, can
-modify itself one expression at a time, and has a simple security model built in
-that at least prevents us from shooting _ourselves_ in the foot. The language
-has to be able to unroll from simple beginnings (implemented in a hex editor or
-similar) to a full-featured language that we can build a Civboot, with all the
-software complexity that entails, on top of it.
+modify itself, and has a simple but effective security model built in. The
+language has to be able to unroll from simple beginnings (implemented in a hex
+editor or similar) to a full-featured language that we can use to build a
+Civboot -- and have fun in the process!
 
 That language is Fngi, a language inspired primarily by FORTH and C. It is
 self-bootstrapped at runtime from Spor: an assembly bytecode, interpreter and
 syntax. Spor itself is self-bootstrapped from an extremely lean native
-implementation (~1000-2000 lines of C).
+implementation, which is currently ~1-2 thousand lines of C but is intended to
+be writeable in a hex editor (when targeting a simple processor).
 
-Read more about Spor at [spor.md](./spor.md).
+Fngi itself is intended to bootstrap a full-featured OS in very minimal amounts
+of code that is runnable on microcontrollers with 64k of memory or less and zero
+hardware support for memory maangement, thread handling, etc.
 
-Read more about Fngi at [fngi.md](./fngi.md)
-
+Read more:
+* [spor.md](./spor.md).
+* [fngi.md](./fngi.md)
+* [Unstructured Notes](./notes/)
 
 # Hacking
 
-When opening a PR to submit code to this repository you must assent to submit
-your code under the license listed in this project. You must put this assent
-in your commit message. This is only required for your first commit:
+When opening a PR to submit code to this repository you must include the
+following disclaimer in your first commit message:
 
 ```
-I <author> assent to license this contribution under the dual licenses of
-the UNLICENSE or MIT license listed in the `UNLICENSE` and `README.md` files of
-this repository.
+I <author> assent to license this and all future contributions to this project
+under the dual licenses of the UNLICENSE or MIT license listed in the
+`UNLICENSE` and `README.md` files of this repository.
 ```
 
 # LICENSING
 
-The body of work in this directory are licensed using the
-[UNLICENSE](./UNLICENSE), unless otherwise specified at the beginning of the
-source file (only for files in `testing/`).
+This work is part of the Civboot project and therefore primarily exists for
+educational purposes. Attribution to the authors and project is appreciated but
+not necessary.
+
+Therefore this body of work is licensed using the [UNLICENSE](./UNLICENSE),
+unless otherwise specified at the beginning of the source file.
 
 If for any reason the UNLICENSE is not valid in your jurisdiction or project,
-this work can be dual licensed with the MIT license below at your discression.
+this work can be singly or dual licensed at your discression with the MIT
+license below.
 
+<sub><sup>
 ```
 Copyright 2021 Garrett Berg
 
@@ -63,3 +72,4 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+</sup></sub>
