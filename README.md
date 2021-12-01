@@ -1,6 +1,6 @@
 # Fngi: the language that grows on the silicone
 
-> **NOTICE:** in development. Spore is somewhat usable (albeit without even file
+> **NOTICE:** in development. Spor is somewhat usable (albeit without even file
 > handling support), with a line-of-sight for boostrapping into fngi.
 
 If we want to build an entirely understandable tech stack (as part of
@@ -22,7 +22,7 @@ of code that is runnable on microcontrollers with 64k of memory or less and zero
 hardware support for memory maangement, thread handling, etc.
 
 Read more:
-* [spor.md](./spor.md).
+* [spor.md](./spor.md)
 * [fngi.md](./fngi.md)
 * [Unstructured Notes](./notes/)
 
@@ -50,7 +50,6 @@ If for any reason the UNLICENSE is not valid in your jurisdiction or project,
 this work can be singly or dual licensed at your discression with the MIT
 license below.
 
-<sub><sup>
 ```
 Copyright 2021 Garrett Berg
 
@@ -72,4 +71,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-</sup></sub>
