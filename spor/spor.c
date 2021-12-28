@@ -96,6 +96,7 @@ typedef enum { SzI1, SzI2, SzI4 } SzI;
 typedef enum {
   WS,     LIT,   FTLL,   FTML,
   FTOL,   SRLL,   SRML,   SROL,
+  SR, FT,
 } MemI;
 
 // Jmp
@@ -370,6 +371,192 @@ APtr toAPtr(U32 v, U8 sz) {
     case 2: return ENV_MOD_HIGH() + v;
     case 4: ASM_ASSERT(v <= MAX_APTR, E_oob); return v;
     default: SET_ERR(E_cSz);
+  }
+}
+
+APtr toAPtrSzI(U32 v, SzI szI) {
+  switch (szI) {
+    case SzI1: SET_ERR(E_cSzAPtr);
+    case SzI2: return ENV_MOD_HIGH() + v;
+    case SzI4: return v;
+    default: SET_ERR(E_cSz);
+  }
+}
+
+// ********************************************
+// ** Executing Instructions2
+
+// Bytecode:
+// 0XXX XXXX: operation
+// 10SS XXXX: jmp
+// 11SS _XXX: mem
+
+#define INSTR_SZI(INSTR) ((instr & 0x30) >> 4)
+
+U32 popLit(SzI szI) {
+  U32 out;
+  switch(szI) {
+    case SzI1:
+      out = fetch(mem, env.ep, 1);
+      env.ep += 1;
+      break;
+    case SzI2:
+      out = fetch(mem, env.ep, 2);
+      env.ep += 2;
+      break;
+    case SzI4:
+      out = fetch(mem, env.ep, 4);
+      env.ep += 4;
+      break;
+    default: SET_ERR(E_cSz);
+  }
+  return out;
+}
+
+static void executeMem(U8 instr) {
+  SzI szI = INSTR_SZI(instr);
+  U32 l;
+  switch(instr & 0xFF) {
+    case LIT: WS_PUSH(popLit(szI));  break;
+    case SR: l = WS_POP(); store(mem, WS_POP(), l, szIToSz(szI)); break;
+    case SRLL:
+      store(mem, LS_OFFSET() + env.ls.sp + popLit(szI), WS_POP(), szIToSz(szI));
+      break;
+    case SRML:
+      store(mem, (MOD_HIGH_MASK & env.mp) + popLit(szI), WS_POP(), szIToSz(szI));
+      break;
+    case FT: WS_PUSH(fetch(mem, WS_POP(), szIToSz(szI))); break;
+    case FTLL: WS_PUSH(fetch(mem, LS_OFFSET() + env.ls.sp  + popLit(szI), szIToSz(szI))); break;
+    case FTML: WS_PUSH(fetch(mem, (MOD_HIGH_MASK & env.mp) + popLit(szI), szIToSz(szI))); break;
+    default: SET_ERR(E_cInstr);
+  }
+}
+
+static inline void executeOp(U8 instr) {
+  U32 l; U32 r;
+
+  U32 szMask = 0xFFFFFFFF; // TODO: remove
+
+  switch (instr >> 4) {
+    // Special    [0x0 - 0x10)
+    case 0:
+      switch (instr) {
+        case 0x0: /*NOP */ break;
+        case 0x1: /*SWP */
+          r = WS_POP();
+          l = WS_POP();
+          WS_PUSH(r);
+          WS_PUSH(l);
+          break;
+        case 0x2: /*DRP */ WS_POP(); break;
+        case 0x3: /*DRP2*/ WS_POP(); WS_POP(); break;
+        case 0x4: /*DUP */ l = WS_POP(); WS_PUSH(l); WS_PUSH(l);      break;
+        case 0x5: /*DUPN*/ l = WS_POP(); WS_PUSH(l); WS_PUSH(0 == l); break;
+        case 0x6: /*DVF */ deviceOp(TRUE, SzI4, szMask, 4); break;
+        case 0x7: /*DVS */ deviceOp(FALSE, SzI4, szMask, 4); break;
+        case 0x8: /*RGL */ assert(FALSE); // not impl
+        case 0x9: /*RGS */ assert(FALSE); // not impl
+      }
+      break;
+
+    // Single Arg [0x10 - 0x20)
+    case 1:
+      r = WS_POP();
+      switch (instr - OPI1_START) {
+        case 0: /*INC */ r = r + 1; break;
+        case 1: /*INC2*/ r = r + 2; break;
+        case 2: /*INC4*/ r = r + 4; break;
+        case 3: /*DEC */ r = r - 1; break;
+        case 4: /*INV */ r = ~r; break;
+        case 5: /*NEG */ r = -r; break;
+        case 6: /*NOT */ r = 0==r; break;
+        case 7: /*CI1 */ r = (I32) ((I8) r); break;
+        case 8: /*CI2 */ r = (I32) ((I16) r); break;
+      }
+      WS_PUSH(r);
+      break;
+
+    // Two Arg    [0x20 - 0x3F)
+    case 2:
+      r = WS_POP();
+      l = WS_POP();
+      switch (instr - OPI2_START) {
+        case 0x0: /*ADD */ r = l + r; break;
+        case 0x1: /*SUB */ r = l - r; break;
+        case 0x2: /*MOD */ r = l % r; break;
+        case 0x3: /*SHL */ r = l << r; break;
+        case 0x4: /*SHR */ r = l >> r; break;
+        case 0x5: /*AND */ r = l & r; break;
+        case 0x6: /*OR */ r = l | r; break;
+        case 0x7: /*XOR*/ r = l ^ r; break;
+        case 0x8: /*LAND*/ r = l && r; break;
+        case 0x9: /*LOR */ r = l || r; break;
+        case 0xA: /*EQ  */ r = l == r; break;
+        case 0xB: /*NEQ */ r = l != r; break;
+        case 0xC: /*GE_U*/ r = l >= r; break;
+        case 0xD: /*LT_U*/ r = l < r; break;
+        case 0xE: /*GE_S*/ r = (I32) l >= (I32) r; break;
+        case 0xF: /*LT_S*/ r = (I32) l < (I32) r; break;
+        case 0x10: /*MUL  */ r = l * r; break;
+        case 0x11: /*DIV_U*/ r = l / r; break;
+        case 0x12: /*DIV_S*/
+          ASM_ASSERT(r, E_divZero);
+          r = (I32) l / (I32) r;
+          break;
+      }
+      WS_PUSH(r);
+  }
+}
+
+static inline void executeJmp(ExecuteResult *res, U8 instr) {
+  SzI szI;
+  U32 l, r;
+  switch(instr & 0xFF) {
+    case NOJ: break;
+    case RET:
+      if(Stk_len(env.callStk) == 0) {
+        res->escape = TRUE;
+      } else {
+        U32 callMeta = Stk_pop(&env.callStk);
+        Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
+        env.mp = MOD_HIGH_MASK & callMeta;
+        env.ep = MAX_APTR & callMeta;
+      }
+      break;
+    case JMPL:
+      szI = INSTR_SZI(instr);
+      env.ep = toAPtrSzI(popLit(szI), szI); break;
+    case JMPW: env.ep = toAPtrSzI(WS_POP(), INSTR_SZI(instr));
+    case JZL:
+      szI = INSTR_SZI(instr);
+      l = popLit(szI);
+      r = WS_POP();
+      if(!r) { env.ep = toAPtrSzI(l, szI); }
+      break;
+    case JTBL: assert(FALSE); // TODO: not impl
+    case XL:
+      szI = INSTR_SZI(instr);
+      xImpl(toAPtrSzI(popLit(szI), szI));
+      break;
+    case XW: xImpl(toAPtrSzI(WS_POP(), INSTR_SZI(instr))); break;
+    case XSL:
+      szI = INSTR_SZI(instr);
+      xsImpl(toAPtrSzI(popLit(szI), szI)); break;
+      break;
+    case XSW: xsImpl(toAPtrSzI(WS_POP(), INSTR_SZI(instr))); break;
+    default: SET_ERR(E_cInstr);
+  }
+}
+
+
+ExecuteResult executeInstrByte(U8 instr) {
+  ExecuteResult res = {};
+
+  switch (instr >> 6) {
+    case 0:
+    case 1: executeOp(instr); break;
+    case 2: executeJmp(&res, instr); break;
+    case 3: executeMem(instr); break;
   }
 }
 
