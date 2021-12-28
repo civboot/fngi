@@ -5,12 +5,16 @@
 //    JJJ XX MMM   SS OO OOOO
 //   | high byte |  low byte |
 
+// Instr Bit Layout (S=sz bit)
+// 00XX XXXX: operation
+// 01XX XXXX: tiny literal
+// 10SS XXXX: jmp
+// 11SS _XXX: mem
+
+
 .4
-
-
 // **********
 // * Instructions
-#FF3F_0000 =CLR_INSTR   // Clear instr except Size bits
 
 // Jmps:
 // - Jumps can be to either a literal (L) or to an item on the working stack (W).
@@ -22,60 +26,47 @@
 //   callstack (which RET uses to shrink the local stack on return).
 
 // # Jmp          // Description
-#F000_0000 =NOJ   // No Jump
-#F000_1000 =RET   // Return
-#F000_2000 =JMPL  // Jmp to Literal
-#F000_3000 =JMPW  // Jmp to WS
-#F000_4000 =JZL   // Jmp to Literal if store==0
-#F000_5000 =JTBL  // Jump to Table index using size=Literal
-#F000_6000 =XL    // Execute Literal (mPtr)
-#F000_7000 =XW    // Execute WS (aPtr)
-#F000_8000 =XSL   // Execute Small Literal (no LS update)
-#F000_9000 =XSW   // Execute Small WS (no LS update)
+#80 =RET   // Return
+#81 =JMPL  // Jmp to Literal
+#82 =JMPW  // Jmp to WS
+#83 =JZL   // Jmp to Literal if store==0
+#84 =JTBL  // Jump to Table index using size=Literal
+#85 =XL    // Execute Literal (mPtr)
+#86 =XW    // Execute WS (aPtr)
+#87 =XSL   // Execute Small Literal (no LS update)
+#88 =XSW   // Execute Small WS (no LS update)
 
-
-// # Mem          // Top         Store    Description
-#0700_0000 =WS    // WS          WS       Working Stack
-#0700_0100 =LIT   // LIT         WS       Literal
-#0700_0200 =FTLL  // FT(LP+LIT)  WS       FeTch LocalsPtr offset
-#0700_0300 =FTML  // FT(MP+LIT)  WS       FeTch ModulePtr offset
-#0700_0400 =FTOL  // FT(WS)      WS       FeTch Operate Literal
-#0700_0500 =SRLL  // FT(LP+LIT)  &LP+LIT  StoRe LocalsPtr offset
-#0700_0600 =SRML  // FT(MP+LIT)  &MP+LIT  StoRe ModulePtr offset
-#0700_0700 =SROL  // WS          &LIT     StoRe Operate Literal
-
-// # Size
-#00C0_0000 =Sz1   // 1 byte, .1
-#00C0_0040 =Sz2   // 2 byte, .2
-#00C0_0080 =Sz4   // 4 byte, .4
-#00C0_0080 =SzA   // APtr,   .A
+// # Mem          Store    Description
+#C0 =LIT   // LIT         Literal
+#C1 =FT    // FT(WS)      FeTch WS
+#C2 =FTLL  // FT(LP+LIT)  FeTch LocalsPtr offset
+#C3 =FTML  // FT(MP+LIT)  FeTch ModulePtr offset
+#C4 =SR    // SR(WS)      StoRe WS
+#C5 =SRLL  // SR(LP+LIT)  StoRe LocalsPtr offset
+#C6 =SRML  // SR(MP+LIT)  StoRe ModulePtr offset
 
 // # Operations: Special
-#003F_0000 =NOP   // { -> }     no operation
-#003F_0001 =SWP   // {l r -> r l} swap
-#003F_0002 =DRP   // {l -> }    drop
-#003F_0003 =DRP2  // {l r -> }  drop 2
-#003F_0004 =DUP   // {l -> l l} duplicate
-#003F_0005 =DUPN  // {l -> l l==0} DUP then NOT
-#003F_0006 =DVF   // Device Operation Load
-#003F_0007 =DVS   // Device Operation Store
-#003F_0008 =RGL   // Register Load
-#003F_0009 =RGS   // Register Store
-#003F_000A =FT    // Fetch
-#003F_000B =SR    // Store
-#003F_000C =LIT4  // { -> U4} push 4byte literal
-#003F_000D =ZERO  // { -> 0} push zero onto WS
+#00 =NOP   // { -> }     no operation
+#01 =SWP   // {l r -> r l} swap
+#02 =DRP   // {l -> }    drop
+#03 =DRP2  // {l r -> }  drop 2
+#04 =DUP   // {l -> l l} duplicate
+#05 =DUPN  // {l -> l l==0} DUP then NOT
+#06 =DVF   // Device Operation Load
+#07 =DVS   // Device Operation Store
+#08 =RGL   // Register Load
+#09 =RGS   // Register Store
 
 // # Operations: One Inp {l} -> One Out
-#003F_0010 =INC   // {l+1}  increment 1
-#003F_0011 =INC2  // {l+2}  increment 2
-#003F_0012 =INC4  // {l+4}  increment 4
-#003F_0013 =DEC   // {l-4}  decrement 1
-#003F_0014 =INV   // {~l}   Bitwise Inversion
-#003F_0015 =NEG   // {-l}   Negate (2's compliment)
-#003F_0016 =NOT   // {l==0} Logical NOT
-#003F_0017 =CI1   // {ISz}  Convert I1 to ISz
-#003F_0018 =CI2   // {ISz}  Convert I2 to ISz
+#10 =INC   // {l+1}  increment 1
+#11 =INC2  // {l+2}  increment 2
+#12 =INC4  // {l+4}  increment 4
+#13 =DEC   // {l-4}  decrement 1
+#14 =INV   // {~l}   Bitwise Inversion
+#15 =NEG   // {-l}   Negate (2's compliment)
+#16 =NOT   // {l==0} Logical NOT
+#17 =CI1   // {ISz}  Convert I1 to ISz
+#18 =CI2   // {ISz}  Convert I2 to ISz
 // future: leading 0's, trailing 0's, count of 1's
 // Some single-arg extension commands might be:
 // (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
@@ -83,26 +74,26 @@
 // (1) f -> i conversion
 
 // # Operations: Two Inp {l r} -> One Out
-#003F_0020 =ADD   // {l +  r } add
-#003F_0021 =SUB   // {l -  r } subtract
-#003F_0022 =MOD   // {l %  r } integer modulo (remainder)
-#003F_0023 =SHL   // {l << r } bit shift left
-#003F_0024 =SHR   // {l >> r } bit shift right
-#003F_0025 =AND   // {l &  r } bitwise and
-#003F_0026 =OR    // {l |  r } bitwise or
-#003F_0027 =XOR   // {l ^  r } bitwise xor
-#003F_0028 =LAND  // {l && r } logical and
-#003F_0029 =LOR   // {l || r } logical or
-#003F_002A =EQ    // {l == r } equal
-#003F_002B =NEQ   // {l != r } not equal
-#003F_002C =GE_U  // {l >= r } unsigned greater than or equal
-#003F_002D =LT_U  // {l <  r } unsigned less than
-#003F_002E =GE_S  // {l >= r } signed greater than or equal
-#003F_002F =LT_S  // {l <  r } signed less than
+#20 =ADD   // {l +  r } add
+#21 =SUB   // {l -  r } subtract
+#22 =MOD   // {l %  r } integer modulo (remainder)
+#23 =SHL   // {l << r } bit shift left
+#24 =SHR   // {l >> r } bit shift right
+#25 =AND   // {l &  r } bitwise and
+#26 =OR    // {l |  r } bitwise or
+#27 =XOR   // {l ^  r } bitwise xor
+#28 =LAND  // {l && r } logical and
+#29 =LOR   // {l || r } logical or
+#2A =EQ    // {l == r } equal
+#2B =NEQ   // {l != r } not equal
+#2C =GE_U  // {l >= r } unsigned greater than or equal
+#2D =LT_U  // {l <  r } unsigned less than
+#2E =GE_S  // {l >= r } signed greater than or equal
+#2F =LT_S  // {l <  r } signed less than
 
-#003F_0030 =MUL   // {l *  r } multiplication
-#003F_0031 =DIV_U // {l / r  } unsigned division
-#003F_0032 =DIV_S // {l / r  } signed division
+#30 =MUL   // {l *  r } multiplication
+#31 =DIV_U // {l / r  } unsigned division
+#32 =DIV_S // {l / r  } signed division
 // Double-arg extension commands might be:
 // floating point: add,sub,mul,div,ge,lt
 
@@ -122,7 +113,6 @@
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
 #0A =D_xsCatch
-
 
 // **********
 // * Memory Locations
