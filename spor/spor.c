@@ -86,6 +86,13 @@ typedef CSz CPtr;
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 
 typedef enum {
+  C_OP   = 0x00,
+  C_SLIT = 0x40,
+  C_JMP =  0x80,
+  C_MEM =  0xC0,
+} InstrClass;
+
+typedef enum {
   NOP  = 0x00,
   SWP  = 0x01,
   DRP  = 0x02,
@@ -128,26 +135,25 @@ typedef enum {
   DIV_U= 0x31,
   DIV_S= 0x32,
 
-  SLIT = 0x40, // start of SLIT
+  RET  = 0x80,
+  JMPL = 0x81,
+  JMPW = 0x82,
+  JZL  = 0x83,
+  JTBL = 0x84,
+  XL   = 0x85,
+  XW   = 0x86,
+  XSL  = 0x87,
+  XSW  = 0x88,
 
-  RET   = 0x80,
-  JMPL  = 0x81,
-  JMPW  = 0x82,
-  JZL   = 0x83,
-  JTBL  = 0x84,
-  XL    = 0x85,
-  XW    = 0x86,
-  XSL   = 0x87,
-  XSW   = 0x88,
-
-  LIT = 0xC0,
-  FT  = 0xC1,
+  LIT  = 0xC0,
+  FT   = 0xC1,
   FTLL = 0xC2,
   FTML = 0xC3,
-  SR = 0xC4,
+  SR   = 0xC4,
   SRLL = 0xC5,
   SRML = 0xC6,
 } Instr;
+
 
 typedef enum {
   SzI1 = 0x00,
@@ -155,15 +161,12 @@ typedef enum {
   SzI4 = 0x20,
 } SzI;
 
-#define INSTR_SZI(INSTR) ((SzI) (INSTR & SZ_MASK))
-#define SzIA SzI4
-
-// Operations
 #define SZ_MASK        0x30
-#define INSTR_DEFAULT  0x00
+#define INSTR_CLASS(INSTR) (InstrClass)(0xC0 & INSTR)
+#define INSTR_NO_SZ(INSTR)  (Instr)(~SZ_MASK & (U8)INSTR)
+#define INSTR_SZI(INSTR) ((SzI) (INSTR & SZ_MASK))
 
-#define OPI1_START 0x10
-#define OPI2_START 0x20
+#define SzIA SzI4
 
 // Generic stack.
 typedef struct { U16 sp; U16 size; U8* mem; } Stk;
@@ -228,9 +231,8 @@ typedef enum {
 } TokenGroup;
 
 // Debugging
-void dbgIndent();
 void dbgEnv();
-void dbgInstr(Instr instr);
+void dbgInstr(Instr instr, Bool lit);
 void dbgWs();
 void dbgWsFull();
 void printToken();
@@ -367,11 +369,11 @@ APtr toAptr(U32 v, SzI szI) {
 }
 
 U8 mergeInstrSzI(SzI szI, U8 instr) {
-  switch (instr >> 6) {
-    case 0:
-    case 1: return instr;
-    case 2:
-    case 3: return szI + instr;
+  switch (INSTR_CLASS(instr)) {
+    case C_OP:
+    case C_SLIT: return instr;
+    case C_JMP:
+    case C_MEM: return szI + instr;
     default: assert(FALSE);
   }
 }
@@ -422,7 +424,7 @@ U32 popLit(SzI szI) {
 /* returns: should escape */
 inline static Bool executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
-  if(dbgMode) { printf("  * "); dbgInstr(instr); dbgWs(); printf("\n"); }
+  if(dbgMode) { printf("  * "); dbgInstr(instr, TRUE);  printf("@%X", env.ep); printf("\n"); }
 
   U32 l, r;
   U32 szMask = 0xFFFFFFFF; // TODO: remove
@@ -480,8 +482,8 @@ inline static Bool executeInstr(Instr instr) {
       break;
 
     // Small literal (64 cases)
-    CASE_32(SLIT)
-    CASE_32(SLIT+32) WS_PUSH(0x3F & instr); break;
+    CASE_32(C_SLIT)
+    CASE_32(C_SLIT+32) WS_PUSH(0x3F & instr); break;
 
     // Jmp Cases
 RET: case SzI2 + RET:
@@ -507,9 +509,9 @@ JMPW: case SzI2 + JMPW:
     GOTO_SZ(JMPW, SzI1)
     GOTO_SZ(JMPW, SzI4)
 JZL: case SzI2 + JZL:
-      l = popLit(szI);
-      r = WS_POP();
-      if(!r) { env.ep = toAptr(l, szI); }
+      printf("??? JZL %X\n", szI);
+      r = popLit(szI);
+      if(!WS_POP()) { env.ep = toAptr(r, szI); }
       break;
     GOTO_SZ(JZL, SzI1)
     GOTO_SZ(JZL, SzI4)
@@ -560,8 +562,9 @@ FTML: case SzI2 + FTML:
     GOTO_SZ(FTML, SzI1)
     GOTO_SZ(FTML, SzI4)
 SR: case SzI2 + SR:
-      l = WS_POP();
-      store(mem, WS_POP(), l, szI);
+      // TODO: swap SR to be forth like
+      r = WS_POP();
+      store(mem, WS_POP(), r, szI);
       break;
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
@@ -761,7 +764,7 @@ U8 scanInstr() {
 
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
-  if (dbgMode) { printf("= "); printToken(); dbgWs(); printf("\n"); }
+  if (dbgMode) { printf("= "); dbgWs(); printToken(); printf("\n"); }
   U32 value = WS_POP();
   DictRef d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value);
@@ -785,20 +788,20 @@ U8 scanInstr() {
 /*fn*/ void cWriteInstr() { // `%`
   U8 instr = scanInstr();
   store(mem, *env.heap, instr, SzI1);
-  if (dbgMode) { printf("%% "); dbgInstr(instr); printf("\n"); }
+  if (dbgMode) { printf("%% "); dbgInstr(instr, FALSE); printf(" @%X\n", *env.heap); }
   *env.heap += 1;
 }
 
 /*fn*/ void cExecuteInstr() { // ^
   U8 instr = scanInstr();
-  if (dbgMode) { printf("^ "); dbgInstr(instr); dbgWs(); printf("\n"); }
+  if (dbgMode) { printf("^ "); printf("\n"); }
   env.ep = 0;
   executeInstr(instr);
 }
 
 /*fn*/ void cExecute() { // $
   scan();
-  if(dbgMode) { printf("$ "); printToken(); dbgWs(); printf("\n"); }
+  if(dbgMode) { printf("$ "); dbgWs(); printToken(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
   WS_PUSH(value);
@@ -1042,10 +1045,6 @@ void printToken() {
   printf("\" line=%u ", line);
 }
 
-void dbgIndent() {
-  for(U16 i = 0; i < X_DEPTH; i += 1) printf("  ");
-}
-
 void dbgEnv() {
   printf("  token[%u, %u]=", tokenLen, tokenBufSize);
   printToken();
@@ -1075,37 +1074,19 @@ Key* Dict_findFn(U32 value) {
   return &keyDNE;
 }
 
-// void dbgJmpI(JmpI j) {
-//   U32 jloc = 0;
-// 
-//   switch (j) {
-//     case JMPL:
-//     case XL:
-//     case XSL: jloc = toAptr(fetch(mem, env.ep, 2), SzI2); break;
-//     case JMPW:
-//     case XW:
-//     case XSW: jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
-//   }
-//   if(!jloc) return;
-//   Key* k = Dict_findFn(jloc);
-//   printf(" [[ ");
-//   printCStr(k->len, k->s);
-//   printf(" ]] ");
-// }
-
 U32 max(I32 a, I32 b) {
   if (a > b) return a;
   return b;
 }
 
 void dbgWs() {
-  printf("WS");
-  printf(" [%u...]", max(0, ((I32) WS_LEN) - 2));
+  printf(" {%u... ", max(0, ((I32) WS_LEN) - 2));
   if(WS_LEN > 0) {
     if(WS_LEN == 1) printf("   ----  |");
     else printf(" %+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, SzIA));
-    printf(" %+8X|", fetch(env.ws.mem, env.ws.sp, SzIA));
-  } else printf("   ----  |   ----  |");
+    printf(" %+8X}", fetch(env.ws.mem, env.ws.sp, SzIA));
+  } else printf("   ----  |   ----  }");
+  printf(" ");
 }
 
 void dbgWsFull() {
@@ -1185,24 +1166,102 @@ char* instrStr(Instr instr) {
   return "instr?";
 }
 
+
+Bool _dbgMemInvalid(SzI szI, APtr aptr) {
+  U8 sz = szIToSz(szI);
+  if (aptr != alignAPtr(aptr, sz)) {
+    printf(" !!ALIGN!! ");
+    return TRUE;
+  }
+  if (aptr == 0) {
+    printf(" !!ep=0!! ");
+    return TRUE;
+  }
+  if (aptr + sz > *env.topHeap) {
+    printf(" !!ep>=topHeap!! ");
+    return TRUE;
+  }
+  return FALSE;
+}
+
+void dbgJmp(Instr instr) {
+  if (INSTR_CLASS(instr) != C_JMP) return;
+
+  U32 jloc = 0;
+  SzI szI = INSTR_SZI(instr);
+
+  switch (INSTR_NO_SZ(instr)) {
+    case JMPL:
+    case JZL:
+    case XL:
+    case XSL:
+      if(_dbgMemInvalid(szI, env.ep)) break;
+      jloc = toAptr(fetch(mem, env.ep, szI), SzI2);
+      if(!jloc) { printf(" !!jloc=0!! "); }
+      break;
+    case JMPW:
+    case XW:
+    case XSW:
+      if (!WS_LEN) { printf(" ((!WS EMPTY!)) "); break; }
+      jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
+  }
+  if(!jloc) return;
+  Key* k = Dict_findFn(jloc);
+  printf(" ((");
+  if(k == &keyDNE) {
+    printf("?? 0x%X", jloc);
+  } else {
+    printCStr(k->len, k->s);
+    printf(" 0x%X", jloc);
+  }
+  printf(")) ");
+}
+
+void dbgMem(Instr instr) {
+  if (INSTR_CLASS(instr) != C_MEM) return;
+
+  SzI szI = SzI2;
+  switch (INSTR_NO_SZ(instr)) {
+    case LIT: szI = INSTR_SZI(instr); break;
+    case FTLL:
+    case FTML:
+    case SRLL:
+    case SRML: break;
+    default: return;
+  }
+  if(_dbgMemInvalid(szI, env.ep)) return;
+  printf("{0x%X}", fetch(mem, env.ep, szI), szI);
+}
+
+void dbgIndent() {
+  for(U16 i = 0; i < X_DEPTH; i += 1) printf("  ");
+}
+
 #define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
-void dbgInstr(Instr instr) {
-  printf("[0x%-2X ", instr);
-  switch (instr >> 6) {
-    case 1: // SLIT
-      printf("SL 0x%0+2X ] ", 0x3F & instr);
-      return;
-    case 2:
-    case 3: printf("U%u ", szIToSz(INSTR_SZI(instr))); break;
-    default: printf("   ");
+void dbgInstr(Instr instr, Bool lit) {
+  dbgWs();
+  dbgIndent();
+  printf("["); // printf("0x%-2X ", instr);
+  if(INSTR_CLASS(instr) == C_SLIT) {
+    printf("SL      ] [0x%X}", 0x3F & instr);
+    return;
   }
   printf("%s", instrStr(instr));
+  switch (INSTR_CLASS(instr)) {
+    case C_JMP:
+    case C_MEM: printf(" U%u", szIToSz(INSTR_SZI(instr))); break;
+    default: printf("   ");
+  }
   printf("] ");
+  if (lit) {
+    dbgJmp(instr);
+    dbgMem(instr);
+  }
 }
 
 
 #define TEST_ENV_BARE \
-  globalInstr = INSTR_DEFAULT; \
+  globalInstr = NOP; \
   SMALL_ENV_BARE; \
   U32 heapStart = *env.heap
 
