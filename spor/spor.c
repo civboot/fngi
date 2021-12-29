@@ -105,13 +105,14 @@ typedef enum {
   XL  , XW  , XSL , XSW ,
 } JmpI;
 
-#define NOOP 0
+#define NOP 0
 
 // Operations
-#define LIT_MASK       0x40
+#define SLIT_MASK      0x40
 #define JMP_MASK       0x80
 #define MEM_MASK       0xC0
 #define SZ_SHIFT       4
+#define SZI4_MASK      (SzI4 << SZ_SHIFT)
 
 #define INSTR_DEFAULT  0x00
 
@@ -187,7 +188,7 @@ typedef enum {
 // Debugging
 void dbgIndent();
 void dbgEnv();
-void dbgInstr(SzI szI, U8 i);
+void dbgInstr(U8 i);
 void dbgWs();
 void dbgWsFull();
 void dbgJmpI(JmpI j);
@@ -204,8 +205,8 @@ Dict* dict = NULL;
 TokenState* tokenState = NULL;
 U8* compilingName;
 FILE* srcFile;
-U8 globalInstr = 0;
 SzI instrSzI = SzI1;
+U8 globalInstr = NOP;
 ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
 U32 line = 1;
 jmp_buf* err_jmp;
@@ -376,7 +377,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 }
 
 
-#define INSTR_SZI(INSTR) ((instr & 0x30) >> 4)
+#define INSTR_SZI(INSTR) ((INSTR & 0x30) >> 4)
 
 U32 popLit(SzI szI) {
   U32 out;
@@ -543,10 +544,12 @@ static inline Bool executeJmp(U8 instr) {
 
 /* returns: should escape */
 inline static Bool executeInstr(U8 instr) {
+  globalInstr = instr; // for debugging
+  if(dbgMode) { printf("  * "); dbgInstr(instr); printf("\n"); }
   switch (instr >> 6) {
     case 0: return executeOp(instr);
     case 1: // Tiny literal
-      WS_PUSH(instr & 0xFFF);
+      WS_PUSH(0x3F & instr);
       return FALSE;
     case 2: return executeJmp(instr);
     case 3: return executeMem(instr);
@@ -693,6 +696,13 @@ inline static Bool executeInstr(U8 instr) {
   }
 }
 
+U8 scanInstr() {
+  DictRef d = DEFAULT_DICT;
+  scan();
+  U8 instr = Dict_get(d, tokenLen, tokenBuf);
+  return mergeInstrSzI(instrSzI, instr);
+}
+
 /*fn*/ void cSz() { // '.': change sz
   if(tokenLen >= tokenBufSize) readAppend();
   U8 sz = charToHex(tokenBuf[tokenLen]);
@@ -752,25 +762,23 @@ inline static Bool executeInstr(U8 instr) {
 /*fn*/ void cWriteHeap() { // `,`
   U8 sz = szIToSz(instrSzI);
   U32 value = WS_POP();
-  if (dbgMode) { printf(", #%X\n sz=%u", value, sz); }
+  if (dbgMode) { printf(", #%X sz=%u\n", value, sz); }
   store(mem, *env.heap, value, sz);
   *env.heap += sz;
 }
 
-/*fn*/ void cWriteInstr() { // `;`
-  U8 i = mergeInstrSzI(instrSzI, globalInstr);
-  globalInstr = 0;
-  store(mem, *env.heap, i, 1);
-  if (dbgMode) { printf("; "); dbgInstr(instrSzI, i); printf("\n"); }
-  *env.heap += 2;
+/*fn*/ void cWriteInstr() { // `%`
+  U8 instr = scanInstr();
+  store(mem, *env.heap, instr, 1);
+  if (dbgMode) { printf("%% "); dbgInstr(instr); printf("\n"); }
+  *env.heap += 1;
 }
 
 /*fn*/ void cExecuteInstr() { // ^
-  U8 tmp = mergeInstrSzI(instrSzI, globalInstr);
-  if (dbgMode) { printf("^ (cExecuteInstr) "); dbgInstr(instrSzI, tmp); printf("\n"); }
-  globalInstr = 0;
+  U8 instr = scanInstr();
+  if (dbgMode) { printf("^ "); dbgInstr(instr); dbgWs(); printf("\n"); }
   env.ep = 0;
-  executeInstr(tmp);
+  executeInstr(instr);
 }
 
 /*fn*/ void cExecute() { // $
@@ -779,7 +787,7 @@ inline static Bool executeInstr(U8 instr) {
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
   WS_PUSH(value);
-  execute(JMP_MASK & JMPW);
+  execute(JMP_MASK | SZI4_MASK | JMPW);
 }
 
 /*fn*/ ExecuteResult compile() {
@@ -787,10 +795,6 @@ inline static Bool executeInstr(U8 instr) {
   ExecuteResult result = {};
   if(tokenLen == 0) {
     result.escape = TRUE;
-    return result;
-  }
-  if(tokenState->group <= T_ALPHA) {
-    globalInstr = Dict_get(d, tokenLen, tokenBuf);
     return result;
   }
   tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
@@ -801,7 +805,7 @@ inline static Bool executeInstr(U8 instr) {
     case '=': cDictSet(); break;
     case '@': cDictGet(); break;
     case ',': cWriteHeap(); break;
-    case ';': cWriteInstr(); break;
+    case '%': cWriteInstr(); break;
     case '^': cExecuteInstr(); break;
     case '$': cExecute(); break;
     default:
@@ -871,7 +875,7 @@ void deviceOpCatch() {
   if(setjmp(local_err_jmp)) {
     // got error, handled below
   } else {
-    execute(JMP_MASK & JMPW);
+    execute(JMP_MASK | SZI4_MASK | JMPW);
   }
 
   // ALWAYS Reset ep, call, and local stack and clear WS.
@@ -898,27 +902,23 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   U32 op = WS_POP();
   U32 tmp;
   switch(op) {
-    case 0: /*D_read*/ readAppend(); break;
-    case 1: /*D_scan*/ scan(); break;
-    case 2: /*D_dict*/ deviceOp_dict(isFetch); break;
-    case 3: /*D_rdict*/ deviceOpRDict(isFetch); break;
-    case 4: /*D_instr*/
-      if(isFetch) WS_PUSH(globalInstr);
-      else globalInstr = WS_POP();
-      break;
-    case 5: /*D_sz*/
+    case 0x0: /*D_read*/ readAppend(); break;
+    case 0x1: /*D_scan*/ scan(); break;
+    case 0x2: /*D_dict*/ deviceOp_dict(isFetch); break;
+    case 0x3: /*D_rdict*/ deviceOpRDict(isFetch); break;
+    case 0x4: /*D_sz*/
       if(isFetch) WS_PUSH(szIToSz(instrSzI));
       else instrSzI = szToSzI(WS_POP());
       break;
-    case 6: /*D_comp*/ deviceOpCompile(); break;
-    case 7: /*D_assert*/ 
+    case 0x5: /*D_comp*/ deviceOpCompile(); break;
+    case 0x6: /*D_assert*/ 
       tmp = WS_POP();
       if(!tmp) SET_ERR(E_cErr);
       if(!WS_POP()) SET_ERR(tmp);
       break;
-    case 0x8: /*D_wslen*/ WS_PUSH(WS_LEN); break;
-    case 0x9: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
-    case 0xA: /*D_xsCatch*/ deviceOpCatch(); break;
+    case 0x7: /*D_wslen*/ WS_PUSH(WS_LEN); break;
+    case 0x8: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
+    case 0x9: /*D_xsCatch*/ deviceOpCatch(); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -983,6 +983,7 @@ ssize_t readSrc(size_t nbyte) {
 
 void compileFile(U8* s) {
   compilingName = s;
+  printf("# Compiling: %s\n", s);
   line = 1;
   readAppend = &readSrc;
   srcFile = fopen(s, "rb");
@@ -1190,14 +1191,14 @@ void dbgWsFull() {
 }
 
 
-#define dbgInstrFmt(SZ, NAME) printf("%%%%.%X %s; ", SZ, NAME);
-void dbgInstr(SzI szI, U8 i) {
-  printf("0x%-2X ", i);
+#define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
+void dbgInstr(U8 i) {
+  printf("[0x%-2X ", i);
   switch (i >> 6) {
     case 0: dbgInstrFmt(4, opName(i)); break;
     case 1: dbgInstrFmt(4, "T_LIT"); break;
-    case 2: dbgInstrFmt(szI, jmpName(0xF & i)); break;
-    case 3: dbgInstrFmt(szI, memName(0xF & i)); break;
+    case 2: dbgInstrFmt(INSTR_SZI(i), jmpName(0xF & i)); break;
+    case 3: dbgInstrFmt(INSTR_SZI(i), memName(0xF & i)); break;
   }
 }
 
@@ -1296,10 +1297,10 @@ void compileStr(U8* s) {
 
 /*test*/ void testWriteHeap() { // test , and ;
   printf("## testWriteHeap\n"); TEST_ENV_BARE;
-  compileStr(".4 #77770101, .2 #0F00, ;");
+  compileStr(".4 #77770101, .2 #0F00, .1 #0,");
   assert(0x77770101 == fetch(mem, heapStart, 4));
   assert(0x0F00 == fetch(mem, heapStart+4, 2));
-  assert(NOOP == fetch(mem, heapStart+6, 1));
+  assert(0 == fetch(mem, heapStart+6, 1));
 }
 
 /*test*/ void testExecuteInstr() {
@@ -1307,44 +1308,38 @@ void compileStr(U8* s) {
   compileStr(".4 @E_general");
   assert(0xE000 == WS_POP());
 
-  compileStr(".4 NOP");
-  assert(INSTR_DEFAULT == globalInstr);
-  assert(SzI4 == instrSzI);
-
   compileStr(".2");
   assert(SzI2 == instrSzI);
 
-  compileStr(".4 #5006 #7008 .2 DRP^");
+  compileStr(".4 #5006 #7008 .2 ^DRP");
   assert(0x5006 == WS_POP());
 
-  compileStr(".1 #01 #02  ADD^");
+  compileStr(".1 #01 #02  ^ADD");
   assert(0x03 == WS_POP());
 
-  compileStr(".4 #8 #5 SUB^");
+  compileStr(".4 #8 #5 ^SUB");
   assert(0x03 == WS_POP());
 
-  compileStr(".4 #8000 #4 SUB^");
+  compileStr(".4 #8000 #4 ^SUB");
   assert(0x7FFC == WS_POP());
 
-  compileStr(".A @D_sz DVF^");
+  compileStr(".A @D_sz ^DVF");
   assert(0x04 == WS_POP());
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
-  compileStr(".4 @c_tokenBuf FT^");
-  U32 val = WS_POP();
-  assert(tokenState->buf == val);
-  // compileStr(".4 @topHeap FT^");  assert(*env.topHeap == WS_POP());
-  // compileStr(".4 @c_dictHeap");   assert(expectDictHeap == WS_POP());
+  compileStr(".4 @c_tokenBuf ^FT"); assert(tokenState->buf == WS_POP());
+  compileStr(".4 @topHeap ^FT");  assert(*env.topHeap == WS_POP());
+  compileStr(".4 @c_dictHeap");   assert(expectDictHeap == WS_POP());
 }
 
-// /*test*/ void testAsm2() {
-//   printf("## testAsm2\n"); SMALL_ENV;
-//   compileFile("spor/asm2.sp");
-//   assert(!WS_LEN);
-//   compileLoop(); ASSERT_NO_ERR();
-//   compileFile("spor/testAsm2.sp");
-// }
-// 
+/*test*/ void testAsm2() {
+  printf("## testAsm2\n"); SMALL_ENV;
+  compileFile("spor/asm2.sp");
+  assert(!WS_LEN);
+  compileLoop(); ASSERT_NO_ERR();
+  compileFile("spor/testAsm2.sp");
+}
+
 // /*test*/ void testBoot() {
 //   printf("## testBoot\n"); SMALL_ENV;
 //   compileFile("spor/asm2.sp");
@@ -1364,7 +1359,7 @@ void compileStr(U8* s) {
   testDict();
   testWriteHeap();
   testExecuteInstr();
-  // testAsm2();
+  testAsm2();
   // testBoot();
 
   assert(0 == WS_LEN);

@@ -7,7 +7,7 @@
 
 // Instr Bit Layout (S=sz bit)
 // 00XX XXXX: operation
-// 01XX XXXX: tiny literal
+// 01XX XXXX: small literal
 // 10SS XXXX: jmp
 // 11SS _XXX: mem
 
@@ -25,7 +25,9 @@
 //   are loaded by the execute instr and stored in the highest byte in the
 //   callstack (which RET uses to shrink the local stack on return).
 
-// # Jmp          // Description
+#40 =ULIT  // micro literal mask
+
+// # Jmp      Description
 #80 =RET   // Return
 #81 =JMPL  // Jmp to Literal
 #82 =JMPW  // Jmp to WS
@@ -36,7 +38,7 @@
 #87 =XSL   // Execute Small Literal (no LS update)
 #88 =XSW   // Execute Small WS (no LS update)
 
-// # Mem          Store    Description
+// # Mem      Store    Description
 #C0 =LIT   // LIT         Literal
 #C1 =FT    // FT(WS)      FeTch WS
 #C2 =FTLL  // FT(LP+LIT)  FeTch LocalsPtr offset
@@ -103,16 +105,15 @@
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
 #02 =D_dict   // FT=get SR=set dict key=tokenBuf
 #03 =D_rdict  // FT=get reference to val  SR=forget including key
-#04 =D_instr  // get/set cached instr. Set uses `mask | instr` like asm.
-#05 =D_sz     // get/set current sz in bytes
-#06 =D_comp   // compile (assemble) the token in tokenBuf
-#07 =D_assert // error if != 0
-#08 =D_wslen  // working stk len
-#09 =D_cslen  // call stk len
+#04 =D_sz     // get/set current sz in bytes
+#05 =D_comp   // compile (assemble) the token in tokenBuf
+#06 =D_assert // error if != 0
+#07 =D_wslen  // working stk len
+#08 =D_cslen  // call stk len
 // {-> err} D_xsCatch executes small function from WS but catches a panic.
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
-#0A =D_xsCatch
+#09 =D_xsCatch
 
 // **********
 // * Memory Locations
@@ -136,8 +137,8 @@
 
 // **********
 // * Global Compiler Variables
-@heap .4 FT^ =c_rKey        #0 .4, // rKey, ref to current dict key.
-@heap .4 FT^ =c_localOffset #0 .2, // Local Offset (for local var setup)
+@heap .4 ^FT =c_rKey        #0 .4, // rKey, ref to current dict key.
+@heap .4 ^FT =c_localOffset #0 .2, // Local Offset (for local var setup)
 
 // **********
 // * Global Constants
