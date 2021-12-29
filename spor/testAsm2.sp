@@ -1,10 +1,10 @@
-#1 $tAssert
-
-
-// Test assert
-#0              $tAssertNot
-ZERO^           $tAssertNot
-#1              $tAssert
+// #1 $tAssert
+// 
+// 
+// // Test assert
+// #0              $tAssertNot
+// ZERO^           $tAssertNot
+// #1              $tAssert
 
 // // Test operations
 // #400 #1 ADD^    #401 $tAssertEq

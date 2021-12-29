@@ -6,31 +6,49 @@
 // to make the syntax much more readable.
 
 @heap .4^FT =h1  // h1: {val:1} push 1bytes from stack to heap
-  .1@heap @ULIT ^ADD, .4%FT // fetch heap {val, heap}
+  .1@heap @SLIT ^ADD, .4%FT // fetch heap {val, heap}
   .4%SWP      .1%SR         // store 1 byte value at heap
-  .1@heap @ULIT ^OR,  .4%FT // fetch heap {heap}
+  .1@heap @SLIT ^OR,  .4%FT // fetch heap {heap}
   .4%INC      %SRML.2@heap, // heap=heap+1
   %RET        %NOP // aligned
 
-@heap .4^FT =ulit  // ulit: compile a micro literal
-  .1%LIT    @ULIT .1,
+@heap .4^FT =sl  // sl: compile a small literal
+  .1%LIT    @SLIT .1,
   .1%ADD    .2%XSL@h1 .2,
-  %RET      %NOP // aligned
+  %RET // unaligned
 
-// 
-// @heap .4^FT =h2  // h2: {val:2} push 2bytes from stack to heap
-//   @heap$ulit  %FT           // fetch heap {val, heap}
+@heap .4^FT =h2  // h2: {val:2} push 2bytes from stack to heap
+  @heap$sl  %FT           // fetch heap {val, heap}
 //   .4%SWP    .2%SR             // store 2 byte value at heap
-//   @heap$ulit  %FT           // fetch heap {heap}
+//   @heap$sl  %FT           // fetch heap {heap}
 //   .4%INC2     %SRML.2@heap, // heap=heap+2
 //   %RET        %NOP // aligned
 // 
 // @heap .4^FT =h4  // h4: {val:4} push 4bytes from stack to heap
-//   @heap$ulit  %FT           // fetch heap {val, heap}
+//   @heap$sl    %FT           // fetch heap {val, heap}
 //   .4%SWP    .4%SR         // store 4 byte value at heap
-//   @heap$ulit  %FT           // fetch heap {heap}
+//   @heap$sl    %FT           // fetch heap {heap}
 //   .4%INC4     %SRML  .2@heap, // heap=heap+2
 //   %RET // unaligned
+// 
+// 
+// @heap .4^FT =hma2 // {} heap mis-align 2
+//                 .2%XSL @getHeap $h2 // {heap}
+//   #2 $sl        .4%MOD
+//   .4%DUP          %NOT
+//     // IF(heap % 2 == 0)
+//     %NOP        .2%JZ @heap ^FT #0 $h2 // keep this location on the stk
+//     .4%SUB        #4 $sl
+//     .4%ADD        %JMPL @setHeap $h2
+//   .4@heap ^FT ^SWP
+//   %DRP2           %RET // aligned
+
+// $loc tAssert        LIT @E_test $mem_jmpl assert
+// $loc tAssertNot     LIT @E_test $mem_jmpl assertNot
+// $loc tAssertEq      .4 EQ  $jmpl tAssert
+// $loc tAssertNe      .4 NEQ $jmpl tAssert
+
+// 
 // 
 // @heap .4^FT =_dict // setup for dict
 //             .4%FTML@c_dictBuf $h2  // dict.buf
@@ -38,9 +56,9 @@
 //   %RET // unaligned
 // 
 // @heap .4^FT =dictSet // dctSet: Set "standard" dictionary to next token.
-//                 @D_scan$ulit
+//                 @D_scan$sl  
 //   %DVF        .2%XSL@_dict $h2
-//   @D_scan$ulit  %DVS
+//   @D_scan$sl    %DVS
 //   %RET // unaligned
 // 
 // @heap .4^FT =c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
@@ -63,21 +81,21 @@
 //               .4%XSL @locSetup $h2
 // 
 //   // Set dict[nextToken] = heap
-//   @heap$ulit    %FT
+//   @heap$sl      %FT
 //   .4%NOP        %XSL @dictSet $h2
 // 
 //   // // set rKey as fn type
-//   @IS_FN$ulit   %XSL @c_setRKeyMeta $h2
+//   @IS_FN$sl     %XSL @c_setRKeyMeta $h2
 // 
 //   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
-//   #0$ulit     .2%SRML @c_localOffset $h2  // zero localDict.offset
-//   #0$ulit     .2%SRML @c_dictLHeap $h2    // zero localDict.heap
+//   #0$sl       .2%SRML @c_localOffset $h2  // zero localDict.offset
+//   #0$sl       .2%SRML @c_dictLHeap $h2    // zero localDict.heap
 //   %RET          %NOP // aligned
 // 
 // $loc dictGet   // { -> v}
-//   @D_scan$ulit    %DVF
+//   @D_scan$sl      %DVF
 //   %NOP          .4%XSL @_dict $h2
-//   @D_dict$ulit    %DVF
+//   @D_dict$sl      %DVF
 //   %RET  // unaligned
 // 
 // .4
@@ -85,17 +103,17 @@
 // $loc setHeap     %SRML @heap $h2      %RET // unaligned
 // $loc getTopHeap  %FTML @topHeap $h2   %RET // unaligned
 // $loc setTopHeap  %SRML @topHeap $h2   %RET // unaligned
-// $loc getSz       @D_sz$ulit       %DVF %RET // aligned
-// $loc setSz       @D_sz$ulit       %DVS %RET // unaligned
-// $loc getWsLen    @D_wslen$ulit    %DVF %RET // aligned
-// $loc c_xsCatch   @D_xsCatch$ulit  %DVF %RET // unaligned
-// $loc c_scan      @D_scan$ulit     %DVF %RET // aligned
-// $loc c_assemble  @D_assemble$ulit %DVS %RET // unaligned
+// $loc getSz       @D_sz$sl         %DVF %RET // aligned
+// $loc setSz       @D_sz$sl         %DVS %RET // unaligned
+// $loc getWsLen    @D_wslen$sl      %DVF %RET // aligned
+// $loc c_xsCatch   @D_xsCatch$sl    %DVF %RET // unaligned
+// $loc c_scan      @D_scan$sl       %DVF %RET // aligned
+// $loc c_assemble  @D_assemble$sl   %DVS %RET // unaligned
 // 
 // %NOP // aligned
 // $loc c_assembleNext // scan and assemble
-//   @D_scan$ulit  %DVF
-//   @D_comp$ulit  %DVS
+//   @D_scan$sl    %DVF
+//   @D_comp$sl    %DVS
 //   %RET // unaligned
 // 
 // // Assert checks a condition or panics with an error
@@ -104,24 +122,14 @@
 //   %SWP
 //   %NOT            %SWP // fallthrough (aligned)
 // $loc assert
-//   @D_assert$ulit  %DVF
+//   @D_assert$sl    %DVF
 //   %RET // unaligned
 // 
 // $loc panic
-//                   #0$ulit
+//                   #0$sl  
 //   %SWP            %JMPL @assert$h2  // Panic with an error code
 //   %RET // unaligned
 // 
-// @heap .4^FT =hma2 // {} heap mis-align 2
-//                 .2%XSL @getHeap $h2 // {heap}
-//   // IF(NOT heap % 2)
-//   #2 $ulit      .4%MOD
-//   .4%DUP          %NOT
-//     %NOP        .2%JZ @heap ^FT #0 $h2 // keep this location on the stk
-//     .4%SUB        #4 $ulit
-//     .4%ADD        %JMPL @setHeap $h2
-//   .4@heap ^FT ^SWP
-//   %DRP2           %RET // aligned
 
 
 // **********
@@ -171,16 +179,16 @@
 // ignore current instr since LIT4 is an operation.
 //   Ex: $L@myVar   $L#1234_5678   $retL#3
 
-$loc topU4And // {v:U4 mask:U1} mask upper 8bits of U4
-                #18$ulit
-  .4 %SHL       %AND
-  %RET // unaligned
+// $loc topU4And // {v:U4 mask:U1} mask upper 8bits of U4
+//                 #18$sl  
+//   .4 %SHL       %AND
+//   %RET // unaligned
 
 // TODO: don't use this one, tried to do it w/out .4LIT
 // $loc chkXNoLocals // {metaFnAddr -> fnAddr}
 //   // Assert is not local
 //                   .4%DUP // {metaFnAddr, metaFnAddr}
-//   @IS_LARGE_FN$ulit   %XSL @topU4And $h2 // {metaFnAddr isLocal}
+//   @IS_LARGE_FN$sl     %XSL @topU4And $h2 // {metaFnAddr isLocal}
 //   %NOP            .4%LIT @E_cXHasL $h2
 //   %NOP            .4%LIT @assertNot $h2 // {metaFnAddr}
 //   .1 %LIT           #FF $h1
@@ -292,10 +300,6 @@ $loc topU4And // {v:U4 mask:U1} mask upper 8bits of U4
 // .4
 // 
 // $loc assertWsEmpty  $xsl getWsLen  $L @E_wsEmpty  $jmpl assertNot
-// $loc tAssert        LIT @E_test $mem_jmpl assert
-// $loc tAssertNot     LIT @E_test $mem_jmpl assertNot
-// $loc tAssertEq      .4 EQ  $jmpl tAssert
-// $loc tAssertNe      .4 NEQ $jmpl tAssert
 // 
 // // **********
 // // * Local Variables

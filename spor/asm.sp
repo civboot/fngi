@@ -25,28 +25,6 @@
 //   are loaded by the execute instr and stored in the highest byte in the
 //   callstack (which RET uses to shrink the local stack on return).
 
-#40 =ULIT  // micro literal mask
-
-// # Jmp      Description
-#80 =RET   // Return
-#81 =JMPL  // Jmp to Literal
-#82 =JMPW  // Jmp to WS
-#83 =JZL   // Jmp to Literal if store==0
-#84 =JTBL  // Jump to Table index using size=Literal
-#85 =XL    // Execute Literal (mPtr)
-#86 =XW    // Execute WS (aPtr)
-#87 =XSL   // Execute Small Literal (no LS update)
-#88 =XSW   // Execute Small WS (no LS update)
-
-// # Mem      Store    Description
-#C0 =LIT   // LIT         Literal
-#C1 =FT    // FT(WS)      FeTch WS
-#C2 =FTLL  // FT(LP+LIT)  FeTch LocalsPtr offset
-#C3 =FTML  // FT(MP+LIT)  FeTch ModulePtr offset
-#C4 =SR    // SR(WS)      StoRe WS
-#C5 =SRLL  // SR(LP+LIT)  StoRe LocalsPtr offset
-#C6 =SRML  // SR(MP+LIT)  StoRe ModulePtr offset
-
 // # Operations: Special
 #00 =NOP   // { -> }     no operation
 #01 =SWP   // {l r -> r l} swap
@@ -98,6 +76,29 @@
 #32 =DIV_S // {l / r  } signed division
 // Double-arg extension commands might be:
 // floating point: add,sub,mul,div,ge,lt
+
+// # Small Literal [0x40 - 0x80)
+#40 =SLIT
+
+// # Jmp      Description
+#80 =RET   // Return
+#81 =JMPL  // Jmp to Literal
+#82 =JMPW  // Jmp to WS
+#83 =JZL   // Jmp to Literal if store==0
+#84 =JTBL  // Jump to Table index using size=Literal
+#85 =XL    // Execute Literal (mPtr)
+#86 =XW    // Execute WS (aPtr)
+#87 =XSL   // Execute Small Literal (no LS update)
+#88 =XSW   // Execute Small WS (no LS update)
+
+// # Mem      Store    Description
+#C0 =LIT   // LIT         Literal
+#C1 =FT    // FT(WS)      FeTch WS
+#C2 =FTLL  // FT(LP+LIT)  FeTch LocalsPtr offset
+#C3 =FTML  // FT(MP+LIT)  FeTch ModulePtr offset
+#C4 =SR    // SR(WS)      StoRe WS
+#C5 =SRLL  // SR(LP+LIT)  StoRe LocalsPtr offset
+#C6 =SRML  // SR(MP+LIT)  StoRe ModulePtr offset
 
 // **********
 // * Device Operations
