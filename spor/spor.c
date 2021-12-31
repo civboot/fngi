@@ -297,17 +297,17 @@ SzI szToSzI(U8 sz) {
   ASM_ASSERT(aptr, E_null);
   ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (szI) {
-    case SzI1: 
+    case SzI1:
       *(mem+aptr) = (U8)value;
-      break;
+      return;
     case SzI2:
       ASM_ASSERT(aptr % 2 == 0, E_align2);
       *((U16*) (mem+aptr)) = (U16)value;
-      break;
+      return;
     case SzI4:
       ASM_ASSERT(aptr % 2 == 0, E_align4);
       *((U32*) (mem+aptr)) = value;
-      break;
+      return;
     default: SET_ERR(E_cSz);
   }
 }
@@ -424,7 +424,7 @@ U32 popLit(SzI szI) {
 /* returns: should escape */
 inline static Bool executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
-  if(dbgMode) { printf("  * "); dbgInstr(instr, TRUE);  printf("@%X", env.ep); printf("\n"); }
+  if(dbgMode) { printf("  * "); dbgInstr(instr, TRUE);  printf("@%X", env.ep - 1); printf("\n"); }
 
   U32 l, r;
   U32 szMask = 0xFFFFFFFF; // TODO: remove
@@ -509,7 +509,6 @@ JMPW: case SzI2 + JMPW:
     GOTO_SZ(JMPW, SzI1)
     GOTO_SZ(JMPW, SzI4)
 JZL: case SzI2 + JZL:
-      printf("??? JZL %X\n", szI);
       r = popLit(szI);
       if(!WS_POP()) { env.ep = toAptr(r, szI); }
       break;
@@ -562,9 +561,8 @@ FTML: case SzI2 + FTML:
     GOTO_SZ(FTML, SzI1)
     GOTO_SZ(FTML, SzI4)
 SR: case SzI2 + SR:
-      // TODO: swap SR to be forth like
-      r = WS_POP();
-      store(mem, WS_POP(), r, szI);
+      r = WS_POP(); // Removing this will cause invalid order. stackoverflow.com/questions/376278
+      store(mem, r, WS_POP(), szI);
       break;
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
@@ -586,7 +584,7 @@ SRML: case SzI2 + SRML:
 }
 
 /*fn*/ void execute(U8 instr) {
-  env.ep = 0;
+  env.ep = 1;
   while(TRUE) {
     if(executeInstr(instr)) return;
     instr = popLit(SzI1);
@@ -787,7 +785,7 @@ U8 scanInstr() {
 
 /*fn*/ void cWriteInstr() { // `%`
   U8 instr = scanInstr();
-  store(mem, *env.heap, instr, SzI1);
+  store(mem, *env.heap, (U8)instr, SzI1);
   if (dbgMode) { printf("%% "); dbgInstr(instr, FALSE); printf(" @%X\n", *env.heap); }
   *env.heap += 1;
 }
@@ -795,7 +793,7 @@ U8 scanInstr() {
 /*fn*/ void cExecuteInstr() { // ^
   U8 instr = scanInstr();
   if (dbgMode) { printf("^ "); printf("\n"); }
-  env.ep = 0;
+  env.ep = 1;
   executeInstr(instr);
 }
 
@@ -1230,7 +1228,7 @@ void dbgMem(Instr instr) {
     default: return;
   }
   if(_dbgMemInvalid(szI, env.ep)) return;
-  printf("{0x%X}", fetch(mem, env.ep, szI), szI);
+  printf("{0x%X}", fetch(mem, env.ep, szI));
 }
 
 void dbgIndent() {
@@ -1390,9 +1388,26 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testAsm2() {
-  printf("## testAsm2\n"); SMALL_ENV;
+  printf("## testAsm2\n"); TEST_ENV;
   compileFile("spor/asm2.sp");
-  assert(!WS_LEN);
+  if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+
+  // Test h1
+  heapStart = *env.heap;
+  compileStr(".1 #42 ,  #43 $h1");
+  assert(heapStart+2 == *env.heap);
+  U32 v1 = fetch(mem, heapStart, SzI1);
+  U32 v2 = fetch(mem, heapStart+1, SzI1);
+  assert(0x42 == v1);
+  /* assert(0x43 == fetch(mem, heapStart + 1, SzI1)); */
+
+  // // Test _L0
+  // heapStart = *env.heap;
+  // compileStr("#7 $_L0");
+  // assert(C_SLIT & 0x7 == fetch(mem, heapStart, SzI1));
+  // assert(heapStart+1 == *env.heap);
+
+
   compileLoop(); ASSERT_NO_ERR();
   compileFile("spor/testAsm2.sp");
 }
