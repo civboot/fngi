@@ -1,17 +1,13 @@
-// #1 $tAssert
-// 
-// 
-// // Test assert
-// #0              $tAssertNot
-// ZERO^           $tAssertNot
-// #1              $tAssert
+// Test assert
+#0              $tAssertNot
+#1              $tAssert
 
 // // Test operations
-// #400 #1 ADD^    #401 $tAssertEq
-// #400 #1 SUB^    #3FF $tAssertEq
-// #400 #1 SHR^    #200 $tAssertEq
-// #400 #1 SHL^    #800 $tAssertEq
-// $assertWsEmpty
+#400 #1 ^ADD    #401 $tAssertEq
+#400 #1 ^SUB    #3FF $tAssertEq
+#400 #1 ^SHR    #200 $tAssertEq
+#400 #1 ^SHL    #800 $tAssertEq
+//$assertWsEmpty
 // 
 // // Test core macros
 // $loc test_h2 .4 LIT RET; #1234_5678 $h2

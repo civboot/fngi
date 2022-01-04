@@ -1396,17 +1396,43 @@ void compileStr(char* s) {
   heapStart = *env.heap;
   compileStr(".1 #42 ,  #43 $h1");
   assert(heapStart+2 == *env.heap);
+  assert(0x42 == fetch(mem, heapStart, SzI1));
+  assert(0x43 == fetch(mem, heapStart + 1, SzI1));
+
+  // Test _L0
+  heapStart = *env.heap;
+  compileStr("#7 $_L0");
+  assert(heapStart+1 == *env.heap);
   U32 v1 = fetch(mem, heapStart, SzI1);
-  U32 v2 = fetch(mem, heapStart+1, SzI1);
-  assert(0x42 == v1);
-  /* assert(0x43 == fetch(mem, heapStart + 1, SzI1)); */
+  assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
 
-  // // Test _L0
-  // heapStart = *env.heap;
-  // compileStr("#7 $_L0");
-  // assert(C_SLIT & 0x7 == fetch(mem, heapStart, SzI1));
-  // assert(heapStart+1 == *env.heap);
+  // Test h2
+  *env.heap = alignAPtr(*env.heap, 2);
+  heapStart = *env.heap;
+  compileStr("#1234 $h2");
+  assert(heapStart+2 == *env.heap);
+  assert(0x1234 == fetch(mem, heapStart, SzI2));
 
+  // Test h4
+  *env.heap = alignAPtr(*env.heap, 4);
+  heapStart = *env.heap;
+  compileStr("#987654 $h4");
+  assert(heapStart+4 == *env.heap);
+  assert(0x987654 == fetch(mem, heapStart, SzI4));
+
+  // Test various
+  compileStr("$getHeap $getTopHeap");
+  assert(*env.topHeap == WS_POP());
+  assert(*env.heap == WS_POP());
+
+  // Test hla
+  *env.heap = 0x100;
+  compileStr("#2 $hla");
+  assert(0x101 == *env.heap);
+  compileStr("#4 $hla");
+  assert(0x103 == *env.heap);
+  compileStr("#4 $hla");
+  assert(0x103 == *env.heap);
 
   compileLoop(); ASSERT_NO_ERR();
   compileFile("spor/testAsm2.sp");
