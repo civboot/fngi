@@ -99,8 +99,8 @@ typedef enum {
   DRP2 = 0x03,
   DUP  = 0x04,
   DUPN = 0x05,
-  DVF  = 0x06,
-  DVS  = 0x07,
+  DVFT = 0x06,
+  DVSR = 0x07,
   RGL  = 0x08,
   RGS  = 0x09,
 
@@ -442,8 +442,8 @@ inline static Bool executeInstr(Instr instr) {
     case DRP2: WS_POP(); WS_POP(); break;
     case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      break;
     case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); break;
-    case DVF : deviceOp(TRUE, SzI4, szMask, 4); break;
-    case DVS : deviceOp(FALSE, SzI4, szMask, 4); break;
+    case DVFT: deviceOp(TRUE, SzI4, szMask, 4); break;
+    case DVSR: deviceOp(FALSE, SzI4, szMask, 4); break;
     case RGL : assert(FALSE); // not impl
     case RGS : assert(FALSE); // not impl
 
@@ -1060,16 +1060,16 @@ Key keyDNE = {.len = 3, .s = "???" };
 Key* Dict_findFn(U32 value) {
   DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
   U16 offset = 0;
+  Key* key = &keyDNE;
 
   while(offset < dict->heap) {
-    Key* key = Dict_key(d, offset);
-    if(value == (0xFFFFFFFFFFFF & key->value)) return key;
-    U16 entrySz = alignAPtr(keySizeWLen(key->len), 4);
+    Key* atKey = Dict_key(d, offset);
+    if(value == (0xFFFFFFFFFFFF & atKey->value)) key = atKey;
+    U16 entrySz = alignAPtr(keySizeWLen(atKey->len), 4);
     offset += entrySz;
   }
-
   assert(offset == *d.heap);
-  return &keyDNE;
+  return key;
 }
 
 U32 max(I32 a, I32 b) {
@@ -1104,8 +1104,8 @@ char* instrStr(Instr instr) {
     case DRP2 :  return "DRP2 ";
     case DUP  :  return "DUP  ";
     case DUPN :  return "DUPN ";
-    case DVF  :  return "DVF  ";
-    case DVS  :  return "DVS  ";
+    case DVFT :  return "DVFT ";
+    case DVSR :  return "DVSR ";
     case RGL  :  return "RGL  ";
     case RGS  :  return "RGS  ";
 
@@ -1378,7 +1378,7 @@ void compileStr(char* s) {
   compileStr(".4 #8000 #4 ^SUB");
   assert(0x7FFC == WS_POP());
 
-  compileStr(".A @D_sz ^DVF");
+  compileStr(".A @D_sz ^DVFT");
   assert(0x04 == WS_POP());
 
   U32 expectDictHeap = (U8*)dict - mem + 4;
@@ -1391,6 +1391,8 @@ void compileStr(char* s) {
   printf("## testAsm2\n"); TEST_ENV;
   compileFile("spor/asm2.sp");
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+
+  compileFile("spor/testAsm2.sp");
 
   // Test h1
   heapStart = *env.heap;
@@ -1425,17 +1427,17 @@ void compileStr(char* s) {
   assert(*env.topHeap == WS_POP());
   assert(*env.heap == WS_POP());
 
-  // Test hla
+  // Test hal
   *env.heap = 0x100;
-  compileStr("#2 $hla");
+  compileStr("#2 $_hal");
   assert(0x101 == *env.heap);
-  compileStr("#4 $hla");
+  compileStr("#4 $_hal");
   assert(0x103 == *env.heap);
-  compileStr("#4 $hla");
+  compileStr("#4 $_hal");
   assert(0x103 == *env.heap);
 
   compileLoop(); ASSERT_NO_ERR();
-  compileFile("spor/testAsm2.sp");
+  //compileFile("spor/testAsm2.sp");
 }
 
 // /*test*/ void testBoot() {

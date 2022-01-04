@@ -2,11 +2,33 @@
 #0              $tAssertNot
 #1              $tAssert
 
-// // Test operations
+// Test operations
 #400 #1 ^ADD    #401 $tAssertEq
 #400 #1 ^SUB    #3FF $tAssertEq
 #400 #1 ^SHR    #200 $tAssertEq
 #400 #1 ^SHL    #800 $tAssertEq
+
+// Test dictionary
+#444 $dictSet foo
+$dictGet foo   #444 $tAssertEq
+#123455 $dictSet foo2
+$dictGet foo2 #123455 $tAssertEq
+
+// Test rKeyMeta
+$c_updateRKey
+
+// assert @rKey == @(&dict.buf + &dict.heap)
+  @c_rKey .4^FT
+  @c_dictBuf .4^FT @c_dictHeap .2^FT .4^ADD
+  $tAssertEq
+
+
+@heap .4^FT =twelve #12 $_L0 %RET
+
+$twelve #12 $tAssertEq
+
+
+
 //$assertWsEmpty
 // 
 // // Test core macros

@@ -32,8 +32,8 @@
 #03 =DRP2  // {l r -> }  drop 2
 #04 =DUP   // {l -> l l} duplicate
 #05 =DUPN  // {l -> l l==0} DUP then NOT
-#06 =DVF   // Device Operation Load
-#07 =DVS   // Device Operation Store
+#06 =DVFT  // Device Operation Load
+#07 =DVSR  // Device Operation Store
 #08 =RGL   // Register Load
 #09 =RGS   // Register Store
 
@@ -138,8 +138,8 @@
 
 // **********
 // * Global Compiler Variables
-@heap .4 ^FT =c_rKey        #0 .4, // rKey, ref to current dict key.
-@heap .4 ^FT =c_localOffset #0 .2, // Local Offset (for local var setup)
+@heap .4^FT =c_rKey        #0 .4, // [U4] rKey, ref to current dict key.
+@heap .4^FT =c_localOffset #0 .2, // [U2] Local Offset (for local var setup)
 
 // **********
 // * Global Constants
