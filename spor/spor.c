@@ -83,6 +83,10 @@ typedef CSz CPtr;
 #define E_cXNoL     0xE0CE // x to non-locals
 #define E_cErr      0xE0CF // D_assert err code invalid
 
+#define REF_MASK    0xFFFFFF
+#define IS_FN       (0x01 << 24)
+#define FN_LOCALS   (0x08 << 24)
+
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 
 typedef enum {
@@ -94,15 +98,17 @@ typedef enum {
 
 typedef enum {
   NOP  = 0x00,
-  SWP  = 0x01,
-  DRP  = 0x02,
-  DRP2 = 0x03,
-  DUP  = 0x04,
-  DUPN = 0x05,
-  DVFT = 0x06,
-  DVSR = 0x07,
-  RGL  = 0x08,
-  RGS  = 0x09,
+  RETZ = 0x01,
+  RET  = 0x02,
+  SWP  = 0x03,
+  DRP  = 0x04,
+  DRP2 = 0x05,
+  DUP  = 0x06,
+  DUPN = 0x07,
+  DVFT = 0x08,
+  DVSR = 0x09,
+  RGL  = 0x0A,
+  RGS  = 0x0B,
 
   INC  = 0x10,
   INC2 = 0x11,
@@ -135,15 +141,14 @@ typedef enum {
   DIV_U= 0x31,
   DIV_S= 0x32,
 
-  RET  = 0x80,
-  JMPL = 0x81,
-  JMPW = 0x82,
-  JZL  = 0x83,
-  JTBL = 0x84,
-  XL   = 0x85,
-  XW   = 0x86,
-  XSL  = 0x87,
-  XSW  = 0x88,
+  JMPL = 0x80,
+  JMPW = 0x81,
+  JZL  = 0x82,
+  JTBL = 0x83,
+  XL   = 0x84,
+  XW   = 0x85,
+  XSL  = 0x86,
+  XSW  = 0x87,
 
   LIT  = 0xC0,
   FT   = 0xC1,
@@ -422,7 +427,7 @@ U32 popLit(SzI szI) {
 #define GOTO_SZ(I, SZ) case SZ + I: szI = SZ; goto I;
 
 /* returns: should escape */
-inline static Bool executeInstr(Instr instr) {
+inline static void executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
   if(dbgMode) { printf("  * "); dbgInstr(instr, TRUE);  printf("@%X", env.ep - 1); printf("\n"); }
 
@@ -431,87 +436,82 @@ inline static Bool executeInstr(Instr instr) {
   SzI szI = SzI2;
   switch ((U8)instr) {
     // Operation Cases
-    case NOP: break;
+    case NOP: return;
+    case RETZ:
+      if(WS_POP()) return;
+      // intentional fallthrough
+    case RET:
+      U32 callMeta = Stk_pop(&env.callStk);
+      Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
+      env.mp = MOD_HIGH_MASK & callMeta;
+      env.ep = MAX_APTR & callMeta;
+      return;
     case SWP:
       r = WS_POP();
       l = WS_POP();
       WS_PUSH(r);
       WS_PUSH(l);
-      break;
-    case DRP : WS_POP(); break;
-    case DRP2: WS_POP(); WS_POP(); break;
-    case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      break;
-    case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); break;
-    case DVFT: deviceOp(TRUE, SzI4, szMask, 4); break;
-    case DVSR: deviceOp(FALSE, SzI4, szMask, 4); break;
+      return;
+    case DRP : WS_POP(); return;
+    case DRP2: WS_POP(); WS_POP(); return;
+    case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      return;
+    case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); return;
+    case DVFT: deviceOp(TRUE, SzI4, szMask, 4); return;
+    case DVSR: deviceOp(FALSE, SzI4, szMask, 4); return;
     case RGL : assert(FALSE); // not impl
     case RGS : assert(FALSE); // not impl
 
-    case INC : WS_PUSH(WS_POP() + 1); break;
-    case INC2: WS_PUSH(WS_POP() + 2); break;
-    case INC4: WS_PUSH(WS_POP() + 4); break;
-    case DEC : WS_PUSH(WS_POP() - 1); break;
-    case INV : WS_PUSH(~WS_POP()); break;
-    case NEG : WS_PUSH(-WS_POP()); break;
-    case NOT : WS_PUSH(0 == WS_POP()); break;
-    case CI1 : WS_PUSH((I32) ((I8) WS_POP())); break;
-    case CI2 : WS_PUSH((I32) ((I16) WS_POP())); break;
+    case INC : WS_PUSH(WS_POP() + 1); return;
+    case INC2: WS_PUSH(WS_POP() + 2); return;
+    case INC4: WS_PUSH(WS_POP() + 4); return;
+    case DEC : WS_PUSH(WS_POP() - 1); return;
+    case INV : WS_PUSH(~WS_POP()); return;
+    case NEG : WS_PUSH(-WS_POP()); return;
+    case NOT : WS_PUSH(0 == WS_POP()); return;
+    case CI1 : WS_PUSH((I32) ((I8) WS_POP())); return;
+    case CI2 : WS_PUSH((I32) ((I16) WS_POP())); return;
 
-    case ADD : r = WS_POP(); WS_PUSH(WS_POP() + r); break;
-    case SUB : r = WS_POP(); WS_PUSH(WS_POP() - r); break;
-    case MOD : r = WS_POP(); WS_PUSH(WS_POP() % r); break;
-    case SHL : r = WS_POP(); WS_PUSH(WS_POP() << r); break;
-    case SHR : r = WS_POP(); WS_PUSH(WS_POP() >> r); break;
-    case AND : r = WS_POP(); WS_PUSH(WS_POP() & r); break;
-    case OR  : r = WS_POP(); WS_PUSH(WS_POP() | r); break;
-    case XOR : r = WS_POP(); WS_PUSH(WS_POP() ^ r); break;
-    case LAND: r = WS_POP(); WS_PUSH(WS_POP() && r); break;
-    case LOR : r = WS_POP(); WS_PUSH(WS_POP() || r); break;
-    case EQ  : r = WS_POP(); WS_PUSH(WS_POP() == r); break;
-    case NEQ : r = WS_POP(); WS_PUSH(WS_POP() != r); break;
-    case GE_U: r = WS_POP(); WS_PUSH(WS_POP() >= r); break;
-    case LT_U: r = WS_POP(); WS_PUSH(WS_POP() < r); break;
-    case GE_S: r = WS_POP(); WS_PUSH((I32)WS_POP() >= (I32) r); break;
-    case LT_S: r = WS_POP(); WS_PUSH((I32)WS_POP() < (I32) r); break;
-    case MUL  :r = WS_POP(); WS_PUSH(WS_POP() * r); break;
-    case DIV_U:r = WS_POP(); WS_PUSH(WS_POP() / r); break;
+    case ADD : r = WS_POP(); WS_PUSH(WS_POP() + r); return;
+    case SUB : r = WS_POP(); WS_PUSH(WS_POP() - r); return;
+    case MOD : r = WS_POP(); WS_PUSH(WS_POP() % r); return;
+    case SHL : r = WS_POP(); WS_PUSH(WS_POP() << r); return;
+    case SHR : r = WS_POP(); WS_PUSH(WS_POP() >> r); return;
+    case AND : r = WS_POP(); WS_PUSH(WS_POP() & r); return;
+    case OR  : r = WS_POP(); WS_PUSH(WS_POP() | r); return;
+    case XOR : r = WS_POP(); WS_PUSH(WS_POP() ^ r); return;
+    case LAND: r = WS_POP(); WS_PUSH(WS_POP() && r); return;
+    case LOR : r = WS_POP(); WS_PUSH(WS_POP() || r); return;
+    case EQ  : r = WS_POP(); WS_PUSH(WS_POP() == r); return;
+    case NEQ : r = WS_POP(); WS_PUSH(WS_POP() != r); return;
+    case GE_U: r = WS_POP(); WS_PUSH(WS_POP() >= r); return;
+    case LT_U: r = WS_POP(); WS_PUSH(WS_POP() < r); return;
+    case GE_S: r = WS_POP(); WS_PUSH((I32)WS_POP() >= (I32) r); return;
+    case LT_S: r = WS_POP(); WS_PUSH((I32)WS_POP() < (I32) r); return;
+    case MUL  :r = WS_POP(); WS_PUSH(WS_POP() * r); return;
+    case DIV_U:r = WS_POP(); WS_PUSH(WS_POP() / r); return;
     case DIV_S:
       r = WS_POP();
       ASM_ASSERT(r, E_divZero);
       WS_PUSH((I32) WS_POP() / (I32) r);
-      break;
+      return;
 
     // Small literal (64 cases)
     CASE_32(C_SLIT)
-    CASE_32(C_SLIT+32) WS_PUSH(0x3F & instr); break;
+    CASE_32(C_SLIT+32) WS_PUSH(0x3F & instr); return;
 
     // Jmp Cases
-RET: case SzI2 + RET:
-      if(Stk_len(env.callStk) == 0) {
-        return TRUE;
-      } else {
-        U32 callMeta = Stk_pop(&env.callStk);
-        Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
-        env.mp = MOD_HIGH_MASK & callMeta;
-        env.ep = MAX_APTR & callMeta;
-      }
-      break;
-    GOTO_SZ(RET, SzI1)
-    GOTO_SZ(RET, SzI4)
-JMPL: case SzI2 + JMPL:
-      env.ep = toAptr(popLit(szI), szI);
-      break;
-    GOTO_SZ(JMPL, SzI1)
-    GOTO_SZ(JMPL, SzI4)
+    case SzI1 + JMPL: env.ep = toAptr(env.ep + (I8)popLit(SzI1), SzI4); return;
+    case SzI2 + JMPL: env.ep = toAptr(popLit(SzI2), SzI2); return;
+    case SzI4 + JMPL: env.ep = toAptr(popLit(SzI4), SzI4); return;
 JMPW: case SzI2 + JMPW:
       env.ep = toAptr(WS_POP(), szI);
-      break;
+      return;
     GOTO_SZ(JMPW, SzI1)
     GOTO_SZ(JMPW, SzI4)
 JZL: case SzI2 + JZL:
       r = popLit(szI);
       if(!WS_POP()) { env.ep = toAptr(r, szI); }
-      break;
+      return;
     GOTO_SZ(JZL, SzI1)
     GOTO_SZ(JZL, SzI4)
 JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
@@ -519,74 +519,73 @@ JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
     GOTO_SZ(JTBL, SzI4)
 XL: case SzI2 + XL:
       xImpl(toAptr(popLit(szI), szI));
-      break;
+      return;
     GOTO_SZ(XL, SzI1)
     GOTO_SZ(XL, SzI4)
 XW:
     case SzI2 + XW:
       xImpl(toAptr(WS_POP(), szI));
-      break;
+      return;
     GOTO_SZ(XW, SzI1)
     GOTO_SZ(XW, SzI4)
 XSL: case SzI2 + XSL:
-      xsImpl(toAptr(popLit(szI), szI)); break;
-      break;
+      xsImpl(toAptr(popLit(szI), szI)); return;
+      return;
     GOTO_SZ(XSL, SzI1)
     GOTO_SZ(XSL, SzI4)
 XSW: case SzI2 + XSW:
       xsImpl(toAptr(WS_POP(), szI));
-      break;
+      return;
     GOTO_SZ(XSW, SzI1)
     GOTO_SZ(XSW, SzI4)
 
     // Mem Cases
 LIT: case SzI2 + LIT:
       WS_PUSH(popLit(szI));
-      break;
+      return;
     GOTO_SZ(LIT, SzI1)
     GOTO_SZ(LIT, SzI4)
 FT: case SzI2 + FT:
       WS_PUSH(fetch(mem, WS_POP(), szI));
-      break;
+      return;
     GOTO_SZ(FT, SzI1)
     GOTO_SZ(FT, SzI4)
 FTLL: case SzI2 + FTLL:
-      WS_PUSH(fetch(mem, LS_OFFSET() + env.ls.sp  + popLit(SzI2), szI));
-      break;
+      WS_PUSH(fetch(mem, LS_OFFSET() + env.ls.sp  + popLit(SzI1), szI));
+      return;
     GOTO_SZ(FTLL, SzI1)
     GOTO_SZ(FTLL, SzI4)
 FTML: case SzI2 + FTML:
       WS_PUSH(fetch(mem, (MOD_HIGH_MASK & env.mp) + popLit(SzI2), szI));
-      break;
+      return;
     GOTO_SZ(FTML, SzI1)
     GOTO_SZ(FTML, SzI4)
 SR: case SzI2 + SR:
       r = WS_POP(); // Removing this will cause invalid order. stackoverflow.com/questions/376278
       store(mem, r, WS_POP(), szI);
-      break;
+      return;
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
 SRLL: case SzI2 + SRLL:
-      store(mem, LS_OFFSET() + env.ls.sp + popLit(SzI2), WS_POP(), szI);
-      break;
+      store(mem, LS_OFFSET() + env.ls.sp + popLit(SzI1), WS_POP(), szI);
+      return;
     GOTO_SZ(SRLL, SzI1)
     GOTO_SZ(SRLL, SzI4)
 SRML: case SzI2 + SRML:
       store(mem, (MOD_HIGH_MASK & env.mp) + popLit(SzI2), WS_POP(), szI);
-      break;
+      return;
     GOTO_SZ(SRML, SzI1)
     GOTO_SZ(SRML, SzI4)
 
     default: SET_ERR(E_cInstr);
   }
-
-  return FALSE;
 }
 
 /*fn*/ void execute(U8 instr) {
-  env.ep = 1;
+  env.ep = 1; // so dbg makes it 0
   while(TRUE) {
-    if(executeInstr(instr)) return;
+    executeInstr(instr);
+    if(Stk_len(env.callStk) == 0) return;
     instr = popLit(SzI1);
   }
 }
@@ -802,8 +801,9 @@ U8 scanInstr() {
   if(dbgMode) { printf("$ "); dbgWs(); printToken(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
-  WS_PUSH(value);
-  execute(SzI4 + JMPW);
+  WS_PUSH(REF_MASK & value);
+  if(FN_LOCALS & value) execute(SzI4 + XW);
+  else                  execute(SzI4 + XSW);
 }
 
 /*fn*/ Bool compile() {
@@ -885,7 +885,7 @@ void deviceOpCatch() {
   if(setjmp(local_err_jmp)) {
     // got error, handled below
   } else {
-    execute(SzI4 + JMPW);
+    execute(SzI4 + XW);
   }
 
   // ALWAYS Reset ep, call, and local stack and clear WS.
@@ -1064,7 +1064,7 @@ Key* Dict_findFn(U32 value) {
 
   while(offset < dict->heap) {
     Key* atKey = Dict_key(d, offset);
-    if(value == (0xFFFFFFFFFFFF & atKey->value)) key = atKey;
+    if(value == (REF_MASK & atKey->value)) key = atKey;
     U16 entrySz = alignAPtr(keySizeWLen(atKey->len), 4);
     offset += entrySz;
   }
@@ -1099,6 +1099,8 @@ void dbgWsFull() {
 char* instrStr(Instr instr) {
   switch (instr) {
     case NOP  :  return "NOP  ";
+    case RETZ :  return "RETZ ";
+    case RET  :  return "RET  ";
     case SWP  :  return "SWP  ";
     case DRP  :  return "DRP  ";
     case DRP2 :  return "DRP2 ";
@@ -1150,7 +1152,6 @@ char* instrStr(Instr instr) {
     case SRLL:  return "SRLL ";
     case SRML:  return "SRML ";
 
-    case RET:   return "RET  ";
     case JMPL:  return "JMPL ";
     case JMPW:  return "JMPW ";
     case JZL:   return "JZL  ";

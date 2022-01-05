@@ -9,15 +9,15 @@ endif
 
 syn match elAlpha    '[_a-zA-Z0-9]\+' nextGroup=elInstr
 syn keyword elInstr
-      \ NOJ RET JMPL JMPW JZL JTBL XL  XW  XSL XSW
-      \ WS    LIT  FTLL  FTML  FTOL  SRLL  SRML  SROL
-      \ Sz1   Sz2   Sz4   SzA
-      \ NOP   SWP   DRP   DRP2  DUP   DUPN  DVFT  DVSR
+      \ NOP   RETZ  RET   SWP   DRP   DRP2  DUP   DUPN  DVFT  DVSR
       \ RGL   RGS   FT    SR    LIT4  ZERO
       \ INC   INC2  INC4  DEC   INV   NEG   NOT   CI1   CI2
       \ ADD   SUB   MOD   SHL   SHR   AND   OR    XOR   LAND  LOR
       \ EQ    NEQ   GE_U  LT_U  GE_S  LT_S
-      \ MUL   DIV_U DIV_S ;
+      \ MUL   DIV_U DIV_S
+      \ SLIT  SZ1   SZ2   SZ4   SZA
+      \ NOJ   JMPL  JMPW  JZL   JTBL  XL    XW    XSL   XSW
+      \ WS    LIT   FTLL  FTML  FTOL  SRLL  SRML  SROL
       \ nextgroup=elInstrSC
 
 syn match elInstrSC   ';'               nextGroup=elSymbol

@@ -4,6 +4,26 @@
 // * Essential macros:
 // These macros must be defined in pure ASM. They build on eachother
 // to make the syntax much more readable.
+//
+// h1 [U1] -> []                : push 1 byte to heap
+// h2 [U2] -> []                : push 2 byte to heap
+// h4 [U4] -> []                : push 4 byte to heap
+// _L0 [U1] -> []               : compile a small literal (<64), unchecked
+// $dictSet <key> [U4] -> []    : set a dictionary key to value
+// $dictGet <key> [] -> [U4]    : get dictionary key's value
+// $loc <token> [] -> []        : set current heap location to <token>
+// hpad [U4] -> []              : pad heap with NOPs
+// hal2 [] -> []                : align heap for 2 byte literal
+// hal4 [] -> []                : align heap for 4 byte literal
+// ha2 [] -> []                 : align heap to 2 bytes
+// ha4 [] -> []                 : align heap to 4 bytes
+//
+// Assertions: these panic with the supplied errCode if cond is not met.
+// assert [cond errCode]
+// assertNot [cond errCode]
+//
+// Test Assertions: these panic with E_test if the cond is not met.
+// tAssert, tAssertNot, tAssertEq, tAssertNe
 
 @heap .4^FT =h1  // h1: {val:1} push 1bytes from stack to heap
   .1@heap @SLIT ^OR,  .4%FT // fetch heap {val, heap}
@@ -21,8 +41,8 @@
 
 @heap .4^FT =h2  // h2: {val:2} push 2bytes from stack to heap
             @heap$_L0
-  %FT       .2%SR           // store 2 byte value at heap
-  @heap$_L0   %FT           // {heap}
+  .4%FT       .2%SR          // store 2 byte value at heap
+  @heap$_L0   .4%FT          // {heap}
   .4%INC2     %SRML .2@heap, // heap=heap+2
   %RET // (unaligned)
 
@@ -33,13 +53,37 @@
   .4%INC4     %SRML .2@heap, // heap=heap+4
   %RET // (unaligned)
 
-@heap .4^FT =getHeap     %FTML @heap $h2      %RET // (unaligned)
-@heap .4^FT =setHeap     %SRML @heap $h2      %RET // (unaligned)
-@heap .4^FT =getTopHeap  %FTML @topHeap $h2   %RET // (unaligned)
-@heap .4^FT =setTopHeap  %SRML @topHeap $h2   %RET // (unaligned)
+@heap .4^FT =_dict // setup for dict.
+  // Scan next token
+            @D_scan$_L0
+  %DVFT
+  // put {dict.buf &dict.heap} on stack
+            .4%FTML @c_dictBuf $h2
+  %NOP      .2%LIT @c_dictHeap $h2
+  %RET // (unaligned)
 
-%NOP // aligned
-@heap .4^FT =hpad // {pad} write pad bytes to heap.
+@heap .4^FT =dictSet // dictSet: Set "standard" dictionary to next token.
+            .2%XSL @_dict $h2
+  @D_dict$_L0  %DVSR // device dict SR
+  %RET // (unaligned)
+
+@heap .4^FT =dictGet // dictGet: Get the value of the next token.
+            .2%XSL @_dict $h2
+  @D_dict$_L0  %DVFT
+  %RET // (unaligned)
+
+@heap .4^FT =loc // $loc <name>: define a location
+            @heap$_L0
+  %FT       .2%XSL @dictSet $h2
+  %RET // (unaligned)
+
+$loc getHeap     %FTML @heap $h2      %RET // (unaligned)
+$loc setHeap     %SRML @heap $h2      %RET // (unaligned)
+$loc getTopHeap  %FTML @topHeap $h2   %RET // (unaligned)
+$loc setTopHeap  %SRML @topHeap $h2   %RET // (unaligned)
+
+%NOP // (aligned)
+$loc hpad // {pad} write pad bytes to heap.
   // WHILE(pad) we write NOP to heap
   @heap ^FT // c-stk{loopStart}
     .4%DUP        .2%JZL // if(pad == 0) breakTo
@@ -49,7 +93,7 @@
   .4@heap ^FT ^SWP .2^SR // update breakTo spot
   %DRP           %RET // (aligned)
 
-@heap .4^FT =_hal // {align} heap align (for) literal
+$loc _hal // {align} heap align (for) literal
   .4%DUP        .2%XSL @getHeap $h2 // {align align heap}
   .4%SWP        .4%MOD // {align heap%align}
   // pad = (align-1) - heap%align
@@ -58,114 +102,207 @@
   .4%NOP        .2%JMPL @hpad $h2
 
 // halN: heap align (for) N-byte literal.
-@heap .4^FT =hal2   #2$_L0         .2%JMPL @_hal $h2 // (aligned)
-@heap .4^FT =hal4   #4$_L0         .2%JMPL @_hal $h2 // (aligned)
-
+$loc hal2   #2$_L0         .2%JMPL @_hal $h2 // (aligned)
+$loc hal4   #4$_L0         .2%JMPL @_hal $h2 // (aligned)
 
 // Assert checks a condition or panics with an error
 // ex: <some check> @E_myError assert
-$hal2
-@heap .4^FT =assertNot // {failIfTrue errCode}
+$hal2 $loc assertNot // {failIfTrue errCode}
                   %SWP
   %NOT            %SWP // fallthrough (aligned)
-@heap .4^FT =assert    // {failIfFalse errCode}
+$loc assert    // {failIfFalse errCode}
   @D_assert$_L0    %DVFT
   %RET // (unaligned)
 
-$hal2
-@heap .4^FT =tAssert
+$hal2 $loc tAssert
         .2%LIT @E_test $h2
   $hal2 %JMPL @assert $h2
 
-@heap .4^FT =tAssertNot     .4%NOT $hal2 .2%JMPL @tAssert,
-@heap .4^FT =tAssertEq      .4%EQ  $hal2 .2%JMPL @tAssert,
-@heap .4^FT =tAssertNe      .4%NEQ $hal2 .2%JMPL @tAssert,
+$loc tAssertNot     .4%NOT $hal2 .2%JMPL @tAssert,
+$loc tAssertEq      .4%EQ  $hal2 .2%JMPL @tAssert,
+$loc tAssertNe      .4%NEQ $hal2 .2%JMPL @tAssert,
 
-$hal2
-@heap .4^FT =_ha // {align} heap align (with NOPs)
+$hal2 $loc _ha // {align} heap align (with NOPs)
                 .2%XSL @getHeap $h2 // {align heap}
   .4%SWP        .4%MOD // {heap%align}
   $hal2 .2%JMPL @hpad $h2
 
-
 // haN: heap align N byte.
 #2 $_ha
-@heap .4^FT =ha2   #2$_L0  .2%JMPL @_ha $h2
-@heap .4^FT =ha4   #4$_L0  .2%JMPL @_ha $h2
+$loc ha2   #2$_L0  .2%JMPL @_ha $h2
+$loc ha4   #4$_L0  .2%JMPL @_ha $h2
 
-$hal2
-@heap .4^FT =_dict // setup for dict
-            .4%FTML@c_dictBuf $h2  // dict.buf
-  %NOP      .2%LIT @c_dictHeap $h2 // &dict.heap
-  %RET
+$loc assertFn // {metaRef}
+  @IS_FN $_L0 .1%LIT #18 $h1 %SHL %AND
+  $hal2 .2%LIT @E_cNotFn $h2
+  $hal2 .2%JMPL @assert $h2
 
-@heap .4^FT =dictSet // dictSet: Set "standard" dictionary to next token.
-  @D_scan$_L0 %DVFT // scan next token
-  $hal2 .2%XSL@_dict $h2 // select "main" dictionary
-  @D_dict$_L0  %DVSR
-  %RET
+$loc assertXs // {metaRef}
+  %DUP $hal2 .2%XSL @assertFn $h2
+  @FN_LOCALS $_L0 .1%LIT #18 $h1 %SHL %AND
+  $hal2 .2%LIT @E_cIsX $h2
+  $hal2 .2%JMPL @assertNot $h2
 
-@heap .4^FT =dictGet // dictGet: Get the value of the next token.
-  @D_scan$_L0 %DVFT
-  $hal2 .2%XSL @_dict $h2
-  @D_dict$_L0  %DVFT
-  %RET
+$loc assertSameMod // {metaRef}
+  $hal4 .4%LIT #FF_0000 $h4 %AND // {mod}
+  $hal2 .2%XSL @getHeap $h2
+  $hal4 .4%LIT #FF_0000 $h4 %AND // {mod heapMod}
+  %EQ
+  $hal2 .2%LIT @E_cMod $h2
+  $hal2 .2%JMPL @assert $h2
 
-$hal2
-@heap .4^FT =c_updateRKey
+$loc _xslComp // {metaRef}
+  $hal2 .2%XSL @hal2 $h2    // enforce proper alignment
+  .1%LIT @SZ2 @XSL ^OR $h1  // get .2%XSL instr
+  $hal2 .2%XSL @h1 $h2      // compile it
+  $hal4 .4%LIT #FF_FFFF $h4 %AND // {addr} remove meta
+  $hal2 .2%JMPL @h2 $h2 // compile addr
+
+$loc _xsl // unchecked xsl
+  $hal2 .2%XSL @dictGet $h2 // {metaRef}
+  $hal2 .2%JMPL @_xslComp $h2
+
+$loc xsl // $xsl <token> : compile xsl2
+  $_xsl dictGet // {metaRef}
+  // Assert correct type and module
+  %DUP $_xsl assertXs
+  %DUP $_xsl assertSameMod
+  $_xsl _xslComp %RET
+
+$hal2 $loc c_updateRKey // &key contains the current dict key.
         .4%FTML @c_dictBuf $h2  // dict.buf
   $hal2 .2%FTML @c_dictHeap $h2 // dict.heap
   .4%ADD // {&newKey}
   $hal2 .4%SRML @c_rKey $h2 // rKey=newKey
   %RET
 
-@heap .4^FT =c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
-  #18 $_L0 .4%SHL           // make mask for upper byte
-  $hal2 .4%FTML @c_rKey $h2 .4 %FT // {mask key.meta}
-  %OR // updated {key.meta}
-  $hal2 .4%FTML @c_rKey $h2 .4 %SR // key.meta = (mask<<24) | key.meta
+.4$loc metaSet // {U4 mask:U1} -> U4 : apply meta mask to U4 value
+  #18 $_L0 %SHL           // make mask be upper byte
+  %OR %RET
+
+$loc c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
+  $hal2 .4%FTML @c_rKey $h2 .4 %FT // fetch key {mask key}
+  %SWP $hal2 .2%XSL @metaSet $h2   // apply mask
+  $hal2 .4%FTML @c_rKey $h2 .4 %SR // update key
   %RET
 
-$hal2
-// Define $c_fn for cleaner function/etc names.
-// This creates a name and sets up for local variables.
-@heap .4^FT =c_fn
+$hal2 $loc c_sfn // $c_sfn <token>: define location of small function
             .2%XSL @c_updateRKey $h2
-
-  // Set dict[nextToken] = heap
-  @heap$_L0 .4%FT   $hal2 .2%XSL @dictSet $h2
+  $hal2 .2%XSL @loc $h2
 
   // set rKey as fn type
   @IS_FN$_L0     .2%XSL @c_setRKeyMeta $h2
+  %RET
 
+$hal2 $loc c_fn // $c_fn <token>: define location of function with locals
+            .2%XSL @c_sfn $h2
+  // set rKey as FN_LOCALS
+  @FN_LOCALS$_L0     .2%XSL @c_setRKeyMeta $h2
   $ha2
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   #0$_L0       .2%SRML @c_localOffset $h2  // zero localDict.offset
   #0$_L0       .4%SRML @c_dictLHeap $h2    // zero localDict.heap
   %RET
 
-.4
-$c_fn getSz       @D_sz$_L0         %DVFT %RET
-// $c_fn setSz       @D_sz$_L0         %DVSR %RET // (unaligned)
-// $c_fn getWsLen    @D_wslen$_L0      %DVFT %RET // (aligned)
-// $c_fn c_xsCatch   @D_xsCatch$_L0    %DVFT %RET // (unaligned)
-// $c_fn c_scan      @D_scan$_L0       %DVFT %RET // (aligned)
-// $c_fn c_assemble  @D_assemble$_L0   %DVSR %RET // (unaligned)
+$c_fn makeSmallFn
+  $hal2 .2%XSL 
+
+// // **********
+// // * ASM Flow Control
+// // - `$IF1 ... $END1` for if blocks
+// // - `$LOOP ... $BREAK0 ... $AGAIN $END` for infiinte loops with breaks.
+// //
+// // All flow control pushes the current heap on the WS, then END/AGAIN correctly
+// // stores/jmps the heap where they are called from.
 // 
-// %NOP // (aligned)
-// $c_fn c_assembleNext // scan and assemble
+// $ha2 $loc IF1
+//   $hal2  .2%XSL @getHeap $h2  // {start} push start location to stack
+//   .1%LIT @Sz1 @JZL ^ADD $h1   // .1%JZL literal
+//   $hal2  .2%XSL @h1 $h2       // compile it
+//   #0$_L0 $hal2 .2%XSL @h1 $h2 // compile 0 (jump pad)
+//   %RET
+// 
+// $loc assertLt128 // {U4}
+//   .1%LIT #10 $h1 %LT_U
+//   $hal2 .2%LIT @E_cJmpL1 $h2
+//   $hal2 .2%XSL @assert
+//   %RET
+// 
+// $loc END1 // {start}
+//   .4%DUP // {start start}
+//   $hal2  .2%XSL @getHeap $h2 // {start start heap}
+//   %SWP %SUB                           // {start (heap-start)}
+//   %DUP $hal2 .2%XSL @assertLt128 $h2  // assert that it is < 0x10
+//   // store at location after start (1 byte literal)
+//   %SWP %INC .1%SR %RET
+// 
+// // $LOOP ... $BREAK0 ... $AGAIN $END
+// $c_fn LOOP   $hal2 .2%XSL @getHeap $h2 // push location for AGAIN
+// $c_fn BREAK0 $xsl IF   SWP RET;
+// $c_fn mem_BREAK0 $xsl mem_IF   SWP RET;
+// $c_fn AGAIN
+//   LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
+//   $jmpl h2 // compile location to jmp to
+// 
+// // **********
+// // * Compiler helpers
+// // These are core compiler helpers for compiling literals, jumps and
+// // (unchecked) executes.
+// //
+// // L [U4] -> []                : compile a literal of the correct size
+// 
+// $loc szInstr // [sz] -> [instr] : convert a sz in bytes to instr bits
+// 
+// $loc L // [U4] : compile a literal. Automatically handles size and align.
+// 
+// $hal4 $loc keyRef // {metaRef} -> {ref}
+//         .4%LIT #FF_FFFF $h4
+//   .4%AND  %RET
+// 
+// $hal2 $loc _xsl // $_xsl <token>: compile an .2%XSL to token.
+// 
+// 
+// // **********
+// // * Defining and executing functions.
+// //
+// // Functions have meta bits in the dictionary set, in order to distinguish that
+// // they are functions. Confusing between an XSW and an XW is an easy but fatal
+// // mistake. These help define functions and do the type checking when compiling
+// // functions.
+// 
+// 
+// $ha2 $locX metaChk // {metaRef mask:U1} -> bool: return true if meta bit/s are set.
+//   #1 .2, // 1 local variable. [mask]
+//   .4#18 $_L0 %SHL    // {metaRef mask} make mask be upper byte
+//   %DUP %SRLL #0$h1 // cache .mask {metaRef mask}
+//   %AND %FTLL #0$h1 %EQ // (mask AND metaRef) == mask
+//   %RET
+// 
+// $ha2 $locX metaAssert // {metaRef mask:U1 errCode}
+//   #1 .2, // 1 local variable. [errCode]
+//   .4%SRLL #0$h1 // store errCode
+//   $hal2 .2%XL @metaChk $h2
+//   .4%FTLL #0$h1  $hal2 .2%XSL @assert $h2 // assert
+//   %RET
+// 
+// .4
+// $locXs getSz       @D_sz$_L0         %DVFT %RET
+// $locXs setSz       @D_sz$_L0         %DVSR %RET
+// $locXs getWsLen    @D_wslen$_L0      %DVFT %RET
+// $locXs c_xsCatch   @D_xsCatch$_L0    %DVFT %RET
+// $locXs c_scan      @D_scan$_L0       %DVFT %RET
+// 
+// $locXs c_compNext // scan and compile
 //   @D_scan$_L0    %DVFT
 //   @D_comp$_L0    %DVSR
-//   %RET // (unaligned)
+//   %RET
+// 
+// $hal2 $locXs panic // {errCode} panic with errCode
+//             #0 $_L0
+//   .4%SWP      .2%JMPL @assert$h2  // Panic with an error code
+//   %RET
 // 
 // 
-// $c_fn panic
-//                   #0$_L0  
-//   %SWP            %JMPL @assert$h2  // Panic with an error code
-//   %RET // (unaligned)
-// 
-
-
 // **********
 // * ASM Flow Control
 // - `$IF ... $END` for if blocks
@@ -189,13 +326,6 @@ $c_fn getSz       @D_sz$_L0         %DVFT %RET
 // 
 // .4 $c_fn END $xsl getHeap   .2 SR RET;
 // 
-// // $LOOP ... $BREAK0 ... $AGAIN $END
-// $c_fn LOOP   $jmpl getHeap // push location for AGAIN
-// $c_fn BREAK0 $xsl IF   SWP RET;
-// $c_fn mem_BREAK0 $xsl mem_IF   SWP RET;
-// $c_fn AGAIN
-//   LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
-//   $jmpl h2 // compile location to jmp to
 
 
 // **********

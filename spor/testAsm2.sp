@@ -14,19 +14,30 @@ $dictGet foo   #444 $tAssertEq
 #123455 $dictSet foo2
 $dictGet foo2 #123455 $tAssertEq
 
-// Test rKeyMeta
-$c_updateRKey
-
-// assert @rKey == @(&dict.buf + &dict.heap)
-  @c_rKey .4^FT
-  @c_dictBuf .4^FT @c_dictHeap .2^FT .4^ADD
-  $tAssertEq
-
-
-@heap .4^FT =twelve #12 $_L0 %RET
+$loc twelve #12 $_L0 %RET
 
 $twelve #12 $tAssertEq
 
+// Test xsl
+
+$c_sfn myXs #22 $_L0 %RET
+$myXs #22 $tAssertEq
+
+$c_sfn callMyXs $xsl myXs %RET
+$callMyXs #22 $tAssertEq
+
+
+// // Test rKeyMeta
+// $c_updateRKey
+// 
+// // assert @rKey == @(&dict.buf + &dict.heap)
+//   @c_rKey .4^FT
+//   @c_dictBuf .4^FT @c_dictHeap .2^FT .4^ADD
+//   $tAssertEq
+
+
+
+// Test functions
 
 
 //$assertWsEmpty

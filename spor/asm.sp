@@ -27,15 +27,17 @@
 
 // # Operations: Special
 #00 =NOP   // { -> }     no operation
-#01 =SWP   // {l r -> r l} swap
-#02 =DRP   // {l -> }    drop
-#03 =DRP2  // {l r -> }  drop 2
-#04 =DUP   // {l -> l l} duplicate
-#05 =DUPN  // {l -> l l==0} DUP then NOT
-#06 =DVFT  // Device Operation Load
-#07 =DVSR  // Device Operation Store
-#08 =RGL   // Register Load
-#09 =RGS   // Register Store
+#01 =RETZ  // Return if zero
+#02 =RET   // Return
+#03 =SWP   // {l r -> r l} swap
+#04 =DRP   // {l -> }    drop
+#05 =DRP2  // {l r -> }  drop 2
+#06 =DUP   // {l -> l l} duplicate
+#07 =DUPN  // {l -> l l==0} DUP then NOT
+#08 =DVFT  // Device Operation Load
+#09 =DVSR  // Device Operation Store
+#0A =RGL   // Register Load
+#0B =RGS   // Register Store
 
 // # Operations: One Inp {l} -> One Out
 #10 =INC   // {l+1}  increment 1
@@ -80,16 +82,21 @@
 // # Small Literal [0x40 - 0x80)
 #40 =SLIT
 
+// # Sizes
+#00 =SZ1
+#10 =SZ2
+#20 =SZ4
+#20 =SZA
+
 // # Jmp      Description
-#80 =RET   // Return
-#81 =JMPL  // Jmp to Literal
-#82 =JMPW  // Jmp to WS
-#83 =JZL   // Jmp to Literal if store==0
-#84 =JTBL  // Jump to Table index using size=Literal
-#85 =XL    // Execute Literal (mPtr)
-#86 =XW    // Execute WS (aPtr)
-#87 =XSL   // Execute Small Literal (no LS update)
-#88 =XSW   // Execute Small WS (no LS update)
+#80 =JMPL  // Jmp to Literal
+#81 =JMPW  // Jmp to WS
+#82 =JZL   // Jmp to Literal if store==0
+#83 =JTBL  // Jump to Table index using size=Literal
+#84 =XL    // Execute Literal (mPtr)
+#85 =XW    // Execute WS (aPtr)
+#86 =XSL   // Execute Small Literal (no LS update)
+#87 =XSW   // Execute Small WS (no LS update)
 
 // # Mem      Store    Description
 #C0 =LIT   // LIT         Literal
@@ -162,6 +169,10 @@
 #01 =IS_FN    // function, can be called and has an fnMeta
 #02 =IS_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
 #03 =IS_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
+#FF_FFFF =REF_MASK
+
+// IS_FN meta
+#08 =FN_LOCALS // fn has locals
 
 // Error Classes
 // [E000 - E100): built-in errors.
@@ -206,5 +217,11 @@
 #E0CD  =E_cXHasL  // small-execute to fn w/locals
 #E0CE  =E_cXNoL   // large-execute to fn wo/locals
 #E0CF  =E_cErr    // D_assert err code invalid
-#E0CF  =E_cNotGlobal // using a non-global as global
+
+#E0D0  =E_cNotGlobal // using a non-global as global
+#E0D1  =E_cIsX       // using an XS for an X
+#E0D1  =E_cIsXS      // using an X for an XS
+#E0D2  =E_cJmpL1     // JMP1 over too much space
+#E0D2  =E_cNotFn
+#E0D2  =E_cMod       // different modules
 
