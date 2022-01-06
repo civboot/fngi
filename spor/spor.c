@@ -1402,9 +1402,9 @@ void compileStr(char* s) {
   assert(0x42 == fetch(mem, heapStart, SzI1));
   assert(0x43 == fetch(mem, heapStart + 1, SzI1));
 
-  // Test _L0
+  // Test L0
   heapStart = *env.heap;
-  compileStr("#7 $_L0");
+  compileStr("#7 $L0");
   assert(heapStart+1 == *env.heap);
   U32 v1 = fetch(mem, heapStart, SzI1);
   assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));

@@ -14,16 +14,24 @@ $dictGet foo   #444 $tAssertEq
 #123455 $dictSet foo2
 $dictGet foo2 #123455 $tAssertEq
 
-$loc twelve #12 $_L0 %RET
-
+// Test loc
+$loc twelve #12 $L0 %RET
 $twelve #12 $tAssertEq
+
+// Test L0-4
+$loc lits #5 $L0  #12345 $L1  #12345 $L2   #12345 $L4 %RET
+$lits
+#12345  $tAssertEq
+#2345   $tAssertEq
+#45     $tAssertEq
+#5     $tAssertEq
 
 // Test xsl
 
-$c_sfn myXs #22 $_L0 %RET
+$_sfn myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
 
-$c_sfn callMyXs $xsl myXs %RET
+$_sfn callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
 

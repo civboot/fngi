@@ -34,7 +34,7 @@ hi def link elInstr       PreProc
 hi def link elInstrSC     PreProc
 hi def link elInstrDot    PreProc
 hi def link elSymbol      Type
-hi def link elSpecial     Constant
+hi def link elSpecial     Keyword
 hi def link elNum         Constant
-hi def link elInstant     Constant
+hi def link elInstant     Macro
 hi def link elComment     Comment

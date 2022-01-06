@@ -224,4 +224,5 @@
 #E0D2  =E_cJmpL1     // JMP1 over too much space
 #E0D2  =E_cNotFn
 #E0D2  =E_cMod       // different modules
+#E0D2  =E_cLSz       // literal sz
 
