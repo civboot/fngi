@@ -34,58 +34,37 @@ $myXs #22 $tAssertEq
 $_sfn callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
+// Test rKeyMeta
+#12 #1 $metaSet  #100_0012 $tAssertEq
 
-// // Test rKeyMeta
-// $c_updateRKey
-// 
-// // assert @rKey == @(&dict.buf + &dict.heap)
-//   @c_rKey .4^FT
-//   @c_dictBuf .4^FT @c_dictHeap .2^FT .4^ADD
-//   $tAssertEq
+$c_updateRKey ^DRP
 
+// assert @rKey == @(&dict.buf + &dict.heap)
+  @c_rKey .4^FT
+  @c_dictBuf .4^FT @c_dictHeap .2^FT .4^ADD
+  $tAssertEq
 
 
 // Test functions
+$assertWsEmpty
+
+// Test core macros
+
+$_sfn one   #1 $L0 %RET
+$_sfn add   %ADD %RET
+
+$_sfn test_xslJmpl $xsl one   $xsl one   $jmpl add
+$test_xslJmpl  #2 $tAssertEq
+
+// Test control flow
+.4 $loc testIF // converts 1->10 else: 42
+  #1 $L0 %EQ  $IF   #4 $L0 %RET
+              $END  #13 $L0 %RET
+
+#1 $testIF      #4 $tAssertEq
+#2 $testIF      #13 $tAssertEq
 
 
-//$assertWsEmpty
-// 
-// // Test core macros
-// $loc test_h2 .4 LIT RET; #1234_5678 $h2
-// $test_h2 #5678 $tAssertEq
-// 
-// .4 $loc one   LIT RET; #1 $h2
-// .4 $loc add   ADD RET;
-// 
-// $loc test_xslJmpl $xsl one   $xsl one   $jmpl add
-// $test_xslJmpl  #2 $tAssertEq
-// 
-// $loc test_mem_xslJmpl
-//   LIT #5 $mem_xsl one // {5, 1}
-//   ADD LIT #10 $mem_jmpl add // add({5, 1+10})
-// $test_mem_xslJmpl   #16 $tAssertEq $assertWsEmpty
-// 
-// $loc test_l  $L#420        $retL@DUP
-// $test_l  SWP^  #420 $tAssertEq  @DUP $tAssertEq
-// 
-// $loc test_LIT4 .4 LIT4 RET; #1234 $h2 #5678 $h2
-// $test_LIT4 #1234_5678 $tAssertEq
-// 
-// $loc test_HL4 .4 LIT4 RET; #1234_5678 $hL4
-// $test_HL4 #1234_5678 $tAssertEq
-// 
-// // Test control flow
-// .4 $loc testIF // converts 1->10 else: 42
-//   LIT EQ #1 $mem_IF  $retL #10
-//            $END  $retL #42
-// #1 $testIF      #10 $tAssertEq
-// #2 $testIF      #42 $tAssertEq
-// 
-// 
-// #200 #2 $XX alignSz  #200 $tAssertEq
-// #201 #2 $XX alignSz  #202 $tAssertEq
-// #201 #4 $XX alignSz  #204 $tAssertEq
-// 
 // $loc badMultiply // {a b -- a*b} uses loop to implement multiply
 //   #2 $decl_lo b
 //   #2 $decl_lo a
@@ -110,6 +89,11 @@ $callMyXs #22 $tAssertEq
 // #5 #0 $XX badMultiply   #0   $tAssertEq
 // #8 #8 $XX badMultiply   #40  $tAssertEq
 // #5 #5 $XX badMultiply   #19  $tAssertEq
+
+// #200 #2 $XX alignSz  #200 $tAssertEq
+// #201 #2 $XX alignSz  #202 $tAssertEq
+// #201 #4 $XX alignSz  #204 $tAssertEq
+// 
 // 
 // // Test fetching/storing
 // $hAlign4

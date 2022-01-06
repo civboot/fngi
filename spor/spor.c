@@ -82,6 +82,7 @@ typedef CSz CPtr;
 #define E_cXHasL    0xE0CD // xs/jmp to non-small
 #define E_cXNoL     0xE0CE // x to non-locals
 #define E_cErr      0xE0CF // D_assert err code invalid
+#define E_cKeyLen   0xE0D0 // Key len too large
 
 #define REF_MASK    0xFFFFFF
 #define IS_FN       (0x01 << 24)
@@ -215,11 +216,15 @@ typedef struct {
 
 typedef struct {
   U32 value;
-  U8 meta;
   U8 len;
   U8 s[];
 } Key;
 #define keySizeWLen(LEN)  (4 + 1 + 1 + (LEN))
+
+// Get key len. The top two bits are used for metadata (i.e. constant)
+static inline U8 Key_len(Key* key) {
+  return 0x3F & key->len;
+}
 
 #define MAX_TOKEN 32
 #define TOKEN_BUF 0x7D
@@ -500,7 +505,7 @@ inline static void executeInstr(Instr instr) {
     CASE_32(C_SLIT+32) WS_PUSH(0x3F & instr); return;
 
     // Jmp Cases
-    case SzI1 + JMPL: env.ep = toAptr(env.ep + (I8)popLit(SzI1), SzI4); return;
+    case SzI1 + JMPL: r = env.ep; env.ep = toAptr(r + (I8)popLit(SzI1), SzI4); return;
     case SzI2 + JMPL: env.ep = toAptr(popLit(SzI2), SzI2); return;
     case SzI4 + JMPL: env.ep = toAptr(popLit(SzI4), SzI4); return;
 JMPW: case SzI2 + JMPW:
@@ -508,12 +513,19 @@ JMPW: case SzI2 + JMPW:
       return;
     GOTO_SZ(JMPW, SzI1)
     GOTO_SZ(JMPW, SzI4)
-JZL: case SzI2 + JZL:
-      r = popLit(szI);
-      if(!WS_POP()) { env.ep = toAptr(r, szI); }
+    case SzI1 + JZL:
+      l = env.ep;
+      r = popLit(SzI1);
+      if(!WS_POP()) { env.ep = toAptr(l + (I8)r, SzI4); }
       return;
-    GOTO_SZ(JZL, SzI1)
-    GOTO_SZ(JZL, SzI4)
+    case SzI2 + JZL:
+      r = popLit(SzI2);
+      if(!WS_POP()) { env.ep = toAptr(r, SzI2); }
+      return;
+    case SzI4 + JZL:
+      r = popLit(SzI4);
+      if(!WS_POP()) { env.ep = toAptr(r, SzI4); }
+      return;
 JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
     GOTO_SZ(JTBL, SzI1)
     GOTO_SZ(JTBL, SzI4)
@@ -606,13 +618,14 @@ SRML: case SzI2 + SRML:
 
 // find key offset from dict. Else return dict.heap
 /*fn*/ U16 Dict_find(DictRef d, U8 slen, char* s) {
+  ASM_ASSERT(slen < 0x40, E_cKeyLen);
   U16 offset = 0;
   assert(*d.heap < d.end);
 
   while(offset < *d.heap) {
     Key* key = Dict_key(d, offset);
-    if(cstrEq(key->len, slen, (char *)key->s, s)) return offset;
-    U16 entrySz = alignAPtr(keySizeWLen(key->len), 4);
+    if(cstrEq(Key_len(key), slen, (char *)key->s, s)) return offset;
+    U16 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
     offset += entrySz;
   }
 
@@ -845,14 +858,18 @@ U8 scanInstr() {
   err_jmp = prev_err_jmp;
 }
 
-void deviceOp_dict(Bool isFetch) {
+DictRef popDictRef() {
   U32 rHeap = WS_POP();
   U32 buf = WS_POP();
-  DictRef d = {
+  return (DictRef) {
     .heap = (U16*) (mem + rHeap),
     .buf = buf,
     .end = dict->end,
   };
+}
+
+void deviceOp_dict(Bool isFetch) {
+  DictRef d = popDictRef();
   if(isFetch) {
     WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
   } else {
@@ -861,7 +878,7 @@ void deviceOp_dict(Bool isFetch) {
 }
 
 void deviceOpRDict(Bool isFetch) {
-  DictRef d = DEFAULT_DICT;
+  DictRef d = popDictRef();
   if(isFetch) {
     U32 offset = Dict_find(d, tokenLen, tokenBuf);
     if(offset == *d.heap) {
@@ -1065,7 +1082,7 @@ Key* Dict_findFn(U32 value) {
   while(offset < dict->heap) {
     Key* atKey = Dict_key(d, offset);
     if(value == (REF_MASK & atKey->value)) key = atKey;
-    U16 entrySz = alignAPtr(keySizeWLen(atKey->len), 4);
+    U16 entrySz = alignAPtr(keySizeWLen(Key_len(atKey)), 4);
     offset += entrySz;
   }
   assert(offset == *d.heap);
@@ -1210,7 +1227,7 @@ void dbgJmp(Instr instr) {
   if(k == &keyDNE) {
     printf("?? 0x%X", jloc);
   } else {
-    printCStr(k->len, k->s);
+    printCStr(Key_len(k), k->s);
     printf(" 0x%X", jloc);
   }
   printf(")) ");

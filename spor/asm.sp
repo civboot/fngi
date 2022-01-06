@@ -98,6 +98,10 @@
 #86 =XSL   // Execute Small Literal (no LS update)
 #87 =XSW   // Execute Small WS (no LS update)
 
+// JZL and JMPL for SZ=1
+// For SZ=1 they jump to the 1 byte signed offset from the location
+// of the LITERAL (not the location of the operation).
+
 // # Mem      Store    Description
 #C0 =LIT   // LIT         Literal
 #C1 =FT    // FT(WS)      FeTch WS
@@ -106,6 +110,17 @@
 #C4 =SR    // SR(WS)      StoRe WS
 #C5 =SRLL  // SR(LP+LIT)  StoRe LocalsPtr offset
 #C6 =SRML  // SR(MP+LIT)  StoRe ModulePtr offset
+
+// Common instr+szs
+@SZ1 @LIT  ^OR  =LIT1
+@SZ2 @LIT  ^OR  =LIT2
+@SZ4 @LIT  ^OR  =LIT4
+
+@SZ1 @JZL  ^OR  =JZL1
+
+@SZ2 @XSL  ^OR  =XSL2
+@SZ2 @XL   ^OR  =XL2
+@SZ2 @JMPL ^OR  =JMPL2
 
 // **********
 // * Device Operations
@@ -163,16 +178,17 @@
 // masks for varMeta (same position as fnMeta)
 #C0 =VAR_SZ_MASK // sz instr to use for var.
 
-// The following are byte masks for meta (byte following dict value)
+// ** Meta types
+#40 =KEY_HAS_TY // dict entry is a non-constant
+
 #07 =META_TY_MASK // # Lower three bits determine type
-#00 =IS_CONST // constant value, should be compiled as a literal
-#01 =IS_FN    // function, can be called and has an fnMeta
-#02 =IS_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
-#03 =IS_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
+#01 =TY_FN    // function, can be called and has an fnMeta
+#02 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
+#03 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
 #FF_FFFF =REF_MASK
 
-// IS_FN meta
-#08 =FN_LOCALS // fn has locals
+// ** FN meta bits
+#08 =TY_FN_LOCALS // fn has locals
 
 // Error Classes
 // [E000 - E100): built-in errors.
@@ -220,9 +236,10 @@
 
 #E0D0  =E_cNotGlobal // using a non-global as global
 #E0D1  =E_cIsX       // using an XS for an X
-#E0D1  =E_cIsXS      // using an X for an XS
-#E0D2  =E_cJmpL1     // JMP1 over too much space
-#E0D2  =E_cNotFn
-#E0D2  =E_cMod       // different modules
-#E0D2  =E_cLSz       // literal sz
+#E0D2  =E_cIsXS      // using an X for an XS
+#E0D3  =E_cJmpL1     // JMP1 over too much space
+#E0D4  =E_cNotFn
+#E0D5  =E_cMod       // different modules
+#E0D6  =E_cLSz       // literal sz
+#E0D7  =E_cNotType
 

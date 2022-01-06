@@ -74,6 +74,11 @@
   @D_dict$L0   %DVFT
   %RET // (unaligned)
 
+@heap .4^FT =dictGetR // dictGetR: Get the &metaRef of the next token.
+            .2%XSL @_dict $h2
+  @D_rdict$L0   %DVFT
+  %RET // (unaligned)
+
 @heap .4^FT =loc // $loc <name>: define a location
             @heap$L0
   %FT       .2%XSL @dictSet $h2
@@ -106,6 +111,7 @@ $loc _hal // {align} heap align (for) literal
 // halN: heap align (for) N-byte literal.
 $loc hal2   #2$L0          .2%JMPL @_hal $h2 // (aligned)
 $loc hal4   #4$L0          .2%JMPL @_hal $h2 // (aligned)
+
 
 // Assert checks a condition or panics with an error
 // ex: <some check> @E_myError assert
@@ -143,7 +149,7 @@ $loc ha4   #4$L0   .2%JMPL @_ha $h2
 // $jmpl <token>                : compile a jump to small function
 // L1 / L2 / L4  [U] -> []      : compile a 1 / 2 / 4 byte literal.
 
-$hal2 $loc _j2 // {metaRef instr} compile jmp instr with 2 byte literal
+$hal2 $loc _j2 // {metaRef instr} compile jmpInstr to 2 byte metaRef
   $hal2 .2%XSL @hal2 $h2    // enforce proper alignment
   $hal2 .2%XSL @h1 $h2      // compile instr {metaRef}
   $hal4 .4%LIT #FF_FFFF $h4
@@ -152,260 +158,239 @@ $hal2 $loc _j2 // {metaRef instr} compile jmp instr with 2 byte literal
 
 $hal2 $loc _xsl // $_xsl <token> : compile unchecked xsl
   $hal2 .2%XSL @dictGet $h2 // {metaRef}
-  .1%LIT @SZ2 @XSL ^OR $h1  // push .2%XSL instr
+  .1%LIT @XSL2 $h1  // push .2%XSL instr
   $hal2 .2%JMPL @_j2 $h2
 
 $hal2 $loc _jmpl // $_jmpl <token>: compile unchecked jmpl
   $_xsl dictGet             // {metaRef}
-  .1%LIT @SZ2 @JMPL ^OR $h1 // push .2%JMPL instr
+  .1%LIT @JMPL2 $h1 // push .2%JMPL instr
   $hal2 .2%JMPL @_j2 $h2
 
+
 $hal2 $loc L1 // {U1} compile 1 byte literal
-  .1%LIT @SZ1 @LIT ^OR $h1 // push .1%LIT instr
+  .1%LIT @LIT1 $h1 // push .1%LIT instr
   $_xsl h1 // compile it
   $_jmpl h1
 
+$hal2 $loc c1 // @INSTR $c1: compile "compile INSTR"
+  $_xsl L1             // compile the INSTR literal itself
+  // compile xsl to h1
+  $hal2 .2%LIT @h1 $h2
+  $hal2 .2%LIT @XSL2 $h2
+  $_jmpl _j2
+
 $hal2 $loc L2 // {U1} compile 2 byte literal
   $_xsl hal2 // enforce proper alignment
-  @SZ2 @LIT ^OR $L1 // push .2%LIT instr
-  $_xsl h1 // compile it
-  $_jmpl h2
+  @LIT2 $c1  // compile .2%LIT instr
+  $_jmpl h2  // compile the 2 byte literal
 
 $hal2 $loc L4 // {U1} compile 4 byte literal
   $_xsl hal4 // enforce proper alignment
-  @SZ4 @LIT ^OR $L1 // push .4%LIT instr
-  $_xsl h1 // compile it
-  $_jmpl h4
+  @LIT4 $c1  // compile .4%LIT
+  $_jmpl h4  // compile the 4 byte literal
 
-$loc assertFn // {metaRef}
-  @IS_FN $L0  .1%LIT #18 $h1 %SHL %AND
-  $hal2 .2%LIT @E_cNotFn $h2
-  $_jmpl assert
+$loc toMeta // INLINE {metaRef} -> {meta}
+  @SLIT #18 ^OR $c1  @SHR $c1  %RET
+
+$loc keyHasTy  // {&metaRef} dict value is a constant
+  %INC4 .1%FT @KEY_HAS_TY$L1 %AND %RET
+
+// These take {metaRef} and tell information about it
+
+$loc isFn         $toMeta  @META_TY_MASK$L0 %AND  @TY_FN$L0      %EQ %RET
+$loc isLocal      $toMeta  @META_TY_MASK$L0 %AND  @TY_LOCAL$L0   %EQ %RET
+$loc isGlobal     $toMeta  @META_TY_MASK$L0 %AND  @TY_GLOBAL$L0  %EQ %RET
+$loc fnHasLocals  $toMeta  @TY_FN_LOCALS $L0 %AND %RET
+
+$loc assertHasTy // [&metaRef]
+  $_xsl keyHasTy @E_cNotType $L2 $_jmpl assert
+$loc assertFn   $_xsl isFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
 
 $loc assertXs // {metaRef}
-  %DUP $hal2 .2%XSL @assertFn $h2
-  @FN_LOCALS $L0  .1%LIT #18 $h1 %SHL %AND
-  $hal2 .2%LIT @E_cIsX $h2
-  $hal2 .2%JMPL @assertNot $h2
+  %DUP $_xsl assertFn
+  $_xsl fnHasLocals  @E_cIsX $L2  $_jmpl assertNot
+
+$loc assertX // {metaRef}
+  %DUP $_xsl assertFn
+  $_xsl fnHasLocals  @E_cIsX $L2  $_jmpl assert
 
 $loc assertSameMod // {metaRef}
-  $hal4 .4%LIT #FF_0000 $h4 %AND // {mod}
-  $hal2 .2%XSL @getHeap $h2
-  $hal4 .4%LIT #FF_0000 $h4 %AND // {mod heapMod}
-  %EQ
-  $hal2 .2%LIT @E_cMod $h2
-  $hal2 .2%JMPL @assert $h2
+  #FF_0000 $L4 %AND // {refMod}
+  $_xsl getHeap
+  #FF_0000 $L4 %AND // {refMod heapMod}
+  %EQ  @E_cMod$L2  $_jmpl assert
 
-$loc _jchkd // checked jmp setup
-  $_xsl dictGet // {metaRef}
-  // Assert correct type and module
+$loc _jchkd // [] -> [checked jmp setup
+  $_xsl dictGetR
+  %DUP $_xsl assertHasTy
+  .4%FT
   %DUP $_xsl assertXs
   %DUP $_jmpl assertSameMod
 
-$loc xsl // $xsl <token> : compile xsl2
+$loc xsl // $xsl <token> : compile .2%xsl
   $_xsl _jchkd
-  .1%LIT @SZ2 @XSL ^OR $h1  // get .2%XSL instr
+  .1%LIT @XSL2 $h1  // get .2%XSL instr
   $_jmpl _j2
+
+$loc xl // $xl <token> : compile .2%xl
+  $_xsl dictGet // {metaRef}
+  %DUP $_xsl assertX
+  %DUP $_xsl assertSameMod
+  @XL2$L1  $_jmpl _j2
 
 $loc jmpl // $jmpl <token> : compile jmpl2
   $_xsl _jchkd
-  .1%LIT @SZ2 @JMPL ^OR $h1  // get .2%JMPL instr
-  $_jmpl _j2
+  @JMPL2$L1  $_jmpl _j2
 
-$hal2 $loc c_updateRKey // &key contains the current dict key.
+$hal2 $loc c_updateRKey // [] -> [&metaRef] update and return current key
         .4%FTML @c_dictBuf $h2  // dict.buf
   $hal2 .2%FTML @c_dictHeap $h2 // dict.heap
   .4%ADD // {&newKey}
-  $hal2 .4%SRML @c_rKey $h2 // rKey=newKey
-  %RET
+  %DUP $hal2 .4%SRML @c_rKey $h2 // rKey=newKey
+  %RET // return &metaRef (newKey)
 
 $loc metaSet // {U4 mask:U1} -> U4 : apply meta mask to U4 value
-  #18 $L0  %SHL           // make mask be upper byte
+  #18 $L0  %SHL  // make mask be upper byte
   %OR %RET
 
-$loc c_setRKeyMeta // {mask:U1} mask current key's 8bit meta
-  $hal2 .4%FTML @c_rKey $h2 .4 %FT // fetch key {mask key}
-  %SWP $hal2 .2%XSL @metaSet $h2   // apply mask
-  $hal2 .4%FTML @c_rKey $h2 .4 %SR // update key
+$loc c_keySetTyped // {&metaRef} -> []
+  %INC4 %DUP .1%FT @KEY_HAS_TY $L1 %OR // {&metaRef tyKeyLen}
+  %SWP .1%SR      // update tyKeyLen {&metaRef}
   %RET
 
-$hal2 $loc _sfn // $_sfn <token>: define location of small function
-  $_xsl c_updateRKey
+  // $hal2 .4%FTML @c_rKey $h2  // {&metaRef}
+
+$ha2 // Note: this uses locals
+$loc c_keySetTy // {mask:U1 &metaRef } mask current key's meta to be a FN
+  #1 $h2 // 1 local [&metaRef]
+  %DUP .4%SRLL #0$h1 // cache &metaRef
+  %DUP $_xsl c_keySetTyped // make key "typed" {mask &metaRef}
+
+  .4%FT // fetch key {mask metaRef}
+  %SWP $_xsl metaSet // apply mask {metaRef}
+  .4%FTLL #0$h1 .4%SR // update key
+  %RET
+
+$hal2 $loc _declFn // [meta]
+  @TY_FN$L0 %OR // {meta}
+  $_xsl c_updateRKey // {meta &metaRef}
   $_xsl loc
-
-  // set rKey as fn type
-  @IS_FN$L0      .2%XSL @c_setRKeyMeta $h2
-  %RET
-
-$hal2 $loc _fn // $c_fn <token>: define location of function with locals
-  $_xsl _sfn
-
-  // set rKey as FN_LOCALS
-  @FN_LOCALS$L0      $_xsl c_setRKeyMeta
+  $hal2 .2%XL @c_keySetTy $h2
   $ha2
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   #0$L0        .2%SRML @c_localOffset $h2  // zero localDict.offset
   #0$L0        .4%SRML @c_dictLHeap $h2    // zero localDict.heap
   %RET
 
-$_sfn dictGetR $_xsl _dict @D_dict$L0   %DVFT %RET
-$_sfn makeSmallFn // <token>: set meta for token to be a small function.
-  $_xsl dictGetR   // {&metaRef}
-  %DUP .4%FT      // {&metaRef metaRef}
-  @IS_FN $L0 $_xsl metaSet // {&metaRef metaRef}
-  %SWP .4%SR %RET // update
+$hal2 $loc _sfn  // $_sfn <token>: define location of small function
+  #0$L0         $_jmpl _declFn
+$hal2 $_sfn _fn  // $c_fn <token>: define location of function with locals
+  $_xsl ha2 // must be aligned for the locals
+  @TY_FN_LOCALS$L0 $_jmpl _declFn
 
-$makeSmallFn _fn
-// $makeSmallFn _sfn
-// $makeSmallFn xsl
-// $makeSmallFn jmpl
-// $makeSmallFn L0
-// $makeSmallFn L1
-// $makeSmallFn L2
-// $makeSmallFn L4
-// 
-// $makeSmallFn loc
-// $makeSmallFn h1
-// $makeSmallFn h2
-// $makeSmallFn h4
-// $makeSmallFn dictSet
-// $makeSmallFn dictGet
-// $makeSmallFn hpad
-// $makeSmallFn hal2
-// $makeSmallFn hal4
-// $makeSmallFn ha2
-// $makeSmallFn ha4
-// $makeSmallFn metaSet
-// 
-// $makeSmallFn assert
-// $makeSmallFn assertNot
-// $makeSmallFn tAssert
-// $makeSmallFn tAssertNot
-// $makeSmallFn tAssertEq
-// $makeSmallFn tAssertNe
-// $makeSmallFn assertFn
-// $makeSmallFn assertXs
-// $makeSmallFn assertSameMod
+// Backfill the fn meta
+$_sfn c_makeFn // {meta} <token>: set meta for token to be a small function.
+  @TY_FN$L0 %OR
+  $_xsl dictGetR   // {meta &metaRef}
+  $hal2 .2%XL @c_keySetTy $h2
+  %RET
 
-// // **********
-// // * ASM Flow Control
-// // - `$IF1 ... $END1` for if blocks
-// // - `$LOOP ... $BREAK0 ... $AGAIN $END` for infiinte loops with breaks.
-// //
-// // All flow control pushes the current heap on the WS, then END/AGAIN correctly
-// // stores/jmps the heap where they are called from.
-// 
-// $ha2 $loc IF1
-//   $hal2  .2%XSL @getHeap $h2  // {start} push start location to stack
-//   .1%LIT @Sz1 @JZL ^ADD $h1   // .1%JZL literal
-//   $hal2  .2%XSL @h1 $h2       // compile it
-//   #0$L0  $hal2 .2%XSL @h1 $h2 // compile 0 (jump pad)
-//   %RET
-// 
-// $loc assertLt128 // {U4}
-//   .1%LIT #10 $h1 %LT_U
-//   $hal2 .2%LIT @E_cJmpL1 $h2
-//   $jmpl assert
-// 
-// $loc END1 // {start}
-//   .4%DUP // {start start}
-//   $hal2  .2%XSL @getHeap $h2 // {start start heap}
-//   %SWP %SUB                           // {start (heap-start)}
-//   %DUP $hal2 .2%XSL @assertLt128 $h2  // assert that it is < 0x10
-//   // store at location after start (1 byte literal)
-//   %SWP %INC .1%SR %RET
-// 
-// // $LOOP ... $BREAK0 ... $AGAIN $END
-// $c_fn LOOP   $hal2 .2%XSL @getHeap $h2 // push location for AGAIN
-// $c_fn BREAK0 $xsl IF   SWP RET;
-// $c_fn mem_BREAK0 $xsl mem_IF   SWP RET;
-// $c_fn AGAIN
-//   LIT4 XSL; @JMPL $hL4  @c_compMaskInstr $h2 // compile with JMPL
-//   $jmpl h2 // compile location to jmp to
-// 
-// // **********
-// // * Compiler helpers
-// // These are core compiler helpers for compiling literals, jumps and
-// // (unchecked) executes.
-// //
-// // L [U4] -> []                : compile a literal of the correct size
-// 
-// $loc szInstr // [sz] -> [instr] : convert a sz in bytes to instr bits
-// 
-// $loc L // [U4] : compile a literal. Automatically handles size and align.
-// 
-// $hal4 $loc keyRef // {metaRef} -> {ref}
-//         .4%LIT #FF_FFFF $h4
-//   .4%AND  %RET
-// 
-// $hal2 $loc _xsl // $_xsl <token>: compile an .2%XSL to token.
-// 
-// 
-// // **********
-// // * Defining and executing functions.
-// //
-// // Functions have meta bits in the dictionary set, in order to distinguish that
-// // they are functions. Confusing between an XSW and an XW is an easy but fatal
-// // mistake. These help define functions and do the type checking when compiling
-// // functions.
-// 
-// 
-// $ha2 $locX metaChk // {metaRef mask:U1} -> bool: return true if meta bit/s are set.
-//   #1 .2, // 1 local variable. [mask]
-//   .4#18 $L0  %SHL    // {metaRef mask} make mask be upper byte
-//   %DUP %SRLL #0$h1 // cache .mask {metaRef mask}
-//   %AND %FTLL #0$h1 %EQ // (mask AND metaRef) == mask
-//   %RET
-// 
-// $ha2 $locX metaAssert // {metaRef mask:U1 errCode}
-//   #1 .2, // 1 local variable. [errCode]
-//   .4%SRLL #0$h1 // store errCode
-//   $hal2 .2%XL @metaChk $h2
-//   .4%FTLL #0$h1  $hal2 .2%XSL @assert $h2 // assert
-//   %RET
-// 
-// .4
-// $locXs getSz       @D_sz$L0          %DVFT %RET
-// $locXs setSz       @D_sz$L0          %DVSR %RET
-// $locXs getWsLen    @D_wslen$L0       %DVFT %RET
-// $locXs c_xsCatch   @D_xsCatch$L0     %DVFT %RET
-// $locXs c_scan      @D_scan$L0        %DVFT %RET
-// 
-// $locXs c_compNext // scan and compile
-//   @D_scan$L0     %DVFT
-//   @D_comp$L0     %DVSR
-//   %RET
-// 
-// $hal2 $locXs panic // {errCode} panic with errCode
-//             #0 $L0
-//   .4%SWP      .2%JMPL @assert$h2  // Panic with an error code
-//   %RET
-// 
-// 
+#0 $c_makeFn _sfn
+#0 $c_makeFn xsl
+#0 $c_makeFn jmpl
+#0 $c_makeFn L0
+#0 $c_makeFn L1
+#0 $c_makeFn L2
+#0 $c_makeFn L4
+
+#0 $c_makeFn loc
+#0 $c_makeFn h1
+#0 $c_makeFn h2
+#0 $c_makeFn h4
+#0 $c_makeFn dictSet
+#0 $c_makeFn dictGet
+#0 $c_makeFn getHeap
+#0 $c_makeFn setHeap
+#0 $c_makeFn hpad
+#0 $c_makeFn hal2
+#0 $c_makeFn hal4
+#0 $c_makeFn ha2
+#0 $c_makeFn ha4
+#0 $c_makeFn metaSet
+#0 $c_makeFn toMeta
+#0 $c_makeFn keyHasTy
+#0 $c_makeFn isFn
+#0 $c_makeFn isLocal
+#0 $c_makeFn isGlobal
+#0 $c_makeFn fnHasLocals
+#0 $c_makeFn c_updateRKey
+#0 $c_makeFn c_keySetTyped
+@TY_FN_LOCALS $c_makeFn c_keySetTy
+
+#0 $c_makeFn assert
+#0 $c_makeFn assertNot
+#0 $c_makeFn tAssert
+#0 $c_makeFn tAssertNot
+#0 $c_makeFn tAssertEq
+#0 $c_makeFn tAssertNe
+#0 $c_makeFn assertFn
+#0 $c_makeFn assertXs
+#0 $c_makeFn assertSameMod
+#0 $c_makeFn assertHasTy
+
+$_sfn getSz           @D_sz$L0          %DVFT %RET
+$_sfn setSz           @D_sz$L0          %DVSR %RET
+$_sfn getWsLen        @D_wslen$L0       %DVFT %RET
+$_sfn c_xsCatch       @D_xsCatch$L0     %DVFT %RET
+$_sfn c_scan          @D_scan$L0        %DVFT %RET
+$_sfn panic   #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
+$_sfn assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
+$assertWsEmpty
+
+
 // **********
 // * ASM Flow Control
-// - `$IF ... $END` for if blocks
+// - `$IF1 ... $END1` for if blocks
 // - `$LOOP ... $BREAK0 ... $AGAIN $END` for infiinte loops with breaks.
 //
 // All flow control pushes the current heap on the WS, then END/AGAIN correctly
 // stores/jmps the heap where they are called from.
 
+$_sfn IF // {} -> {&jmpTo} : start an IF block
+  @JZL1 $L1  $xsl h1 // compile .1%JZL instr
+  $xsl getHeap // {&jmpTo} push &jmpTo location to stack
+  #0$L0               $xsl h1 // compile 0 (jump pad)
+  %RET
 
-// .4 $c_fn IF
-//   @JZL $h1
-//   LIT4 XSL; @JZL $hL4  @c_compMaskInstr $h2 // compile with JZL
-//   $xsl getHeap // push location for END
-//   LIT #1BAD $mem_jmpl h2 // compile 1BAD to jmp location
+$_sfn assertLt128  #10 $L0 %LT_U   @E_cJmpL1 $L2   $jmpl assert
 
-// .4 $c_fn mem_IF
-//   LIT4 XSL; @JZL $hL4  @c_compMaskInstr $h2 // compile with JZL
-//   $xsl h2 // compile literal
-//   $xsl getHeap // push location for END
-//   LIT #1BAD $mem_jmpl h2 // compile 1BAD to jmp location
-// 
-// .4 $c_fn END $xsl getHeap   .2 SR RET;
-// 
+$_sfn END // {&jmpTo} -> {} : end of IF or BREAK0
+  %DUP          // {&jmpTo &jmpTo}
+  $xsl getHeap  // {&jmpTo &jmpTo heap}
+  %SWP %SUB     // {&jmpTo (heap-&jmpTo)}
+  %DUP $xsl assertLt128
+  %SWP .1%SR %RET // store at location after start (1 byte literal)
 
+// $LOOP ... $BREAK0 ... $AGAIN $END
+$_sfn LOOP   $jmpl getHeap   // push location for AGAIN
+$_sfn BREAK0 $xsl IF   %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
+$_sfn AGAIN // {&loopTo} -> {} : run loop again
+  %JMPL         // compile jmp
+  $xsl getHeap  // {&loopTo heap}
+  %SWP %SUB     // {heap-&loopTo}
+  %DUP $xsl assertLt128
+  %NEG          // make negative for backwards jmp
+  $jmpl h1      // compile as jmp offset
+
+$_fn hasMeta // {metaRef mask:U1} -> bool: return true if ALL meta bit/s are set.
+  #1 $h2           // [mask] local variable
+  #18 $L0  %SHL    // {metaRef mask} make mask be upper byte
+  %DUP .4%SRLL #0$h1 // cache .mask {metaRef mask}
+  %AND .4%FTLL #0$h1 %EQ // (mask AND metaRef) == mask
+  %RET
+
+// compile metaRef, handling the possible types.
+$_fn comp // {metaRef}
 
 // **********
 // * Core macros:
@@ -542,8 +527,6 @@ $makeSmallFn _fn
 // 
 // .4
 // 
-// $c_fn assertWsEmpty  $xsl getWsLen  $L @E_wsEmpty  $jmpl assertNot
-// 
 // // **********
 // // * Local Variables
 // // Local variables are simply offsets that are fetch/store using FTLL and SRLL
@@ -609,3 +592,5 @@ $makeSmallFn _fn
 //   JMPL; @h2 $h2 // put on stack (literal)
 // 
 // $assertWsEmpty
+
+$assertWsEmpty
