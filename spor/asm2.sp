@@ -383,7 +383,31 @@ $c_sfn c_again // {&loopTo} -> {} : run loop again
   $jmpl h1      // compile as jmp offset
 
 // **********
-// * Global variable names
+// * Defining and Using global variables
+
+$c_fn min // [a b] -> [min]
+  #1 $h2 // one local, b
+  .4%SRLL #0 $h1
+  %DUP // {a a}
+  .4%FTLL #0 $h1 // {a a b}
+  %GE_U %RETZ               // if(!(a >= b)) ret a
+  %DRP .4%FTLL #0 $h1 %RET  // ret b
+
+$c_sfn align // get alignment needs of sz
+  // convert sz 3 -> 4
+  %DUP #3$L0 %EQ $c_if  %DRP #4$L0  $c_end
+  #4$L0 $xl min // .sz = min(sz, 4)
+  %RET
+
+$c_sfn hAlign // [sz] auto align heap to sz
+  $xsl align  $xsl getHeap // {sz heap}
+  %SWP %MOD $jmpl hpad
+
+// $c_sfn c_global // <sz> <refs> $c_global <token>: define a global variable of sz
+//   %DUP $xsl hAlign // align heap
+//   $xsl loc // declare location
+//   @TY_GLOBAL$L0 %OR // {meta}
+
 
 // **********
 // * Local variable names

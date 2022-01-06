@@ -85,8 +85,8 @@ typedef CSz CPtr;
 #define E_cKeyLen   0xE0D0 // Key len too large
 
 #define REF_MASK    0xFFFFFF
-#define IS_FN       (0x01 << 24)
-#define FN_LOCALS   (0x08 << 24)
+#define IS_FN        (0x20 << 24)
+#define TY_FN_LOCALS (0x10 << 24)
 
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 
@@ -815,8 +815,8 @@ U8 scanInstr() {
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
   WS_PUSH(REF_MASK & value);
-  if(FN_LOCALS & value) execute(SzI4 + XW);
-  else                  execute(SzI4 + XSW);
+  if(TY_FN_LOCALS & value) execute(SzI4 + XW);
+  else                     execute(SzI4 + XSW);
 }
 
 /*fn*/ Bool compile() {

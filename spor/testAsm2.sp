@@ -64,6 +64,8 @@ $test_xslJmpl  #2 $tAssertEq
 #1 $testIf      #4 $tAssertEq
 #2 $testIf      #13 $tAssertEq
 
+#1 #2 $min      #1 $tAssertEq
+#42 #333 $min   #42 $tAssertEq
 
 // $loc badMultiply // {a b -- a*b} uses loop to implement multiply
 //   #2 $decl_lo b

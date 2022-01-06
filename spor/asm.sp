@@ -181,14 +181,14 @@
 // ** Meta types
 #40 =KEY_HAS_TY // dict entry is a non-constant
 
-#07 =META_TY_MASK // # Lower three bits determine type
-#01 =TY_FN    // function, can be called and has an fnMeta
-#02 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
-#03 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
+#E0 =META_TY_MASK // # Upper three bits determine type
+#20 =TY_FN    // function, can be called and has an fnMeta
+#40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
+#60 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
 #FF_FFFF =REF_MASK
 
 // ** FN meta bits
-#08 =TY_FN_LOCALS // fn has locals
+#10 =TY_FN_LOCALS // fn has locals
 
 // Error Classes
 // [E000 - E100): built-in errors.
