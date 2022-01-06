@@ -126,8 +126,8 @@
 // * Device Operations
 #00 =D_read   // read from src, filling up tokenBuf
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
-#02 =D_dict   // FT=get SR=set dict key=tokenBuf
-#03 =D_rdict  // FT=get reference to val  SR=forget including key
+#02 =D_dict   // [&buf &heap] FT=get SR=set dict key=tokenBuf
+#03 =D_rdict  // [&buf &heap] FT=get reference to val  SR=forget including key
 #04 =D_sz     // get/set current sz in bytes
 #05 =D_comp   // compile (assemble) the token in tokenBuf
 #06 =D_assert // error if != 0
