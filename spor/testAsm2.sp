@@ -28,10 +28,10 @@ $lits
 
 // Test xsl
 
-$_sfn myXs #22 $L0 %RET
+$c_sfn myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
 
-$_sfn callMyXs $xsl myXs %RET
+$c_sfn callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
 // Test rKeyMeta
@@ -50,19 +50,19 @@ $assertWsEmpty
 
 // Test core macros
 
-$_sfn one   #1 $L0 %RET
-$_sfn add   %ADD %RET
+$c_sfn one   #1 $L0 %RET
+$c_sfn add   %ADD %RET
 
-$_sfn test_xslJmpl $xsl one   $xsl one   $jmpl add
+$c_sfn test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
 // Test control flow
-.4 $loc testIF // converts 1->10 else: 42
-  #1 $L0 %EQ  $IF   #4 $L0 %RET
-              $END  #13 $L0 %RET
+.4 $loc testIf // converts 1->10 else: 42
+  #1 $L0 %EQ  $c_if   #4 $L0 %RET
+              $c_end  #13 $L0 %RET
 
-#1 $testIF      #4 $tAssertEq
-#2 $testIF      #13 $tAssertEq
+#1 $testIf      #4 $tAssertEq
+#2 $testIf      #13 $tAssertEq
 
 
 // $loc badMultiply // {a b -- a*b} uses loop to implement multiply
@@ -73,15 +73,15 @@ $test_xslJmpl  #2 $tAssertEq
 //   .2 $setl a
 // 
 //   ZERO; // out = 0
-//   $LOOP
+//   $c_loop
 //     // if(!b) break
-//     .2 FTLL $lo b $mem_BREAK0
+//     .2 FTLL $lo b $mem_c_break0
 //     // out = out + l2
 //     .2 ADD $getl a
 //     // l0 = l0 - 1
 //     .2 DEC $getl b   .2 $setl b
-//   $AGAIN
-//   $END // for BREAK0
+//   $c_again
+//   $c_end // for break
 //   RET;
 // 
 // #0 #0 $XX badMultiply   #0   $tAssertEq

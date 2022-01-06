@@ -282,20 +282,20 @@ $hal2 $loc _declFn // [meta]
   #0$L0        .4%SRML @c_dictLHeap $h2    // zero localDict.heap
   %RET
 
-$hal2 $loc _sfn  // $_sfn <token>: define location of small function
+$hal2 $loc c_sfn  // $c_sfn <token>: define location of small function
   #0$L0         $_jmpl _declFn
-$hal2 $_sfn _fn  // $c_fn <token>: define location of function with locals
+$hal2 $c_sfn c_fn  // $c_fn <token>: define location of function with locals
   $_xsl ha2 // must be aligned for the locals
   @TY_FN_LOCALS$L0 $_jmpl _declFn
 
 // Backfill the fn meta
-$_sfn c_makeFn // {meta} <token>: set meta for token to be a small function.
+$c_sfn c_makeFn // {meta} <token>: set meta for token to be a small function.
   @TY_FN$L0 %OR
   $_xsl dictGetR   // {meta &metaRef}
   $hal2 .2%XL @c_keySetTy $h2
   %RET
 
-#0 $c_makeFn _sfn
+#0 $c_makeFn c_sfn
 #0 $c_makeFn xsl
 #0 $c_makeFn jmpl
 #0 $c_makeFn L0
@@ -338,43 +338,43 @@ $_sfn c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn assertSameMod
 #0 $c_makeFn assertHasTy
 
-$_sfn getSz           @D_sz$L0          %DVFT %RET
-$_sfn setSz           @D_sz$L0          %DVSR %RET
-$_sfn getWsLen        @D_wslen$L0       %DVFT %RET
-$_sfn c_xsCatch       @D_xsCatch$L0     %DVFT %RET
-$_sfn c_scan          @D_scan$L0        %DVFT %RET
-$_sfn panic   #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
-$_sfn assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
+$c_sfn getSz           @D_sz$L0          %DVFT %RET
+$c_sfn setSz           @D_sz$L0          %DVSR %RET
+$c_sfn getWsLen        @D_wslen$L0       %DVFT %RET
+$c_sfn c_xsCatch       @D_xsCatch$L0     %DVFT %RET
+$c_sfn c_scan          @D_scan$L0        %DVFT %RET
+$c_sfn panic   #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
+$c_sfn assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
 
 
 // **********
 // * ASM Flow Control
-// - `$IF1 ... $END1` for if blocks
-// - `$LOOP ... $BREAK0 ... $AGAIN $END` for infiinte loops with breaks.
+// - `$c_if ... $c_end` for if blocks
+// - `$c_loop ... $c_break0 ... $c_again $c_end` for infiinte loops with breaks.
 //
-// All flow control pushes the current heap on the WS, then END/AGAIN correctly
+// All flow control pushes the current heap on the WS, then c_end/c_again correctly
 // stores/jmps the heap where they are called from.
 
-$_sfn IF // {} -> {&jmpTo} : start an IF block
+$c_sfn c_if // {} -> {&jmpTo} : start an if block
   @JZL1 $L1  $xsl h1 // compile .1%JZL instr
   $xsl getHeap // {&jmpTo} push &jmpTo location to stack
   #0$L0               $xsl h1 // compile 0 (jump pad)
   %RET
 
-$_sfn assertLt128  #10 $L0 %LT_U   @E_cJmpL1 $L2   $jmpl assert
+$c_sfn assertLt128  #10 $L0 %LT_U   @E_cJmpL1 $L2   $jmpl assert
 
-$_sfn END // {&jmpTo} -> {} : end of IF or BREAK0
+$c_sfn c_end // {&jmpTo} -> {} : end of c_if or c_break0
   %DUP          // {&jmpTo &jmpTo}
   $xsl getHeap  // {&jmpTo &jmpTo heap}
   %SWP %SUB     // {&jmpTo (heap-&jmpTo)}
   %DUP $xsl assertLt128
   %SWP .1%SR %RET // store at location after start (1 byte literal)
 
-// $LOOP ... $BREAK0 ... $AGAIN $END
-$_sfn LOOP   $jmpl getHeap   // push location for AGAIN
-$_sfn BREAK0 $xsl IF   %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
-$_sfn AGAIN // {&loopTo} -> {} : run loop again
+// $c_loop ... $c_break0 ... $c_again $c_end
+$c_sfn c_loop   $jmpl getHeap   // push location for c_again
+$c_sfn c_break0 $xsl c_if   %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
+$c_sfn c_again // {&loopTo} -> {} : run loop again
   %JMPL         // compile jmp
   $xsl getHeap  // {&loopTo heap}
   %SWP %SUB     // {heap-&loopTo}
@@ -383,15 +383,18 @@ $_sfn AGAIN // {&loopTo} -> {} : run loop again
   $jmpl h1      // compile as jmp offset
 
 // **********
+// * Global variable names
+
+// **********
 // * Local variable names
 // Defining and using local variables.
 //
-// #2 $decl_lo nameOfU2 : declares a local variable of sz=2
-//    $end_lo // uses decl_lo to reserve space in fn. Required for all fns with locals.
+// #2 $c_locals nameOfU2 : declares a local variable of sz=2
+//    $c_localsEnd // uses c_locals to reserve space in fn. Required for all fns with locals.
 //    $getl // get a local value
 //    $setl // set a local value
 
-$_sfn _ldict
+$c_sfn _ldict
   $xsl c_scan
   $hal2     .4%FTML @c_dictBuf $h2
   $hal2     .2%FTML @c_dictHeap $h2
@@ -399,11 +402,11 @@ $_sfn _ldict
   @c_dictLHeap $L2  // &ldict.heap
   %RET
 
-$_fn ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
-$_fn ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
-$_fn ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
+$c_sfn ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
+$c_sfn ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
+$c_sfn ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 
-// $_fn decl_lo // {sz}: declare a local variable offset
+// $c_fn c_locals // {sz}: declare a local variable offset
 //   %DUP // {sz sz}
 // 
 //   .4 DUP; // {sz sz}
@@ -411,7 +414,7 @@ $_fn ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 //   .4 DUP $xsl lDictSet // set next token to alignedOffset {sz alignedOffset}
 //   .2 ADD SRML RET; @c_localOffset $h2 // add together and update vLocalOffset
 // 
-// $c_fn end_lo // use the current declared local offsets to define the locals size
+// $c_fn c_localsEnd // use the current declared local offsets to define the locals size
 //   LIT @IS_LARGE_FN $mem_xsl c_setRKeyFnMeta // make it a locals fn
 //   .2 FTML; @c_localOffset $h2
 //   LIT #4 $mem_xl alignSz
@@ -427,7 +430,7 @@ $_fn ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 //   $xsl lo // get next local token value (offset)
 //   JMPL; @h2 $h2 // put on stack (literal)
 
-$_fn hasMeta // {metaRef mask:U1} -> bool: return true if ALL meta bit/s are set.
+$c_fn hasMeta // {metaRef mask:U1} -> bool: return true if ALL meta bit/s are set.
   #1 $h2           // [mask] local variable
   #18 $L0  %SHL    // {metaRef mask} make mask be upper byte
   %DUP .4%SRLL #0$h1 // cache .mask {metaRef mask}
@@ -439,15 +442,15 @@ $_fn hasMeta // {metaRef mask:U1} -> bool: return true if ALL meta bit/s are set
 // - local variable compiler
 // - global variable compiler
 // - 
-$_fn comp // {metaRef}
+// $c_fn comp // {metaRef}
 
 // // **********
 // // * Local Variables
 // // Local variables are simply offsets that are fetch/store using FTLL and SRLL
 // // They are defined like:
 // // $c_fn foo
-// //   #4 $decl_lo a
-// //   #2 $decl_lo b
+// //   #4 $c_locals a
+// //   #2 $c_locals b
 // //   $end_lo
 // //   SRLL ZERO; $lo a $h2 // a = 0
 // 
@@ -474,10 +477,10 @@ $_fn comp // {metaRef}
 //   #1 $h2 // locals (4bytes)
 //   .2 SRLL; #0 $h2 // l0=sz
 //   .4 DUP; FTLL MOD; #0 $h2 // {value value%sz}
-//   DUP $IF
+//   DUP $c_if
 //     SUB;
 //     FTLL ADD RET; #0 $h2 // return: value - value%sz + sz
-//   $END   DRP RET;        // return: value
+//   $c_end   DRP RET;        // return: value
 // 
 // 
 // $assertWsEmpty
