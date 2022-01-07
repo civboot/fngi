@@ -40,8 +40,8 @@ $callMyXs #22 $tAssertEq
 $c_updateRKey ^DRP
 
 // assert @rKey == @(&dict.buf + &dict.heap)
-  @c_rKey .4^FT
-  @c_dictBuf .4^FT @c_dictHeap .2^FT .4^ADD
+  @c_rKey @REF_MASK ^AND .4^FT
+  @c_dictBuf @REF_MASK ^AND .4^FT   @c_dictHeap @REF_MASK ^AND .2^FT   .4^ADD
   $tAssertEq
 
 
@@ -64,8 +64,34 @@ $test_xslJmpl  #2 $tAssertEq
 #1 $testIf      #4 $tAssertEq
 #2 $testIf      #13 $tAssertEq
 
-#1 #2 $min      #1 $tAssertEq
+#1 #2    $min   #1 $tAssertEq
 #42 #333 $min   #42 $tAssertEq
+
+$ha2 #1 $h1 // misalign heap
+@SZ4 $halN #1 $h1 #12345 $h4 // use them.
+
+// Testing Gloabls
+#12345 @SZ4 $c_global myG1   $assertWsEmpty
+@myG1 #FF_FFFF ^AND .4^FT  #12345 $tAssertEq
+
+$c_sfn myG1Ref  $gRef myG1 %RET
+$myG1Ref  @myG1 #FF_FFFF ^AND  $tAssertEq
+
+$c_sfn myG1Get  $gGet myG1 %RET
+$myG1Get  #12345 $tAssertEq
+
+$c_sfn myG1Set  $gSet myG1 %RET
+#6789F $myG1Set   $myG1Get  #6789F $tAssertEq
+
+// Testing Locals
+#12 =shadowed
+$c_sfn notARealFn %RET // updates ldict
+@shadowed #12 $tAssertEq
+
+#45 $ldictSet shadowed
+$ldictGet shadowed #45 $tAssertEq
+@shadowed #12 $tAssertEq
+
 
 // $loc badMultiply // {a b -- a*b} uses loop to implement multiply
 //   #2 $decl_lo b

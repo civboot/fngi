@@ -186,9 +186,12 @@
 #40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
 #60 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
 #FF_FFFF =REF_MASK
+#FF_0000 =MOD_MASK
 
-// ** FN meta bits
-#10 =TY_FN_LOCALS // fn has locals
+// ** FN meta bits [001L XXXX] L=locals
+#10 =TY_FN_LOCALS
+
+// ** Global Meta bits [011X RRSS] R=numRefs S=sz
 
 // Error Classes
 // [E000 - E100): built-in errors.

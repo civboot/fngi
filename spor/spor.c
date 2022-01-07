@@ -194,7 +194,7 @@ typedef struct {
   Stk callStk;
 } Env;
 
-#define LS_OFFSET() (env.ls.mem - mem)
+#define LS_OFFSET() (env.ls.mem - mem + env.ls.sp)
 #define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
 
 typedef struct {
@@ -563,7 +563,7 @@ FT: case SzI2 + FT:
     GOTO_SZ(FT, SzI1)
     GOTO_SZ(FT, SzI4)
 FTLL: case SzI2 + FTLL:
-      WS_PUSH(fetch(mem, LS_OFFSET() + env.ls.sp  + popLit(SzI1), szI));
+      WS_PUSH(fetch(mem, LS_OFFSET() + popLit(SzI1), szI));
       return;
     GOTO_SZ(FTLL, SzI1)
     GOTO_SZ(FTLL, SzI4)
@@ -579,7 +579,7 @@ SR: case SzI2 + SR:
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
 SRLL: case SzI2 + SRLL:
-      store(mem, LS_OFFSET() + env.ls.sp + popLit(SzI1), WS_POP(), szI);
+      store(mem, LS_OFFSET() + popLit(SzI1), WS_POP(), szI);
       return;
     GOTO_SZ(SRLL, SzI1)
     GOTO_SZ(SRLL, SzI4)
@@ -1250,7 +1250,7 @@ void dbgMem(Instr instr) {
 }
 
 void dbgIndent() {
-  for(U16 i = 0; i < X_DEPTH; i += 1) printf("  ");
+  for(U16 i = 0; i < X_DEPTH; i += 1) printf(" +");
 }
 
 #define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
