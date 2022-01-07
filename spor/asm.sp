@@ -161,6 +161,7 @@
 // **********
 // * Global Compiler Variables
 @heap .4^FT =c_rKey        #0 .4, // [U4] rKey, ref to current dict key.
+@heap .4^FT =c_rLKey       #0 .4, // [U4] rLKey, ref to current L dict key.
 @heap .4^FT =c_localOffset #0 .2, // [U2] Local Offset (for local var setup)
 
 // **********
@@ -245,4 +246,5 @@
 #E0D5  =E_cMod       // different modules
 #E0D6  =E_cLSz       // literal sz
 #E0D7  =E_cNotType
+#E0D9  =E_cNotLocal
 

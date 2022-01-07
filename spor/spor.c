@@ -393,12 +393,12 @@ U8 mergeInstrSzI(SzI szI, U8 instr) {
 
 void xImpl(APtr aptr) { // impl for "execute"
   // get amount to grow, must be multipled by APtr size .
-  U16 growLs = fetch(mem, aptr, SzI2);
+  U16 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
   // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
   Stk_push(&env.callStk, (growLs << 24) + env.ep);
   env.mp = MOD_HIGH_MASK & aptr;
-  env.ep = aptr + 2;
+  env.ep = aptr + 1;
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
@@ -1236,13 +1236,13 @@ void dbgJmp(Instr instr) {
 void dbgMem(Instr instr) {
   if (INSTR_CLASS(instr) != C_MEM) return;
 
-  SzI szI = SzI2;
+  SzI szI;
   switch (INSTR_NO_SZ(instr)) {
     case LIT: szI = INSTR_SZI(instr); break;
     case FTLL:
+    case SRLL: szI = SzI1; break;
     case FTML:
-    case SRLL:
-    case SRML: break;
+    case SRML: szI = SzI2; break;
     default: return;
   }
   if(_dbgMemInvalid(szI, env.ep)) return;
