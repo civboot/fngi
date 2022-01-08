@@ -116,35 +116,32 @@ $c_fn useLocal
 
 $useLocal #2345 $tAssertEq
 
+$c_fn badMultiply // {a b -- a*b} uses loop to implement multiply
+  @SZ2 $c_local b
+  @SZ2 $c_local a
+  $c_localEnd
+  $lSet b
+  $lSet a
 
+  #0$L0 // out = 0
+  $c_loop
+    // if(!b) break
+    $lGet b $c_break0
+    // out = out + a
+    $lGet a  %ADD
+    // b = b - 1
+    $lGet b  %DEC  $lSet b
+  $c_again
+  $c_end // end break
+  %RET
 
+#0 #0 $badMultiply   #0   $tAssertEq
+#5 #1 $badMultiply   #5   $tAssertEq
+#5 #0 $badMultiply   #0   $tAssertEq
+#8 #8 $badMultiply   #40  $tAssertEq
+#5 #5 $badMultiply   #19  $tAssertEq
 
-
-
-// $loc badMultiply // {a b -- a*b} uses loop to implement multiply
-//   #2 $decl_lo b
-//   #2 $decl_lo a
-//   $end_lo
-//   .2 $setl b
-//   .2 $setl a
-// 
-//   ZERO; // out = 0
-//   $c_loop
-//     // if(!b) break
-//     .2 FTLL $lo b $mem_c_break0
-//     // out = out + l2
-//     .2 ADD $getl a
-//     // l0 = l0 - 1
-//     .2 DEC $getl b   .2 $setl b
-//   $c_again
-//   $c_end // for break
-//   RET;
-// 
-// #0 #0 $XX badMultiply   #0   $tAssertEq
-// #5 #1 $XX badMultiply   #5   $tAssertEq
-// #5 #0 $XX badMultiply   #0   $tAssertEq
-// #8 #8 $XX badMultiply   #40  $tAssertEq
-// #5 #5 $XX badMultiply   #19  $tAssertEq
+$assertWsEmpty
 
 // #200 #2 $XX alignSz  #200 $tAssertEq
 // #201 #2 $XX alignSz  #202 $tAssertEq

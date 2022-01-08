@@ -379,9 +379,9 @@ $c_sfn c_end // {&jmpTo} -> {} : end of c_if or c_break0
 
 // $c_loop ... $c_break0 ... $c_again $c_end
 $c_sfn c_loop   $jmpl getHeap   // push location for c_again
-$c_sfn c_break0 $xsl c_if   %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
+$c_sfn c_break0 $xsl c_if  %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
 $c_sfn c_again // {&loopTo} -> {} : run loop again
-  %JMPL         // compile jmp
+  @JMPL $c1  // compile jmp
   $xsl getHeap  // {&loopTo heap}
   %SWP %SUB     // {heap-&loopTo}
   %DUP $xsl assertLt128
