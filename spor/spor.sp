@@ -6,9 +6,19 @@
 //
 // 1. Instructions: contains definition of spore assembly instructions and
 //    documentation.
+//    a. Operations: Special
+//    b. Operations: One Inp -> One Out
+//    c. Operations: Two Inp -> One Out
+//    d. Small Literal
+//    e. Sizes
+//    f. Jmp
+//    g. Mem
+// 2. Registers and Device Operations
+// 3. Memory Locations, Globals and Constants
+// 4. Errors
 
 // **********
-// * Instructions
+// * 1. Instructions
 // Spor uses 8 bit instructions with the following bit layout:
 //
 // Note: (S=sz bit)
@@ -31,7 +41,7 @@
 #0A =RGFT  // Register Fetch
 #0B =RGSR  // Register Store
 
-// # Operations: One Inp {l} -> One Out
+// # Operations: One Inp -> One Out
 #10 =INC   // {l+1}  increment 1
 #11 =INC2  // {l+2}  increment 2
 #12 =INC4  // {l+4}  increment 4
@@ -47,7 +57,7 @@
 // (1) i -> f conversion
 // (1) f -> i conversion
 
-// # Operations: Two Inp {l r} -> One Out
+// # Operations: Two Inp -> One Out
 #20 =ADD   // {l +  r } add
 #21 =SUB   // {l -  r } subtract
 #22 =MOD   // {l %  r } integer modulo (remainder)
@@ -125,10 +135,11 @@
 @SZ2 @JMPL ^OR  =JMPL2
 
 // **********
-// * Registers
-// Registers can be accessed through RGFT and RGSR operations, which
-// include a 1 byte literal. The 1 byte literal has the following
-// byte format:
+// * 2. Registers and Device Operations
+//
+// Registers and device operations can be accessed through RGXX and DVXX
+// operations. RG operations include a 1 byte literal. The 1 byte literal has
+// the following byte format:
 // RROO OOOO: R=register O=offset
 //
 // FT will return the register value + offset
@@ -138,8 +149,7 @@
 #40 =R_LP // local stack pointer
 #80 =R_CP // call stack pointer
 
-// **********
-// * Device Operations
+// Device operations with DVFT and DVSR
 #00 =D_read   // read from src, filling up tokenBuf
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
 #02 =D_dict   // [&buf &heap] FT=get SR=set dict key=tokenBuf
@@ -155,7 +165,7 @@
 #09 =D_xsCatch
 
 // **********
-// * Memory Locations
+// * 3. Memory Locations, Globals and Constants
 #0000_0000 =null
 #0000_0004 =heap
 #0000_0008 =topHeap
@@ -174,15 +184,12 @@
 #0000_0028 =c_tokenBuf   // TokenBuf struct
 #0000_002C =c_tokenLen
 
-// **********
-// * Global Compiler Variables
+// Global Compiler Variables
 @heap .4^FT =c_rKey        #0 .4, // [U4] rKey, ref to current dict key.
 @heap .4^FT =c_rLKey       #0 .4, // [U4] rLKey, ref to current L dict key.
 @heap .4^FT =c_localOffset #0 .2, // [U2] Local Offset (for local var setup)
 
-// **********
-// * Global Constants
-.4
+// Constants
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
 #0001_0000 =cAllowPanicMask
 
@@ -195,9 +202,8 @@
 // masks for varMeta (same position as fnMeta)
 #C0 =VAR_SZ_MASK // sz instr to use for var.
 
-// ** Meta types
+// Meta types
 #40 =KEY_HAS_TY // dict entry is a non-constant
-
 #E0 =META_TY_MASK // # Upper three bits determine type
 #20 =TY_FN    // function, can be called and has an fnMeta
 #40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
@@ -205,12 +211,12 @@
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
-// ** FN meta bits [001L XXXX] L=locals
+// FN meta bits [001L XXXX] L=locals
 #10 =TY_FN_LOCALS
 
-// ** Global Meta bits [011X RRSS] R=numRefs S=sz
-
-// Error Classes
+// **********
+// * 4. Errors
+//
 // [E000 - E100): built-in errors.
 //  E100: device-specific hardware errors
 // [E200-E800): reserved
