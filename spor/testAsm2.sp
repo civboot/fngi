@@ -83,7 +83,9 @@ $myG1Get  #12345 $tAssertEq
 $c_sfn myG1Set  $gSet myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
-// Testing Locals
+// *****
+// * Testing Locals
+// test ldict
 #12 =shadowed
 $c_sfn notARealFn %RET // updates ldict
 @shadowed #12 $tAssertEq
@@ -96,6 +98,27 @@ $ldictGet shadowed #45 $tAssertEq
   $ldictGet myLocal
   @TY_LOCAL  @SZ2 #4 ^SHR  ^OR  #18 ^SHL
   $tAssertEq
+
+// test R_LP
+$c_sfn getLp %RGFT @R_LP$h1  %RET
+$getLp ^DUP #8000 $tAssertEq  =lsTop
+
+$c_fn getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET // uses locals
+$getLpWLocal @lsTop #4 ^SUB $tAssertEq
+
+// test local variables
+$c_fn useLocal
+  @SZ2 $c_local a
+  $c_localEnd
+  #12345$L4 $lSet a
+  $lGet a
+  %RET
+
+$useLocal #2345 $tAssertEq
+
+
+
+
 
 
 // $loc badMultiply // {a b -- a*b} uses loop to implement multiply

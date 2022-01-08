@@ -474,16 +474,21 @@ inline static void executeInstr(Instr instr) {
     case RGFT:
       r = popLit(SzI1);
       switch (RG_MASK & r) {
-        case R_EP: WS_PUSH(env.ep - 1); return;
-        case R_LP: WS_PUSH(LS_SP); return;
-        case R_CP: WS_PUSH(CS_SP); return;
+        case R_EP: WS_PUSH(env.ep - 1 + (0x3F & r)); return;
+        case R_LP:
+          WS_PUSH(LS_SP + (0x3F & r)); return;
+        case R_CP: WS_PUSH(CS_SP + (0x3F & r)); return;
         default: SET_ERR(E_cReg);
       }
     case RGSR:
       switch (RG_MASK & r) {
         case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
-        case R_LP: env.ls.sp = WS_POP() - (env.ls.mem - mem); return;
-        case R_CP: env.cs.sp = WS_POP() - (env.cs.mem - mem); return;
+        case R_LP:
+          env.ls.sp = WS_POP() - (env.ls.mem - mem) + (0x3F & r);
+          return;
+        case R_CP:
+          env.cs.sp = WS_POP() - (env.cs.mem - mem) + (0x3F & r);
+          return;
         default: SET_ERR(E_cReg);
       }
     case INC : WS_PUSH(WS_POP() + 1); return;
