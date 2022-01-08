@@ -83,6 +83,7 @@ typedef CSz CPtr;
 #define E_cXNoL     0xE0CE // x to non-locals
 #define E_cErr      0xE0CF // D_assert err code invalid
 #define E_cKeyLen   0xE0D0 // Key len too large
+#define E_cReg      0xE0D1 // Register error
 
 #define REF_MASK    0xFFFFFF
 #define IS_FN        (0x20 << 24)
@@ -108,8 +109,8 @@ typedef enum {
   DUPN = 0x07,
   DVFT = 0x08,
   DVSR = 0x09,
-  RGL  = 0x0A,
-  RGS  = 0x0B,
+  RGFT = 0x0A,
+  RGSR = 0x0B,
 
   INC  = 0x10,
   INC2 = 0x11,
@@ -160,6 +161,11 @@ typedef enum {
   SRML = 0xC6,
 } Instr;
 
+typedef enum {
+  R_EP = 0x00,
+  R_LP = 0x40,
+  R_CP = 0x80,
+} Reg;
 
 typedef enum {
   SzI1 = 0x00,
@@ -168,6 +174,7 @@ typedef enum {
 } SzI;
 
 #define SZ_MASK        0x30
+#define RG_MASK        0xC0
 #define INSTR_CLASS(INSTR) (InstrClass)(0xC0 & INSTR)
 #define INSTR_NO_SZ(INSTR)  (Instr)(~SZ_MASK & (U8)INSTR)
 #define INSTR_SZI(INSTR) ((SzI) (INSTR & SZ_MASK))
@@ -191,10 +198,11 @@ typedef struct {
 
   // Separate from mem
   Stk ws;
-  Stk callStk;
+  Stk cs;
 } Env;
 
-#define LS_OFFSET() (env.ls.mem - mem + env.ls.sp)
+#define LS_SP           (env.ls.mem - mem + env.ls.sp)
+#define CS_SP           (env.cs.mem - mem + env.cs.sp)
 #define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
 
 typedef struct {
@@ -340,7 +348,7 @@ SzI szToSzI(U8 sz) {
 
 #define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
-#define X_DEPTH       Stk_len(env.callStk)
+#define X_DEPTH       Stk_len(env.cs)
 #define _CHK_GROW(SP, SZ) \
   ASM_ASSERT(SP - SZ >= 0, E_stkOvr)
 
@@ -396,13 +404,13 @@ void xImpl(APtr aptr) { // impl for "execute"
   U16 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
   // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
-  Stk_push(&env.callStk, (growLs << 24) + env.ep);
+  Stk_push(&env.cs, (growLs << 24) + env.ep);
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr + 1;
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
-  Stk_push(&env.callStk, env.ep);
+  Stk_push(&env.cs, env.ep);
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr;
 }
@@ -446,7 +454,7 @@ inline static void executeInstr(Instr instr) {
       if(WS_POP()) return;
       // intentional fallthrough
     case RET:
-      U32 callMeta = Stk_pop(&env.callStk);
+      U32 callMeta = Stk_pop(&env.cs);
       Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
       env.mp = MOD_HIGH_MASK & callMeta;
       env.ep = MAX_APTR & callMeta;
@@ -463,9 +471,21 @@ inline static void executeInstr(Instr instr) {
     case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); return;
     case DVFT: deviceOp(TRUE, SzI4, szMask, 4); return;
     case DVSR: deviceOp(FALSE, SzI4, szMask, 4); return;
-    case RGL : assert(FALSE); // not impl
-    case RGS : assert(FALSE); // not impl
-
+    case RGFT:
+      r = popLit(SzI1);
+      switch (RG_MASK & r) {
+        case R_EP: WS_PUSH(env.ep - 1); return;
+        case R_LP: WS_PUSH(LS_SP); return;
+        case R_CP: WS_PUSH(CS_SP); return;
+        default: SET_ERR(E_cReg);
+      }
+    case RGSR:
+      switch (RG_MASK & r) {
+        case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
+        case R_LP: env.ls.sp = WS_POP() - (env.ls.mem - mem); return;
+        case R_CP: env.cs.sp = WS_POP() - (env.cs.mem - mem); return;
+        default: SET_ERR(E_cReg);
+      }
     case INC : WS_PUSH(WS_POP() + 1); return;
     case INC2: WS_PUSH(WS_POP() + 2); return;
     case INC4: WS_PUSH(WS_POP() + 4); return;
@@ -563,7 +583,7 @@ FT: case SzI2 + FT:
     GOTO_SZ(FT, SzI1)
     GOTO_SZ(FT, SzI4)
 FTLL: case SzI2 + FTLL:
-      WS_PUSH(fetch(mem, LS_OFFSET() + popLit(SzI1), szI));
+      WS_PUSH(fetch(mem, LS_SP + popLit(SzI1), szI));
       return;
     GOTO_SZ(FTLL, SzI1)
     GOTO_SZ(FTLL, SzI4)
@@ -579,7 +599,7 @@ SR: case SzI2 + SR:
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
 SRLL: case SzI2 + SRLL:
-      store(mem, LS_OFFSET() + popLit(SzI1), WS_POP(), szI);
+      store(mem, LS_SP + popLit(SzI1), WS_POP(), szI);
       return;
     GOTO_SZ(SRLL, SzI1)
     GOTO_SZ(SRLL, SzI4)
@@ -597,7 +617,7 @@ SRML: case SzI2 + SRML:
   env.ep = 1; // so dbg makes it 0
   while(TRUE) {
     executeInstr(instr);
-    if(Stk_len(env.callStk) == 0) return;
+    if(Stk_len(env.cs) == 0) return;
     instr = popLit(SzI1);
   }
 }
@@ -892,7 +912,7 @@ void deviceOpRDict(Bool isFetch) {
 void deviceOpCatch() {
   // cache ep, call and local stack.
   U32 ep = env.ep;
-  U32 cs_sp = env.callStk.sp;
+  U32 cs_sp = env.cs.sp;
   U32 ls_sp = env.ls.sp;
 
   jmp_buf* prev_err_jmp = err_jmp;
@@ -907,7 +927,7 @@ void deviceOpCatch() {
 
   // ALWAYS Reset ep, call, and local stack and clear WS.
   env.ep = ep;
-  env.callStk.sp = cs_sp;
+  env.cs.sp = cs_sp;
   env.ls.sp = ls_sp;
   env.ws.sp = env.ws.size; // clear WS
 
@@ -945,7 +965,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       if(!WS_POP()) SET_ERR(tmp);
       break;
     case 0x7: /*D_wslen*/ WS_PUSH(WS_LEN); break;
-    case 0x8: /*D_cslen*/ WS_PUSH(Stk_len(env.callStk)); break;
+    case 0x8: /*D_cslen*/ WS_PUSH(Stk_len(env.cs)); break;
     case 0x9: /*D_xsCatch*/ deviceOpCatch(); break;
     default: SET_ERR(E_cDevOp);
   }
@@ -980,7 +1000,7 @@ ssize_t readSrc(size_t nbyte) {
     .testIdx = (U32*) (mem + 0x18),       \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
-    .callStk = \
+    .cs = \
     { .size = RS, .sp = RS, .mem = callStkMem },     \
   };                                      \
   /* configure heap+topheap */            \
@@ -1125,8 +1145,8 @@ char* instrStr(Instr instr) {
     case DUPN :  return "DUPN ";
     case DVFT :  return "DVFT ";
     case DVSR :  return "DVSR ";
-    case RGL  :  return "RGL  ";
-    case RGS  :  return "RGS  ";
+    case RGFT :  return "RGFT ";
+    case RGSR :  return "RGSR ";
 
     case INC  :  return "INC  ";
     case INC2 :  return "INC2 ";

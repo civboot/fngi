@@ -34,10 +34,10 @@
 #05 =DRP2  // {l r -> }  drop 2
 #06 =DUP   // {l -> l l} duplicate
 #07 =DUPN  // {l -> l l==0} DUP then NOT
-#08 =DVFT  // Device Operation Load
+#08 =DVFT  // Device Operation Fetch
 #09 =DVSR  // Device Operation Store
-#0A =RGL   // Register Load
-#0B =RGS   // Register Store
+#0A =RGFT  // Register Fetch
+#0B =RGSR  // Register Store
 
 // # Operations: One Inp {l} -> One Out
 #10 =INC   // {l+1}  increment 1
@@ -121,6 +121,20 @@
 @SZ2 @XSL  ^OR  =XSL2
 @SZ2 @XL   ^OR  =XL2
 @SZ2 @JMPL ^OR  =JMPL2
+
+// **********
+// * Registers
+// Registers can be accessed through RGFT and RGSR operations, which
+// include a 1 byte literal. The 1 byte literal has the following
+// byte format:
+// RROO OOOO: R=register O=offset
+//
+// FT will return the register value + offset
+// SR will store the value + offset in the register
+
+#00 =R_EP // execution pointer, SR will panic
+#40 =R_LP // local stack pointer
+#80 =R_CP // call stack pointer
 
 // **********
 // * Device Operations
@@ -237,14 +251,16 @@
 #E0CD  =E_cXHasL  // small-execute to fn w/locals
 #E0CE  =E_cXNoL   // large-execute to fn wo/locals
 #E0CF  =E_cErr    // D_assert err code invalid
+#E0D0  =E_cKeyLen // Key len too large
+#E0D1  =E_cReg    // Register error
 
-#E0D0  =E_cNotGlobal // using a non-global as global
-#E0D1  =E_cIsX       // using an XS for an X
-#E0D2  =E_cIsXS      // using an X for an XS
-#E0D3  =E_cJmpL1     // JMP1 over too much space
-#E0D4  =E_cNotFn
-#E0D5  =E_cMod       // different modules
-#E0D6  =E_cLSz       // literal sz
-#E0D7  =E_cNotType
-#E0D9  =E_cNotLocal
+#E0E0  =E_cNotGlobal // using a non-global as global
+#E0E1  =E_cIsX       // using an XS for an X
+#E0E2  =E_cIsXS      // using an X for an XS
+#E0E3  =E_cJmpL1     // JMP1 over too much space
+#E0E4  =E_cNotFn
+#E0E5  =E_cMod       // different modules
+#E0E6  =E_cLSz       // literal sz
+#E0E7  =E_cNotType
+#E0E9  =E_cNotLocal
 

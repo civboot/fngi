@@ -555,10 +555,14 @@ $c_fn c_local
   %SWP $xsl metaSet // {offsetMeta}
   $jmpl ldictSet
 
-// $c_fn lRef
-//   $xsl ldictGetR  %DUP $xsl _gSetup // {&metaRef}
-//   .4%FT $xsl toRef // {&global}
-//   $jmpl L4
+$c_sfn _lSetup // {&metaRef} -> {metaRef} : checked local setup
+  %DUP $_xsl assertHasTy
+  .4%FT %DUP $_jmpl assertLocal
+
+$c_sfn lRef // lRef [] -> [&local] : get local reference
+  $_xsl ldictGetR  $xsl _lSetup // {metaLocalOffset}
+  $xsl toRef // {localOffset}
+  $jmpl L4
 
 //  .2 FTML SWP @c_localOffset $mem_xl alignSz // {sz alignedOffset}
 //  .4 DUP $xsl lDictSet // set next token to alignedOffset {sz alignedOffset}
