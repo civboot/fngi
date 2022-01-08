@@ -9,7 +9,7 @@ endif
 
 syn match elAlpha    '[_a-zA-Z0-9]\+' nextGroup=elInstr
 syn keyword elInstr
-      \ NOP   RETZ  RET   SWP   DRP   DRP2  DUP   DUPN  DVFT  DVSR
+      \ NOP   RETZ  RET   SWP   DRP   OVR   DUP   DUPN  DVFT  DVSR
       \ RGFT  RGSR  FT    SR
       \ INC   INC2  INC4  DEC   INV   NEG   NOT   CI1   CI2
       \ ADD   SUB   MOD   SHL   SHR   AND   OR    XOR   LAND  LOR

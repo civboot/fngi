@@ -104,7 +104,7 @@ typedef enum {
   RET  = 0x02,
   SWP  = 0x03,
   DRP  = 0x04,
-  DRP2 = 0x05,
+  OVR  = 0x05,
   DUP  = 0x06,
   DUPN = 0x07,
   DVFT = 0x08,
@@ -466,7 +466,7 @@ inline static void executeInstr(Instr instr) {
       WS_PUSH(l);
       return;
     case DRP : WS_POP(); return;
-    case DRP2: WS_POP(); WS_POP(); return;
+    case OVR : r = WS_POP(); l = WS_POP(); WS_PUSH(l); WS_PUSH(r); WS_PUSH(l); return;
     case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      return;
     case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); return;
     case DVFT: deviceOp(TRUE, SzI4, szMask, 4); return;
@@ -1145,7 +1145,7 @@ char* instrStr(Instr instr) {
     case RET  :  return "RET  ";
     case SWP  :  return "SWP  ";
     case DRP  :  return "DRP  ";
-    case DRP2 :  return "DRP2 ";
+    case OVR  :  return "OVR  ";
     case DUP  :  return "DUP  ";
     case DUPN :  return "DUPN ";
     case DVFT :  return "DVFT ";

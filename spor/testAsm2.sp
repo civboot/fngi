@@ -56,6 +56,12 @@ $SFN add   %ADD %RET
 $SFN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
+$dictGet SFN     $isFnInstant $tAssert
+$dictGet FN      $isFnInstant $tAssert
+$dictGet IF      $isTyFn      $tAssert
+$dictGet IF      $isFnInstant $tAssert
+$dictGet assert  $isFnInstant $tAssertNot
+
 // Test control flow
 .4 $loc testIf // converts 1->10 else: 42
   #1 $L0 %EQ  $IF   #4 $L0 %RET

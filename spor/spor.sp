@@ -33,7 +33,7 @@
 #02 =RET   // Return
 #03 =SWP   // {l r -> r l} swap
 #04 =DRP   // {l -> }    drop
-#05 =DRP2  // {l r -> }  drop 2
+#05 =OVR   // {l r -> }  drop 2
 #06 =DUP   // {l -> l l} duplicate
 #07 =DUPN  // {l -> l l==0} DUP then NOT
 #08 =DVFT  // Device Operation Fetch
@@ -193,15 +193,6 @@
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
 #0001_0000 =cAllowPanicMask
 
-// 1-byte masks for fnMeta (upper byte of dict value)
-#01 =IS_LARGE_FN // 1=has local stack (XL/XW instead of XSL/XSW)
-#02 =IS_INSTANT // 1=is instant
-#04 =IS_SUPER // 1=super always instant fn ($ may alter behavior)
-#08 =IS_PRE // 1=is prefix
-
-// masks for varMeta (same position as fnMeta)
-#C0 =VAR_SZ_MASK // sz instr to use for var.
-
 // Meta types
 #40 =KEY_HAS_TY // dict entry is a non-constant
 #E0 =META_TY_MASK // # Upper three bits determine type
@@ -211,8 +202,13 @@
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
-// FN meta bits [001L XXXX] L=locals
-#10 =TY_FN_LOCALS
+// FN meta bits [001L TT-P] L=locals T=fnTy P=pre
+#0C =TY_FN_TY_MASK // 0b1100
+#01 =TY_FN_PRE     // always run immediately and passed compile state.
+#00 =TY_FN_NORMAL  // normally compiled and run at runtime
+#04 =TY_FN_INSTANT // normally run immediately (compile time)
+#08 =TY_FN_SMART   // always run immediately and passed compile state.
+#10 =TY_FN_LOCALS  // has locals (called with XL or XW)
 
 // **********
 // * 4. Errors
@@ -464,7 +460,7 @@ $hal2 $loc L4 // {U1} compile 4 byte literal
   @LIT4 $c1  // compile .4%LIT
   $_jmpl h4  // compile the 4 byte literal
 
-$loc toMeta // INLINE {metaRef} -> {meta}
+$loc toMeta // INSTANT {metaRef} -> {meta}
   @SLIT #18 ^OR $c1  @SHR $c1  %RET
 
 $loc keyHasTy  // {&metaRef} dict value is a constant
@@ -472,26 +468,26 @@ $loc keyHasTy  // {&metaRef} dict value is a constant
 
 // These take {metaRef} and tell information about it
 
-$loc isFn         $toMeta  @META_TY_MASK$L1 %AND  @TY_FN$L1      %EQ %RET
-$loc fnHasLocals  $toMeta  @TY_FN_LOCALS$L1 %AND %RET
+$loc isTyFn      $toMeta  @META_TY_MASK$L1 %AND  @TY_FN$L1  %EQ %RET
+$loc isFnLocals  $toMeta  @TY_FN_LOCALS$L1 %AND %RET
 
 $loc assertHasTy // [&metaRef]
   $_xsl keyHasTy @E_cNotType $L2 $_jmpl assert
-$loc assertFn   $_xsl isFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
+$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
 
 $loc assertXs // [metaRef]
   %DUP $_xsl assertFn
-  $_xsl fnHasLocals  @E_cIsX $L2  $_jmpl assertNot
+  $_xsl isFnLocals  @E_cIsX $L2  $_jmpl assertNot
 
 $loc assertX // {metaRef}
   %DUP $_xsl assertFn
-  $_xsl fnHasLocals  @E_cIsX $L2  $_jmpl assert
+  $_xsl isFnLocals  @E_cIsX $L2  $_jmpl assert
 
 $hal4 $loc toMod @MOD_MASK $L4 %AND %RET // {ref} -> {mod}
 $loc isSameMod // {metaRef metaRef} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
-$hal2 $loc curMod   .2%FTML @c_rKey  $h2 .4%FT  $_jmpl toMod // [] -> [mod]
+$hal2 $loc curMod   .2%FTML @c_rKey$h2 .4%FT  $_jmpl toMod // [] -> [mod]
 $hal2 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET        // [ref] -> [isCurMod]
 
 $hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
@@ -525,9 +521,14 @@ $hal2 $loc c_updateRKey // [] -> [&metaRef] update and return current key
   %DUP $hal2 .4%SRML @c_rKey $h2 // rKey=newKey
   %RET // return &metaRef (newKey)
 
-$loc metaSet // {U4 mask:U1} -> U4 : apply meta mask to U4 value
+$loc metaSet // {metaRef mask:U1} -> U4 : apply meta mask to metaRef
   #18 $L0  %SHL  // make mask be upper byte
   %OR %RET
+
+$loc rMetaSet // {&metaRef mask:U1} -> U4 : apply meta mask to &metaRef
+  %OVR .4%FT %SWP // {&metaRef metaRef mask}
+  $_xsl metaSet   // {&metaRef newMetaRef}
+  %SWP .4%SR %RET
 
 $loc c_keySetTyped // {&metaRef} -> []
   %INC4 %DUP // {&len &len}
@@ -535,20 +536,16 @@ $loc c_keySetTyped // {&metaRef} -> []
   %SWP .1%SR %RET            // update tyKeyLen
 
 // Note: this uses locals
-$loc c_keySetTy // {mask:U1 &metaRef} mask current key's meta to be a Ty
-  #1 $h1 // 1 local [&metaRef]
-  %DUP .4%SRLL #0$h1 // cache &metaRef {mask &metaRef}
+$loc c_keySetTy // {mask:U1 &metaRef} -> {} mask current key's meta to be a Ty
   %DUP $_xsl c_keySetTyped // make key "typed" {mask &metaRef}
-  .4%FT // fetch key {mask metaRef}
-  %SWP $_xsl metaSet // apply mask {metaRef}
-  .4%FTLL#0$h1  .4%SR // update key
+  %SWP $_xsl rMetaSet
   %RET
 
 $hal2 $loc _declFn // [meta]
   @TY_FN$L1 %OR // {meta}
   $_xsl c_updateRKey // {meta &metaRef}
   $_xsl loc
-  $hal2 .2%XL @c_keySetTy $h2
+  $_xsl c_keySetTy
   $ha2
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
   #0$L0        .2%SRML @c_localOffset $h2  // zero localDict.offset
@@ -558,19 +555,25 @@ $hal2 $loc _declFn // [meta]
 $ha2 $loc SFN  // $SFN <token>: define location of small function
   #0$L0         $_jmpl _declFn
 
-$hal2 $SFN FN  // $FN <token>: define location of function with locals
+$hal2 $loc FN  // $FN <token>: define location of function with locals
   @TY_FN_LOCALS$L1 $_jmpl _declFn
+
+$hal2
+$loc INSTANT // {} modify current function to be instant
+  .4%FTML @c_rKey$h2  @TY_FN_INSTANT$L1   $_jmpl rMetaSet
 
 // Backfill the fn meta
 $SFN c_makeTy // {meta mask} make an existing symbol a type.
   $_xsl dictGetR   // {meta &metaRef}
-  $hal2 .2%XL @c_keySetTy $h2
+  $_xsl c_keySetTy
   %RET
 
 $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
   @TY_FN$L1 %OR  $_jmpl c_makeTy
 
-#0 $c_makeFn SFN
+@TY_FN_INSTANT $c_makeFn SFN
+@TY_FN_INSTANT $c_makeFn FN
+@TY_FN_INSTANT $c_makeFn INSTANT
 #0 $c_makeFn xsl
 #0 $c_makeFn jmpl
 #0 $c_makeFn L0
@@ -595,16 +598,16 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn metaSet
 #0 $c_makeFn toRef
 #0 $c_makeFn toMod
-#0 $c_makeFn toMeta
+@TY_FN_INSTANT $c_makeFn toMeta
 #0 $c_makeFn curMod
 #0 $c_makeFn keyHasTy
-#0 $c_makeFn isFn
+#0 $c_makeFn isTyFn
 #0 $c_makeFn isSameMod
 #0 $c_makeFn isCurMod
-#0 $c_makeFn fnHasLocals
+#0 $c_makeFn isFnLocals
 #0 $c_makeFn c_updateRKey
 #0 $c_makeFn c_keySetTyped
-@TY_FN_LOCALS $c_makeFn c_keySetTy
+#0 $c_makeFn c_keySetTy
 
 #0 $c_makeFn assert
 #0 $c_makeFn assertNot
@@ -616,6 +619,14 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn assertXs
 #0 $c_makeFn assertCurMod
 #0 $c_makeFn assertHasTy
+
+$SFN isFnNormal  $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_NORMAL$L1  %EQ %RET
+$SFN isFnInstant $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_INSTANT$L1  %EQ %RET
+$SFN isFnSmart   $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_SMART$L1  %EQ %RET
+$SFN isTyLocal   $toMeta  @META_TY_MASK$L1 %AND  @TY_LOCAL$L1  %EQ %RET
+$SFN isTyGlobal  $toMeta  @META_TY_MASK$L1 %AND  @TY_GLOBAL$L1  %EQ %RET
+$SFN assertLocal $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
+$SFN assertGlobal $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 
 $SFN getSz           @D_sz$L0          %DVFT %RET
 $SFN setSz           @D_sz$L0          %DVSR %RET
@@ -635,15 +646,15 @@ $assertWsEmpty
 // All flow control pushes the current heap on the WS, then END/AGAIN correctly
 // stores/jmps the heap where they are called from.
 
-$SFN IF // {} -> {&jmpTo} : start an if block
+$SFN IF  $INSTANT // {} -> {&jmpTo} : start an if block
   @JZL1 $L1  $xsl h1 // compile .1%JZL instr
   $xsl getHeap // {&jmpTo} push &jmpTo location to stack
-  #0$L0               $xsl h1 // compile 0 (jump pad)
+  #0$L0  $xsl h1 // compile 0 (jump pad)
   %RET
 
 $SFN assertLt128  #10 $L0 %LT_U   @E_cJmpL1 $L2   $jmpl assert
 
-$SFN END // {&jmpTo} -> {} : end of IF or BREAK0
+$SFN END  $INSTANT // {&jmpTo} -> {} : end of IF or BREAK0
   %DUP          // {&jmpTo &jmpTo}
   $xsl getHeap  // {&jmpTo &jmpTo heap}
   %SWP %SUB     // {&jmpTo (heap-&jmpTo)}
@@ -651,9 +662,9 @@ $SFN END // {&jmpTo} -> {} : end of IF or BREAK0
   %SWP .1%SR %RET // store at location after start (1 byte literal)
 
 // $LOOP ... $BREAK0 ... $AGAIN $END
-$SFN LOOP   $jmpl getHeap   // push location for AGAIN
-$SFN BREAK0 $xsl IF  %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
-$SFN AGAIN // {&loopTo} -> {} : run loop again
+$SFN LOOP   $INSTANT $jmpl getHeap
+$SFN BREAK0 $INSTANT $xsl IF  %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
+$SFN AGAIN $INSTANT // {&loopTo} -> {} : run loop again
   @JMPL $c1  // compile jmp
   $xsl getHeap  // {&loopTo heap}
   %SWP %SUB     // {heap-&loopTo}
@@ -664,8 +675,6 @@ $SFN AGAIN // {&loopTo} -> {} : run loop again
 // **********
 // * Defining and Using global variables
 
-$SFN isGlobal     $toMeta  @META_TY_MASK$L1 %AND  @TY_GLOBAL$L1  %EQ %RET
-$SFN assertGlobal $xsl isGlobal  @E_cNotGlobal$L2 $jmpl assert
 
 $SFN assertSzI // {szI}
   %DUP #CF$L1 %AND @E_cSz$L2 $xsl assertNot // non-sz bits empty
@@ -709,7 +718,7 @@ $FN c_global // <value> <szI> $c_global <token>: define a global variable of sz
   $xsl c_updateRKey // {value &metaRef}
   $xsl loc
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMask // {value &metaRef mask}
-  %SWP $xl c_keySetTy // update key ty
+  %SWP $xsl c_keySetTy // update key ty
   .1%FTLL#0$h1  $jmpl hN // write value to heap
 
 $SFN _gSetup // {&metaRef} -> {metaRef} : checked global setup
@@ -773,8 +782,6 @@ $SFN c_makeGlobal // {szI} <token>: set meta for token to be a global.
 // $lSet myLocal
 // $lGet myLocal
 
-$SFN isLocal     $toMeta  @META_TY_MASK$L1 %AND  @TY_LOCAL$L1  %EQ %RET
-$SFN assertLocal $xsl isLocal  @E_cNotLocal$L2 $jmpl assert
 
 $FN min // [a b] -> [min]
   #1 $h1 // one local, b
@@ -827,7 +834,7 @@ $FN c_local
   %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD $gSet c_localOffset
   $xsl c_updateRLKey // {mask loff &metaRef}
   %SWP $xsl ldictSet  // set to localOffset {mask &metaRef}
-  $xl c_keySetTy %RET
+  $xsl c_keySetTy %RET
 
 $SFN c_localEnd // end local declarations and write the number of slots needed.
   $gGet c_localOffset #4$L0 $xl align
