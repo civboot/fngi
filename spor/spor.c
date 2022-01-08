@@ -1031,8 +1031,8 @@ ssize_t readSrc(size_t nbyte) {
   tokenState->buf = *env.topHeap;
 
 #define SMALL_ENV_BARE \
-  /*      MS      WS     RS     LS     DICT */    \
-  NEW_ENV_BARE(0x8000, 0x100, 0x100, 0x200, 0x1000)
+  /*           MS       WS     RS     LS     DICT */    \
+  NEW_ENV_BARE(0x10000, 0x100, 0x100, 0x200, 0x2000)
 
 void compileFile(char* s) {
   compilingName = s;
@@ -1401,38 +1401,38 @@ void compileStr(char* s) {
   assert(0 == fetch(mem, heapStart+6, SzI1));
 }
 
-/*test*/ void testExecuteInstr() {
-  printf("## testExecuteInstr\n"); SMALL_ENV;
-  compileStr(".4 @E_general");
-  assert(0xE000 == WS_POP());
-
-  compileStr(".2");
-  assert(SzI2 == instrSzI);
-
-  compileStr(".4 #5006 #7008 .2 ^DRP");
-  assert(0x5006 == WS_POP());
-
-  compileStr(".1 #01 #02  ^ADD");
-  assert(0x03 == WS_POP());
-
-  compileStr(".4 #8 #5 ^SUB");
-  assert(0x03 == WS_POP());
-
-  compileStr(".4 #8000 #4 ^SUB");
-  assert(0x7FFC == WS_POP());
-
-  compileStr(".A @D_sz ^DVFT");
-  assert(0x04 == WS_POP());
-
-  U32 expectDictHeap = (U8*)dict - mem + 4;
-  compileStr(".4 @c_tokenBuf ^FT"); assert(tokenState->buf == WS_POP());
-  compileStr(".4 @topHeap ^FT");  assert(*env.topHeap == WS_POP());
-  compileStr(".4 @c_dictHeap");   assert(expectDictHeap == WS_POP());
-}
+// These were useful for initial development
+// /*test*/ void testExecuteInstr() {
+//   printf("## testExecuteInstr\n"); TEST_ENV;
+//   compileStr(".4 @E_general");
+//   assert(0xE000 == WS_POP());
+// 
+//   compileStr(".2");
+//   assert(SzI2 == instrSzI);
+// 
+//   compileStr(".4 #5006 #7008 .2 ^DRP");
+//   assert(0x5006 == WS_POP());
+// 
+//   compileStr(".1 #01 #02  ^ADD");
+//   assert(0x03 == WS_POP());
+// 
+//   compileStr(".4 #8 #5 ^SUB");
+//   assert(0x03 == WS_POP());
+// 
+//   compileStr(".4 #8000 #4 ^SUB");
+//   assert(0x7FFC == WS_POP());
+// 
+//   compileStr(".A @D_sz ^DVFT");
+//   assert(0x04 == WS_POP());
+// 
+//   U32 expectDictHeap = (U8*)dict - mem + 4;
+//   compileStr(".4 @c_tokenBuf #FF_FFFF ^AND ^FT"); assert(tokenState->buf == WS_POP());
+//   compileStr(".4 @topHeap #FF_FFFF ^AND ^FT");  assert(*env.topHeap == WS_POP());
+//   compileStr(".4 @c_dictHeap #FF_FFFF ^AND");   assert(expectDictHeap == WS_POP());
+// }
 
 /*test*/ void testAsm2() {
   printf("## testAsm2\n"); TEST_ENV;
-  compileFile("spor/asm2.sp");
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
 
   compileFile("spor/testAsm2.sp");
@@ -1485,7 +1485,6 @@ void compileStr(char* s) {
 
 // /*test*/ void testBoot() {
 //   printf("## testBoot\n"); SMALL_ENV;
-//   compileFile("spor/asm2.sp");
 //   compileFile("spor/boot.sp");
 // 
 //   // printf("## testBoot... testBoot.sp\n");
@@ -1501,7 +1500,6 @@ void compileStr(char* s) {
   testDictDeps();
   testDict();
   testWriteHeap();
-  testExecuteInstr();
   testAsm2();
   // testBoot();
 

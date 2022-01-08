@@ -12,31 +12,28 @@ is not designed for the following principles:
   and therefore able to create it's own macros and syntax, it can achieve higher
   readability as it bootstraps.
 
-Spor has a 16bit bytecode with a stack-based interpreter. It assembler starts as
+Spor has an 8bit bytecode with a stack-based interpreter. It assembler starts as
 extremely primitive but bootstraps itself into a more "full featured"
 macro-heavy "language".
 
-A single 16bit spor instruction speficies a size (1, 2 or 4 bytes) and can
-perform multiple orthoginal operations:
-- mem: immediate load (of 16bit value), memory fetch, memory store, etc
-- operation: logical operation (add, subtract, eq, etc)
-- jump: jmp, jump table, call or return
-
 The assembly language is stack-based. It also has a builtin dictionary of 32bit
-values and a register to store the currently built instruction. The syntax looks
-like this:
+values and a register to store the current instr size (1, 2 or 4 bytes).
+
+The syntax looks like
 
 ```
-$loc add1
-  .2 LIT ADD RET; #1,
+// (sfn means "small function" aka no locals)
+$c_sfn add1   // [U4] -> [U4]: add one
+  #1$L0       // compile literal of 0x1
+  %ADD %RET   // add and return
 
-$loc add2
-  .2 XSL; @add1,
-  .2 XSL; @add1,
-  RET;
+$c_sfn add2 // [U4] -> [U4]: add two
+  $xsl  add1 // xsl means "execute small"
+  $jmpl add1 // jmpl does a jump, add1 does the return
 ```
 
-The assembler supports the following native tokens.
+The assembler syntax is obsenely simple and fngi builds on top of it. It
+supports the following tokens.
 
 Pushing and setting stack values:
 - `/` starts a line comment.
@@ -49,38 +46,30 @@ Pushing and setting stack values:
   on the stack (assuming it had been set like above).
 - `,` pops a value from stack and writes it to heap. The size is controlled by `.`
 
-Compiling an executing instructions:
-- `<non-native token>` any non-native token is interpreted as a dictionary
-  lookup to mask and sets the global instruction register. Asm instructions are
-  defined with a 16bit mask in the high 2bytes and 16bit instruction in the
-  low 2bytes, i.e. `#003F_0020 =ADD`. Using just a plain `ADD` will mask and set
-  the current instruction.
-- `;` compile the current instruction register to heap and clear it (but don't
-  clear size bits).
-- `^` run the current instruction register then clear it. This ignores JMP. This
-  is useful for doing small bits of algebra and stack manipulation in the
-  assembly. Does not clear size bits.
-- `$<token>` gets `<token>` from dictionary and immediately begins executing it.
+Compiling and executing instructions:
+- `%` compile the next token's dictionary value as an instruction. Does not
+  clear sz bits.
+- `^` run the next token's dictionary value as an instruction. This is useful
+  for doing small bits of algebra and stack manipulation in the assembly. Does
+  not clear size bits.
+- `$<token>` gets `<token>` from dictionary and immediately executes it.
   This is an assembly "macro", which must have been previously compiled to the
   heap at the location in asm.
 
 From the above we can now break down this code:
 ```
-$loc add1
-  .2 LIT ADD RET; #1,
+$c_sfn add1
+  #1$L0
+  %ADD %RET
 ```
 
-- `$loc add1` is a macro defined in `asm2.sa`. It simply sets dictionary entry
-  "add1" to the current heap location.
-- `.2 LIT ADD RET` is the components of our instruction. `.2` is the size in
-  bytes, `LIT` is the memory (literal), `ADD` is the operation and `RET` causes
-  a return. They update the global instruction.
-- `;` compiles the global instruction (writes to heap) and then clears it (but
-  does not change sz).
-- `#1,` pushes the hex value `1` to the stack and `,` compiles it to the heap.
-  It's the immediate value referenced by the `LIT` in the previous instruction.
+- `$c_sfn add1` is a macro defined in `asm2.sa`. It simply sets dictionary entry
+  "add1" to the current heap location and sets a few global values.
+- #1$L0 `#1` puts the value 0x1 on the stack immediately and `$L0` consumes it
+  and compiles it as a "small literal" (uses only one byte)
+- `%ADD  %RET` compiles the `ADD` and then the `RET` instructions. they are defined in `asm.sp`
 
-For `add2` `XSL` means "eXecute Small Literal". It looks up the address to
-execute as a literal. "Small" means the function has no locals stack. (read more
-about that in the docs for XL vs XSL in `spor/asm.sa`).
+For `add2` `xsl` means "eXecute Small Literal". It looks up the address to
+execute as a literal. "Small" means the function has no locals stack.
 
+Read the full documentation in asm.sa
