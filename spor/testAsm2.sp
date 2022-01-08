@@ -28,10 +28,10 @@ $lits
 
 // Test xsl
 
-$c_sfn myXs #22 $L0 %RET
+$SFN myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
 
-$c_sfn callMyXs $xsl myXs %RET
+$SFN callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
 // Test rKeyMeta
@@ -50,16 +50,16 @@ $assertWsEmpty
 
 // Test core macros
 
-$c_sfn one   #1 $L0 %RET
-$c_sfn add   %ADD %RET
+$SFN one   #1 $L0 %RET
+$SFN add   %ADD %RET
 
-$c_sfn test_xslJmpl $xsl one   $xsl one   $jmpl add
+$SFN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
 // Test control flow
 .4 $loc testIf // converts 1->10 else: 42
-  #1 $L0 %EQ  $c_if   #4 $L0 %RET
-              $c_end  #13 $L0 %RET
+  #1 $L0 %EQ  $IF   #4 $L0 %RET
+              $END  #13 $L0 %RET
 
 #1 $testIf      #4 $tAssertEq
 #2 $testIf      #13 $tAssertEq
@@ -74,20 +74,20 @@ $ha2 #1 $h1 // misalign heap
 #12345 @SZ4 $c_global myG1   $assertWsEmpty
 @myG1 #FF_FFFF ^AND .4^FT  #12345 $tAssertEq
 
-$c_sfn myG1Ref  $gRef myG1 %RET
+$SFN myG1Ref  $gRef myG1 %RET
 $myG1Ref  @myG1 #FF_FFFF ^AND  $tAssertEq
 
-$c_sfn myG1Get  $gGet myG1 %RET
+$SFN myG1Get  $gGet myG1 %RET
 $myG1Get  #12345 $tAssertEq
 
-$c_sfn myG1Set  $gSet myG1 %RET
+$SFN myG1Set  $gSet myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
 // *****
 // * Testing Locals
 // test ldict
 #12 =shadowed
-$c_sfn notARealFn %RET // updates ldict
+$SFN notARealFn %RET // updates ldict
 @shadowed #12 $tAssertEq
 
 #45 $ldictSet shadowed
@@ -100,14 +100,14 @@ $ldictGet shadowed #45 $tAssertEq
   $tAssertEq
 
 // test R_LP
-$c_sfn getLp %RGFT @R_LP$h1  %RET
+$SFN getLp %RGFT @R_LP$h1  %RET
 $getLp ^DUP #8000 $tAssertEq  =lsTop
 
-$c_fn getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET // uses locals
+$FN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET // uses locals
 $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 
 // test local variables
-$c_fn useLocal
+$FN useLocal
   @SZ2 $c_local a
   $c_localEnd
   #12345$L4 $lSet a
@@ -116,7 +116,7 @@ $c_fn useLocal
 
 $useLocal #2345 $tAssertEq
 
-$c_fn badMultiply // {a b -- a*b} uses loop to implement multiply
+$FN badMultiply // {a b -- a*b} uses loop to implement multiply
   @SZ2 $c_local b
   @SZ2 $c_local a
   $c_localEnd
@@ -124,15 +124,15 @@ $c_fn badMultiply // {a b -- a*b} uses loop to implement multiply
   $lSet a
 
   #0$L0 // out = 0
-  $c_loop
+  $LOOP
     // if(!b) break
-    $lGet b $c_break0
+    $lGet b $BREAK0
     // out = out + a
     $lGet a  %ADD
     // b = b - 1
     $lGet b  %DEC  $lSet b
-  $c_again
-  $c_end // end break
+  $AGAIN
+  $END // end break
   %RET
 
 #0 #0 $badMultiply   #0   $tAssertEq
