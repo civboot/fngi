@@ -267,6 +267,7 @@
 #E0E6  =E_cLSz       // literal sz
 #E0E7  =E_cNotType
 #E0E9  =E_cNotLocal
+#E0EA  =E_cNotVar
 
 // **********
 // * Core Utility Macros
@@ -324,15 +325,18 @@
   .4%INC4     %SRML .2@heap, // heap=heap+4
   %RET // (unaligned)
 
-@heap .4^FT =_dict // setup for dict.
-  // Scan next token
-            @D_scan$L0
-  %DVFT
+@heap .4^FT =dictArgs // args for dict.
   // put {dict.buf &dict.heap} on stack
             .4%FTML @c_dictBuf $h2
   %NOP      .2%LIT @c_dictHeap $h2
   %RET // (unaligned)
 
+@heap .4^FT =_dict // setup for dict.
+  // Scan next token
+            @D_scan$L0
+  %DVFT     .2%JMPL @dictArgs$h2 // (aligned)
+
+%NOP // (unaligned)
 @heap .4^FT =dictSet // dictSet: Set "standard" dictionary to next token.
             .2%XSL @_dict $h2
   @D_dict$L0   %DVSR // device dict SR
@@ -471,7 +475,7 @@ $loc keyHasTy  // {&metaRef} dict value is a constant
 $loc isTyFn      $toMeta  @META_TY_MASK$L1 %AND  @TY_FN$L1  %EQ %RET
 $loc isFnLocals  $toMeta  @TY_FN_LOCALS$L1 %AND %RET
 
-$loc assertHasTy // [&metaRef]
+$loc assertTyped // [&metaRef]
   $_xsl keyHasTy @E_cNotType $L2 $_jmpl assert
 $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
 
@@ -493,7 +497,7 @@ $hal2 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET        // [ref] -> [isCur
 $hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
 $loc _jSetup // [&metaRef] -> [metaRef]: checked jmp setup
-  %DUP $_xsl assertHasTy
+  %DUP $_xsl assertTyped
   .4%FT // {metaRef}
   %DUP $_xsl assertXs
   %DUP $_jmpl assertCurMod
@@ -535,7 +539,6 @@ $loc c_keySetTyped // {&metaRef} -> []
   .1%FT @KEY_HAS_TY$L1 %OR // {&len tyKeyLen}
   %SWP .1%SR %RET            // update tyKeyLen
 
-// Note: this uses locals
 $loc c_keySetTy // {mask:U1 &metaRef} -> {} mask current key's meta to be a Ty
   %DUP $_xsl c_keySetTyped // make key "typed" {mask &metaRef}
   %SWP $_xsl rMetaSet
@@ -588,6 +591,7 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn dictSet
 #0 $c_makeFn dictGet
 #0 $c_makeFn dictGetR
+#0 $c_makeFn dictArgs
 #0 $c_makeFn getHeap
 #0 $c_makeFn setHeap
 #0 $c_makeFn hpad
@@ -618,15 +622,15 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn assertFn
 #0 $c_makeFn assertXs
 #0 $c_makeFn assertCurMod
-#0 $c_makeFn assertHasTy
+#0 $c_makeFn assertTyped
 
 $SFN isFnNormal  $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_NORMAL$L1  %EQ %RET
 $SFN isFnInstant $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_INSTANT$L1  %EQ %RET
 $SFN isFnSmart   $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_SMART$L1  %EQ %RET
 $SFN isTyLocal   $toMeta  @META_TY_MASK$L1 %AND  @TY_LOCAL$L1  %EQ %RET
 $SFN isTyGlobal  $toMeta  @META_TY_MASK$L1 %AND  @TY_GLOBAL$L1  %EQ %RET
-$SFN assertLocal $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
-$SFN assertGlobal $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
+$SFN assertTyLocal $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
+$SFN assertTyGlobal $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 
 $SFN getSz           @D_sz$L0          %DVFT %RET
 $SFN setSz           @D_sz$L0          %DVSR %RET
@@ -652,7 +656,7 @@ $SFN IF  $INSTANT // {} -> {&jmpTo} : start an if block
   #0$L0  $xsl h1 // compile 0 (jump pad)
   %RET
 
-$SFN assertLt128  #10 $L0 %LT_U   @E_cJmpL1 $L2   $jmpl assert
+$SFN assertLt128  #80 $L1 %LT_U   @E_cJmpL1 $L2   $jmpl assert
 
 $SFN END  $INSTANT // {&jmpTo} -> {} : end of IF or BREAK0
   %DUP          // {&jmpTo &jmpTo}
@@ -672,9 +676,7 @@ $SFN AGAIN $INSTANT // {&loopTo} -> {} : run loop again
   %NEG          // make negative for backwards jmp
   $jmpl h1      // compile as jmp offset
 
-// **********
-// * Defining and Using global variables
-
+// * Some utilities for globals + locals
 
 $SFN assertSzI // {szI}
   %DUP #CF$L1 %AND @E_cSz$L2 $xsl assertNot // non-sz bits empty
@@ -686,10 +688,8 @@ $SFN szToSzI // [sz] -> [SzI] convert sz to szI (instr)
        #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
   @E_cSz$L2 $xsl panic
 
-
 $SFN szILowerToSzI // convert a szI in lower bits to a proper szI
   #3$L0 %AND #4$L0 %SHL %RET
-
 
 $SFN szIToSz // {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -710,25 +710,24 @@ $SFN hN // {value szI} write a value of szI to heap
 
 $SFN joinSzTyMask #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
 
-$FN c_global // <value> <szI> $c_global <token>: define a global variable of sz
-  #1 $h1 // 1 local [szI:U1]
-  %DUP $xsl assertSzI // {value szI}
-  %DUP $xsl haN // align heap {value szI}
-  .1%SRLL#0$h1 // cache sz {value}
-  $xsl c_updateRKey // {value &metaRef}
-  $xsl loc
-  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMask // {value &metaRef mask}
-  %SWP $xsl c_keySetTy // update key ty
-  .1%FTLL#0$h1  $jmpl hN // write value to heap
+$SFN ldictArgs
+  $hal2 .4%FTML @c_dictBuf$h2  
+    $hal2 .2%FTML @c_dictHeap$h2  %ADD // ldict.buf
+  @c_dictLHeap$L2                      // &ldict.heap
+  %RET
+
+$SFN _ldict $xsl c_scan $jmpl ldictArgs
+$SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
+$SFN ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
+$SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
+
+$SFN _lSetup // {&metaO} -> {metaO} : checked local setup
+  %DUP $_xsl assertTyped
+  .4%FT %DUP $_jmpl assertTyLocal // returns metaOffset
 
 $SFN _gSetup // {&metaRef} -> {metaRef} : checked global setup
-  %DUP $_xsl assertHasTy
-  .4%FT %DUP $_jmpl assertGlobal
-
-$SFN gRef // gRef [] -> [&global] : get global reference
-  $_xsl dictGetR  $xsl _gSetup // {metaRef}
-  $xsl toRef // {&global}
-  $jmpl L4
+  %DUP $_xsl assertTyped
+  .4%FT %DUP $_jmpl assertTyGlobal
 
 // {metaRO szLit instr} compile a literal memory instr.
 //   szLit the size of the literal to compile for the instr.
@@ -743,15 +742,54 @@ $FN _memLitImpl
   .1%FTLL #1$h1 %OR $xsl h1 // compile (szI | instr) {metaRO}
   .1%FTLL #0$h1  $jmpl hN // compile literal of proper instrSz
 
-$SFN gGet // gGet [] -> [global] : get global value
-  $_xsl dictGetR  $xsl _gSetup // {metaRef}
-  %DUP $xsl assertCurMod
-  @SZ2$L1  @FTML$L1  $xl _memLitImpl %RET
+$FN _getSetImpl // {localInstrSz localInstr globalInstrSz globalInstr}
+  #1 $h1 // locals (see below)
+  .1%SRLL#3$h1   .1%SRLL#2$h1 // 2=globalInstrSz 3=globalInstr
+  .1%SRLL#1$h1   .1%SRLL#0$h1 // 0=localInstrSz 1=localInstr
+  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    $xsl _lSetup
+    .1%FTLL#0$h1 .1%FTLL#1$h1  $xl _memLitImpl %RET
+  $END %DRP
+  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    $xsl _gSetup
+    .1%FTLL#2$h1 .1%FTLL#3$h1  $xl _memLitImpl %RET
+  $END @E_cNotType$L2 $xsl panic
 
-$SFN gSet // gSet [value] -> [] : set global value
-  $_xsl dictGetR  $xsl _gSetup // {metaRef}
-  %DUP $xsl assertCurMod
-  @SZ2$L1  @SRML$L1  $xl _memLitImpl %RET
+// (create _xxxImpl for fngi to use)
+$SFN _getImpl
+  @SZ1$L1  @FTLL$L1  // local sz + instr
+  @SZ2$L1  @FTML$L1  // global sz + instr
+  $xl _getSetImpl %RET
+
+$SFN _setImpl
+  @SZ1$L1  @SRLL$L1  // local sz + instr
+  @SZ2$L1  @SRML$L1  // global sz + instr
+  $xl _getSetImpl %RET
+
+$SFN _refImpl
+  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    $xsl _lSetup // {metaOffset}
+    $xsl toRef  %RGFT @R_LP$h1  %ADD // add to local stk ptr
+    $jmpl L1
+  $END %DRP
+  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    $xsl _gSetup  $xsl toRef $jmpl L4 // write literal directly TODO: use c_lit
+  $END @E_cNotType$L2 $xsl panic
+
+$SFN REF  $INSTANT $xsl c_scan $jmpl _refImpl
+$SFN GET  $INSTANT $xsl c_scan $jmpl _getImpl
+$SFN SET  $INSTANT $xsl c_scan $jmpl _setImpl
+
+$FN c_global // <value> <szI> $c_global <token>: define a global variable of sz
+  #1 $h1 // 1 local [szI:U1]
+  %DUP $xsl assertSzI // {value szI}
+  %DUP $xsl haN // align heap {value szI}
+  .1%SRLL#0$h1 // cache sz {value}
+  $xsl c_updateRKey // {value &metaRef}
+  $xsl loc
+  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMask // {value &metaRef mask}
+  %SWP $xsl c_keySetTy // update key ty
+  .1%FTLL#0$h1  $jmpl hN // write value to heap
 
 $SFN c_makeGlobal // {szI} <token>: set meta for token to be a global.
   #4$L0 %SHR  @TY_GLOBAL$L1  %OR  $_jmpl c_makeTy
@@ -775,38 +813,11 @@ $SFN c_makeGlobal // {szI} <token>: set meta for token to be a global.
 
 // **********
 // * Local Variables
-// Defining and using local variables.
-//
-// #2 $c_local myLocal : declares a local variable of sz=2
-// $c_localEnd // Reserves correct amount of space in fn. Required for all fns with locals.
-// $lSet myLocal
-// $lGet myLocal
-
-
-$FN min // [a b] -> [min]
-  #1 $h1 // one local, b
-  .4%SRLL #0 $h1
-  %DUP // {a a}
-  .4%FTLL #0 $h1 // {a a b}
-  %GE_U %RETZ               // if(!(a >= b)) ret a
-  %DRP .4%FTLL #0 $h1 %RET  // ret b
-
-$SFN _ldict
-  $xsl c_scan
-  $gGet c_dictBuf   $gGet c_dictHeap  %ADD // ldict.buf
-  $gRef c_dictLHeap                        // &ldict.heap
-  %RET
-
-$SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
-$SFN ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
-$SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
-
 $SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
-  $gGet c_dictBuf   $gGet c_dictHeap  %ADD // ldict.buf
-  $gGet c_dictLHeap                        // ldict.heap
+  $GET c_dictBuf   $GET c_dictHeap  %ADD // ldict.buf
+  $GET c_dictLHeap                        // ldict.heap
   %ADD // {&newLkey}
-  %DUP $gSet c_rLKey  %RET
-
+  %DUP $SET c_rLKey  %RET
 
 $FN align // {aptr sz}: return the aptr aligned properly with szI
   #1 $h1 // locals [sz:U1]
@@ -828,21 +839,17 @@ $FN c_local
   %DUP  $xsl assertSzI
   %DUP  .1%SRLL#0$h1 // cache szI
   @TY_LOCAL$L1  %SWP  $xsl joinSzTyMask  // {mask}
-  $gGet c_localOffset // {mask loff}
+  $GET c_localOffset // {mask loff}
   .1%FTLL#0$h1  $xsl alignSzI // align local offset {mask loff}
   // c_localOffset = offset + sz
-  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD $gSet c_localOffset
+  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD $SET c_localOffset
   $xsl c_updateRLKey // {mask loff &metaRef}
   %SWP $xsl ldictSet  // set to localOffset {mask &metaRef}
   $xsl c_keySetTy %RET
 
 $SFN c_localEnd // end local declarations and write the number of slots needed.
-  $gGet c_localOffset #4$L0 $xl align
+  $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $jmpl h1
-
-$SFN _lSetup // {&metaO} -> {metaO} : checked local setup
-  %DUP $_xsl assertHasTy
-  .4%FT %DUP $_jmpl assertLocal // returns metaOffset
 
 $SFN lRef // lRef [] -> [&local] : get local reference
   $_xsl ldictGetR  $xsl _lSetup // {metaLocalOffset}
@@ -856,3 +863,4 @@ $SFN lGet // lGet [] -> [local] : get local value
 $SFN lSet // lSet [value] -> [] : set local value
   $_xsl ldictGetR  $xsl _lSetup // {metaO}
   @SZ1$L1  @SRLL$L1  $xl _memLitImpl %RET
+

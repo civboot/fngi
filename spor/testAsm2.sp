@@ -70,6 +70,14 @@ $dictGet assert  $isFnInstant $tAssertNot
 #1 $testIf      #4 $tAssertEq
 #2 $testIf      #13 $tAssertEq
 
+$FN min // [a b] -> [min]
+  #1 $h1 // one local, b
+  .4%SRLL #0 $h1
+  %DUP // {a a}
+  .4%FTLL #0 $h1 // {a a b}
+  %GE_U %RETZ               // if(!(a >= b)) ret a
+  %DRP .4%FTLL #0 $h1 %RET  // ret b
+
 #1 #2    $min   #1 $tAssertEq
 #42 #333 $min   #42 $tAssertEq
 
@@ -80,13 +88,13 @@ $ha2 #1 $h1 // misalign heap
 #12345 @SZ4 $c_global myG1   $assertWsEmpty
 @myG1 #FF_FFFF ^AND .4^FT  #12345 $tAssertEq
 
-$SFN myG1Ref  $gRef myG1 %RET
+$SFN myG1Ref  $REF myG1 %RET
 $myG1Ref  @myG1 #FF_FFFF ^AND  $tAssertEq
 
-$SFN myG1Get  $gGet myG1 %RET
+$SFN myG1Get  $GET myG1 %RET
 $myG1Get  #12345 $tAssertEq
 
-$SFN myG1Set  $gSet myG1 %RET
+$SFN myG1Set  $SET myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
 // *****
