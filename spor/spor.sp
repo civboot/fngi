@@ -16,7 +16,6 @@
 // 01XX XXXX: small literal
 // 10SS XXXX: jmp
 // 11SS _XXX: mem
-//
 
 // # Operations: Special
 #00 =NOP   // { -> }     no operation

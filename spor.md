@@ -63,8 +63,8 @@ $c_sfn add1
   %ADD %RET
 ```
 
-- `$c_sfn add1` is a macro defined in `asm2.sa`. It simply sets dictionary entry
-  "add1" to the current heap location and sets a few global values.
+- `$c_sfn add1` is a macro defined in `spor/spor.sp`. It simply sets dictionary
+  entry "add1" to the current heap location and sets a few global values.
 - #1$L0 `#1` puts the value 0x1 on the stack immediately and `$L0` consumes it
   and compiles it as a "small literal" (uses only one byte)
 - `%ADD  %RET` compiles the `ADD` and then the `RET` instructions. they are defined in `asm.sp`
@@ -72,4 +72,6 @@ $c_sfn add1
 For `add2` `xsl` means "eXecute Small Literal". It looks up the address to
 execute as a literal. "Small" means the function has no locals stack.
 
-Read the full documentation in asm.sa
+Read the full documentation in [spor/spor.sp](./spor/spor.sp). There is vim
+syntax highlighting in `etc/spor.vim`
+

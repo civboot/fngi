@@ -1046,7 +1046,7 @@ void compileFile(char* s) {
 
 #define NEW_ENV(MS, WS, RS, LS, DS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS); \
-  compileFile("spor/asm.sp");
+  compileFile("spor/spor.sp");
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT */    \
@@ -1431,11 +1431,9 @@ void compileStr(char* s) {
 //   compileStr(".4 @c_dictHeap #FF_FFFF ^AND");   assert(expectDictHeap == WS_POP());
 // }
 
-/*test*/ void testAsm2() {
-  printf("## testAsm2\n"); TEST_ENV;
+/*test*/ void testSporeSp() {
+  printf("## testSporeSp\n"); TEST_ENV;
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
-
-  compileFile("spor/testAsm2.sp");
 
   // Test h1
   heapStart = *env.heap;
@@ -1470,17 +1468,8 @@ void compileStr(char* s) {
   assert(*env.topHeap == WS_POP());
   assert(*env.heap == WS_POP());
 
-  // Test hal
-  *env.heap = 0x100;
-  compileStr("#2 $_hal");
-  assert(0x101 == *env.heap);
-  compileStr("#4 $_hal");
-  assert(0x103 == *env.heap);
-  compileStr("#4 $_hal");
-  assert(0x103 == *env.heap);
-
   compileLoop(); ASSERT_NO_ERR();
-  //compileFile("spor/testAsm2.sp");
+  compileFile("spor/testAsm2.sp");
 }
 
 // /*test*/ void testBoot() {
@@ -1500,7 +1489,7 @@ void compileStr(char* s) {
   testDictDeps();
   testDict();
   testWriteHeap();
-  testAsm2();
+  testSporeSp();
   // testBoot();
 
   assert(0 == WS_LEN);
