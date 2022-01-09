@@ -1469,7 +1469,7 @@ void compileStr(char* s) {
   assert(*env.heap == WS_POP());
 
   compileLoop(); ASSERT_NO_ERR();
-  compileFile("spor/testAsm2.sp");
+  compileFile("spor/testSpore.sp");
 }
 
 // /*test*/ void testBoot() {
