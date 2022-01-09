@@ -17,7 +17,7 @@ syn keyword elInstr
       \ MUL   DIV_U DIV_S
       \ SLIT  SZ1   SZ2   SZ4   SZA
       \ NOJ   JMPL  JMPW  JZL   JTBL  XL    XW    XSL   XSW
-      \ WS    LIT   FTLL  FTML  FTOL  SRLL  SRML  SROL
+      \ WS    LIT   FTLL  FTGL  FTOL  SRLL  SRGL  SROL
       \ nextgroup=elInstrSC
 
 syn match elInstrSC   ';'               nextGroup=elSymbol

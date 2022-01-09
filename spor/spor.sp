@@ -118,10 +118,10 @@
 #C0 =LIT   // LIT         Literal
 #C1 =FT    // FT(WS)      FeTch WS
 #C2 =FTLL  // FT(LP+LIT)  FeTch LocalsPtr offset
-#C3 =FTML  // FT(MP+LIT)  FeTch ModulePtr offset
+#C3 =FTGL  // FT(MP+LIT)  FeTch ModulePtr offset
 #C4 =SR    // SR(WS)      StoRe WS
 #C5 =SRLL  // SR(LP+LIT)  StoRe LocalsPtr offset
-#C6 =SRML  // SR(MP+LIT)  StoRe ModulePtr offset
+#C6 =SRGL  // SR(MP+LIT)  StoRe ModulePtr offset
 
 // Common instr+szs
 @SZ1 @LIT  ^OR  =LIT1
@@ -148,6 +148,7 @@
 #00 =R_EP // execution pointer, SR will panic
 #40 =R_LP // local stack pointer
 #80 =R_CP // call stack pointer
+#C0 =R_GB // global base pointer
 
 // Device operations with DVFT and DVSR
 #00 =D_read   // read from src, filling up tokenBuf
@@ -166,7 +167,6 @@
 
 // **********
 // * 3. Memory Locations, Globals and Constants
-#0000_0000 =null
 #0000_0004 =heap
 #0000_0008 =topHeap
 #0000_000C =topMem
@@ -185,9 +185,13 @@
 #0000_002C =c_tokenLen
 
 // Global Compiler Variables
-@heap .4^FT =c_rKey        #0 .4, // [U4] rKey, ref to current dict key.
-@heap .4^FT =c_rLKey       #0 .4, // [U4] rLKey, ref to current L dict key.
-@heap .4^FT =c_localOffset #0 .2, // [U2] Local Offset (for local var setup)
+#0000_0030 =c_rKey         // sz=4
+#0000_0034 =c_rLKey        // sz=4
+#0000_0038 =c_localOffset  // sz=2
+// @heap .4^FT =c_rKey        #0 .4, // [U4] rKey, ref to current dict key.
+// @heap .4^FT =c_rLKey       #0 .4, // [U4] rLKey, ref to current L dict key.
+// @heap .4^FT =c_localOffset #0 .2, // [U2] Local Offset (for local var setup)
+// #A ^ADD // TODO: remove
 
 // Constants
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
@@ -198,7 +202,7 @@
 #E0 =META_TY_MASK // # Upper three bits determine type
 #20 =TY_FN    // function, can be called and has an fnMeta
 #40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
-#60 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTML/SRML
+#60 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTGL/SRGL
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
@@ -300,72 +304,74 @@
 // tAssert, tAssertNot, tAssertEq, tAssertNe
 // Spore assembly constants.
 
-@heap .4^FT =h1  // h1: {val:1} push 1bytes from stack to heap
-  .1@heap @SLIT ^OR,  .4%FT // fetch heap {val, heap}
+%NOP // (unaligned) Note: heap is still on the stack!
+^INC =getHeap
+                %FTGL @heap.2,
+    %RET // (unaligned)
+
+$getHeap =h1  // h1: {val:1} push 1bytes from stack to heap
+                      .4%FTGL @heap.2, // fetch heap {val, heap}
   .1%SR                        // store 1 byte value at heap
-  // fetch heap and INC
-                      .1@heap @SLIT ^OR,
-  .4%FT               .4%INC // {heap+1}
-  .1@heap @SLIT ^OR,  .4%SR  // heap=heap+1
+                      .4%FTGL @heap.2, // fetch heap {val, heap}
+  .4%INC              .4%SRGL @heap.2,
   %RET // (unaligned)
 
-@heap .4^FT =L0   // L0: compile a small literal (unchecked)
+$getHeap =L0   // L0: compile a small literal (unchecked)
           .1%LIT
   #3F,      %AND        // truncated to bottom 6 bits
   .1%LIT    @SLIT,
-  %OR       .2%JMPL @h1, // made into SLIT instr and stored. (aligned)
+  %OR       .2%JMPL .2@h1, // made into SLIT instr and stored. (aligned)
 
 %NOP // (unaligned)
-@heap .4^FT =h2  // h2: {val:2} push 2bytes from stack to heap
-            @heap$L0
-  .4%FT       .2%SR          // store 2 byte value at heap
-  @heap$L0    .4%FT          // {heap}
-  .4%INC2     %SRML .2@heap, // heap=heap+2
+$getHeap =h2  // h2: {val:2} push 2bytes from stack to heap
+              .4%FTGL @heap.2, // fetch heap {val, heap}
+  %NOP        .2%SR            // store 2 byte value at heap
+  %NOP        .4%FTGL @heap.2, // {heap}
+  .4%INC2     %SRGL   @heap.2,   // heap=heap+2
   %RET // (unaligned)
 
-@heap .4^FT =h4  // h4: {val:4} push 4bytes from stack to heap
-            @heap$L0
-  %FT       .4%SR           // store 4 byte value at heap
-  @heap$L0    %FT           // {heap}
-  .4%INC4     %SRML .2@heap, // heap=heap+4
+$getHeap =h4  // h4: {val:4} push 4bytes from stack to heap
+            .4%FTGL @heap.2, // fetch heap {val, heap}
+  %NOP      .4%SR           // store 4 byte value at heap
+  %NOP      .4%FTGL @heap.2, // {heap}
+  %INC4     .4%SRGL @heap.2, // heap=heap+4
   %RET // (unaligned)
 
-@heap .4^FT =dictArgs // args for dict.
+$getHeap =dictArgs // args for dict.
   // put {dict.buf &dict.heap} on stack
-            .4%FTML @c_dictBuf $h2
+            .4%FTGL @c_dictBuf $h2
   %NOP      .2%LIT @c_dictHeap $h2
   %RET // (unaligned)
 
-@heap .4^FT =_dict // setup for dict.
+$getHeap =_dict // setup for dict.
   // Scan next token
             @D_scan$L0
   %DVFT     .2%JMPL @dictArgs$h2 // (aligned)
 
 %NOP // (unaligned)
-@heap .4^FT =dictSet // dictSet: Set "standard" dictionary to next token.
+$getHeap =dictSet // dictSet: Set "standard" dictionary to next token.
             .2%XSL @_dict $h2
   @D_dict$L0   %DVSR // device dict SR
   %RET // (unaligned)
 
-@heap .4^FT =dictGet // dictGet: Get the value of the next token.
+$getHeap =dictGet // dictGet: Get the value of the next token.
             .2%XSL @_dict $h2
   @D_dict$L0   %DVFT
   %RET // (unaligned)
 
-@heap .4^FT =dictGetR // dictGetR: Get the &metaRef of the next token.
+$getHeap =dictGetR // dictGetR: Get the &metaRef of the next token.
             .2%XSL @_dict $h2
   @D_rdict$L0   %DVFT
   %RET // (unaligned)
 
-@heap .4^FT =loc // $loc <name>: define a location
+$getHeap =loc // $loc <name>: define a location
             @heap$L0
   %FT       .2%XSL @dictSet $h2
   %RET // (unaligned)
 
-$loc getHeap     %FTML @heap $h2      %RET // (unaligned)
-$loc setHeap     %SRML @heap $h2      %RET // (unaligned)
-$loc getTopHeap  %FTML @topHeap $h2   %RET // (unaligned)
-$loc setTopHeap  %SRML @topHeap $h2   %RET // (unaligned)
+$loc setHeap     %SRGL @heap $h2      %RET // (unaligned)
+$loc getTopHeap  %FTGL @topHeap $h2   %RET // (unaligned)
+$loc setTopHeap  %SRGL @topHeap $h2   %RET // (unaligned)
 
 %NOP // (aligned)
 $loc hpad // {pad} write pad bytes to heap.
@@ -496,7 +502,7 @@ $hal4 $loc toMod @MOD_MASK $L4 %AND %RET // {ref} -> {mod}
 $loc isSameMod // {metaRef metaRef} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
-$hal2 $loc curMod   .2%FTML @c_rKey$h2 .4%FT  $_jmpl toMod // [] -> [mod]
+$hal2 $loc curMod   .2%FTGL @c_rKey$h2 .4%FT  $_jmpl toMod // [] -> [mod]
 $hal2 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET        // [ref] -> [isCurMod]
 
 $hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
@@ -524,10 +530,10 @@ $loc jmpl // $jmpl <token> : compile jmpl2
 
 
 $hal2 $loc c_updateRKey // [] -> [&metaRef] update and return current key
-        .4%FTML @c_dictBuf $h2  // dict.buf
-  $hal2 .2%FTML @c_dictHeap $h2 // dict.heap
+        .4%FTGL @c_dictBuf $h2  // dict.buf
+  $hal2 .2%FTGL @c_dictHeap $h2 // dict.heap
   .4%ADD // {&newKey}
-  %DUP $hal2 .4%SRML @c_rKey $h2 // rKey=newKey
+  %DUP $hal2 .4%SRGL @c_rKey $h2 // rKey=newKey
   %RET // return &metaRef (newKey)
 
 $loc metaSet // {metaRef meta:U1} -> U4 : apply meta to metaRef
@@ -556,8 +562,8 @@ $hal2 $loc _declFn // [meta]
   $_xsl c_keySetTy
   $ha2
   // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
-  #0$L0        .2%SRML @c_localOffset $h2  // zero localDict.offset
-  #0$L0        .4%SRML @c_dictLHeap $h2    // zero localDict.heap
+  #0$L0        .2%SRGL @c_localOffset $h2  // zero localDict.offset
+  #0$L0        .4%SRGL @c_dictLHeap $h2    // zero localDict.heap
   %RET
 
 $ha2 $loc SFN  // $SFN <token>: define location of small function
@@ -568,7 +574,7 @@ $hal2 $loc FN  // $FN <token>: define location of function with locals
 
 $hal2
 $loc INSTANT // {} modify current function to be instant
-  .4%FTML @c_rKey$h2  @TY_FN_INSTANT$L1   $_jmpl rMetaSet
+  .4%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1   $_jmpl rMetaSet
 
 // Backfill the fn meta
 $SFN c_makeTy // {meta} make an existing symbol a type.
@@ -718,8 +724,8 @@ $SFN hN // {value szI} write a value of szI to heap
 $SFN joinSzTyMeta #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
 
 $SFN ldictBuf // {} -> {ldict.buf:APtr}
-  $hal2 .4%FTML @c_dictBuf$h2
-  $hal2 .2%FTML @c_dictHeap$h2
+  $hal2 .4%FTGL @c_dictBuf$h2
+  $hal2 .2%FTGL @c_dictHeap$h2
   %ADD %RET
 
 $SFN ldictArgs
@@ -770,12 +776,12 @@ $FN _getSetImpl // {localInstrSz localInstr globalInstrSz globalInstr}
 // (create _xxxImpl for fngi to use)
 $SFN _getImpl
   @SZ1$L1  @FTLL$L1  // local sz + instr
-  @SZ2$L1  @FTML$L1  // global sz + instr
+  @SZ2$L1  @FTGL$L1  // global sz + instr
   $xl _getSetImpl %RET
 
 $SFN _setImpl
   @SZ1$L1  @SRLL$L1  // local sz + instr
-  @SZ2$L1  @SRML$L1  // global sz + instr
+  @SZ2$L1  @SRGL$L1  // global sz + instr
   $xl _getSetImpl %RET
 
 $SFN _refImpl
@@ -850,7 +856,7 @@ $ha2 $FN _localImpl // {szI:U1 meta:U1}
   #1 $h1 // 0=szI:U1  1=meta:U1
 
   // assert current function is valid
-  .4%FTML @c_rKey$h2 %DUP $xsl assertTyped .4%FT // {szI meta fnMetaRef}
+  .4%FTGL @c_rKey$h2 %DUP $xsl assertTyped .4%FT // {szI meta fnMetaRef}
     $xsl assertFnLocals // {szI meta}
 
   .1%SRLL#1$h1 // 1=meta
