@@ -130,11 +130,9 @@ $FN useLocal
 $useLocal #2345 $tAssertEq
 
 $FN badMultiply // {a b -- a*b} uses loop to implement multiply
-  @SZ2 $LOCAL b
-  @SZ2 $LOCAL a
+  @SZ2 $INPUT a
+  @SZ2 $INPUT b
   $END_LOCALS
-  $SET b
-  $SET a
 
   #0$L0 // out = 0
   $LOOP

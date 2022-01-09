@@ -202,13 +202,17 @@
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
-// FN meta bits [001L TT-P] L=locals T=fnTy P=pre
+// FN meta bits [TTTL TT-P] L=locals T=fnTy P=pre
 #0C =TY_FN_TY_MASK // 0b1100
 #01 =TY_FN_PRE     // always run immediately and passed compile state.
 #00 =TY_FN_NORMAL  // normally compiled and run at runtime
 #04 =TY_FN_INSTANT // normally run immediately (compile time)
 #08 =TY_FN_SMART   // always run immediately and passed compile state.
 #10 =TY_FN_LOCALS  // has locals (called with XL or XW)
+
+// Local meta bits [TTTI --SS] I=input S=szI
+#10 =TY_LOCAL_INPUT
+
 
 // **********
 // * 4. Errors
@@ -525,12 +529,12 @@ $hal2 $loc c_updateRKey // [] -> [&metaRef] update and return current key
   %DUP $hal2 .4%SRML @c_rKey $h2 // rKey=newKey
   %RET // return &metaRef (newKey)
 
-$loc metaSet // {metaRef mask:U1} -> U4 : apply meta mask to metaRef
-  #18 $L0  %SHL  // make mask be upper byte
+$loc metaSet // {metaRef meta:U1} -> U4 : apply meta to metaRef
+  #18 $L0  %SHL  // make meta be upper byte
   %OR %RET
 
-$loc rMetaSet // {&metaRef mask:U1} -> U4 : apply meta mask to &metaRef
-  %OVR .4%FT %SWP // {&metaRef metaRef mask}
+$loc rMetaSet // {&metaRef meta:U1} -> U4 : apply meta to &metaRef
+  %OVR .4%FT %SWP // {&metaRef metaRef meta}
   $_xsl metaSet   // {&metaRef newMetaRef}
   %SWP .4%SR %RET
 
@@ -539,8 +543,8 @@ $loc c_keySetTyped // {&metaRef} -> []
   .1%FT @KEY_HAS_TY$L1 %OR // {&len tyKeyLen}
   %SWP .1%SR %RET            // update tyKeyLen
 
-$loc c_keySetTy // {mask:U1 &metaRef} -> {} mask current key's meta to be a Ty
-  %DUP $_xsl c_keySetTyped // make key "typed" {mask &metaRef}
+$loc c_keySetTy // {meta:U1 &metaRef} -> {} meta current key's meta to be a Ty
+  %DUP $_xsl c_keySetTyped // make key "typed" {meta &metaRef}
   %SWP $_xsl rMetaSet
   %RET
 
@@ -566,7 +570,7 @@ $loc INSTANT // {} modify current function to be instant
   .4%FTML @c_rKey$h2  @TY_FN_INSTANT$L1   $_jmpl rMetaSet
 
 // Backfill the fn meta
-$SFN c_makeTy // {meta mask} make an existing symbol a type.
+$SFN c_makeTy // {meta} make an existing symbol a type.
   $_xsl dictGetR   // {meta &metaRef}
   $_xsl c_keySetTy
   %RET
@@ -628,6 +632,7 @@ $SFN isFnNormal  $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_NORMAL$L1  %EQ %RET
 $SFN isFnInstant $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_INSTANT$L1  %EQ %RET
 $SFN isFnSmart   $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_SMART$L1  %EQ %RET
 $SFN isTyLocal   $toMeta  @META_TY_MASK$L1 %AND  @TY_LOCAL$L1  %EQ %RET
+$SFN isLocalInput $toMeta  @TY_LOCAL_INPUT$L1 %AND %RET
 $SFN isTyGlobal  $toMeta  @META_TY_MASK$L1 %AND  @TY_GLOBAL$L1  %EQ %RET
 $SFN assertTyLocal $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
 $SFN assertTyGlobal $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
@@ -708,13 +713,18 @@ $SFN hN // {value szI} write a value of szI to heap
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
   @E_cSz$L2 $xsl panic
 
-$SFN joinSzTyMask #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
+$SFN joinSzTyMeta #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
+
+$SFN ldictBuf // {} -> {ldict.buf:APtr}
+  $hal2 .4%FTML @c_dictBuf$h2
+  $hal2 .2%FTML @c_dictHeap$h2
+  %ADD %RET
 
 $SFN ldictArgs
-  $hal2 .4%FTML @c_dictBuf$h2  
-    $hal2 .2%FTML @c_dictHeap$h2  %ADD // ldict.buf
-  @c_dictLHeap$L2                      // &ldict.heap
+  $xsl ldictBuf
+  @c_dictLHeap$L2  // &ldict.heap
   %RET
+$SFN ldictHeap $xsl ldictArgs .2%FT %ADD %RET // {} -> ldictHeap
 
 $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
@@ -787,7 +797,7 @@ $FN GLOBAL  $INSTANT // <value> <szI> $GLOBAL <token>: define a global variable 
   .1%SRLL#0$h1 // cache sz {value}
   $xsl c_updateRKey // {value &metaRef}
   $xsl loc
-  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMask // {value &metaRef mask}
+  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
   %SWP $xsl c_keySetTy // update key ty
   .1%FTLL#0$h1  $jmpl hN // write value to heap
 
@@ -830,24 +840,51 @@ $FN align // {aptr sz}: return the aptr aligned properly with szI
   $END
   %DRP %RET
 
+$SFN align4 #4$L0 $xl align %RET
 $SFN alignSzI $xsl szIToSz  $xl align  %RET
 
-// <szI> $LOCAL myLocal: declare a local variable of sz
-// This stores the offset and sz for lRef, lGet and lSet to use.
-$FN LOCAL  $INSTANT
-  #1 $h1 // locals [szI:U1]
-  %DUP  $xsl assertSzI
-  %DUP  .1%SRLL#0$h1 // cache szI
-  @TY_LOCAL$L1  %SWP  $xsl joinSzTyMask  // {mask}
-  $GET c_localOffset // {mask loff}
-  .1%FTLL#0$h1  $xsl alignSzI // align local offset {mask loff}
+$FN _localImpl // {szI:U1 meta:U1}
+  #1 $h1 // 0=szI:U1  1=meta:U1
+  .1%SRLL#1$h1 // 1=meta
+  %DUP  $xsl assertSzI // {szI}
+  %DUP  .1%SRLL#0$h1 // {szI} cache szI
+  @TY_LOCAL$L1  .1%FTLL#1$h1 %OR // update full meta {szI meta}
+  %SWP  $xsl joinSzTyMeta  // {meta}
+  $GET c_localOffset // {meta loff}
+  .1%FTLL#0$h1  $xsl alignSzI // align local offset {meta loff}
   // c_localOffset = offset + sz
-  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD $SET c_localOffset
-  $xsl c_updateRLKey // {mask loff &metaRef}
-  %SWP $xsl ldictSet  // set to localOffset {mask &metaRef}
+  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $SET c_localOffset
+  $xsl c_updateRLKey // {meta loff &metaRef}
+  %SWP $xsl ldictSet  // set to localOffset {meta &metaRef}
   $xsl c_keySetTy %RET
 
-$SFN END_LOCALS // end local declarations and write the number of slots needed.
+// #<szI> $LOCAL myLocal: declare a local variable of sz
+// This stores the offset and sz for lRef, lGet and lSet to use.
+$SFN LOCAL $INSTANT  #0             $L1 $xl _localImpl %RET
+$SFN INPUT $INSTANT  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
+
+$SFN Dict_keyLen   %INC4 .1%FT  #3F$L1 %AND %RET             // {&key} -> {len:U1}
+$SFN Dict_keySz    $xsl Dict_keyLen #5$L0 %ADD $jmpl align4  // {&key} -> {sz:U1}
+$SFN Dict_nextKey  %DUP $xsl Dict_keySz %ADD %RET                 // {&key} -> {&key}
+
+// {&key} -> {} recursive function to compile INPUTs
+// Inputs are "compiled" (i.e. a SRLL is compiled) in reverse order.
+// This maps them well to the conventional stack nomenclature.
+$FN _compileInputs
+  #1$h1 // locals 0=&key:APtr
+  %DUP  .4%SRLL#0$h1 // {&key}
+  $xsl ldictHeap %NEQ %RETZ // return if key=ldictHeap
+  .4%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs // get the next key and recurse {}
+  .4%FTLL#0$h1  %DUP $xsl keyHasTy %SWP .4%FT // {hasTy metaRef}
+  %DUP $xsl isLocalInput %SWP // {hasTy isLocal metaRef}
+  $xsl isLocalInput %LAND %LAND %RETZ
+  .4%FTLL#0$h1  .4%FT  @SZ1$L1 @SRLL$L1 $xl _memLitImpl
+  %RET
+
+// - Updates the number of slots for the FN
+// - compiles SRLL for each INPUT in reverse order.
+$SFN END_LOCALS
   $GET c_localOffset #4$L0 $xl align
-  #2$L0 %SHR $jmpl h1
+  #2$L0 %SHR $xsl h1 // update number of slots
+  $xsl ldictBuf $xl _compileInputs %RET
 
