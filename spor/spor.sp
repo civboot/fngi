@@ -267,11 +267,12 @@
 #E0E2  =E_cIsXS      // using an X for an XS
 #E0E3  =E_cJmpL1     // JMP1 over too much space
 #E0E4  =E_cNotFn
-#E0E5  =E_cMod       // different modules
-#E0E6  =E_cLSz       // literal sz
-#E0E7  =E_cNotType
-#E0E9  =E_cNotLocal
-#E0EA  =E_cNotVar
+#E0E5  =E_cNotFnLocals
+#E0E6  =E_cMod       // different modules
+#E0E7  =E_cLSz       // literal sz
+#E0E9  =E_cNotType
+#E0EA  =E_cNotLocal
+#E0EB  =E_cNotVar
 
 // **********
 // * Core Utility Macros
@@ -483,11 +484,11 @@ $loc assertTyped // [&metaRef]
   $_xsl keyHasTy @E_cNotType $L2 $_jmpl assert
 $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
 
-$loc assertXs // [metaRef]
+$loc assertFnSmall // [metaRef]
   %DUP $_xsl assertFn
   $_xsl isFnLocals  @E_cIsX $L2  $_jmpl assertNot
 
-$loc assertX // {metaRef}
+$loc assertFnLocals // [metaRef]
   %DUP $_xsl assertFn
   $_xsl isFnLocals  @E_cIsX $L2  $_jmpl assert
 
@@ -503,7 +504,7 @@ $hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 $loc _jSetup // [&metaRef] -> [metaRef]: checked jmp setup
   %DUP $_xsl assertTyped
   .4%FT // {metaRef}
-  %DUP $_xsl assertXs
+  %DUP $_xsl assertFnSmall
   %DUP $_jmpl assertCurMod
 
 $loc xsl // $xsl <token> : compile .2%xsl
@@ -513,7 +514,7 @@ $loc xsl // $xsl <token> : compile .2%xsl
 
 $loc xl // $xl <token> : compile .2%xl
   $_xsl dictGet // {metaRef}
-  %DUP $_xsl assertX
+  %DUP $_xsl assertFnLocals
   %DUP $_xsl assertCurMod
   @XL2$L1  $_jmpl _j2
 
@@ -624,7 +625,8 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn tAssertEq
 #0 $c_makeFn tAssertNe
 #0 $c_makeFn assertFn
-#0 $c_makeFn assertXs
+#0 $c_makeFn assertFnSmall
+#0 $c_makeFn assertFnLocals
 #0 $c_makeFn assertCurMod
 #0 $c_makeFn assertTyped
 
@@ -843,8 +845,14 @@ $FN align // {aptr sz}: return the aptr aligned properly with szI
 $SFN align4 #4$L0 $xl align %RET
 $SFN alignSzI $xsl szIToSz  $xl align  %RET
 
-$FN _localImpl // {szI:U1 meta:U1}
+// implement LOCAL or INPUT. Mostly just updating ldict key and globals.
+$ha2 $FN _localImpl // {szI:U1 meta:U1}
   #1 $h1 // 0=szI:U1  1=meta:U1
+
+  // assert current function is valid
+  .4%FTML @c_rKey$h2 %DUP $xsl assertTyped .4%FT // {szI meta fnMetaRef}
+    $xsl assertFnLocals // {szI meta}
+
   .1%SRLL#1$h1 // 1=meta
   %DUP  $xsl assertSzI // {szI}
   %DUP  .1%SRLL#0$h1 // {szI} cache szI

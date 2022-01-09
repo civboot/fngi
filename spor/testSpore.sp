@@ -108,7 +108,8 @@ $SFN notARealFn %RET // updates ldict
 $ldictGet shadowed #45 $tAssertEq
 @shadowed #12 $tAssertEq
 
-@SZ2 $LOCAL myLocal
+$FN fooLocals
+  @SZ2 $LOCAL myLocal
   $ldictGet myLocal
   @TY_LOCAL  @SZ2 #4 ^SHR  ^OR  #18 ^SHL
   $tAssertEq
