@@ -780,7 +780,7 @@ $SFN REF  $INSTANT $xsl c_scan $jmpl _refImpl
 $SFN GET  $INSTANT $xsl c_scan $jmpl _getImpl
 $SFN SET  $INSTANT $xsl c_scan $jmpl _setImpl
 
-$FN c_global // <value> <szI> $c_global <token>: define a global variable of sz
+$FN GLOBAL  $INSTANT // <value> <szI> $GLOBAL <token>: define a global variable of sz
   #1 $h1 // 1 local [szI:U1]
   %DUP $xsl assertSzI // {value szI}
   %DUP $xsl haN // align heap {value szI}
@@ -832,9 +832,9 @@ $FN align // {aptr sz}: return the aptr aligned properly with szI
 
 $SFN alignSzI $xsl szIToSz  $xl align  %RET
 
-// <szI> $c_local myLocal: declare a local variable of sz
+// <szI> $LOCAL myLocal: declare a local variable of sz
 // This stores the offset and sz for lRef, lGet and lSet to use.
-$FN c_local
+$FN LOCAL  $INSTANT
   #1 $h1 // locals [szI:U1]
   %DUP  $xsl assertSzI
   %DUP  .1%SRLL#0$h1 // cache szI
@@ -847,20 +847,7 @@ $FN c_local
   %SWP $xsl ldictSet  // set to localOffset {mask &metaRef}
   $xsl c_keySetTy %RET
 
-$SFN c_localEnd // end local declarations and write the number of slots needed.
+$SFN END_LOCALS // end local declarations and write the number of slots needed.
   $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $jmpl h1
-
-$SFN lRef // lRef [] -> [&local] : get local reference
-  $_xsl ldictGetR  $xsl _lSetup // {metaLocalOffset}
-  $xsl toRef // {localOffset}
-  %RGFT @R_LP$h1  %ADD %RET
-
-$SFN lGet // lGet [] -> [local] : get local value
-  $_xsl ldictGetR  $xsl _lSetup // {metaO}
-  @SZ1$L1  @FTLL$L1  $xl _memLitImpl %RET
-
-$SFN lSet // lSet [value] -> [] : set local value
-  $_xsl ldictGetR  $xsl _lSetup // {metaO}
-  @SZ1$L1  @SRLL$L1  $xl _memLitImpl %RET
 

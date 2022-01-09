@@ -85,7 +85,7 @@ $ha2 #1 $h1 // misalign heap
 @SZ4 $halN #1 $h1 #12345 $h4 // use them.
 
 // Testing Gloabls
-#12345 @SZ4 $c_global myG1   $assertWsEmpty
+#12345 @SZ4 $GLOBAL myG1   $assertWsEmpty
 @myG1 #FF_FFFF ^AND .4^FT  #12345 $tAssertEq
 
 $SFN myG1Ref  $REF myG1 %RET
@@ -108,7 +108,7 @@ $SFN notARealFn %RET // updates ldict
 $ldictGet shadowed #45 $tAssertEq
 @shadowed #12 $tAssertEq
 
-@SZ2 $c_local myLocal
+@SZ2 $LOCAL myLocal
   $ldictGet myLocal
   @TY_LOCAL  @SZ2 #4 ^SHR  ^OR  #18 ^SHL
   $tAssertEq
@@ -122,29 +122,28 @@ $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 
 // test local variables
 $FN useLocal
-  @SZ2 $c_local a
-  $c_localEnd
-  #12345$L4 $lSet a
-  $lGet a
+  @SZ2 $LOCAL a   $END_LOCALS
+  #12345$L4 $SET a
+  $GET a
   %RET
 
 $useLocal #2345 $tAssertEq
 
 $FN badMultiply // {a b -- a*b} uses loop to implement multiply
-  @SZ2 $c_local b
-  @SZ2 $c_local a
-  $c_localEnd
-  $lSet b
-  $lSet a
+  @SZ2 $LOCAL b
+  @SZ2 $LOCAL a
+  $END_LOCALS
+  $SET b
+  $SET a
 
   #0$L0 // out = 0
   $LOOP
     // if(!b) break
-    $lGet b $BREAK0
+    $GET b $BREAK0
     // out = out + a
-    $lGet a  %ADD
+    $GET a  %ADD
     // b = b - 1
-    $lGet b  %DEC  $lSet b
+    $GET b  %DEC  $SET b
   $AGAIN
   $END // end break
   %RET
