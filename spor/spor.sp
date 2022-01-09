@@ -593,74 +593,76 @@ $SFN c_makeTy // {meta} make an existing symbol a type.
 $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
   @TY_FN$L1 %OR  $_jmpl c_makeTy
 
-@TY_FN_INSTANT $c_makeFn SFN
-@TY_FN_INSTANT $c_makeFn FN
-@TY_FN_INSTANT $c_makeFn INSTANT
-#0 $c_makeFn xsl
-#0 $c_makeFn jmpl
-#0 $c_makeFn L0
-#0 $c_makeFn L1
-#0 $c_makeFn L2
-#0 $c_makeFn L4
+$hal2 $SFN PRE .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 
-#0 $c_makeFn loc
-#0 $c_makeFn h1
-#0 $c_makeFn h2
-#0 $c_makeFn h4
-@TY_FN_INSTANT $c_makeFn c1
-#0 $c_makeFn dictSet
-#0 $c_makeFn dictGet
-#0 $c_makeFn dictGetR
-#0 $c_makeFn dictArgs
-#0 $c_makeFn getHeap
-#0 $c_makeFn setHeap
-#0 $c_makeFn hpad
-#0 $c_makeFn hal2
-#0 $c_makeFn hal4
-#0 $c_makeFn ha2
-#0 $c_makeFn ha4
-#0 $c_makeFn metaSet
-#0 $c_makeFn toRef
-#0 $c_makeFn toMod
-@TY_FN_INSTANT $c_makeFn toMeta
-#0 $c_makeFn curMod
-#0 $c_makeFn isTyped
-#0 $c_makeFn isTyFn
-#0 $c_makeFn isSameMod
-#0 $c_makeFn isCurMod
-#0 $c_makeFn isFnLocals
-#0 $c_makeFn c_updateRKey
-#0 $c_makeFn c_keySetTyped
-#0 $c_makeFn c_keySetTy
+@TY_FN_INSTANT        $c_makeFn SFN
+@TY_FN_INSTANT        $c_makeFn FN
+@TY_FN_INSTANT        $c_makeFn INSTANT
+#0                    $c_makeFn xsl
+#0                    $c_makeFn jmpl
+@TY_FN_PRE            $c_makeFn L0
+@TY_FN_PRE            $c_makeFn L1
+@TY_FN_PRE            $c_makeFn L2
+@TY_FN_PRE            $c_makeFn L4
 
-#0 $c_makeFn assert
-#0 $c_makeFn assertNot
-#0 $c_makeFn tAssert
-#0 $c_makeFn tAssertNot
-#0 $c_makeFn tAssertEq
-#0 $c_makeFn tAssertNe
-#0 $c_makeFn assertFn
-#0 $c_makeFn assertFnSmall
-#0 $c_makeFn assertFnLocals
-#0 $c_makeFn assertCurMod
-#0 $c_makeFn assertTyped
+#0                    $c_makeFn loc
+@TY_FN_PRE            $c_makeFn h1
+@TY_FN_PRE            $c_makeFn h2
+@TY_FN_PRE            $c_makeFn h4
+@TY_FN_PRE @TY_FN_INSTANT ^OR $c_makeFn c1
+@TY_FN_PRE            $c_makeFn dictSet
+#0                    $c_makeFn dictGet
+#0                    $c_makeFn dictGetR
+#0                    $c_makeFn dictArgs
+#0                    $c_makeFn getHeap
+@TY_FN_PRE            $c_makeFn setHeap
+@TY_FN_PRE            $c_makeFn hpad
+#0                    $c_makeFn hal2
+#0                    $c_makeFn hal4
+#0                    $c_makeFn ha2
+#0                    $c_makeFn ha4
+@TY_FN_PRE            $c_makeFn metaSet
+@TY_FN_PRE            $c_makeFn toRef
+@TY_FN_PRE            $c_makeFn toMod
+@TY_FN_INSTANT @TY_FN_PRE ^OR $c_makeFn toMeta
+#0                    $c_makeFn curMod
+@TY_FN_PRE            $c_makeFn isTyped
+@TY_FN_PRE            $c_makeFn isTyFn
+@TY_FN_PRE            $c_makeFn isSameMod
+@TY_FN_PRE            $c_makeFn isCurMod
+@TY_FN_PRE            $c_makeFn isFnLocals
+#0                    $c_makeFn c_updateRKey
+@TY_FN_PRE            $c_makeFn c_keySetTyped
+@TY_FN_PRE            $c_makeFn c_keySetTy
 
-$SFN isFnPre     $toMeta  @TY_FN_PRE$L1 %AND %RET
-$SFN isFnNormal  $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_NORMAL$L1  %EQ %RET
-$SFN isFnInstant $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_INSTANT$L1  %EQ %RET
-$SFN isFnSmart   $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_SMART$L1  %EQ %RET
-$SFN isTyLocal   $toMeta  @META_TY_MASK$L1 %AND  @TY_LOCAL$L1  %EQ %RET
-$SFN isLocalInput $toMeta  @TY_LOCAL_INPUT$L1 %AND %RET
-$SFN isTyGlobal  $toMeta  @META_TY_MASK$L1 %AND  @TY_GLOBAL$L1  %EQ %RET
-$SFN assertTyLocal $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
-$SFN assertTyGlobal $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
+@TY_FN_PRE            $c_makeFn assert
+@TY_FN_PRE            $c_makeFn assertNot
+@TY_FN_PRE            $c_makeFn tAssert
+@TY_FN_PRE            $c_makeFn tAssertNot
+@TY_FN_PRE            $c_makeFn tAssertEq
+@TY_FN_PRE            $c_makeFn tAssertNe
+@TY_FN_PRE            $c_makeFn assertFn
+@TY_FN_PRE            $c_makeFn assertFnSmall
+@TY_FN_PRE            $c_makeFn assertFnLocals
+@TY_FN_PRE            $c_makeFn assertCurMod
+@TY_FN_PRE            $c_makeFn assertTyped
+
+$SFN isFnPre     $PRE $toMeta  @TY_FN_PRE$L1 %AND %RET
+$SFN isFnNormal  $PRE $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_NORMAL$L1  %EQ %RET
+$SFN isFnInstant $PRE $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_INSTANT$L1  %EQ %RET
+$SFN isFnSmart   $PRE $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_SMART$L1  %EQ %RET
+$SFN isTyLocal   $PRE $toMeta  @META_TY_MASK$L1 %AND  @TY_LOCAL$L1  %EQ %RET
+$SFN isLocalInput $PRE $toMeta  @TY_LOCAL_INPUT$L1 %AND %RET
+$SFN isTyGlobal  $PRE $toMeta  @META_TY_MASK$L1 %AND  @TY_GLOBAL$L1  %EQ %RET
+$SFN assertTyLocal $PRE $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
+$SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 
 $SFN getSz           @D_sz$L0          %DVFT %RET
-$SFN setSz           @D_sz$L0          %DVSR %RET
+$SFN setSz     $PRE  @D_sz$L0          %DVSR %RET
 $SFN getWsLen        @D_wslen$L0       %DVFT %RET
-$SFN c_xsCatch       @D_xsCatch$L0     %DVFT %RET
+$SFN c_xsCatch $PRE  @D_xsCatch$L0     %DVFT %RET
 $SFN c_scan          @D_scan$L0        %DVFT %RET
-$SFN panic   #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
+$SFN panic   $PRE #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
 $SFN unreach @E_unreach$L2 $jmpl panic // {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
@@ -670,7 +672,7 @@ $SFN ldictBuf // {} -> {ldict.buf:APtr}
   $hal2 .2%FTGL @c_dictHeap$h2
   %ADD %RET
 
-$SFN ldictArgs
+$SFN ldictArgs // {} -> dictArgs
   $xsl ldictBuf
   @c_dictLHeap$L2  // &ldict.heap
   %RET
@@ -678,7 +680,7 @@ $SFN ldictHeap $xsl ldictArgs .2%FT %ADD %RET // {} -> ldictHeap
 
 $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
-$SFN ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
+$SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
 $SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 
 
@@ -696,7 +698,7 @@ $SFN IF  $INSTANT // {} -> {&jmpTo} : start an if block
   #0$L0  $xsl h1 // compile 0 (jump pad)
   %RET
 
-$SFN assertLt128  #80 $L1 %LT_U   @E_cJmpL1 $L2   $jmpl assert
+$SFN assertLt128  $PRE #80 $L1 %LT_U   @E_cJmpL1 $L2   $jmpl assert
 
 $SFN END  $INSTANT // {&jmpTo} -> {} : end of IF or BREAK0
   %DUP          // {&jmpTo &jmpTo}
@@ -734,45 +736,45 @@ $SFN END_N // {...(N &jmpTo) numJmpTo}
 
 // * Some utilities for globals + locals
 
-$SFN assertSzI // {szI}
+$SFN assertSzI $PRE // {szI}
   %DUP #CF$L1 %AND @E_cSz$L2 $xsl assertNot // non-sz bits empty
   #6$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert // sz bits < 3
 
-$SFN szToSzI // [sz] -> [SzI] convert sz to szI (instr)
+$SFN szToSzI $PRE // [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
   %DUP #2$L0 %EQ $IF  %DRP @SZ2 $L1 %RET  $END
        #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
   @E_cSz$L2 $xsl panic
 
-$SFN szILowerToSzI // convert a szI in lower bits to a proper szI
+$SFN szILowerToSzI $PRE // convert a szI in lower bits to a proper szI
   #3$L0 %AND #4$L0 %SHL %RET
 
-$SFN metaRefSzI $toMeta $jmpl szILowerToSzI
+$SFN metaRefSzI $PRE $toMeta $jmpl szILowerToSzI
 
-$SFN szIToSz // {szI} -> {sz}
+$SFN szIToSz $PRE // {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
   %DUP @SZ2$L1 %EQ $IF  %DRP #2$L0 %RET  $END
        @SZ4$L1 %EQ $IF       #4$L0 %RET  $END
   @E_cSz$L2 $xsl panic
 
-$SFN haN  // {szI} align heap
+$SFN haN  $PRE // {szI} align heap
   $xsl szIToSz $_jmpl _ha
-$SFN halN // {szI} align heap for literal to szI
+$SFN halN $PRE // {szI} align heap for literal to szI
   $xsl szIToSz $_jmpl _hal
 
-$SFN hN // {value szI} write a value of szI to heap
+$SFN hN $PRE // {value szI} write a value of szI to heap
   %DUP @SZ1$L1 %EQ $IF  %DRP $jmpl h1  $END
   %DUP @SZ2$L1 %EQ $IF  %DRP $jmpl h2  $END
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
   @E_cSz$L2 $xsl panic
 
-$SFN joinSzTyMeta #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
+$SFN joinSzTyMeta $PRE #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
 
-$SFN _lSetup // {&metaO} -> {metaO} : checked local setup
+$SFN _lSetup $PRE // {&metaO} -> {metaO} : checked local setup
   %DUP $_xsl assertTyped
   .4%FT %DUP $_jmpl assertTyLocal // returns metaOffset
 
-$SFN _gSetup // {&metaRef} -> {metaRef} : checked global setup
+$SFN _gSetup $PRE // {&metaRef} -> {metaRef} : checked global setup
   %DUP $_xsl assertTyped
   .4%FT %DUP $_jmpl assertTyGlobal
 
@@ -780,7 +782,7 @@ $SFN _gSetup // {&metaRef} -> {metaRef} : checked global setup
 //   szLit the size of the literal to compile for the instr.
 //   metaRO: either a reference or an offset with a conforming meta attached to
 //     it (meta at upper byte, szI in lowest 2 bits).
-$FN _instrLitImpl
+$FN _instrLitImpl $PRE
   #1 $h1 // 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 // store instr {metaR0 szLit}
   %DUP $xsl halN // align for literal {metaR0 szLit}
@@ -789,7 +791,7 @@ $FN _instrLitImpl
   .1%FTLL #1$h1 %OR $xsl h1 // compile (szI | instr) {metaRO}
   .1%FTLL #0$h1  $jmpl hN // compile literal of proper instrSz
 
-$FN _getSetImpl // {localInstrSz localInstr globalInstrSz globalInstr}
+$FN _getSetImpl $PRE // {localInstrSz localInstr globalInstrSz globalInstr}
   #1 $h1 // locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 // 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 // 0=localInstrSz 1=localInstr
@@ -838,7 +840,7 @@ $FN GLOBAL  $INSTANT // <value> <szI> $GLOBAL <token>: define a global variable 
   %SWP $xsl c_keySetTy // update key ty
   .1%FTLL#0$h1  $jmpl hN // write value to heap
 
-$SFN c_makeGlobal // {szI} <token>: set meta for token to be a global.
+$SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
   #4$L0 %SHR  @TY_GLOBAL$L1  %OR  $_jmpl c_makeTy
 
 @SZA $c_makeGlobal heap
@@ -866,7 +868,7 @@ $SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
   %ADD // {&newLkey}
   %DUP $SET c_rLKey  %RET
 
-$FN align // {aptr sz}: return the aptr aligned properly with szI
+$FN align $PRE // {aptr sz}: return the aptr aligned properly with szI
   #1 $h1 // locals [sz:U1]
   .1%SRLL#0$h1 // cache sz
   %DUP // {aptr aptr}
@@ -877,11 +879,11 @@ $FN align // {aptr sz}: return the aptr aligned properly with szI
   $END
   %DRP %RET
 
-$SFN align4 #4$L0 $xl align %RET
-$SFN alignSzI $xsl szIToSz  $xl align  %RET
+$SFN align4 $PRE #4$L0 $xl align %RET
+$SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET
 
 // implement LOCAL or INPUT. Mostly just updating ldict key and globals.
-$ha2 $FN _localImpl // {szI:U1 meta:U1}
+$ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
   #1 $h1 // 0=szI:U1  1=meta:U1
 
   // assert current function is valid
@@ -906,14 +908,14 @@ $ha2 $FN _localImpl // {szI:U1 meta:U1}
 $SFN LOCAL $INSTANT  #0             $L1 $xl _localImpl %RET
 $SFN INPUT $INSTANT  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
 
-$SFN Dict_keyLen   %INC4 .1%FT  #3F$L1 %AND %RET             // {&key} -> {len:U1}
-$SFN Dict_keySz    $xsl Dict_keyLen #5$L0 %ADD $jmpl align4  // {&key} -> {sz:U1}
-$SFN Dict_nextKey  %DUP $xsl Dict_keySz %ADD %RET                 // {&key} -> {&key}
+$SFN Dict_keyLen   $PRE %INC4 .1%FT  #3F$L1 %AND %RET             // {&key} -> {len:U1}
+$SFN Dict_keySz    $PRE $xsl Dict_keyLen #5$L0 %ADD $jmpl align4  // {&key} -> {sz:U1}
+$SFN Dict_nextKey  $PRE %DUP $xsl Dict_keySz %ADD %RET                 // {&key} -> {&key}
 
 // {&key} -> {} recursive function to compile INPUTs
 // Inputs are "compiled" (i.e. a SRLL is compiled) in reverse order.
 // This maps them well to the conventional stack nomenclature.
-$FN _compileInputs
+$FN _compileInputs $PRE
   #1$h1 // locals 0=&key:APtr
   %DUP  .4%SRLL#0$h1 // {&key}
   $xsl ldictHeap %NEQ %RETZ // return if key=ldictHeap
@@ -930,7 +932,6 @@ $SFN END_LOCALS
   $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $xsl h1 // update number of slots
   $xsl ldictBuf $xl _compileInputs %RET
-
 
 // **********
 // * Fngi Compile Loop
@@ -958,20 +959,20 @@ $FN c_parseDecimal // {} -> {value isDecimal}
 
 $assertWsEmpty
 
-$SFN c_stateCompile $GET c_state @C_COMPILE$L2 %AND %RET
-$SFN c_stateInstant $GET c_state @C_INSTANT$L2 %AND %RET
+$SFN c_stateCompile $GET c_state @C_COMPILE$L2 %AND %RET // {} -> state
+$SFN c_stateInstant $GET c_state @C_INSTANT$L2 %AND %RET // {} -> state
 
-$SFN c_lit // {value:U4} : compile proper sized literal
+$SFN c_lit $PRE // {value:U4} : compile proper sized literal
   $xsl c_stateCompile %RETZ // if not in compile mode, leave on stack
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
                                 $jmpl L4
 
-$SFN xSzI // {metaRef} -> {szI}: return the size requirement of the X instr
+$SFN xSzI $PRE // {metaRef} -> {szI}: return the size requirement of the X instr
    $xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZ4$L1 %RET
 
-$SFN c_fn // {&metaRef}: compile a function
+$SFN c_fn $PRE // {&metaRef}: compile a function
   %DUP $xsl assertTyped
   .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
   %DUP $xsl xSzI %SWP // {metaRef litSzI metaRef}
@@ -979,7 +980,7 @@ $SFN c_fn // {&metaRef}: compile a function
   $xl _instrLitImpl %RET
 
 // {metaRefFn} -> {metaRefFn} update the meta ref of the fn based on current state.
-$FN c_updateFnMeta
+$FN c_updateFnMeta $PRE
   @SZA $LOCAL metaRef $END_LOCALS
   %DUP $SET metaRef
   $toMeta %DUP $xsl isFnSmart $IF
@@ -1012,6 +1013,7 @@ $SFN _compConstant // {} -> {metaRefFn (nullable)}
   .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
   %RET
 
+// The core fngi compiler loop
 $FN compLoop
   @SZA $LOCAL metaRef $END_LOCALS
   $LOOP l0
@@ -1039,4 +1041,3 @@ $FN compLoop
   $AGAIN l0
 
 $SFN c_decimal  $xsl c_scan $xl c_parseDecimal %RET
-
