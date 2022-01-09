@@ -306,7 +306,7 @@
 
 %NOP // (unaligned) Note: heap is still on the stack!
 ^INC =getHeap
-                %FTGL @heap.2,
+                .4%FTGL @heap.2,
     %RET // (unaligned)
 
 $getHeap =h1  // h1: {val:1} push 1bytes from stack to heap

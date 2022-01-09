@@ -446,7 +446,6 @@ U32 popLit(SzI szI) {
 inline static void executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
   if(dbgMode) { printf("  * "); dbgInstr(instr, TRUE);  printf("@%X", env.ep - 1); printf("\n"); }
-
   U32 l, r;
   U32 szMask = 0xFFFFFFFF; // TODO: remove
   SzI szI = SzI2;
@@ -1004,8 +1003,13 @@ ssize_t readSrc(size_t nbyte) {
   U8 localMem[MS] = {0};                  \
   U8 wsMem[WS];                           \
   U8 callStkMem[RS];                      \
+  memset(&localMem, 0, MS);               \
+  memset(&wsMem, 0, MS);               \
+  memset(&callStkMem, 0, MS);               \
   mem = localMem;                         \
   env = (Env) {                           \
+    .ep = 0,                              \
+    .mp = 0,                              \
     .gb = 0,                              \
     .heap =    (APtr*) (mem + 0x4),       \
     .topHeap = (APtr*) (mem + 0x8),       \
@@ -1061,7 +1065,7 @@ void compileFile(char* s) {
   compileFile("spor/spor.sp");
 
 #define SMALL_ENV \
-  /*      MS      WS     RS     LS     DICT   GS*/    \
+  /*      MS      WS     RS     LS     DICT    GS*/    \
   NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x2000, 0x1000)
 
 
@@ -1411,6 +1415,7 @@ void compileStr(char* s) {
   assert(0x77770101 == fetch(mem, heapStart, SzI4));
   assert(0x0F00 == fetch(mem, heapStart+4, SzI2));
   assert(0 == fetch(mem, heapStart+6, SzI1));
+  dbgWs(); dbgEnv();
 }
 
 // These were useful for initial development
@@ -1500,7 +1505,7 @@ void compileStr(char* s) {
   testHex();
   testDictDeps();
   testDict();
-  // testWriteHeap();
+  testWriteHeap();
   testSporeSp();
   // testBoot();
 
