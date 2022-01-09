@@ -188,6 +188,7 @@ typedef struct { U16 sp; U16 size; U8* mem; } Stk;
 typedef struct {
   APtr ep;  // execution pointer
   APtr mp;  // Module Pointer
+  APtr gb;  // Global Base
   APtr* heap;
   APtr* topHeap;
   APtr* topMem;
@@ -991,7 +992,7 @@ ssize_t readSrc(size_t nbyte) {
   return 0;
 }
 
-#define NEW_ENV_BARE(MS, WS, RS, LS, DS)  \
+#define NEW_ENV_BARE(MS, WS, RS, LS, DS, GB)  \
   U8 localMem[MS] = {0};                  \
   U8 wsMem[WS];                           \
   U8 callStkMem[RS];                      \
@@ -1023,6 +1024,9 @@ ssize_t readSrc(size_t nbyte) {
   /* Reserve space for local stack*/      \
   *env.topHeap -= LS;                     \
   env.ls.mem = mem + *env.topHeap;        \
+  /* Then globals */                      \
+  *env.topHeap -= GB;                     \
+  env.gb = *env.topHeap;                  \
   /* Then dictionary */                   \
   *env.topHeap -= DS;                     \
   dict->buf = *env.topHeap;               \
@@ -1031,8 +1035,8 @@ ssize_t readSrc(size_t nbyte) {
   tokenState->buf = *env.topHeap;
 
 #define SMALL_ENV_BARE \
-  /*           MS       WS     RS     LS     DICT */    \
-  NEW_ENV_BARE(0x10000, 0x100, 0x100, 0x200, 0x2000)
+  /*           MS       WS     RS     LS     DICT    GB*/    \
+  NEW_ENV_BARE(0x10000, 0x100, 0x100, 0x200, 0x2000, 0x100)
 
 void compileFile(char* s) {
   compilingName = s;
@@ -1044,13 +1048,13 @@ void compileFile(char* s) {
   compileLoop(); ASSERT_NO_ERR();
 }
 
-#define NEW_ENV(MS, WS, RS, LS, DS) \
-  NEW_ENV_BARE(MS, WS, RS, LS, DS); \
+#define NEW_ENV(MS, WS, RS, LS, DS, GB) \
+  NEW_ENV_BARE(MS, WS, RS, LS, DS, GB); \
   compileFile("spor/spor.sp");
 
 #define SMALL_ENV \
-  /*      MS      WS     RS     LS     DICT */    \
-  NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x2000)
+  /*      MS      WS     RS     LS     DICT   GB*/    \
+  NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x2000, 0x1000)
 
 
 // ********************************************
