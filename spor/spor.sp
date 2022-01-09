@@ -1,6 +1,10 @@
 // This file bootstraps spor from the native (i.e. C) implementation into
 // a more full-featured language with helpful macros.
 //
+// Note: this file requires the compiler to pass the current heap value on the
+// stack so that it can define it's first function (getHeap), which it then
+// uses to define the other functions.
+//
 // # Table of Contents
 // Search for these headings to find information
 //
@@ -185,13 +189,9 @@
 #0000_002C =c_tokenLen
 
 // Global Compiler Variables
-#0000_0030 =c_rKey         // sz=4
-#0000_0034 =c_rLKey        // sz=4
-#0000_0038 =c_localOffset  // sz=2
-// @heap .4^FT =c_rKey        #0 .4, // [U4] rKey, ref to current dict key.
-// @heap .4^FT =c_rLKey       #0 .4, // [U4] rLKey, ref to current L dict key.
-// @heap .4^FT =c_localOffset #0 .2, // [U2] Local Offset (for local var setup)
-// #A ^ADD // TODO: remove
+#0000_0030 =c_rKey         // [U4] rKey, ref to current dict key.
+#0000_0034 =c_rLKey        // [U4] rLKey, ref to current L dict key.
+#0000_0038 =c_localOffset  // [U2] Local Offset (for local var setup)
 
 // Constants
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.

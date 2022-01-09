@@ -1500,7 +1500,7 @@ void compileStr(char* s) {
   testHex();
   testDictDeps();
   testDict();
-  // testWriteHeap(); // TODO: fix
+  // testWriteHeap();
   testSporeSp();
   // testBoot();
 
