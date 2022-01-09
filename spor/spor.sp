@@ -149,10 +149,11 @@
 // FT will return the register value + offset
 // SR will store the value + offset in the register
 
-#00 =R_EP // execution pointer, SR will panic
-#40 =R_LP // local stack pointer
-#80 =R_CP // call stack pointer
-#C0 =R_GB // global base pointer
+#00 =R_MP // global base pointer
+#01 =R_EP // execution pointer, SR will panic
+#02 =R_LP // local stack pointer
+#03 =R_CP // call stack pointer
+#04 =R_GB // global base pointer
 
 // Device operations with DVFT and DVSR
 #00 =D_read   // read from src, filling up tokenBuf
@@ -194,6 +195,8 @@
 #0000_0038 =c_localOffset  // [U2] Local Offset (for local var setup)
 
 // Constants
+#0 =FALSE
+#1 =TRUE
 #8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
 #0001_0000 =cAllowPanicMask
 
@@ -216,6 +219,10 @@
 
 // Local meta bits [TTTI --SS] I=input S=szI
 #10 =TY_LOCAL_INPUT
+
+// Compiler State
+#8000 =C_COMPILE     // default compile (not execute) tokens.
+#4000 =C_INSTANT     // "$" sets this. Toggles INSTANT for next.
 
 
 // **********
@@ -277,6 +284,7 @@
 #E0E9  =E_cNotType
 #E0EA  =E_cNotLocal
 #E0EB  =E_cNotVar
+#E0EC  =E_cNotFnOrConst
 
 // **********
 // * Core Utility Macros
@@ -478,7 +486,7 @@ $hal2 $loc L4 // {U1} compile 4 byte literal
 $loc toMeta // INSTANT {metaRef} -> {meta}
   @SLIT #18 ^OR $c1  @SHR $c1  %RET
 
-$loc keyHasTy  // {&metaRef} dict value is a constant
+$loc isTyped  // {&metaRef} dict value is a constant
   %INC4 .1%FT @KEY_HAS_TY$L1 %AND %RET
 
 // These take {metaRef} and tell information about it
@@ -487,7 +495,7 @@ $loc isTyFn      $toMeta  @META_TY_MASK$L1 %AND  @TY_FN$L1  %EQ %RET
 $loc isFnLocals  $toMeta  @TY_FN_LOCALS$L1 %AND %RET
 
 $loc assertTyped // [&metaRef]
-  $_xsl keyHasTy @E_cNotType $L2 $_jmpl assert
+  $_xsl isTyped @E_cNotType $L2 $_jmpl assert
 $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
 
 $loc assertFnSmall // [metaRef]
@@ -599,6 +607,7 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn h1
 #0 $c_makeFn h2
 #0 $c_makeFn h4
+@TY_FN_INSTANT $c_makeFn c1
 #0 $c_makeFn dictSet
 #0 $c_makeFn dictGet
 #0 $c_makeFn dictGetR
@@ -615,7 +624,7 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn toMod
 @TY_FN_INSTANT $c_makeFn toMeta
 #0 $c_makeFn curMod
-#0 $c_makeFn keyHasTy
+#0 $c_makeFn isTyped
 #0 $c_makeFn isTyFn
 #0 $c_makeFn isSameMod
 #0 $c_makeFn isCurMod
@@ -636,6 +645,7 @@ $SFN c_makeFn // {meta} <token>: set meta for token to be a small function.
 #0 $c_makeFn assertCurMod
 #0 $c_makeFn assertTyped
 
+$SFN isFnPre     $toMeta  @TY_FN_PRE$L1 %AND %RET
 $SFN isFnNormal  $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_NORMAL$L1  %EQ %RET
 $SFN isFnInstant $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_INSTANT$L1  %EQ %RET
 $SFN isFnSmart   $toMeta  @TY_FN_TY_MASK$L1 %AND  @TY_FN_SMART$L1  %EQ %RET
@@ -651,8 +661,25 @@ $SFN getWsLen        @D_wslen$L0       %DVFT %RET
 $SFN c_xsCatch       @D_xsCatch$L0     %DVFT %RET
 $SFN c_scan          @D_scan$L0        %DVFT %RET
 $SFN panic   #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
+$SFN unreach @E_unreach$L2 $jmpl panic // {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
+
+$SFN ldictBuf // {} -> {ldict.buf:APtr}
+  $hal2 .4%FTGL @c_dictBuf$h2
+  $hal2 .2%FTGL @c_dictHeap$h2
+  %ADD %RET
+
+$SFN ldictArgs
+  $xsl ldictBuf
+  @c_dictLHeap$L2  // &ldict.heap
+  %RET
+$SFN ldictHeap $xsl ldictArgs .2%FT %ADD %RET // {} -> ldictHeap
+
+$SFN _ldict $xsl c_scan $jmpl ldictArgs
+$SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
+$SFN ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
+$SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 
 
 // **********
@@ -664,7 +691,7 @@ $assertWsEmpty
 // stores/jmps the heap where they are called from.
 
 $SFN IF  $INSTANT // {} -> {&jmpTo} : start an if block
-  @JZL1 $L1  $xsl h1 // compile .1%JZL instr
+  @JZL1 $c1 // compile .1%JZL instr
   $xsl getHeap // {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 // compile 0 (jump pad)
   %RET
@@ -678,16 +705,32 @@ $SFN END  $INSTANT // {&jmpTo} -> {} : end of IF or BREAK0
   %DUP $xsl assertLt128
   %SWP .1%SR %RET // store at location after start (1 byte literal)
 
+$SFN ELSE $INSTANT // {&ifNotJmpTo} -> {&elseBlockJmpTo}
+  @JMPL $c1         // (end IF) compile unconditional jmp to end of ELSE
+  $xsl getHeap %SWP // {&elseBlockJmpTo &ifNotJmpTo}
+  #0$L0 $xsl h1     // compile jmp lit for &elseBlockJmpTo
+  $jmpl END         // end of IF block (beginning of ELSE)
+
 // $LOOP ... $BREAK0 ... $AGAIN $END
-$SFN LOOP   $INSTANT $jmpl getHeap
-$SFN BREAK0 $INSTANT $xsl IF  %SWP %RET // {&loopTo} -> {&breakTo &loopTo}
-$SFN AGAIN $INSTANT // {&loopTo} -> {} : run loop again
+$SFN LOOP   $INSTANT $xsl getHeap  $jmpl ldictSet
+$SFN BREAK0 $INSTANT $xsl IF $jmpl ldictSet
+$SFN BREAK_EQ $INSTANT @NEQ $c1  $jmpl BREAK0 // break if equal
+$SFN AGAIN $INSTANT
   @JMPL $c1  // compile jmp
-  $xsl getHeap  // {&loopTo heap}
-  %SWP %SUB     // {heap-&loopTo}
+  $xsl getHeap  // {heap}
+  $xsl ldictGet // {heap &loopTo}
+  %SUB     // {heap-&loopTo}
   %DUP $xsl assertLt128
   %NEG          // make negative for backwards jmp
   $jmpl h1      // compile as jmp offset
+
+$SFN END_BREAK $xsl ldictGet $jmpl END
+
+$SFN END_N // {...(N &jmpTo) numJmpTo}
+  $LOOP l0 %DUP %RETZ
+    %SWP $xsl END
+    %DEC // dec numJmpTo
+  $AGAIN l0
 
 // * Some utilities for globals + locals
 
@@ -703,6 +746,8 @@ $SFN szToSzI // [sz] -> [SzI] convert sz to szI (instr)
 
 $SFN szILowerToSzI // convert a szI in lower bits to a proper szI
   #3$L0 %AND #4$L0 %SHL %RET
+
+$SFN metaRefSzI $toMeta $jmpl szILowerToSzI
 
 $SFN szIToSz // {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -723,22 +768,6 @@ $SFN hN // {value szI} write a value of szI to heap
 
 $SFN joinSzTyMeta #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
 
-$SFN ldictBuf // {} -> {ldict.buf:APtr}
-  $hal2 .4%FTGL @c_dictBuf$h2
-  $hal2 .2%FTGL @c_dictHeap$h2
-  %ADD %RET
-
-$SFN ldictArgs
-  $xsl ldictBuf
-  @c_dictLHeap$L2  // &ldict.heap
-  %RET
-$SFN ldictHeap $xsl ldictArgs .2%FT %ADD %RET // {} -> ldictHeap
-
-$SFN _ldict $xsl c_scan $jmpl ldictArgs
-$SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
-$SFN ldictSet   $xsl _ldict @D_dict$L0  %DVSR %RET
-$SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
-
 $SFN _lSetup // {&metaO} -> {metaO} : checked local setup
   %DUP $_xsl assertTyped
   .4%FT %DUP $_jmpl assertTyLocal // returns metaOffset
@@ -751,12 +780,12 @@ $SFN _gSetup // {&metaRef} -> {metaRef} : checked global setup
 //   szLit the size of the literal to compile for the instr.
 //   metaRO: either a reference or an offset with a conforming meta attached to
 //     it (meta at upper byte, szI in lowest 2 bits).
-$FN _memLitImpl
+$FN _instrLitImpl
   #1 $h1 // 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 // store instr {metaR0 szLit}
   %DUP $xsl halN // align for literal {metaR0 szLit}
   .1%SRLL #0$h1 // store szLit {metaR0}
-  %DUP $toMeta $xsl szILowerToSzI // {metaRO szI}
+  %DUP $xsl metaRefSzI // {metaRO szI}
   .1%FTLL #1$h1 %OR $xsl h1 // compile (szI | instr) {metaRO}
   .1%FTLL #0$h1  $jmpl hN // compile literal of proper instrSz
 
@@ -766,11 +795,11 @@ $FN _getSetImpl // {localInstrSz localInstr globalInstrSz globalInstr}
   .1%SRLL#1$h1   .1%SRLL#0$h1 // 0=localInstrSz 1=localInstr
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _lSetup
-    .1%FTLL#0$h1 .1%FTLL#1$h1  $xl _memLitImpl %RET
+    .1%FTLL#0$h1 .1%FTLL#1$h1  $xl _instrLitImpl %RET
   $END %DRP
   $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _gSetup
-    .1%FTLL#2$h1 .1%FTLL#3$h1  $xl _memLitImpl %RET
+    .1%FTLL#2$h1 .1%FTLL#3$h1  $xl _instrLitImpl %RET
   $END @E_cNotType$L2 $xsl panic
 
 // (create _xxxImpl for fngi to use)
@@ -889,10 +918,10 @@ $FN _compileInputs
   %DUP  .4%SRLL#0$h1 // {&key}
   $xsl ldictHeap %NEQ %RETZ // return if key=ldictHeap
   .4%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs // get the next key and recurse {}
-  .4%FTLL#0$h1  %DUP $xsl keyHasTy %SWP .4%FT // {hasTy metaRef}
+  .4%FTLL#0$h1  %DUP $xsl isTyped %SWP .4%FT // {hasTy metaRef}
   %DUP $xsl isLocalInput %SWP // {hasTy isLocal metaRef}
   $xsl isLocalInput %LAND %LAND %RETZ
-  .4%FTLL#0$h1  .4%FT  @SZ1$L1 @SRLL$L1 $xl _memLitImpl
+  .4%FTLL#0$h1  .4%FT  @SZ1$L1 @SRLL$L1 $xl _instrLitImpl
   %RET
 
 // - Updates the number of slots for the FN
@@ -901,4 +930,113 @@ $SFN END_LOCALS
   $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $xsl h1 // update number of slots
   $xsl ldictBuf $xl _compileInputs %RET
+
+
+// **********
+// * Fngi Compile Loop
+
+$FN c_parseDecimal // {} -> {value isDecimal}
+  @SZ4 $LOCAL value
+  @SZ1 $LOCAL i
+  @SZ1 $LOCAL c
+  $END_LOCALS
+  #0$L0 $SET value
+  #0$L0 $SET i
+  $LOOP l0
+    $GET i  $GET c_tokenLen $BREAK_EQ b0
+    $GET c_tokenBuf $GET i %ADD .1%FT // {c}
+    %DUP $SET c
+    // Check that c is between '0' and '9'
+    %DUP #30$L0 %LT_U %SWP // {c<'0' c}
+    #3A$L0 %GE_U %LOR $IF   #0$L0 @FALSE$L0 %RET   $END
+    #0A$L0  $GET value %MUL // {10 * value}
+    $GET c  #30$L0 %SUB %ADD $SET value // value = value*10 + (c - '0')
+    $GET i %INC $SET i // i += 1
+  $AGAIN l0  $END_BREAK b0
+  $GET i  @E_cToken$L2 $xsl assert // assert there was a token
+  $GET value @TRUE$L0 %RET
+
+$assertWsEmpty
+
+$SFN c_stateCompile $GET c_state @C_COMPILE$L2 %AND %RET
+$SFN c_stateInstant $GET c_state @C_INSTANT$L2 %AND %RET
+
+$SFN c_lit // {value:U4} : compile proper sized literal
+  $xsl c_stateCompile %RETZ // if not in compile mode, leave on stack
+  %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
+  %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
+  %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
+                                $jmpl L4
+
+$SFN xSzI // {metaRef} -> {szI}: return the size requirement of the X instr
+   $xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZ4$L1 %RET
+
+$SFN c_fn // {&metaRef}: compile a function
+  %DUP $xsl assertTyped
+  .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
+  %DUP $xsl xSzI %SWP // {metaRef litSzI metaRef}
+  $xsl isFnLocals $IF @XL$L1  $ELSE @XSL$L1 $END
+  $xl _instrLitImpl %RET
+
+// {metaRefFn} -> {metaRefFn} update the meta ref of the fn based on current state.
+$FN c_updateFnMeta
+  @SZA $LOCAL metaRef $END_LOCALS
+  %DUP $SET metaRef
+  $toMeta %DUP $xsl isFnSmart $IF
+    %DRP @TY_FN_INSTANT$L1 // smart functions are always executed
+  $ELSE
+    // Get the "instant mask" by XORing the "instant states"
+    $xsl c_stateCompile $IF #0$L0  $ELSE  @TY_FN_INSTANT$L1  $END
+    $xsl c_stateInstant $IF #0$L0  $ELSE  @TY_FN_INSTANT$L1  $END
+    %XOR %XOR @TY_FN_INSTANT$L1 %AND
+  $END // {fnInstantMeta}
+  $GET metaRef $toMeta @TY_FN_TY_MASK$L1 %INV %AND // remove FN_TY
+  %ADD // {newMeta}
+  $GET metaRef  $xsl toRef  $jmpl metaSet // update meta
+
+$SFN _compConstant // {} -> {metaRefFn (nullable)}
+  $xl c_parseDecimal $IF  $xsl c_lit #0$L0 %RET  $END %DRP
+
+  // Handle local dictionary. Only constants allowed here.
+  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
+    .4%FT $xsl c_lit  #0$L0 %RET
+  $END %DRP
+
+  $xsl dictArgs  @D_rdict$L0 %DVFT // {&metaRef}
+
+  // Constant
+  %DUP $xsl isTyped %NOT $IF  .4%FT $xsl c_lit #0$L0 %RET  $END
+
+  // Must be a function
+  .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
+  %RET
+
+$FN compLoop
+  @SZA $LOCAL metaRef $END_LOCALS
+  $LOOP l0
+    $xsl c_scan
+
+    // Handle constants
+    $xsl _compConstant // {metaRefFn (nullable)}
+    %DUP %NOT $IF  %DRP $AGAIN l0  $END // {metaRefFn}
+
+    // set the meta to either instant/normal depending on all states.
+    $xl c_updateFnMeta
+
+    // if pre, recursively call compLoop (compile next token first)
+    %DUP $xsl isFnPre $IF
+      $SET metaRef  $xl compLoop  $GET metaRef
+    $END // {metaRef}
+
+    %DUP $xsl isFnInstant $IF
+      %DUP $xsl isFnLocals // {metaRef isFnLocals}
+      %SWP $xsl toRef %SWP // {ref isFnLocals}
+      $IF %XW $ELSE %XSW $END
+    $ELSE
+      $xsl c_fn // not treated as instant
+    $END
+  $AGAIN l0
+
+$SFN c_decimal  $xsl c_scan $xl c_parseDecimal %RET
 

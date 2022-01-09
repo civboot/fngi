@@ -162,11 +162,11 @@ typedef enum {
 } Instr;
 
 typedef enum {
-  // TODO: remove offsetting overloading.
-  R_EP = 0x00,
-  R_LP = 0x40,
-  R_CP = 0x80,
-  R_GB = 0xC0,
+  R_MP = 0x0,
+  R_EP = 0x1,
+  R_LP = 0x2,
+  R_CP = 0x3,
+  R_GB = 0x4,
 } Reg;
 
 typedef enum {
@@ -176,7 +176,6 @@ typedef enum {
 } SzI;
 
 #define SZ_MASK        0x30
-#define RG_MASK        0xC0
 #define INSTR_CLASS(INSTR) (InstrClass)(0xC0 & INSTR)
 #define INSTR_NO_SZ(INSTR)  (Instr)(~SZ_MASK & (U8)INSTR)
 #define INSTR_SZI(INSTR) ((SzI) (INSTR & SZ_MASK))
@@ -202,6 +201,7 @@ typedef struct {
   // Separate from mem
   Stk ws;
   Stk cs;
+  U8 szI; // global instr sz
 } Env;
 
 #define LS_SP           (env.ls.mem - mem + env.ls.sp)
@@ -269,7 +269,6 @@ Dict* dict = NULL;
 TokenState* tokenState = NULL;
 char* compilingName;
 FILE* srcFile;
-SzI instrSzI = SzI1;
 Instr globalInstr = NOP;
 ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
 U32 line = 1;
@@ -475,26 +474,26 @@ inline static void executeInstr(Instr instr) {
     case DVSR: deviceOp(FALSE, SzI4, szMask, 4); return;
     case RGFT:
       r = popLit(SzI1);
-      switch (RG_MASK & r) {
-        case R_EP: WS_PUSH(env.ep - 1 + (0x3F & r)); return;
+      switch (r) {
+        case R_MP: WS_PUSH(env.mp); return;
+        case R_EP: WS_PUSH(env.ep); return;
         case R_LP:
-          WS_PUSH(LS_SP + (0x3F & r)); return;
-        case R_CP: WS_PUSH(CS_SP + (0x3F & r)); return;
+          WS_PUSH(LS_SP); return;
+        case R_CP: WS_PUSH(CS_SP); return;
         case R_GB: WS_PUSH(env.gb); return;
         default: SET_ERR(E_cReg);
       }
     case RGSR:
-      switch (RG_MASK & r) {
+      switch (r) {
+        case R_MP: env.mp = WS_POP(); return;
         case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
         case R_LP:
-          env.ls.sp = WS_POP() - (env.ls.mem - mem) + (0x3F & r);
+          env.ls.sp = WS_POP() - (env.ls.mem - mem);
           return;
         case R_CP:
-          env.cs.sp = WS_POP() - (env.cs.mem - mem) + (0x3F & r);
+          env.cs.sp = WS_POP() - (env.cs.mem - mem);
           return;
-        case R_GB:
-          env.gb = WS_POP();
-          return;
+        case R_GB: env.gb = WS_POP(); return;
         default: SET_ERR(E_cReg);
       }
     case INC : WS_PUSH(WS_POP() + 1); return;
@@ -771,12 +770,12 @@ U8 scanInstr() {
   DictRef d = DEFAULT_DICT;
   scan();
   U8 instr = Dict_get(d, tokenLen, tokenBuf);
-  return mergeInstrSzI(instrSzI, instr);
+  return mergeInstrSzI(env.szI, instr);
 }
 
 /*fn*/ void cSz() { // `.`
   if(tokenLen >= tokenBufSize) readAppend();
-  instrSzI = szToSzI(charToHex(tokenBuf[tokenLen]));
+  env.szI = szToSzI(charToHex(tokenBuf[tokenLen]));
   tokenLen += 1;
 }
 
@@ -823,9 +822,9 @@ U8 scanInstr() {
 
 /*fn*/ void cWriteHeap() { // `,`
   U32 value = WS_POP();
-  if (dbgMode) { printf(", #%X sz=%u\n", value, szIToSz(instrSzI)); }
-  store(mem, *env.heap, value, instrSzI);
-  *env.heap += szIToSz(instrSzI);
+  if (dbgMode) { printf(", #%X sz=%u\n", value, szIToSz(env.szI)); }
+  store(mem, *env.heap, value, env.szI);
+  *env.heap += szIToSz(env.szI);
 }
 
 /*fn*/ void cWriteInstr() { // `%`
@@ -968,8 +967,8 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case 0x2: /*D_dict*/ deviceOp_dict(isFetch); break;
     case 0x3: /*D_rdict*/ deviceOpRDict(isFetch); break;
     case 0x4: /*D_sz*/
-      if(isFetch) WS_PUSH(szIToSz(instrSzI));
-      else instrSzI = szToSzI(WS_POP());
+      if(isFetch) WS_PUSH(szIToSz(env.szI));
+      else env.szI = szToSzI(WS_POP());
       break;
     case 0x5: /*D_comp*/ deviceOpCompile(); break;
     case 0x6: /*D_assert*/ 
@@ -1018,9 +1017,10 @@ ssize_t readSrc(size_t nbyte) {
     .state =   (U32*) (mem + 0x14),       \
     .testIdx = (U32*) (mem + 0x18),       \
     .ls = { .size = LS, .sp = LS },       \
-    .ws = { .size = WS, .sp = WS, .mem = wsMem },     \
+    .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
     .cs = \
-    { .size = RS, .sp = RS, .mem = callStkMem },     \
+      { .size = RS, .sp = RS, .mem = callStkMem }, \
+    .szI = SzI4, \
   };                                      \
   /* configure heap+topheap */            \
   *env.heap = GS; /*bottom is globals*/   \
@@ -1107,7 +1107,7 @@ void dbgEnv() {
   printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=#%X ", globalInstr);
-  printf("sz=%u\n", szIToSzSafe(instrSzI));
+  printf("sz=%u\n", szIToSzSafe(env.szI));
 }
 
 
@@ -1425,7 +1425,7 @@ void compileStr(char* s) {
 //   assert(0xE000 == WS_POP());
 // 
 //   compileStr(".2");
-//   assert(SzI2 == instrSzI);
+//   assert(SzI2 == env.szI);
 // 
 //   compileStr(".4 #5006 #7008 .2 ^DRP");
 //   assert(0x5006 == WS_POP());
@@ -1451,6 +1451,7 @@ void compileStr(char* s) {
 /*test*/ void testSporeSp() {
   printf("## testSporeSp\n"); TEST_ENV;
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+  compileFile("spor/testSpore.sp");
 
   // // Test h1
   // heapStart = *env.heap;
@@ -1486,7 +1487,6 @@ void compileStr(char* s) {
   // assert(*env.heap == WS_POP());
 
   // compileLoop(); ASSERT_NO_ERR();
-  // compileFile("spor/testSpore.sp");
 }
 
 // /*test*/ void testBoot() {

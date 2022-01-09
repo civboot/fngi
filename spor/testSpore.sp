@@ -63,12 +63,18 @@ $dictGet IF      $isFnInstant $tAssert
 $dictGet assert  $isFnInstant $tAssertNot
 
 // Test control flow
-.4 $loc testIf // converts 1->10 else: 42
+$SFN testIf // converts 1->10 else: 42
   #1 $L0 %EQ  $IF   #4 $L0 %RET
               $END  #13 $L0 %RET
-
 #1 $testIf      #4 $tAssertEq
 #2 $testIf      #13 $tAssertEq
+
+$SFN testIfElse
+  #1$L0 %EQ $IF #4$L0 $ELSE #13$L0 $END
+  #2$L0 %ADD %RET
+#1 $testIfElse  #6 $tAssertEq
+#2 $testIfElse  #15 $tAssertEq
+
 
 $FN min // [a b] -> [min]
   #1 $h1 // one local, b
@@ -136,15 +142,14 @@ $FN badMultiply // {a b -- a*b} uses loop to implement multiply
   $END_LOCALS
 
   #0$L0 // out = 0
-  $LOOP
+  $LOOP l0
     // if(!b) break
-    $GET b $BREAK0
+    $GET b $BREAK0 b0
     // out = out + a
     $GET a  %ADD
     // b = b - 1
     $GET b  %DEC  $SET b
-  $AGAIN
-  $END // end break
+  $AGAIN l0  $END_BREAK b0
   %RET
 
 #0 #0 $badMultiply   #0   $tAssertEq
@@ -154,6 +159,9 @@ $FN badMultiply // {a b -- a*b} uses loop to implement multiply
 #5 #5 $badMultiply   #19  $tAssertEq
 
 $assertWsEmpty
+
+$c_decimal 1234   $tAssert     #4D2 $tAssertEq
+$c_decimal notNum $tAssertNot       $tAssertNot
 
 // #200 #2 $XX alignSz  #200 $tAssertEq
 // #201 #2 $XX alignSz  #202 $tAssertEq
