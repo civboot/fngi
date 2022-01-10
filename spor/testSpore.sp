@@ -159,10 +159,10 @@ $FN badMultiply // {a b -- a*b} uses loop to implement multiply
 #5 #5 $badMultiply   #19  $tAssertEq
 
 $assertWsEmpty
-$c_decimal 1234     $tAssert   #4D2  $tAssertEq
-$c_decimal 0x1234   $tAssert   #1234 $tAssertEq
-$c_decimal 0b11100  $tAssert   #1C   $tAssertEq
-$c_decimal notNum   $tAssertNot       $tAssertNot
+$c_number 1234     $tAssert   #4D2  $tAssertEq
+$c_number 0x1234   $tAssert   #1234 $tAssertEq
+$c_number 0b11100  $tAssert   #1C   $tAssertEq
+$c_number notNum   $tAssertNot       $tAssertNot
 
 // Test compiler internals
 

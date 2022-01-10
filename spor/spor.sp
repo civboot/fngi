@@ -194,6 +194,7 @@
 // Global Compiler Variables
 #0000_0030 =c_rKey         // [U4] rKey, ref to current dict key.
 #0000_0034 =c_rLKey        // [U4] rLKey, ref to current L dict key.
+#0000_0030 =c_compFn       // [U4] compiler function (single token)
 #0000_0038 =c_localOffset  // [U2] Local Offset (for local var setup)
 
 // Constants
@@ -1042,8 +1043,12 @@ $FN fngiSingle // {asInstant} -> {}
   $IF    $jmpl c_fn
   $ELSE  $jmpl execute  $END
 
-// The core fngi compiler loop
-$FN fngi
-  $LOOP l0  @FALSE$L0 $xl fngiSingle $AGAIN l0
 
-$SFN c_decimal  $xsl c_scan $xl c_parseNumber %RET
+// The core fngi compiler loop
+$dictGetR c_compFn  @fngiSingle .4^SR // initialize c_compFn
+@SZ4 $c_makeGlobal c_compFn
+
+$FN fngi
+  $LOOP l0  @FALSE$L0  $GET c_compFn %XSW  $AGAIN l0
+
+$SFN c_number  $xsl c_scan $xl c_parseNumber %RET
