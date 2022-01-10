@@ -692,7 +692,7 @@ $SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 // All flow control pushes the current heap on the WS, then END/AGAIN correctly
 // stores/jmps the heap where they are called from.
 
-$SFN IF  $INSTANT // {} -> {&jmpTo} : start an if block
+$SFN IF  $PRE $INSTANT // {} -> {&jmpTo} : start an if block
   @JZL1 $c1 // compile .1%JZL instr
   $xsl getHeap // {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 // compile 0 (jump pad)
@@ -715,8 +715,8 @@ $SFN ELSE $INSTANT // {&ifNotJmpTo} -> {&elseBlockJmpTo}
 
 // $LOOP ... $BREAK0 ... $AGAIN $END
 $SFN LOOP   $INSTANT $xsl getHeap  $jmpl ldictSet
-$SFN BREAK0 $INSTANT $xsl IF $jmpl ldictSet
-$SFN BREAK_EQ $INSTANT @NEQ $c1  $jmpl BREAK0 // break if equal
+$SFN BREAK0 $PRE $INSTANT $xsl IF $jmpl ldictSet
+$SFN BREAK_EQ $PRE $INSTANT @NEQ $c1  $jmpl BREAK0 // break if equal
 $SFN AGAIN $INSTANT
   @JMPL $c1  // compile jmp
   $xsl getHeap  // {heap}
@@ -728,7 +728,7 @@ $SFN AGAIN $INSTANT
 
 $SFN END_BREAK $xsl ldictGet $jmpl END
 
-$SFN END_N // {...(N &jmpTo) numJmpTo}
+$SFN END_N $PRE $INSTANT // {...(N &jmpTo) numJmpTo}
   $LOOP l0 %DUP %RETZ
     %SWP $xsl END
     %DEC // dec numJmpTo
