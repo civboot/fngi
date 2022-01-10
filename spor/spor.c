@@ -31,7 +31,6 @@ typedef CSz CPtr;
 #define APO2  2
 #define ASIZE sizeof(ASz)
 #define CSIZE sizeof(CSz)
-#define OK 0
 
 #ifndef FALSE
 #define TRUE 1
@@ -73,7 +72,7 @@ typedef CSz CPtr;
 #define E_cNoKey    0xE0C5 // key not found
 #define E_cHex      0xE0C6 // non-hex number
 #define E_cSz       0xE0C7 // invalid Sz selected
-#define E_cSzAPtr   0xE0C8 // invalid Sz for aptr
+#define E_cSzPtr    0xE0C8 // invalid Sz for a pointer
 #define E_cRet      0xE0C9 // invalid RET
 #define E_cDblSr    0xE0CA // Double store
 #define E_cDevOp    0xE0CB // device op not impl
@@ -173,6 +172,21 @@ typedef enum {
   SzI2 = 0x10,
   SzI4 = 0x20,
 } SzI;
+
+typedef enum {
+  D_read    = 0x00,
+  D_scan    = 0x01,
+  D_dict    = 0x02,
+  D_rdict   = 0x03,
+  D_sz      = 0x04,
+  D_comp    = 0x05,
+  D_assert  = 0x06,
+  D_wslen   = 0x07,
+  D_cslen   = 0x08,
+  D_xsCatch = 0x09,
+  D_memMove = 0x0A,
+  D_memCmp  = 0x0B,
+} Device;
 
 #define SZ_MASK        0x30
 #define INSTR_CLASS(INSTR) (InstrClass)(0xC0 & INSTR)
@@ -380,7 +394,7 @@ SzI szToSzI(U8 sz) {
 
 APtr toAptr(U32 v, SzI szI) {
   switch (szI) {
-    case SzI1: SET_ERR(E_cSzAPtr);
+    case SzI1: SET_ERR(E_cSzPtr);
     case SzI2: return ENV_MOD_HIGH() + v;
     case SzI4: return v;
     default: SET_ERR(E_cSz);
@@ -956,29 +970,45 @@ void deviceOpCompile() {
   ASM_ASSERT(!compile(), E_cRet);
 }
 
+void deviceOpMemMove() { // {dst src len} -> {}
+  U16 len = WS_POP();
+  APtr src = WS_POP();
+  APtr dst = WS_POP();
+  memmove(mem + dst, mem + src, len);
+}
+
+void deviceOpMemCmp() { // {a b len} -> {cmp}
+  U16 len = WS_POP();
+  APtr b = WS_POP();
+  APtr a = WS_POP();
+  WS_PUSH((U32)(I32) memcmp(mem+a, mem+b, len));
+}
+
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
   U32 op = WS_POP();
   U32 tmp;
   switch(op) {
-    case 0x0: /*D_read*/ readAppend(); break;
-    case 0x1: /*D_scan*/ scan(); break;
-    case 0x2: /*D_dict*/ deviceOp_dict(isFetch); break;
-    case 0x3: /*D_rdict*/ deviceOpRDict(isFetch); break;
-    case 0x4: /*D_sz*/
+    case D_read: readAppend(); break;
+    case D_scan: scan(); break;
+    case D_dict: deviceOp_dict(isFetch); break;
+    case D_rdict: deviceOpRDict(isFetch); break;
+    case D_sz:
       if(isFetch) WS_PUSH(szIToSz(env.szI));
       else env.szI = szToSzI(WS_POP());
       break;
-    case 0x5: /*D_comp*/ deviceOpCompile(); break;
-    case 0x6: /*D_assert*/ 
+    case D_comp: deviceOpCompile(); break;
+    case D_assert: 
       tmp = WS_POP();
       if(!tmp) SET_ERR(E_cErr);
       if(!WS_POP()) SET_ERR(tmp);
       break;
-    case 0x7: /*D_wslen*/ WS_PUSH(WS_LEN); break;
-    case 0x8: /*D_cslen*/ WS_PUSH(Stk_len(env.cs)); break;
-    case 0x9: /*D_xsCatch*/ deviceOpCatch(); break;
+    case D_wslen: WS_PUSH(WS_LEN); break;
+    case D_cslen: WS_PUSH(Stk_len(env.cs)); break;
+    case D_xsCatch: deviceOpCatch(); break;
+    case D_memMove: deviceOpMemMove(); break;
+    case D_memCmp: deviceOpMemMove(); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1077,7 +1107,7 @@ void tests();
   // printf("compiling spor...:\n");
 
   tests();
-  return OK;
+  return 0;
 }
 
 // ********************************************

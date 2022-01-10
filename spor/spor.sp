@@ -169,6 +169,8 @@
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
 #09 =D_xsCatch
+#0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
+#0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
 
 // **********
 // * 3. Memory Locations, Globals and Constants
@@ -195,9 +197,9 @@
 #0000_0038 =c_localOffset  // [U2] Local Offset (for local var setup)
 
 // Constants
+#0 =NULL
 #0 =FALSE
 #1 =TRUE
-#8000 =cmpEq  // Comparison was equal. Was less if LT this, vice-versa.
 #0001_0000 =cAllowPanicMask
 
 // Meta types
@@ -262,7 +264,7 @@
 #E0C5  =E_cNoKey  // dict key not found
 #E0C6  =E_cHex    // non-hex number
 #E0C7  =E_cSz     // invalid Sz selected
-#E0C8  =E_cSzAPtr // invalid Sz for aptr
+#E0C8  =E_cSzPtr  // invalid Sz for aptr
 #E0C9  =E_cRet    // invalid RET
 #E0CA  =E_cDblSr  // Double store
 #E0CB  =E_cDevOp  // device op not impl
@@ -682,6 +684,7 @@ $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
 $SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
+$SFN reteq $PRE $INSTANT @NEQ $c1 @RETZ $c1 %RET
 
 
 // **********
@@ -749,7 +752,7 @@ $SFN szToSzI $PRE // [sz] -> [SzI] convert sz to szI (instr)
 $SFN szILowerToSzI $PRE // convert a szI in lower bits to a proper szI
   #3$L0 %AND #4$L0 %SHL %RET
 
-$SFN metaRefSzI $PRE $toMeta $jmpl szILowerToSzI
+$SFN _metaRefSzI $PRE $toMeta $jmpl szILowerToSzI // {metaRef} -> {szI}
 
 $SFN szIToSz $PRE // {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -778,17 +781,16 @@ $SFN _gSetup $PRE // {&metaRef} -> {metaRef} : checked global setup
   %DUP $_xsl assertTyped
   .4%FT %DUP $_jmpl assertTyGlobal
 
-// {metaRO szLit instr} compile a literal memory instr.
+// {metaRO szInstr szLit instr} compile a literal memory instr.
 //   szLit the size of the literal to compile for the instr.
 //   metaRO: either a reference or an offset with a conforming meta attached to
 //     it (meta at upper byte, szI in lowest 2 bits).
 $FN _instrLitImpl $PRE
   #1 $h1 // 1 slot [szLit:U1 instr:U1]
-  .1%SRLL #1$h1 // store instr {metaR0 szLit}
-  %DUP $xsl halN // align for literal {metaR0 szLit}
-  .1%SRLL #0$h1 // store szLit {metaR0}
-  %DUP $xsl metaRefSzI // {metaRO szI}
-  .1%FTLL #1$h1 %OR $xsl h1 // compile (szI | instr) {metaRO}
+  .1%SRLL #1$h1 // store instr          {metaR0 szInstr szLit}
+  %DUP $xsl halN // align for literal   {metaR0 szInstr szLit}
+  .1%SRLL #0$h1 // store szLit          {metaR0 szInstr}
+  .1%FTLL #1$h1 %OR $xsl h1 // compile (szInstr | instr) {metaRO}
   .1%FTLL #0$h1  $jmpl hN // compile literal of proper instrSz
 
 $FN _getSetImpl $PRE // {localInstrSz localInstr globalInstrSz globalInstr}
@@ -796,11 +798,11 @@ $FN _getSetImpl $PRE // {localInstrSz localInstr globalInstrSz globalInstr}
   .1%SRLL#3$h1   .1%SRLL#2$h1 // 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 // 0=localInstrSz 1=localInstr
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
-    $xsl _lSetup
+    $xsl _lSetup %DUP $xsl _metaRefSzI // {metaRef szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1  $xl _instrLitImpl %RET
   $END %DRP
   $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
-    $xsl _gSetup
+    $xsl _gSetup %DUP $xsl _metaRefSzI // {metaRef szInstr}
     .1%FTLL#2$h1 .1%FTLL#3$h1  $xl _instrLitImpl %RET
   $END @E_cNotType$L2 $xsl panic
 
@@ -918,12 +920,13 @@ $SFN Dict_nextKey  $PRE %DUP $xsl Dict_keySz %ADD %RET                 // {&key}
 $FN _compileInputs $PRE
   #1$h1 // locals 0=&key:APtr
   %DUP  .4%SRLL#0$h1 // {&key}
-  $xsl ldictHeap %NEQ %RETZ // return if key=ldictHeap
+  $xsl ldictHeap $reteq // return if key=ldictHeap
   .4%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs // get the next key and recurse {}
   .4%FTLL#0$h1  %DUP $xsl isTyped %SWP .4%FT // {hasTy metaRef}
   %DUP $xsl isLocalInput %SWP // {hasTy isLocal metaRef}
-  $xsl isLocalInput %LAND %LAND %RETZ
-  .4%FTLL#0$h1  .4%FT  @SZ1$L1 @SRLL$L1 $xl _instrLitImpl
+  $xsl isLocalInput %LAND %LAND %RETZ // {}
+  .4%FTLL#0$h1  .4%FT  %DUP $xsl _metaRefSzI // {metaRef szInstr}
+  @SZ1$L1 @SRLL$L1 $xl _instrLitImpl
   %RET
 
 // - Updates the number of slots for the FN
@@ -962,8 +965,8 @@ $assertWsEmpty
 $SFN c_stateCompile $GET c_state @C_COMPILE$L2 %AND %RET // {} -> state
 $SFN c_stateInstant $GET c_state @C_INSTANT$L2 %AND %RET // {} -> state
 
-$SFN c_lit $PRE // {value:U4} : compile proper sized literal
-  $xsl c_stateCompile %RETZ // if not in compile mode, leave on stack
+$SFN c_lit $PRE // {asInstant value:U4} : compile proper sized literal
+  %SWP %NOT %RETZ // if instant, leave on stack
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
@@ -975,27 +978,16 @@ $SFN xSzI $PRE // {metaRef} -> {szI}: return the size requirement of the X instr
 $SFN c_fn $PRE // {&metaRef}: compile a function
   %DUP $xsl assertTyped
   .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
-  %DUP $xsl xSzI %SWP // {metaRef litSzI metaRef}
-  $xsl isFnLocals $IF @XL$L1  $ELSE @XSL$L1 $END
+  %DUP $xsl xSzI %DUP // {metaRef instrSzI szLit} (lit and instr are same size)
+  %OVR $xsl isFnLocals $IF @XL$L1 $ELSE @XSL$L1 $END // {metaRef instrSzI szLit instr}
   $xl _instrLitImpl %RET
 
-// {metaRefFn} -> {metaRefFn} update the meta ref of the fn based on current state.
-$FN c_updateFnMeta $PRE
-  @SZA $LOCAL metaRef $END_LOCALS
-  %DUP $SET metaRef
-  $toMeta %DUP $xsl isFnSmart $IF
-    %DRP @TY_FN_INSTANT$L1 // smart functions are always executed
-  $ELSE
-    // Get the "instant mask" by XORing the "instant states"
-    $xsl c_stateCompile $IF #0$L0  $ELSE  @TY_FN_INSTANT$L1  $END
-    $xsl c_stateInstant $IF #0$L0  $ELSE  @TY_FN_INSTANT$L1  $END
-    %XOR %XOR @TY_FN_INSTANT$L1 %AND
-  $END // {fnInstantMeta}
-  $GET metaRef $toMeta @TY_FN_TY_MASK$L1 %INV %AND // remove FN_TY
-  %ADD // {newMeta}
-  $GET metaRef  $xsl toRef  $jmpl metaSet // update meta
+$SFN execute // {metaRef} -> {...}: execute a function
+  %DUP $xsl toRef %SWP // {ref metaRef}
+  $xsl isFnLocals  $IF %XW %RET $END
+  %JMPW
 
-$SFN _compConstant // {} -> {metaRefFn (nullable)}
+$SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
   $xl c_parseDecimal $IF  $xsl c_lit #0$L0 %RET  $END %DRP
 
   // Handle local dictionary. Only constants allowed here.
@@ -1004,40 +996,40 @@ $SFN _compConstant // {} -> {metaRefFn (nullable)}
     .4%FT $xsl c_lit  #0$L0 %RET
   $END %DRP
 
-  $xsl dictArgs  @D_rdict$L0 %DVFT // {&metaRef}
+  $xsl dictArgs  @D_rdict$L0 %DVFT // {asInstant &metaRef}
 
   // Constant
   %DUP $xsl isTyped %NOT $IF  .4%FT $xsl c_lit #0$L0 %RET  $END
 
   // Must be a function
-  .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
+  .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {asInstant metaRef}
   %RET
 
-// The core fngi compiler loop
-$FN compLoop
+// {asInstant metaRefFn} -> {metaRefFn} check fn type and update asInstant
+$FN _compFnAsInstant $PRE
+  %DUP $xsl isFnNormal $IF
+    %SWP $IF @TY_FN_INSTANT$L1 $ELSE #0$L0 $END // {metaRefFn newFnTy}
+    $jmpl metaSet
+  $END %SWP %DRP %RET // not normal = leave alone
+
+$FN fngiSingle // {asInstant} -> {}
   @SZA $LOCAL metaRef $END_LOCALS
-  $LOOP l0
-    $xsl c_scan
+  $xsl c_scan
 
-    // Handle constants
-    $xsl _compConstant // {metaRefFn (nullable)}
-    %DUP %NOT $IF  %DRP $AGAIN l0  $END // {metaRefFn}
+  // Handle constants
+  $xsl _compConstant // {asInstant metaRefFn[nullable]}
+  %DUP %NOT $IF  %DRP %DRP %RET  $END // {metaRefFn}
+  $xl _compFnAsInstant // {metaRefFn} update instant type depending
+  // if pre, recursively call fngiSingle (compile next token first)
+  %DUP $xsl isFnPre $IF
+    $SET metaRef  $xl fngiSingle  $GET metaRef
+  $END
+  %DUP $xsl isFnNormal
+  $IF    $jmpl c_fn
+  $ELSE  $jmpl execute  $END
 
-    // set the meta to either instant/normal depending on all states.
-    $xl c_updateFnMeta
-
-    // if pre, recursively call compLoop (compile next token first)
-    %DUP $xsl isFnPre $IF
-      $SET metaRef  $xl compLoop  $GET metaRef
-    $END // {metaRef}
-
-    %DUP $xsl isFnInstant $IF
-      %DUP $xsl isFnLocals // {metaRef isFnLocals}
-      %SWP $xsl toRef %SWP // {ref isFnLocals}
-      $IF %XW $ELSE %XSW $END
-    $ELSE
-      $xsl c_fn // not treated as instant
-    $END
-  $AGAIN l0
+// The core fngi compiler loop
+$FN fngi
+  $LOOP l0  @FALSE$L0 $xl fngiSingle $AGAIN l0
 
 $SFN c_decimal  $xsl c_scan $xl c_parseDecimal %RET

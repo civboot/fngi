@@ -162,29 +162,22 @@ $assertWsEmpty
 
 $c_decimal 1234   $tAssert     #4D2 $tAssertEq
 $c_decimal notNum $tAssertNot       $tAssertNot
+$assertWsEmpty
 
-// #200 #2 $XX alignSz  #200 $tAssertEq
-// #201 #2 $XX alignSz  #202 $tAssertEq
-// #201 #4 $XX alignSz  #204 $tAssertEq
-// 
-// 
-// // Test fetching/storing
-// $hAlign4
-// $loc testVal #12345 $h4
-// .4 @testVal FT^  #12345 $tAssertEq
-// .4 @testVal #2 SR^   @testVal FT^  #2 $tAssertEq
-// 
-// // Test dict commands
-// #0 =dictVal @dictVal    $tAssertNot
-// 
-// // Test catch
-// $loc failNow NOP; NOP;  LIT #0 $mem_jmpl tAssert
-// 
-// $assertWsEmpty #1 #2 // these will be discarded
-// @failNow $c_xsCatch    @E_test $tAssertEq
-// $assertWsEmpty
-// 
-// 
-// / #0
-// / .4 @cAllowPanicMask  @state FT^OR^ @state SWP^SR^
-// / $tAssert
+// Test compiler internals
+
+@TRUE #123 $c_lit #123 $tAssertEq  $assertWsEmpty
+
+$FN two $END_LOCALS #2$L0 %RET // {} -> 1
+
+$SFN test_c_fn   $dictGetR one $c_fn %RET
+$test_c_fn #1 $tAssertEq
+$assertWsEmpty
+
+$SFN test_c_fnTwo   $dictGetR two $c_fn %RET
+$test_c_fnTwo #2 $tAssertEq
+
+@test_c_fnTwo $execute   @test_c_fn $execute
+  ^ADD #3 $tAssertEq
+
+$assertWsEmpty
