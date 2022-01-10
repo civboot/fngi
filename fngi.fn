@@ -1,0 +1,20 @@
+// Fngi bootstrap script: this script bootstraps the fngi language.
+// Requires: spore.sp
+//
+
+// These do nothing and are used for documentation:  _  ,  ;
+$SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
+
+// Block comment, allows nesting.
+$SFN /*  // */
+  $INSTANT
+  LOOP l
+    c_scan   assert(tokenLen, E_eof)
+    IF(tokenLen < 2) AGAIN l
+
+    ft1(tokenBuf) == '/'
+      or ft1(inc tokenBuf) == '*';
+    IF _ ret
+  AGAIN l
+
+

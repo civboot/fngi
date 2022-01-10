@@ -180,4 +180,10 @@ $test_c_fnTwo #2 $tAssertEq
 @test_c_fnTwo $execute   @test_c_fn $execute
   ^ADD #3 $tAssertEq
 
+// Test essential functions
+
+$c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq // 0x24 = '$'
+// $() // does nothing
+// $( 3 one ) #1 $tAssertEq #3 $tAssertEq
+
 $assertWsEmpty

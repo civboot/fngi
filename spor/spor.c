@@ -253,16 +253,16 @@ static inline U8 Key_len(Key* key) {
 #define MAX_TOKEN 32
 #define TOKEN_BUF 0x7D
 
+typedef enum {
+  T_NUM, T_HEX, T_ALPHA, T_SINGLE, T_SYMBOL, T_WHITE
+} TokenGroup;
+
 typedef struct {
   APtr buf; // buffer.
   U8 len;   // length of token
   U8 size;  // characters buffered
   U8 group;
 } TokenState;
-
-typedef enum {
-  T_NUM, T_HEX, T_ALPHA, T_SPECIAL, T_SYMBOL, T_WHITE
-} TokenGroup;
 
 // Debugging
 void dbgEnv();
@@ -719,9 +719,9 @@ SRGL: case SzI2 + SRGL:
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
   if(c == '_') return T_ALPHA;
-  if(c == '~' || c == '\'' || c == '$' ||
+  if(c == '%' || c == '\'' || c == '$' ||
      c == '.' || c ==  '(' || c == ')') {
-    return T_SPECIAL;
+    return T_SINGLE;
   }
   return T_SYMBOL;
 }
@@ -764,8 +764,11 @@ SRGL: case SzI2 + SRGL:
   if(tokenBufSize < MAX_TOKEN) { readAppend(); }
 
   U8 c = tokenBuf[tokenLen];
-  tokenState->group = (U8) toTokenGroup(c);
-  if(tokenState->group <= T_ALPHA) tokenState->group = T_ALPHA;
+  tokenState->group = toTokenGroup(c);
+  if(tokenState->group == T_SINGLE) {
+    tokenLen += 1;
+    return;
+  }
 
   // Parse token until the group changes.
   while(tokenLen < tokenBufSize) {
@@ -774,7 +777,7 @@ SRGL: case SzI2 + SRGL:
 
     TokenGroup tg = toTokenGroup(c);
     if (tg == tokenState->group) {}
-    else if (tokenState->group == T_ALPHA && (tg <= T_ALPHA)) {}
+    else if ((tokenState->group <= T_ALPHA) && (tg <= T_ALPHA)) {}
     else break;
     tokenLen += 1;
   }

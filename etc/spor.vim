@@ -7,7 +7,7 @@ if exists("b:current_syntax")
   finish
 endif
 
-syn match elAlpha    '[_a-zA-Z0-9]\+' nextGroup=elInstr
+syn match elAlpha    '[_a-zA-Z0-9]\+' nextgroup=elInstr
 syn keyword elInstr
       \ NOP   RETZ  RET   SWP   DRP   OVR   DUP   DUPN  DVFT  DVSR
       \ RGFT  RGSR  FT    SR
@@ -18,14 +18,13 @@ syn keyword elInstr
       \ SLIT  SZ1   SZ2   SZ4   SZA
       \ NOJ   JMPL  JMPW  JZL   JTBL  XL    XW    XSL   XSW
       \ WS    LIT   FTLL  FTGL  FTOL  SRLL  SRGL  SROL
-      \ nextgroup=elInstrSC
+      \ nextgroup=elSymbol
 
-syn match elInstrSC   ';'               nextGroup=elSymbol
 syn match elSymbol    '[^!'()_a-zA-Z0-9.]' nextgroup=elSpecial
 syn match elSpecial   '[!'()]' nextgroup=elNum
 syn match elNum       '#[_0-9a-fA-F]\+' nextgroup=elInstant
 syn match elInstant       '$[_0-9a-zA-Z]\+' nextgroup=elInstrDot
-syn match elInstrDot  '[.]\d\+'         nextGroup=elComment
+syn match elInstrDot  '[.]\d\+'         nextgroup=elComment
 syn match elComment   '/.*$'
 
 let b:current_syntax = "sporeASM"

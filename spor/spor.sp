@@ -290,6 +290,7 @@
 #E0EA  =E_cNotLocal
 #E0EB  =E_cNotVar
 #E0EC  =E_cNotFnOrConst
+#E0ED  =E_eof
 
 // **********
 // * Core Utility Macros
@@ -1042,7 +1043,6 @@ $FN _compFnAsInstant $PRE
 
 $FN fngiSingle // {asInstant} -> {}
   @SZA $LOCAL metaRef $END_LOCALS
-  $xsl c_scan
 
   // Handle constants
   $xsl _compConstant // {asInstant metaRefFn[nullable]}
@@ -1057,7 +1057,34 @@ $FN fngiSingle // {asInstant} -> {}
   $ELSE  $jmpl execute  $END
 
 @fngiSingle @SZ4 $GLOBAL c_compFn
-$FN fngi
-  $LOOP l0  @FALSE$L0  $GET c_compFn %XSW  $AGAIN l0
+$SFN fngi
+  $LOOP l0
+    $xsl c_scan
+    @FALSE$L0  $GET c_compFn %XSW
+  $AGAIN l0
 
-$SFN c_number  $xsl c_scan $xl c_parseNumber %RET
+$SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number.
+
+$SFN c_peekChr // {} -> {c} peek at a character
+  $xsl c_scan
+  $GET c_tokenLen #0$L0 %EQ $IF #0$L0 %RET $END
+  $GET c_tokenBuf .1%FT // {c}
+  #0$L0 $SET c_tokenLen %RET // reset scanner for next scan
+
+$SFN (
+  $LOOP l0
+    $xsl c_peekChr #28$L0 $reteq // reteq c_peekChr == ')'
+    $xsl c_scan
+    @TRUE$L0   $GET c_compFn %XSW
+  $AGAIN l0
+
+$SFN c_updateCompFn // {newCompFn} -> {prevCompFn}
+  $GET c_compFn %SWP $SET c_compFn %RET
+
+$FN % // compile as assembly
+  @SZA $LOCAL compFn $END_LOCALS
+  @% $L2      $xsl c_updateCompFn $SET compFn // update c_compFn and cache
+  $xsl c_scan   @D_comp$L0  %DVFT // compile next token as spor asm
+  $GET compFn $xsl c_updateCompFn %DRP %RET
+
+%NOP
