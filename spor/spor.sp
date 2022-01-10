@@ -939,13 +939,27 @@ $SFN END_LOCALS
 // **********
 // * Fngi Compile Loop
 
-$FN c_parseDecimal // {} -> {value isDecimal}
+$FN c_parseNumber // {} -> {value isDecimal}
   @SZ4 $LOCAL value
   @SZ1 $LOCAL i
   @SZ1 $LOCAL c
+  @SZ1 $LOCAL base
   $END_LOCALS
+  #A$L0 $SET base
   #0$L0 $SET value
   #0$L0 $SET i
+
+  // Get correct base
+  $GET c_tokenBuf .1%FT #30$L0 %EQ $IF // if c0 == '0' {}
+    $GET c_tokenBuf %INC .1%FT %DUP // {c1 c1}
+    #62$L1 %EQ  $IF // if .tokenBuf@1=='b' {c}
+      #2$L0  $SET base  #2$L0 $SET i
+    $END
+    #78$L1 %EQ  $IF // if .tokenBuf@1=='x' {}
+      #10$L0 $SET base  #2$L0 $SET i
+    $END
+  $END
+
   $LOOP l0
     $GET i  $GET c_tokenLen $BREAK_EQ b0
     $GET c_tokenBuf $GET i %ADD .1%FT // {c}
@@ -953,7 +967,7 @@ $FN c_parseDecimal // {} -> {value isDecimal}
     // Check that c is between '0' and '9'
     %DUP #30$L0 %LT_U %SWP // {c<'0' c}
     #3A$L0 %GE_U %LOR $IF   #0$L0 @FALSE$L0 %RET   $END
-    #0A$L0  $GET value %MUL // {10 * value}
+    $GET base  $GET value %MUL // {base * value}
     $GET c  #30$L0 %SUB %ADD $SET value // value = value*10 + (c - '0')
     $GET i %INC $SET i // i += 1
   $AGAIN l0  $END_BREAK b0
@@ -988,7 +1002,7 @@ $SFN execute // {metaRef} -> {...}: execute a function
   %JMPW
 
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
-  $xl c_parseDecimal $IF  $xsl c_lit #0$L0 %RET  $END %DRP
+  $xl c_parseNumber $IF  $xsl c_lit #0$L0 %RET  $END %DRP
 
   // Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
@@ -1032,4 +1046,4 @@ $FN fngiSingle // {asInstant} -> {}
 $FN fngi
   $LOOP l0  @FALSE$L0 $xl fngiSingle $AGAIN l0
 
-$SFN c_decimal  $xsl c_scan $xl c_parseDecimal %RET
+$SFN c_decimal  $xsl c_scan $xl c_parseNumber %RET
