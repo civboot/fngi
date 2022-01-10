@@ -119,13 +119,13 @@
 // of the LITERAL (not the location of the operation).
 
 // # Mem      Store    Description
-#C0 =LIT   // LIT         Literal
-#C1 =FT    // FT(WS)      FeTch WS
-#C2 =FTLL  // FT(LP+LIT)  FeTch LocalsPtr offset
-#C3 =FTGL  // FT(MP+LIT)  FeTch ModulePtr offset
-#C4 =SR    // SR(WS)      StoRe WS
-#C5 =SRLL  // SR(LP+LIT)  StoRe LocalsPtr offset
-#C6 =SRGL  // SR(MP+LIT)  StoRe ModulePtr offset
+#C0 =LIT   // {} -> {literal}     Literal (U1, U2 or U4)
+#C1 =FT    // {addr} -> {value}   FeTch value from addr
+#C2 =FTLL  // {} -> {local}       FeTch from LP + U2 literal offset
+#C3 =FTGL  // {} -> {global}      FeTch from GB + U2 literal offset
+#C4 =SR    // {addr value} -> {}  Store value at addr
+#C5 =SRLL  // {value} -> {}       StoRe value at LP + U2 literal offset
+#C6 =SRGL  // {value} -> {}       StoRe value at GB + U2 literal offset
 
 // Common instr+szs
 @SZ1 @LIT  ^OR  =LIT1
@@ -319,9 +319,9 @@
 
 $getHeap =h1  // h1: {val:1} push 1bytes from stack to heap
                       .4%FTGL @heap.2, // fetch heap {val, heap}
-  .1%SR                        // store 1 byte value at heap
-                      .4%FTGL @heap.2, // fetch heap {val, heap}
-  .4%INC              .4%SRGL @heap.2,
+  %SWP                .1%SR            // store 1 byte value at heap
+  %NOP                .4%FTGL @heap.2, // fetch heap {val, heap}
+  %INC                .4%SRGL @heap.2, // heap=heap+1
   %RET // (unaligned)
 
 $getHeap =L0   // L0: compile a small literal (unchecked)
@@ -333,14 +333,14 @@ $getHeap =L0   // L0: compile a small literal (unchecked)
 %NOP // (unaligned)
 $getHeap =h2  // h2: {val:2} push 2bytes from stack to heap
               .4%FTGL @heap.2, // fetch heap {val, heap}
-  %NOP        .2%SR            // store 2 byte value at heap
+  %SWP        .2%SR            // store 2 byte value at heap
   %NOP        .4%FTGL @heap.2, // {heap}
   .4%INC2     %SRGL   @heap.2,   // heap=heap+2
   %RET // (unaligned)
 
 $getHeap =h4  // h4: {val:4} push 4bytes from stack to heap
             .4%FTGL @heap.2, // fetch heap {val, heap}
-  %NOP      .4%SR           // store 4 byte value at heap
+  %SWP      .4%SR           // store 4 byte value at heap
   %NOP      .4%FTGL @heap.2, // {heap}
   %INC4     .4%SRGL @heap.2, // heap=heap+4
   %RET // (unaligned)
@@ -389,7 +389,7 @@ $loc hpad // {pad} write pad bytes to heap.
       .4@heap ^FT ^SWP #0 $h2 // c-stk{breakTo loopStart}
     @NOP$L0       .2%XSL @h1 $h2 // write a noop
     .4%DEC        .2%JMPL    $h2 // DEC and jmp to loopStart
-  .4@heap ^FT ^SWP .2^SR // update breakTo spot
+  .4@heap ^FT .2^SR // update breakTo spot
   %DRP           %RET // (aligned)
 
 $loc _hal // {align} heap align (for) literal
@@ -551,12 +551,12 @@ $loc metaSet // {metaRef meta:U1} -> U4 : apply meta to metaRef
 $loc rMetaSet // {&metaRef meta:U1} -> U4 : apply meta to &metaRef
   %OVR .4%FT %SWP // {&metaRef metaRef meta}
   $_xsl metaSet   // {&metaRef newMetaRef}
-  %SWP .4%SR %RET
+  .4%SR %RET
 
 $loc c_keySetTyped // {&metaRef} -> []
   %INC4 %DUP // {&len &len}
   .1%FT @KEY_HAS_TY$L1 %OR // {&len tyKeyLen}
-  %SWP .1%SR %RET            // update tyKeyLen
+  .1%SR %RET            // update tyKeyLen
 
 $loc c_keySetTy // {meta:U1 &metaRef} -> {} meta current key's meta to be a Ty
   %DUP $_xsl c_keySetTyped // make key "typed" {meta &metaRef}
@@ -705,7 +705,7 @@ $SFN END  $INSTANT // {&jmpTo} -> {} : end of IF or BREAK0
   $xsl getHeap  // {&jmpTo &jmpTo heap}
   %SWP %SUB     // {&jmpTo (heap-&jmpTo)}
   %DUP $xsl assertLt128
-  %SWP .1%SR %RET // store at location after start (1 byte literal)
+  .1%SR %RET // store at location after start (1 byte literal)
 
 $SFN ELSE $INSTANT // {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1         // (end IF) compile unconditional jmp to end of ELSE

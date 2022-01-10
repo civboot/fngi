@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -602,10 +601,11 @@ FTGL: case SzI2 + FTGL:
       return;
     GOTO_SZ(FTGL, SzI1)
     GOTO_SZ(FTGL, SzI4)
-SR: case SzI2 + SR:
-      r = WS_POP(); // Removing this will cause invalid order. stackoverflow.com/questions/376278
-      store(mem, r, WS_POP(), szI);
-      return;
+SR: case SzI2 + SR: r = WS_POP(); store(mem, WS_POP(), r, szI); return;
+// SR: case SzI2 + SR:
+//       r = WS_POP(); // Removing this will cause invalid order. stackoverflow.com/questions/376278
+//       store(mem, r, WS_POP(), szI);
+//       return;
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
 SRLL: case SzI2 + SRLL:
