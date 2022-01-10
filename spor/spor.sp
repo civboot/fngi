@@ -194,8 +194,10 @@
 // Global Compiler Variables
 #0000_0030 =c_rKey         // [U4] rKey, ref to current dict key.
 #0000_0034 =c_rLKey        // [U4] rLKey, ref to current L dict key.
-#0000_0030 =c_compFn       // [U4] compiler function (single token)
-#0000_0038 =c_localOffset  // [U2] Local Offset (for local var setup)
+#0000_0038 =c_gheap        // [U4] global heap
+#0000_003C =c_localOffset  // [U2] Local Offset (for local var setup)
+@c_gheap                       #2
+#0000_003C ^ADD .4^SR           // initial value of global heap
 
 // Constants
 #0 =NULL
@@ -772,6 +774,12 @@ $SFN hN $PRE // {value szI} write a value of szI to heap
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
   @E_cSz$L2 $xsl panic
 
+$SFN srN $PRE // {addr value szI}
+  %DUP @SZ1$L1 %EQ $IF  %DRP .1%SR %RET  $END
+  %DUP @SZ2$L1 %EQ $IF  %DRP .2%SR %RET  $END
+       @SZ4$L1 %EQ $IF       .4%SR %RET  $END
+  @E_cSz$L2 $xsl panic
+
 $SFN joinSzTyMeta $PRE #4$L0 %SHR %OR %RET // {tyMask szI} -> {tyMask}
 
 $SFN _lSetup $PRE // {&metaO} -> {metaO} : checked local setup
@@ -832,17 +840,6 @@ $SFN REF  $INSTANT $xsl c_scan $jmpl _refImpl
 $SFN GET  $INSTANT $xsl c_scan $jmpl _getImpl
 $SFN SET  $INSTANT $xsl c_scan $jmpl _setImpl
 
-$FN GLOBAL  $INSTANT // <value> <szI> $GLOBAL <token>: define a global variable of sz
-  #1 $h1 // 1 local [szI:U1]
-  %DUP $xsl assertSzI // {value szI}
-  %DUP $xsl haN // align heap {value szI}
-  .1%SRLL#0$h1 // cache sz {value}
-  $xsl c_updateRKey // {value &metaRef}
-  $xsl loc
-  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
-  %SWP $xsl c_keySetTy // update key ty
-  .1%FTLL#0$h1  $jmpl hN // write value to heap
-
 $SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
   #4$L0 %SHR  @TY_GLOBAL$L1  %OR  $_jmpl c_makeTy
 
@@ -858,18 +855,10 @@ $SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
 @SZ2 $c_makeGlobal c_dictLHeap
 @SZA $c_makeGlobal c_tokenBuf
 @SZ1 $c_makeGlobal c_tokenLen
-
 @SZ4 $c_makeGlobal c_rKey
 @SZ4 $c_makeGlobal c_rLKey
+@SZ4 $c_makeGlobal c_gheap
 @SZ2 $c_makeGlobal c_localOffset
-
-// **********
-// * Local Variables
-$SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
-  $GET c_dictBuf   $GET c_dictHeap  %ADD // ldict.buf
-  $GET c_dictLHeap                        // ldict.heap
-  %ADD // {&newLkey}
-  %DUP $SET c_rLKey  %RET
 
 $FN align $PRE // {aptr sz}: return the aptr aligned properly with szI
   #1 $h1 // locals [sz:U1]
@@ -884,6 +873,30 @@ $FN align $PRE // {aptr sz}: return the aptr aligned properly with szI
 
 $SFN align4 $PRE #4$L0 $xl align %RET
 $SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET
+
+$FN GLOBAL  $INSTANT // <value> <szI> $GLOBAL <token>: define a global variable of sz
+  #1 $h1 // 1 local [szI:U1]
+  %DUP $xsl assertSzI // {value szI}
+  .1%SRLL#0$h1 // set szI {value}
+  $xsl c_updateRKey // {value &metaRef}
+  $GET c_gheap .1%FTLL#0$h1  $xl align // {value &metaRef alignedGHeap}
+  %DUP $SET c_gheap // update gheap to aligned value {value &metaRef alignedGHeap}
+  $xsl dictSet      // create dictionary entry at alignedGHeap {value &metaRef}
+
+  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
+  %SWP $xsl c_keySetTy // update key ty {value}
+  $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srN // store global value
+  $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $SET c_gheap // gheap += sz
+  %RET
+
+
+// **********
+// * Local Variables
+$SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
+  $GET c_dictBuf   $GET c_dictHeap  %ADD // ldict.buf
+  $GET c_dictLHeap                        // ldict.heap
+  %ADD // {&newLkey}
+  %DUP $SET c_rLKey  %RET
 
 // implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
@@ -1043,11 +1056,7 @@ $FN fngiSingle // {asInstant} -> {}
   $IF    $jmpl c_fn
   $ELSE  $jmpl execute  $END
 
-
-// The core fngi compiler loop
-$dictGetR c_compFn  @fngiSingle .4^SR // initialize c_compFn
-@SZ4 $c_makeGlobal c_compFn
-
+@fngiSingle @SZ4 $GLOBAL c_compFn
 $FN fngi
   $LOOP l0  @FALSE$L0  $GET c_compFn %XSW  $AGAIN l0
 
