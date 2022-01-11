@@ -84,8 +84,9 @@ typedef CSz CPtr;
 #define E_cReg      0xE0D1 // Register error
 
 #define REF_MASK    0xFFFFFF
-#define IS_FN        (0x20 << 24)
-#define TY_FN_LOCALS (0x10 << 24)
+#define IS_FN        (0x20 << 0x18)
+#define TY_FN_LOCALS (0x10 << 0x18)
+#define TY_FN_SMART  (0x08 << 0x18)
 
 #define dbg(MSG)  if(TRUE){printf(MSG); dbgEnv();}
 
@@ -870,10 +871,15 @@ U8 scanInstr() {
   scan();
   if(dbgMode) { printf("$ "); dbgWs(); dbgToken(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
-  U32 value = Dict_get(d, tokenLen, tokenBuf);
-  WS_PUSH(REF_MASK & value);
-  if(TY_FN_LOCALS & value) execute(SzI4 + XW);
-  else                     execute(SzI4 + XSW);
+  U32 metaRef = Dict_get(d, tokenLen, tokenBuf);
+  printf("??? executing %X isSmart=%X\n", metaRef, TY_FN_SMART & metaRef);
+  if(TY_FN_SMART & metaRef) {
+    printf("??? is smart\n");
+    WS_PUSH(FALSE); // pass asInstant=FALSE
+  }
+  WS_PUSH(REF_MASK & metaRef);
+  if(TY_FN_LOCALS & metaRef) execute(SzI4 + XW);
+  else                       execute(SzI4 + XSW);
 }
 
 /*fn*/ Bool compile() {

@@ -56,10 +56,10 @@ $SFN add   %ADD %RET
 $SFN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
-$dictGet SFN     $isFnInstant $tAssert
-$dictGet FN      $isFnInstant $tAssert
+$dictGet SFN     $isFnSmart $tAssert
+$dictGet FN      $isFnSmart $tAssert
 $dictGet IF      $isTyFn      $tAssert
-$dictGet IF      $isFnInstant $tAssert
+$dictGet IF      $isFnSmart $tAssert
 $dictGet assert  $isFnInstant $tAssertNot
 
 // Test control flow
