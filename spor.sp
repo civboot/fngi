@@ -1079,10 +1079,7 @@ $FN c_single // {asInstant} -> {}: compile a single token
   $xsl _compFnAsInstant // {metaRefFn} update instant type from asInstant
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
-    $SET metaRef
-    $xsl c_scanNoEof
-    $GET c_compFn .4%XW
-    $GET metaRef
+    $SET metaRef  $GET c_compFn .4%XW  $GET metaRef
   $END
   %DUP $xsl isFnNormal
   $IF    $jmpl c_fn     $END

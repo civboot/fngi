@@ -3,10 +3,7 @@
 
 $c_loop // starts fngi syntax
 
-$tAssert
-(
-  1
-)
+$tAssert(1)
 
 // $SFN == c1(EQ) ret;
 // $SFN >= c1(GE_U) ret;

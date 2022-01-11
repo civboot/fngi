@@ -1351,7 +1351,10 @@ void dbgInstr(Instr instr, Bool lit) {
   dbgWs();
   printf("["); // printf("0x%-2X ", instr);
   if(INSTR_CLASS(instr) == C_SLIT) {
-    printf("SL      ] [0x%X}", 0x3F & instr);
+    printf("SL      ] ");
+    dbgIndent();
+    printf(" [0x%X]",  0x3F & instr);
+
     return;
   }
   printf("%s", instrStr(instr));
