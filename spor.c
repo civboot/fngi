@@ -270,7 +270,7 @@ void dbgMemUsage();
 void dbgInstr(Instr instr, Bool lit);
 void dbgWs();
 void dbgWsFull();
-void printToken();
+void dbgToken();
 
 // ********************************************
 // ** Globals
@@ -287,6 +287,7 @@ Instr globalInstr = NOP;
 ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
 U32 line = 1;
 jmp_buf* err_jmp;
+long long unsigned int dbgCount = 0;
 
 // ********************************************
 // ** Utilities
@@ -459,8 +460,10 @@ U32 popLit(SzI szI) {
 inline static void executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
   if(dbgMode) {
-    printf("  * "); dbgInstr(instr, TRUE);  printf(" @%X \t\t", env.ep - 1);
-    printToken();
+    printf(" |%.6u|L%.4u|", dbgCount, line);
+    dbgCount += 1;
+    printf("@%.4X", env.ep - 1);
+    dbgInstr(instr, TRUE);  
     printf("\n");
   }
   U32 l, r;
@@ -814,7 +817,7 @@ U8 scanInstr() {
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
   scan();
-  if (dbgMode) { printf("# "); printToken(); printf("\n"); }
+  if (dbgMode) { printf("# "); dbgToken(); printf("\n"); }
   U32 v = 0;
   for(U8 i = 0; i < tokenLen; i += 1) {
     U8 c = tokenBuf[i];
@@ -828,7 +831,7 @@ U8 scanInstr() {
 
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
-  if (dbgMode) { printf("= "); dbgWs(); printToken(); printf("\n"); }
+  if (dbgMode) { printf("= "); dbgWs(); dbgToken(); printf("\n"); }
   U32 value = WS_POP();
   DictRef d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value);
@@ -838,7 +841,7 @@ U8 scanInstr() {
   scan();
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
-  if (dbgMode) { printf("@ "); printToken(); printf("PUSH(0x%X)\n", value); }
+  if (dbgMode) { printf("@ "); dbgToken(); printf("PUSH(0x%X)\n", value); }
   WS_PUSH(value);
 }
 
@@ -865,7 +868,7 @@ U8 scanInstr() {
 
 /*fn*/ void cExecute() { // $
   scan();
-  if(dbgMode) { printf("$ "); dbgWs(); printToken(); printf("\n"); }
+  if(dbgMode) { printf("$ "); dbgWs(); dbgToken(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
   U32 value = Dict_get(d, tokenLen, tokenBuf);
   WS_PUSH(REF_MASK & value);
@@ -1038,6 +1041,7 @@ ssize_t readSrc(size_t nbyte) {
 }
 
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS)  \
+  dbgCount = 0;                           \
   U8 localMem[MS] = {0};                  \
   U8 wsMem[WS];                           \
   U8 callStkMem[RS];                      \
@@ -1134,10 +1138,8 @@ U8 szIToSzSafe(SzI szI) {
 }
 
 void printCStr(U8 len, char* s) { printf("%.*s", len, s); }
-void printToken() {
-  printf("\"");
-  printCStr(tokenLen, tokenBuf);
-  printf("\" line=%u ", line);
+void dbgToken() {
+  printf(" \"%.*s\"", tokenLen, tokenBuf);
 }
 
 void dbgMemUsage() {
@@ -1147,7 +1149,7 @@ void dbgMemUsage() {
 
 void dbgEnv() {
   printf("  token[%u, %u]=", tokenLen, tokenBufSize);
-  printToken();
+  dbgToken();
   printf("stklen:%u ", WS_LEN);
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=#%X ", globalInstr);
@@ -1315,10 +1317,10 @@ void dbgJmp(Instr instr) {
   Key* k = Dict_findFn(jloc);
   printf(" ((");
   if(k == &keyDNE) {
-    printf("?? 0x%X", jloc);
+    printf("?? 0x%.4X", jloc);
   } else {
-    printCStr(Key_len(k), k->s);
-    printf(" 0x%X", jloc);
+    printf("%-10.*s", Key_len(k), k->s);
+    printf(" 0x%.4X", jloc);
   }
   printf(")) ");
 }
@@ -1347,7 +1349,6 @@ void dbgIndent() {
 #define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
 void dbgInstr(Instr instr, Bool lit) {
   dbgWs();
-  dbgIndent();
   printf("["); // printf("0x%-2X ", instr);
   if(INSTR_CLASS(instr) == C_SLIT) {
     printf("SL      ] [0x%X}", 0x3F & instr);
@@ -1360,7 +1361,9 @@ void dbgInstr(Instr instr, Bool lit) {
     default: printf("   ");
   }
   printf("] ");
+  dbgIndent();
   if (lit) {
+    dbgToken();
     dbgJmp(instr);
     dbgMem(instr);
   }

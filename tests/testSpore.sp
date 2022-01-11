@@ -190,7 +190,7 @@ $test_c_compFnExists  @fngiSingle $toRef $tAssertEq
 
 $c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq // 0x24 = '$'
 
-$SFN comp1 $xsl toRef $xsl c_scan .4%XSW %RET
+$SFN comp1 $xsl toRef .4%XW %RET
 
 $SFN testFngiSingleNum @fngiSingle $toRef $comp1 12 %RET
 $testFngiSingleNum #C $tAssertEq

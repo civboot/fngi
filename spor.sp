@@ -292,7 +292,7 @@
 #E0EB  =E_cNotVar
 #E0EC  =E_cNotFnOrConst
 #E0ED  =E_eof
-#E0ED  =E_unclosed   // unclosed paren/brace/etc
+#E0EE  =E_cUnclosed   // unclosed paren/brace/etc
 
 // **********
 // * Core Utility Macros
@@ -474,7 +474,7 @@ $hal2 $loc L1 // {U1} compile 1 byte literal
   $_xsl h1 // compile it
   $_jmpl h1
 
-$hal2 $loc c1 // @INSTR $c1: compile "compile INSTR"
+$hal2 $loc c1 // INSTANT @INSTR $c1: compile "compile INSTR"
   $_xsl L1             // compile the INSTR literal itself
   // compile xsl to h1
   $hal2 .2%LIT @h1 $h2
@@ -1029,11 +1029,12 @@ $SFN execute // {metaRef} -> {...}: execute a function
   .4%JMPW
 
 $SFN null2 @NULL$L0 %DUP %RET
-$SFN c_eof $GET c_tokenLen %NOT %RET
+$SFN c_isEof $GET c_tokenLen %NOT %RET
+$SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert
 
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
   $xl c_parseNumber $IF  $xsl c_lit $jmpl null2 $END %DRP // {}
-  $xsl c_eof $IF  $jmpl null2  $END
+  $xsl c_isEof $IF  $jmpl null2  $END
 
   // Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
@@ -1058,7 +1059,8 @@ $SFN _compFnAsInstant $PRE
   %DUP $xsl isFnNormal $IF
     %SWP $IF @TY_FN_INSTANT$L1 $ELSE #0$L0 $END // {metaRefFn newFnTy}
     $jmpl metaSet
-  $END %SWP %DRP %RET // not normal = leave alone
+  $END // {asInstant metaRefFn}
+  %SWP %DRP %RET // not normal = leave alone
 
 #0 @SZ4 $GLOBAL c_compFn // must be a small fn.
 
@@ -1066,6 +1068,7 @@ $SFN _updateCompFn // {newCompFnMetaRef} -> {prevCompFnRef}
   $xsl toRef
   $GET c_compFn %SWP $SET c_compFn %RET
 
+$SFN c_scanNoEof $xsl c_scan  $xsl c_isEof @E_eof$L2 $jmpl assertNot
 
 $FN c_single // {asInstant} -> {}: compile a single token
   @SZA $LOCAL metaRef $END_LOCALS
@@ -1073,18 +1076,23 @@ $FN c_single // {asInstant} -> {}: compile a single token
   // Handle constants
   $xsl _compConstant // {asInstant metaRefFn[nullable]}
   %DUP %NOT $IF  %DRP %DRP %RET  $END // {metaRefFn}
-  $xsl _compFnAsInstant // {metaRefFn} update instant type depending
+  $xsl _compFnAsInstant // {metaRefFn} update instant type from asInstant
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
     $SET metaRef
-    $xsl c_scan $GET c_compFn .4%XSW
+    $xsl c_scanNoEof
+    $GET c_compFn .4%XW
     $GET metaRef
   $END
   %DUP $xsl isFnNormal
-  $IF    $jmpl c_fn
-  $ELSE  $jmpl execute  $END
+  $IF    $jmpl c_fn     $END
+         $jmpl execute
 
-$SFN fngiSingle  @FALSE$L0 $xl c_single %RET
+$FN fngiSingle $END_LOCALS // actually empty locals
+  $xsl c_scan $GET c_tokenLen %RETZ
+  @FALSE$L0 $xl c_single %RET
+  // @FALSE$L0 $_jmpl c_single // Note: jmp to full fn allowed if args are identical
+
 
 @fngiSingle $_updateCompFn ^DRP
 
@@ -1092,24 +1100,30 @@ $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number
 
 $SFN c_peekChr // {} -> {c} peek at a character
   $xsl c_scan
-  $xsl c_eof $IF  #0$L0 %RET  $END
+  $xsl c_isEof $IF  #0$L0 %RET  $END
   $GET c_tokenBuf .1%FT // {c}
   #0$L0 $SET c_tokenLen %RET // reset scanner for next scan
 
-$SFN ( $INSTANT
+$SFN (  $INSTANT  // parens ()
   $LOOP l0
-    $xsl c_peekChr #29$L0 %EQ $IF // c_peekChr == ')'
-      $xsl c_scan %RET // scan+ignore the closing paren and return
-    $END
-    $xsl c_scan
-    $GET c_compFn .4%XSW
+    $xsl c_assertNoEof
+    $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END // return if we hit ")"
+    $GET c_compFn .4%XW
   $AGAIN l0
 
 $FN % $INSTANT // compile as assembly
   @SZA $LOCAL compFn $END_LOCALS
-  @% $L2      $xsl _updateCompFn $SET compFn // update c_compFn and cache
-  $xsl c_scan   @D_comp$L0  %DVFT // compile next token as spor asm
-  $GET compFn $xsl _updateCompFn %DRP %RET
+  @%$L2  $xsl _updateCompFn $SET compFn // update c_compFn and cache
+  $xsl c_scanNoEof
+  @D_comp$L0  %DVFT // compile next token as spor asm
+  $GET compFn $SET c_compFn %RET
+
+$FN $ $INSTANT // make instant
+  @SZA $LOCAL compFn $END_LOCALS
+  @$ $L2  $xsl _updateCompFn $SET compFn // update c_compFn and cache
+  $xsl c_scanNoEof
+  @TRUE$L0 $xl c_single  // compile next token as INSTANT
+  $GET compFn $SET c_compFn %RET
 
 $SFN ret $INSTANT $PRE  @RET $c1 %RET // ret 4, or just ret;
 
@@ -1135,6 +1149,6 @@ $SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
 
 $SFN c_loop
   $LOOP l0
-    $xsl c_scan $GET c_tokenLen %RETZ // exit on EOF
-    $GET c_compFn .4%XSW
+    $GET c_tokenLen %RETZ // exit on EOF
+    $GET c_compFn .4%XW
   $AGAIN l0
