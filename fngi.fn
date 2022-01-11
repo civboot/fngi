@@ -2,14 +2,9 @@
 // Requires: spore.sp
 
 
-/*(*/ $SFN )  panic E_unclosed  // prevent unclosed parens
-
-// These do nothing and are used for documentation:  _  ,  ;
-$SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
-
 // Block comment, allows nesting.
-$SFN /*  // */
-  $INSTANT
+SFN /*  // */
+  INSTANT
   LOOP l
     c_scan   assert(tokenLen, E_eof)
     IF(tokenLen < 2) AGAIN l
@@ -19,4 +14,4 @@ $SFN /*  // */
     IF _ ret
   AGAIN l
 
-
+/*(*/  SFN )  panic E_unclosed // prevent unclosed parens

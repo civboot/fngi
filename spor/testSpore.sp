@@ -159,10 +159,12 @@ $FN badMultiply // {a b -- a*b} uses loop to implement multiply
 #5 #5 $badMultiply   #19  $tAssertEq
 
 $assertWsEmpty
-$c_number 1234     $tAssert   #4D2  $tAssertEq
-$c_number 0x1234   $tAssert   #1234 $tAssertEq
-$c_number 0b11100  $tAssert   #1C   $tAssertEq
-$c_number notNum   $tAssertNot       $tAssertNot
+$c_number 1234     $tAssert   #4D2   $tAssertEq
+$c_number 0x1234   $tAssert   #1234  $tAssertEq
+$c_number 0xF00FA  $tAssert   #F00FA $tAssertEq
+$c_number 0b11100  $tAssert   #1C    $tAssertEq
+$c_number 0b11102  $tAssertNot      ^DRP // not valid binary
+$c_number notNum   $tAssertNot      ^DRP // not a number
 
 // Test compiler internals
 
@@ -197,7 +199,13 @@ $SFN testFngiSingleOne @fngiSingle $comp1 two %RET
 $testFngiSingleOne #2 $tAssertEq
 
 $() // does nothing
-$( SFN hi 32 one %RET )
-// $hi #1 $tAssertEq  #3 $tAssertEq
+$( SFN hi 32 one %%RET )
+$hi
+  #1 $tAssertEq
+  #20 $tAssertEq
+
+$SFN add1 $PRE %INC %RET // {a} -> {a+1}
+$( SFN three ret add1(2) )
+$three  #3 $tAssertEq
 
 $assertWsEmpty

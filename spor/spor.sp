@@ -955,10 +955,18 @@ $SFN END_LOCALS
 // **********
 // * Fngi Compile Loop
 
+$SFN charToInt // {c} -> {U8}
+  #30$L0 %SUB // c = c - '0'
+  %DUP #A$L0 %LT_U %NOT %RETZ // if(c <= 9) return c;
+  #11$L0 %SUB // c = c - ('A' - '0')
+  // if(c <= 5) return c + 10;
+  %DUP #6$L0 %LT_U $IF #A$L0 %ADD %RET $END
+  #30$L0 %SUB // c = c - ('a' - 'A') + 10;
+  %RET
+
 $FN c_parseNumber // {} -> {value isDecimal}
   @SZ4 $LOCAL value
   @SZ1 $LOCAL i
-  @SZ1 $LOCAL c
   @SZ1 $LOCAL base
   $END_LOCALS
   #A$L0 $SET base
@@ -979,12 +987,12 @@ $FN c_parseNumber // {} -> {value isDecimal}
   $LOOP l0
     $GET i  $GET c_tokenLen $BREAK_EQ b0
     $GET c_tokenBuf $GET i %ADD .1%FT // {c}
-    %DUP $SET c
-    // Check that c is between '0' and '9'
-    %DUP #30$L0 %LT_U %SWP // {c<'0' c}
-    #3A$L0 %GE_U %LOR $IF   #0$L0 @FALSE$L0 %RET   $END
+    $xsl charToInt // {v}
+    // return {0 0} if not integer character
+    %DUP $GET base %GE_U $IF  @FALSE$L0 %RET  $END
+
     $GET base  $GET value %MUL // {base * value}
-    $GET c  #30$L0 %SUB %ADD $SET value // value = value*10 + (c - '0')
+    %ADD $SET value // value = v + value*10
     $GET i %INC $SET i // i += 1
   $AGAIN l0  $END_BREAK b0
   $GET i  @E_cToken$L2 $xsl assert // assert there was a token
@@ -1057,7 +1065,9 @@ $FN c_single // {asInstant} -> {}: compile a single token
   $xsl _compFnAsInstant // {metaRefFn} update instant type depending
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
-    $SET metaRef  $GET c_compFn .4%XSW  $GET metaRef
+    $SET metaRef
+    $xsl c_scan $GET c_compFn .4%XSW
+    $GET metaRef
   $END
   %DUP $xsl isFnNormal
   $IF    $jmpl c_fn
@@ -1081,7 +1091,7 @@ $SFN c_peekChr // {} -> {c} peek at a character
   $GET c_tokenBuf .1%FT // {c}
   #0$L0 $SET c_tokenLen %RET // reset scanner for next scan
 
-$SFN (
+$SFN ( $INSTANT
   $LOOP l0
     $xsl c_peekChr #29$L0 %EQ $IF // c_peekChr == ')'
       $xsl c_scan %RET // scan+ignore the closing paren and return
@@ -1090,10 +1100,13 @@ $SFN (
     $GET c_compFn .4%XSW
   $AGAIN l0
 
-$FN % // compile as assembly
+$FN % $INSTANT // compile as assembly
   @SZA $LOCAL compFn $END_LOCALS
   @% $L2      $xsl _updateCompFn $SET compFn // update c_compFn and cache
   $xsl c_scan   @D_comp$L0  %DVFT // compile next token as spor asm
   $GET compFn $xsl _updateCompFn %DRP %RET
 
-%NOP
+$SFN ret $INSTANT $PRE  @RET $c1 %RET // ret 4, or just ret;
+
+// These do nothing and are used for more readable code.
+$SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
