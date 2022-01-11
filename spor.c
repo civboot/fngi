@@ -1086,7 +1086,7 @@ ssize_t readSrc(size_t nbyte) {
 
 #define SMALL_ENV_BARE \
   /*           MS       WS     RS     LS     DICT    GS*/    \
-  NEW_ENV_BARE(0x10000, 0x100, 0x100, 0x200, 0x2000, 0x100)
+  NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x2000, 0x100)
 
 void compileFile(char* s) {
   compilingName = s;
@@ -1105,7 +1105,7 @@ void compileFile(char* s) {
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT    GS*/    \
-  NEW_ENV(0x8000, 0x100, 0x100, 0x200, 0x2000, 0x1000)
+  NEW_ENV(0x8000, 0x40, 0x100, 0x200, 0x2000, 0x1000)
 
 
 // ********************************************

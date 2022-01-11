@@ -1,7 +1,7 @@
 // Fngi bootstrap script: this script bootstraps the fngi language.
 // Requires: spore.sp
 
-$fngiLoop // starts fngi syntax
+$c_loop // starts fngi syntax
 
 // // Block comment, allows nesting.
 // SFN /*  // */

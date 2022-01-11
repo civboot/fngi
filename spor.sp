@@ -1029,11 +1029,11 @@ $SFN execute // {metaRef} -> {...}: execute a function
   .4%JMPW
 
 $SFN null2 @NULL$L0 %DUP %RET
-$assertWsEmpty
+$SFN c_eof $GET c_tokenLen %NOT %RET
 
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
   $xl c_parseNumber $IF  $xsl c_lit $jmpl null2 $END %DRP // {}
-  $GET c_tokenLen %NOT $IF  $jmpl null2  $END
+  $xsl c_eof $IF  $jmpl null2  $END
 
   // Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
@@ -1092,7 +1092,7 @@ $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number
 
 $SFN c_peekChr // {} -> {c} peek at a character
   $xsl c_scan
-  $GET c_tokenLen #0$L0 %EQ $IF #0$L0 %RET $END
+  $xsl c_eof $IF  #0$L0 %RET  $END
   $GET c_tokenBuf .1%FT // {c}
   #0$L0 $SET c_tokenLen %RET // reset scanner for next scan
 
@@ -1133,8 +1133,8 @@ $SFN // // Define a line comment
 // These do nothing and are used for more readable code.
 $SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
 
-$SFN fngiLoop
+$SFN c_loop
   $LOOP l0
-    $xsl c_scan
+    $xsl c_scan $GET c_tokenLen %RETZ // exit on EOF
     $GET c_compFn .4%XSW
   $AGAIN l0
