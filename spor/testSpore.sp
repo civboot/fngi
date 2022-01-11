@@ -170,14 +170,15 @@ $c_number notNum   $tAssertNot       $tAssertNot
 
 $FN two $END_LOCALS #2$L0 %RET // {} -> 1
 
-$SFN test_c_fn   $dictGetR one $c_fn %RET
+$SFN test_c_fn   @one $c_fn %RET
 $test_c_fn #1 $tAssertEq
 $assertWsEmpty
 
-$SFN test_c_fnTwo   $dictGetR two $c_fn %RET
+$SFN test_c_fnTwo   @two $c_fn %RET
 $test_c_fnTwo #2 $tAssertEq
 
-@test_c_fnTwo $execute   @test_c_fn $execute
+@test_c_fnTwo $execute
+@test_c_fn $execute
   ^ADD #3 $tAssertEq
 
 $SFN test_c_compFnExists $GET c_compFn %RET
@@ -186,8 +187,17 @@ $test_c_compFnExists  @fngiSingle $toRef $tAssertEq
 // Test essential functions
 
 $c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq // 0x24 = '$'
+
+$SFN comp1 $xsl toRef $xsl c_scan .4%XSW %RET
+
+$SFN testFngiSingleNum @fngiSingle $toRef $comp1 12 %RET
+$testFngiSingleNum #C $tAssertEq
+
+$SFN testFngiSingleOne @fngiSingle $comp1 two %RET
+$testFngiSingleOne #2 $tAssertEq
+
 $() // does nothing
-$( SFN hi 3 one %RET )
-$hi #1 $tAssertEq  #3 $tAssertEq
+$( SFN hi 32 one %RET )
+// $hi #1 $tAssertEq  #3 $tAssertEq
 
 $assertWsEmpty

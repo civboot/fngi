@@ -1005,35 +1005,34 @@ $SFN c_lit $PRE // {asInstant value:U4} : compile proper sized literal
 $SFN xSzI $PRE // {metaRef} -> {szI}: return the size requirement of the X instr
    $xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZ4$L1 %RET
 
-$SFN c_fn $PRE // {&metaRef}: compile a function
-  %DUP $xsl assertTyped
-  .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {metaRef}
-  %DUP $xsl xSzI %DUP // {metaRef instrSzI szLit} (lit and instr are same size)
-  %OVR $xsl isFnLocals $IF @XL$L1 $ELSE @XSL$L1 $END // {metaRef instrSzI szLit instr}
+$SFN c_fn $PRE // {metaRef}: compile a function
+  %DUP $xsl assertFn // {metaRef}
+  %DUP $xsl xSzI     // {metaRef szLit}
+  %OVR $xsl isFnLocals $IF @XL$L1 $ELSE @XSL$L1 $END // {metaRef instrSzI instr}
+  %OVR %SWP // {metaRef instrSzI litSzI instr} instr & lit are same sz
   $xl _instrLitImpl %RET
 
 $SFN execute // {metaRef} -> {...}: execute a function
   %DUP $xsl toRef %SWP // {ref metaRef}
-  $xsl isFnLocals  $IF %XW %RET $END
-  %JMPW
+  $xsl isFnLocals  $IF .4%XW %RET $END
+  .4%JMPW
 
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
-  $xl c_parseNumber $IF  $xsl c_lit #0$L0 %RET  $END %DRP
+  $xl c_parseNumber $IF  $xsl c_lit @NULL$L0 %DUP %RET  $END %DRP
 
   // Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
-    .4%FT $xsl c_lit  #0$L0 %RET
+    .4%FT $xsl c_lit  @NULL$L0 %DUP %RET // {asInstant metaRefFn[null]}
   $END %DRP
 
   $xsl dictArgs  @D_rdict$L0 %DVFT // {asInstant &metaRef}
 
   // Constant
-  %DUP $xsl isTyped %NOT $IF  .4%FT $xsl c_lit #0$L0 %RET  $END
+  %DUP $xsl isTyped %NOT $IF  .4%FT $xsl c_lit @NULL$L0 %DUP %RET  $END
 
   // Must be a function
-  .4%FT %DUP $xsl isTyFn @E_cNotFn$L2 $xsl assert // {asInstant metaRef}
-  %RET
+  .4%FT %DUP $jmpl assertFn // {asInstant metaRef}
 
 // {asInstant metaRefFn} -> {metaRefFn} check fn type and update asInstant
 $SFN _compFnAsInstant $PRE

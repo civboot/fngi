@@ -266,6 +266,7 @@ typedef struct {
 
 // Debugging
 void dbgEnv();
+void dbgMemUsage();
 void dbgInstr(Instr instr, Bool lit);
 void dbgWs();
 void dbgWsFull();
@@ -901,6 +902,7 @@ U8 scanInstr() {
     printf("\n!!! ERROR\n!!! Env:");
     dbgEnv();
     printf("!!! code=#%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
+    printf("!!! "); dbgMemUsage();
   } else {
     while(TRUE) {
       scan();
@@ -1138,6 +1140,11 @@ void printToken() {
   printf("\" line=%u ", line);
 }
 
+void dbgMemUsage() {
+  printf("heap = %X/%X   ", *env.heap, *env.topHeap);
+  printf("dict = %X / %X\n", dict->heap, dict->end);
+}
+
 void dbgEnv() {
   printf("  token[%u, %u]=", tokenLen, tokenBufSize);
   printToken();
@@ -1145,6 +1152,7 @@ void dbgEnv() {
   printf("tokenGroup=%u  ", tokenState->group);
   printf("instr=#%X ", globalInstr);
   printf("sz=%u\n", szIToSzSafe(env.szI));
+
 }
 
 
@@ -1300,6 +1308,10 @@ void dbgJmp(Instr instr) {
       jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
   }
   if(!jloc) return;
+  if(SzI1 == szI) {
+      printf(" (( relative %c0x%X ))", (jloc<0) ? '-' : ' ', (jloc<0) ?-jloc : jloc);
+      return;
+  }
   Key* k = Dict_findFn(jloc);
   printf(" ((");
   if(k == &keyDNE) {
@@ -1328,8 +1340,8 @@ void dbgMem(Instr instr) {
 }
 
 void dbgIndent() {
-  printf(" + %+3u + ", X_DEPTH);
-  // for(U16 i = 0; i < X_DEPTH; i += 1) printf(" +");
+  // printf(" + %+3u + ", X_DEPTH);
+  for(U16 i = 0; i < X_DEPTH; i += 1) printf("+");
 }
 
 #define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
