@@ -457,7 +457,11 @@ U32 popLit(SzI szI) {
 /* returns: should escape */
 inline static void executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
-  if(dbgMode) { printf("  * "); dbgInstr(instr, TRUE);  printf("@%X", env.ep - 1); printf("\n"); }
+  if(dbgMode) {
+    printf("  * "); dbgInstr(instr, TRUE);  printf(" @%X \t\t", env.ep - 1);
+    printToken();
+    printf("\n");
+  }
   U32 l, r;
   U32 szMask = 0xFFFFFFFF; // TODO: remove
   SzI szI = SzI2;
@@ -1324,7 +1328,8 @@ void dbgMem(Instr instr) {
 }
 
 void dbgIndent() {
-  for(U16 i = 0; i < X_DEPTH; i += 1) printf(" +");
+  printf(" + %+3u + ", X_DEPTH);
+  // for(U16 i = 0; i < X_DEPTH; i += 1) printf(" +");
 }
 
 #define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);

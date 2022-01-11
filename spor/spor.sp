@@ -291,6 +291,7 @@
 #E0EB  =E_cNotVar
 #E0EC  =E_cNotFnOrConst
 #E0ED  =E_eof
+#E0ED  =E_unclosed   // unclosed paren/brace/etc
 
 // **********
 // * Core Utility Macros
@@ -1035,32 +1036,42 @@ $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
   %RET
 
 // {asInstant metaRefFn} -> {metaRefFn} check fn type and update asInstant
-$FN _compFnAsInstant $PRE
+$SFN _compFnAsInstant $PRE
   %DUP $xsl isFnNormal $IF
     %SWP $IF @TY_FN_INSTANT$L1 $ELSE #0$L0 $END // {metaRefFn newFnTy}
     $jmpl metaSet
   $END %SWP %DRP %RET // not normal = leave alone
 
-$FN fngiSingle // {asInstant} -> {}
+#0 @SZ4 $GLOBAL c_compFn // must be a small fn.
+
+$SFN _updateCompFn // {newCompFnMetaRef} -> {prevCompFnRef}
+  $xsl toRef
+  $GET c_compFn %SWP $SET c_compFn %RET
+
+
+$FN c_single // {asInstant} -> {}: compile a single token
   @SZA $LOCAL metaRef $END_LOCALS
 
   // Handle constants
   $xsl _compConstant // {asInstant metaRefFn[nullable]}
   %DUP %NOT $IF  %DRP %DRP %RET  $END // {metaRefFn}
-  $xl _compFnAsInstant // {metaRefFn} update instant type depending
+  $xsl _compFnAsInstant // {metaRefFn} update instant type depending
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
-    $SET metaRef  $xl fngiSingle  $GET metaRef
+    $SET metaRef  $GET c_compFn .4%XSW  $GET metaRef
   $END
   %DUP $xsl isFnNormal
   $IF    $jmpl c_fn
   $ELSE  $jmpl execute  $END
 
-@fngiSingle @SZ4 $GLOBAL c_compFn
+$SFN fngiSingle  @FALSE$L0 $xl c_single %RET
+
+@fngiSingle $_updateCompFn ^DRP
+
 $SFN fngi
   $LOOP l0
     $xsl c_scan
-    @FALSE$L0  $GET c_compFn %XSW
+    $GET c_compFn .4%XSW
   $AGAIN l0
 
 $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number.
@@ -1073,18 +1084,17 @@ $SFN c_peekChr // {} -> {c} peek at a character
 
 $SFN (
   $LOOP l0
-    $xsl c_peekChr #28$L0 $reteq // reteq c_peekChr == ')'
+    $xsl c_peekChr #29$L0 %EQ $IF // c_peekChr == ')'
+      $xsl c_scan %RET // scan+ignore the closing paren and return
+    $END
     $xsl c_scan
-    @TRUE$L0   $GET c_compFn %XSW
+    $GET c_compFn .4%XSW
   $AGAIN l0
-
-$SFN c_updateCompFn // {newCompFn} -> {prevCompFn}
-  $GET c_compFn %SWP $SET c_compFn %RET
 
 $FN % // compile as assembly
   @SZA $LOCAL compFn $END_LOCALS
-  @% $L2      $xsl c_updateCompFn $SET compFn // update c_compFn and cache
+  @% $L2      $xsl _updateCompFn $SET compFn // update c_compFn and cache
   $xsl c_scan   @D_comp$L0  %DVFT // compile next token as spor asm
-  $GET compFn $xsl c_updateCompFn %DRP %RET
+  $GET compFn $xsl _updateCompFn %DRP %RET
 
 %NOP

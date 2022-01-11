@@ -1,6 +1,8 @@
 // Fngi bootstrap script: this script bootstraps the fngi language.
 // Requires: spore.sp
-//
+
+
+/*(*/ $SFN )  panic E_unclosed  // prevent unclosed parens
 
 // These do nothing and are used for documentation:  _  ,  ;
 $SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
