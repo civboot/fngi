@@ -1101,7 +1101,7 @@ void compileFile(char* s) {
 #define NEW_ENV(MS, WS, RS, LS, DS, GS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS, GS); \
   WS_PUSH(*env.heap); \
-  compileFile("spor/spor.sp");
+  compileFile("spor.sp");
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT    GS*/    \
@@ -1501,7 +1501,7 @@ void compileStr(char* s) {
 /*test*/ void testSporeSp() {
   printf("## testSporeSp\n"); TEST_ENV;
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
-  compileFile("spor/testSpore.sp");
+  compileFile("tests/testSpore.sp");
 
   // // Test h1
   // heapStart = *env.heap;
@@ -1539,17 +1539,6 @@ void compileStr(char* s) {
   // compileLoop(); ASSERT_NO_ERR();
 }
 
-// /*test*/ void testBoot() {
-//   printf("## testBoot\n"); SMALL_ENV;
-//   compileFile("spor/boot.sp");
-// 
-//   // printf("## testBoot... testBoot.sp\n");
-//   // compileFile("spor/testBoot.sp");
-// 
-//   // printf("## testBoot... boot.fn\n");
-//   // compileFile("spor/boot.fn");
-// }
-
 
 /*test*/ void tests() {
   testHex();
@@ -1557,7 +1546,6 @@ void compileStr(char* s) {
   testDict();
   testWriteHeap();
   testSporeSp();
-  // testBoot();
 
   assert(0 == WS_LEN);
 }
