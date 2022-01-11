@@ -1498,46 +1498,53 @@ void compileStr(char* s) {
 //   compileStr(".4 @c_dictHeap #FF_FFFF ^AND");   assert(expectDictHeap == WS_POP());
 // }
 
-/*test*/ void testSporeSp() {
-  printf("## testSporeSp\n"); TEST_ENV;
+/*test*/ void testSpore() {
+  printf("## testSpore\n"); TEST_ENV;
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+
+  // Test h1
+  heapStart = *env.heap;
+  compileStr(".1 #42 ,  #43 $h1");
+  assert(heapStart+2 == *env.heap);
+  assert(0x42 == fetch(mem, heapStart, SzI1));
+  assert(0x43 == fetch(mem, heapStart + 1, SzI1));
+
+  // Test L0
+  heapStart = *env.heap;
+  compileStr("#7 $L0");
+  assert(heapStart+1 == *env.heap);
+  U32 v1 = fetch(mem, heapStart, SzI1);
+  assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
+
+  // Test h2
+  *env.heap = alignAPtr(*env.heap, 2);
+  heapStart = *env.heap;
+  compileStr("#1234 $h2");
+  assert(heapStart+2 == *env.heap);
+  assert(0x1234 == fetch(mem, heapStart, SzI2));
+
+  // Test h4
+  *env.heap = alignAPtr(*env.heap, 4);
+  heapStart = *env.heap;
+  compileStr("#987654 $h4");
+  assert(heapStart+4 == *env.heap);
+  assert(0x987654 == fetch(mem, heapStart, SzI4));
+
+  // Test various
+  compileStr("$getHeap $getTopHeap");
+  assert(*env.topHeap == WS_POP());
+  assert(*env.heap == WS_POP());
+
   compileFile("tests/testSpore.sp");
-
-  // // Test h1
-  // heapStart = *env.heap;
-  // compileStr(".1 #42 ,  #43 $h1");
-  // assert(heapStart+2 == *env.heap);
-  // assert(0x42 == fetch(mem, heapStart, SzI1));
-  // assert(0x43 == fetch(mem, heapStart + 1, SzI1));
-
-  // // Test L0
-  // heapStart = *env.heap;
-  // compileStr("#7 $L0");
-  // assert(heapStart+1 == *env.heap);
-  // U32 v1 = fetch(mem, heapStart, SzI1);
-  // assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
-
-  // // Test h2
-  // *env.heap = alignAPtr(*env.heap, 2);
-  // heapStart = *env.heap;
-  // compileStr("#1234 $h2");
-  // assert(heapStart+2 == *env.heap);
-  // assert(0x1234 == fetch(mem, heapStart, SzI2));
-
-  // // Test h4
-  // *env.heap = alignAPtr(*env.heap, 4);
-  // heapStart = *env.heap;
-  // compileStr("#987654 $h4");
-  // assert(heapStart+4 == *env.heap);
-  // assert(0x987654 == fetch(mem, heapStart, SzI4));
-
-  // // Test various
-  // compileStr("$getHeap $getTopHeap");
-  // assert(*env.topHeap == WS_POP());
-  // assert(*env.heap == WS_POP());
-
-  // compileLoop(); ASSERT_NO_ERR();
+  compileLoop(); ASSERT_NO_ERR();
 }
+
+/*test*/ void testFngi() {
+  printf("## testFngi\n"); TEST_ENV;
+  compileFile("fngi.fn");
+  if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+}
+
 
 
 /*test*/ void tests() {
@@ -1545,7 +1552,8 @@ void compileStr(char* s) {
   testDictDeps();
   testDict();
   testWriteHeap();
-  testSporeSp();
+  testSpore();
+  testFngi();
 
   assert(0 == WS_LEN);
 }

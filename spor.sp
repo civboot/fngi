@@ -188,8 +188,9 @@
 #0000_0024 =c_dictLHeap
 
 // TokenBuf Struct
-#0000_0028 =c_tokenBuf   // TokenBuf struct
-#0000_002C =c_tokenLen
+#0000_0028 =c_tokenBuf   // [APtr] TokenBuf struct
+#0000_002C =c_tokenLen   // [U1] length of token
+#0000_002D =c_tokenSize  // [U1] characters buffered
 
 // Global Compiler Variables
 #0000_0030 =c_rKey         // [U4] rKey, ref to current dict key.
@@ -857,6 +858,7 @@ $SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
 @SZ2 $c_makeGlobal c_dictLHeap
 @SZA $c_makeGlobal c_tokenBuf
 @SZ1 $c_makeGlobal c_tokenLen
+@SZ1 $c_makeGlobal c_tokenSize
 @SZ4 $c_makeGlobal c_rKey
 @SZ4 $c_makeGlobal c_rLKey
 @SZ4 $c_makeGlobal c_gheap
@@ -995,7 +997,8 @@ $FN c_parseNumber // {} -> {value isDecimal}
     %ADD $SET value // value = v + value*10
     $GET i %INC $SET i // i += 1
   $AGAIN l0  $END_BREAK b0
-  $GET i  @E_cToken$L2 $xsl assert // assert there was a token
+
+  $GET i %NOT $IF  #0$L0 @FALSE$L0 %RET  $END // no token
   $GET value @TRUE$L0 %RET
 
 $assertWsEmpty
@@ -1025,22 +1028,30 @@ $SFN execute // {metaRef} -> {...}: execute a function
   $xsl isFnLocals  $IF .4%XW %RET $END
   .4%JMPW
 
+$SFN null2 @NULL$L0 %DUP %RET
+$assertWsEmpty
+
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
-  $xl c_parseNumber $IF  $xsl c_lit @NULL$L0 %DUP %RET  $END %DRP
+  $xl c_parseNumber $IF  $xsl c_lit $jmpl null2 $END %DRP // {}
+  $GET c_tokenLen %NOT $IF  $jmpl null2  $END
 
   // Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
-    .4%FT $xsl c_lit  @NULL$L0 %DUP %RET // {asInstant metaRefFn[null]}
+    .4%FT $xsl c_lit  $jmpl null2
   $END %DRP
 
   $xsl dictArgs  @D_rdict$L0 %DVFT // {asInstant &metaRef}
 
   // Constant
-  %DUP $xsl isTyped %NOT $IF  .4%FT $xsl c_lit @NULL$L0 %DUP %RET  $END
+  %DUP  $xsl isTyped %NOT $IF
+    .4%FT $xsl c_lit $jmpl null2
+  $END
 
   // Must be a function
   .4%FT %DUP $jmpl assertFn // {asInstant metaRef}
+
+$assertWsEmpty
 
 // {asInstant metaRefFn} -> {metaRefFn} check fn type and update asInstant
 $SFN _compFnAsInstant $PRE
@@ -1077,12 +1088,6 @@ $SFN fngiSingle  @FALSE$L0 $xl c_single %RET
 
 @fngiSingle $_updateCompFn ^DRP
 
-$SFN fngi
-  $LOOP l0
-    $xsl c_scan
-    $GET c_compFn .4%XSW
-  $AGAIN l0
-
 $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number.
 
 $SFN c_peekChr // {} -> {c} peek at a character
@@ -1108,5 +1113,28 @@ $FN % $INSTANT // compile as assembly
 
 $SFN ret $INSTANT $PRE  @RET $c1 %RET // ret 4, or just ret;
 
+$SFN c_readNew // clear token buf and read bytes
+  #0$L0 $SET c_tokenLen
+  #0$L0 $SET c_tokenSize
+  @D_read$L0 %DVFT %RET
+
+$SFN // // Define a line comment
+  $INSTANT
+  $LOOP l
+    $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
+      $xsl c_readNew
+    $END
+    $GET c_tokenSize %RETZ
+    // if(tokenBuf[tokenLen] == '\n') return
+    $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT #A$L0 $reteq
+    $GET c_tokenLen %INC $SET c_tokenLen
+  $AGAIN l
+
 // These do nothing and are used for more readable code.
 $SFN _ $INSTANT %RET   $SFN , $INSTANT %RET   $SFN ; $INSTANT %RET
+
+$SFN fngiLoop
+  $LOOP l0
+    $xsl c_scan
+    $GET c_compFn .4%XSW
+  $AGAIN l0
