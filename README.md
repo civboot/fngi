@@ -26,6 +26,34 @@ Read more:
 * [fngi.md](./fngi.md)
 * [Unstructured Notes](./notes/)
 
+# Goals
+fngi's goal is to evolve into nothing less than the primary programming language
+and operating system for [Civboot](http://civboot.org). There are many steps
+along the way, some of them complete.
+
+- [X] create an assembly. Done, see [spor.c](./spor.c)
+- [X] bootstrap the assembly into fngi. Mostly done, see [spor.sp](./spor.sp)
+- [ ] boostrap fngi into a _more_ full-featured language. This will be in
+  [fngi.fn](./fngi.fn). This is mostly adding core operators (`+`, `-`, `*`,
+  etc), along with several other expected pieces.
+- [ ] Write initial way to define namespaces, structs and enums.
+- [ ] Write block and arena-buddy allocators, as well as standardized ways to
+    use them (i.e. an arena stack).
+- [ ] Write way to keep track of types on a "type stack", which the vairious
+      sub-compilers will use (i.e. `fn`, `if`, etc).
+- [ ] Write `fn`, `if`, `while`, etc to replace the asembly defined versions
+  and aquire type safety.
+- [ ] Write zoab in fngi (see [zoa][zoa] project).
+- [ ] Write zoat in fngi (see [zoa][zoa] project).
+- [ ] Write `struct`, allowing for zoa serializable types from the beginning.
+- [ ] Implement zoac (see [zoa][zoa] project).
+- [ ] Implement core OS functions to move and modify files.
+- [ ] Implement zosh (see [zoa][zoa] project).
+- [ ] write a text editor
+
+
+[zoa]: http://github.com/vitiral/zoa
+
 # Hacking
 
 When opening a PR to submit code to this repository you must include the
