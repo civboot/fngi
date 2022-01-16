@@ -163,44 +163,18 @@
 #04 =D_sz     // get/set current sz in bytes
 #05 =D_comp   // compile (assemble) the token in tokenBuf
 #06 =D_assert // error if != 0
-#07 =D_wslen  // working stk len
-#08 =D_cslen  // call stk len
+#07 =D_wslen  // get working stack length (in slots)
+#08 =D_cslen  // get call stack lengh (in slots)
 // {-> err} D_xsCatch executes small function from WS but catches a panic.
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
 #09 =D_xsCatch
 #0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
+#0C =D_log     // {&msg len lvl} -> {}: log at lvl {FT=usr log, SR=instr log}
 
 // **********
-// * 3. Memory Locations, Globals and Constants
-#0000_0004 =heap
-#0000_0008 =topHeap
-#0000_000C =topMem
-#0000_0010 =err
-#0000_0014 =c_state
-#0000_0018 =testIdx
-
-// Dictionary Struct
-#0000_001C =c_dictBuf
-#0000_0020 =c_dictHeap
-#0000_0022 =c_dictEnd
-#0000_0024 =c_dictLHeap
-
-// TokenBuf Struct
-#0000_0028 =c_tokenBuf   // [APtr] TokenBuf struct
-#0000_002C =c_tokenLen   // [U1] length of token
-#0000_002D =c_tokenSize  // [U1] characters buffered
-
-// Global Compiler Variables
-#0000_0030 =c_rKey         // [U4] rKey, ref to current dict key.
-#0000_0034 =c_rLKey        // [U4] rLKey, ref to current L dict key.
-#0000_0038 =c_gheap        // [U4] global heap
-#0000_003C =c_localOffset  // [U2] Local Offset (for local var setup)
-@c_gheap                       #2
-#0000_003C ^ADD .4^SR           // initial value of global heap
-
-// Constants
+// * 3. Constants
 #0 =NULL
 #0 =FALSE
 #1 =TRUE
@@ -232,6 +206,53 @@
 #8000 =C_COMPILE     // default compile (not execute) tokens.
 #4000 =C_INSTANT     // "$" sets this. Toggles INSTANT for next.
 
+
+//*****
+//* Log levels
+#00 =LOG_SILENT
+
+// User level logs
+#80 =LOG_USER
+#1F =LOG_TRACE
+#0F =LOG_DEBUG
+#07 =LOG_INFO
+#03 =LOG_WARN
+#01 =LOG_CRIT
+
+// Language Level (builtin) Logs
+#01 =LOG_INSTR
+#02 =LOG_EXECUTE
+#04 =LOG_ASM
+#10 =LOG_INSTANT
+
+// **********
+// * 4. Globals
+#0000_0004 =heap
+#0000_0008 =topHeap
+#0000_000C =topMem
+#0000_0010 =err
+#0000_0014 =c_state
+#0000_0018 =testIdx
+#0000_001C =instrLogLvl
+#0000_001E =usrLogLvl
+
+// Dictionary Struct
+#0000_0020 =c_dictBuf   // U4
+#0000_0024 =c_dictHeap  // U2
+#0000_0026 =c_dictEnd   // U2
+#0000_0028 =c_dictLHeap // U2 + U2(align)
+
+// TokenBuf Struct
+#0000_002C =c_tokenBuf   // [APtr] TokenBuf struct
+#0000_0030 =c_tokenLen   // [U1] length of token
+#0000_0031 =c_tokenSize  // [U1] characters buffered
+
+// Global Compiler Variables
+#0000_0034 =c_rKey         // [U4] rKey, ref to current dict key.
+#0000_0038 =c_rLKey        // [U4] rLKey, ref to current L dict key.
+#0000_003C =c_gheap        // [U4] global heap
+#0000_0040 =c_localOffset  // [U2] Local Offset (for local var setup)
+@c_gheap #0000_0044 .4^SR  // initial value of global heap
 
 // **********
 // * 4. Errors
@@ -296,6 +317,7 @@
 #E0ED  =E_eof
 #E0EE  =E_cUnclosed   // unclosed paren/brace/etc
 #E0EF  =E_cReqInstant // fn is INSTANT but no '$' used
+#E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
 
 
 // **********
@@ -499,6 +521,7 @@ $loc toMeta // INSTANT {metaRef} -> {meta}
   @SLIT #18 ^BOR $c1  @SHR $c1  %RET
 
 $loc isTyped  // {&metaRef} dict value is a constant
+  %DUP @E_cNoKey$L2 $_xsl assert // no key if metaRef=NULL
   %INC4 .1%FT @KEY_HAS_TY$L1 %BAND %RET
 
 // These take {metaRef} and tell information about it
@@ -535,6 +558,8 @@ $loc _jSetup // [&metaRef] -> [metaRef]: checked jmp setup
   %DUP $_xsl assertFnSmall
   %DUP $_jmpl assertCurMod
 
+$hal2 $loc  assertNoInstant @E_cCompOnly$L2 $_jmpl assertNot   // {asInstant} -> {}
+
 $loc xsl // $xsl <token> : compile .2%xsl
   $_xsl dictGetR $_xsl _jSetup // {metaRef}
   .1%LIT @XSL2 $h1  // get .2%XSL instr
@@ -546,7 +571,8 @@ $loc xl // $xl <token> : compile .2%xl
   %DUP $_xsl assertCurMod
   @XL2$L1  $_jmpl _j2
 
-$loc jmpl // $jmpl <token> : compile jmpl2
+
+$loc jmpl  // $jmpl <token> : compile jmpl2
   $_xsl dictGetR $_xsl _jSetup // {metaRef}
   @JMPL2$L1  $_jmpl _j2
 
@@ -589,14 +615,18 @@ $hal2 $loc _declFn // [meta]
   %RET
 
 $hal2 $loc SFN  // SMART $SFN <token>: define location of small function
-  %DRP #0$L0         $_jmpl _declFn
+  $_xsl assertNoInstant #0$L0         $_jmpl _declFn
 
 $ha2 $loc FN  // SMART $FN <token>: define location of function with locals
-  %DRP @TY_FN_LOCALS$L1 $_jmpl _declFn
+  $_xsl assertNoInstant @TY_FN_LOCALS$L1 $_jmpl _declFn
 
 $ha2
 $loc SMART // {} modify current function to be smart
   %DRP .4%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl rMetaSet
+
+$ha2
+$loc INSTANT // {} modify current function to be smart
+  %DRP .4%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl rMetaSet
 
 // Backfill the fn meta
 $loc c_makeTy // {meta} make an existing symbol a type.
@@ -612,9 +642,10 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_SMART        $c_makeFn SFN
 @TY_FN_SMART        $c_makeFn FN
 @TY_FN_SMART        $c_makeFn SMART
+@TY_FN_SMART        $c_makeFn INSTANT
 @TY_FN_SMART        $c_makeFn PRE
-#0                    $c_makeFn xsl
-#0                    $c_makeFn jmpl
+#0                  $c_makeFn xsl
+@TY_FN_INSTANT      $c_makeFn jmpl
 @TY_FN_PRE            $c_makeFn L0
 @TY_FN_PRE            $c_makeFn L1
 @TY_FN_PRE            $c_makeFn L2
@@ -664,6 +695,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn assertFnLocals
 @TY_FN_PRE            $c_makeFn assertCurMod
 @TY_FN_PRE            $c_makeFn assertTyped
+#0                    $c_makeFn assertNoInstant
 
 $SFN isFnPre     $PRE $toMeta  @TY_FN_PRE$L1 %BAND %RET
 $SFN isFnNormal  $PRE $toMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_NORMAL$L1  %EQ %RET
@@ -701,7 +733,7 @@ $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
 $SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
-$SFN reteq $PRE $SMART%DRP @NEQ $c1 @RETZ $c1 %RET
+$SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ $c1 @RETZ $c1 %RET
 
 
 // **********
@@ -712,7 +744,7 @@ $SFN reteq $PRE $SMART%DRP @NEQ $c1 @RETZ $c1 %RET
 // All flow control pushes the current heap on the WS, then END/AGAIN correctly
 // stores/jmps the heap where they are called from.
 
-$SFN IF  $PRE $SMART%DRP // {} -> {&jmpTo} : start an if block
+$SFN IF  $PRE $SMART $xsl assertNoInstant // {} -> {&jmpTo} : start an if block
   @JZL1 $c1 // compile .1%JZL instr
   $xsl getHeap // {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 // compile 0 (jump pad)
@@ -726,19 +758,19 @@ $SFN _END
   %SWP %SUB     // {&jmpTo (heap-&jmpTo)}
   %DUP $xsl assertLt128
   .1%SR %RET // store at location after start (1 byte literal)
-$SFN END $SMART%DRP $jmpl _END  // {&jmpTo} -> {} : end of IF or BREAK0
+$SFN END $SMART $xsl assertNoInstant $jmpl _END  // {&jmpTo} -> {} : end of IF or BREAK0
 
-$SFN ELSE $SMART%DRP // {&ifNotJmpTo} -> {&elseBlockJmpTo}
+$SFN ELSE $SMART $xsl assertNoInstant // {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1         // (end IF) compile unconditional jmp to end of ELSE
   $xsl getHeap %SWP // {&elseBlockJmpTo &ifNotJmpTo}
   #0$L0 $xsl h1     // compile jmp lit for &elseBlockJmpTo
   $jmpl _END        // end of IF block (beginning of ELSE)
 
 // $LOOP ... $BREAK0 ... $AGAIN $END
-$SFN LOOP   $SMART%DRP $xsl getHeap  $jmpl ldictSet
+$SFN LOOP   $SMART $xsl assertNoInstant $xsl getHeap  $jmpl ldictSet
 $SFN BREAK0 $PRE $SMART   $xsl IF $jmpl ldictSet
-$SFN BREAK_EQ $PRE $SMART @NEQ $c1  $jmpl BREAK0 // break if equal
-$SFN AGAIN $SMART%DRP
+$SFN BREAK_EQ $PRE $SMART @NEQ$c1  $jmpl BREAK0 // break if equal
+$SFN AGAIN $SMART $xsl assertNoInstant
   @JMPL $c1  // compile jmp
   $xsl getHeap  // {heap}
   $xsl ldictGet // {heap &loopTo}
@@ -747,9 +779,9 @@ $SFN AGAIN $SMART%DRP
   %NEG          // make negative for backwards jmp
   $jmpl h1      // compile as jmp offset
 
-$SFN END_BREAK $SMART%DRP $xsl ldictGet $jmpl _END
+$SFN END_BREAK $SMART $xsl assertNoInstant $xsl ldictGet $jmpl _END
 
-$SFN END_N $PRE $SMART%DRP // {...(N &jmpTo) numJmpTo}
+$SFN END_N $PRE $SMART $xsl assertNoInstant // {...(N &jmpTo) numJmpTo}
   $LOOP l0 %DUP %RETZ
     %SWP #0$L0 $xsl _END
     %DEC // dec numJmpTo
@@ -851,9 +883,9 @@ $SFN _refImpl
     $xsl _gSetup  $xsl toRef $jmpl L4 // write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
-$SFN REF  $SMART%DRP $xsl c_scan $jmpl _refImpl
-$SFN GET  $SMART%DRP $xsl c_scan $jmpl _getImpl
-$SFN SET  $SMART%DRP $xsl c_scan $jmpl _setImpl
+$SFN REF  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _refImpl
+$SFN GET  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _getImpl
+$SFN SET  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _setImpl
 
 $SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
   #4$L0 %SHR  @TY_GLOBAL$L1  %BOR  $_jmpl c_makeTy
@@ -890,8 +922,8 @@ $FN align $PRE // {aptr sz}: return the aptr aligned properly with szI
 $SFN align4 $PRE #4$L0 $xl align %RET
 $SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET
 
-$FN GLOBAL  // <value> <szI> $GLOBAL <token>: define a global variable of sz
-  #1 $h1  $SMART%DRP  // 1 local [szI:U1]
+$FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
+  #1 $h1  $SMART $xsl assertNoInstant  // 1 local [szI:U1]
   %DUP $xsl assertSzI // {value szI}
   .1%SRLL#0$h1 // set szI {value}
   $xsl c_updateRKey // {value &metaRef}
@@ -937,8 +969,8 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
 
 // #<szI> $LOCAL myLocal: declare a local variable of sz
 // This stores the offset and sz for lRef, lGet and lSet to use.
-$SFN LOCAL $SMART%DRP  #0             $L1 $xl _localImpl %RET
-$SFN INPUT $SMART%DRP  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
+$SFN LOCAL $SMART $xsl assertNoInstant  #0             $L1 $xl _localImpl %RET
+$SFN INPUT $SMART $xsl assertNoInstant  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
 
 $SFN Dict_keyLen   $PRE %INC4 .1%FT  #3F$L1 %BAND %RET             // {&key} -> {len:U1}
 $SFN Dict_keySz    $PRE $xsl Dict_keyLen #5$L0 %ADD $jmpl align4  // {&key} -> {sz:U1}
@@ -1018,14 +1050,17 @@ $assertWsEmpty
 $SFN c_stateCompile $GET c_state @C_COMPILE$L2 %BAND %RET // {} -> state
 $SFN c_stateInstant $GET c_state @C_INSTANT$L2 %BAND %RET // {} -> state
 
-// {asInstant value:U4} -> {?instantVal}: compile proper sized literal
-// if asInstant=true the value is left on the stack.
-$SFN c_lit
-  %SWP %NOT %RETZ // if instant, leave on stack
+$SFN lit  $PRE $INSTANT
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
                                 $jmpl L4
+
+// {asInstant value:U4} -> {?instantVal}: compile proper sized literal
+// if asInstant=true the value is left on the stack.
+$SFN c_lit
+  %SWP %NOT %RETZ // if instant, leave on stack
+  $jmpl lit
 
 $SFN xSzI $PRE // {metaRef} -> {szI}: return the size requirement of the X instr
    $xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZ4$L1 %RET
@@ -1044,7 +1079,7 @@ $SFN execute // {metaRef} -> {...}: execute a function
 
 $SFN null2 @NULL$L0 %DUP %RET
 $SFN c_isEof $GET c_tokenLen %NOT %RET
-$SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert
+$SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert // {} -> {}
 
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
   $xl c_parseNumber // {asInstant value isNumber}
@@ -1093,9 +1128,6 @@ $SFN _updateCompFn // {newCompFnMetaRef} -> {prevCompFnRef}
 
 $SFN c_scanNoEof $xsl c_scan  $xsl c_isEof @E_eof$L2 $jmpl assertNot
 
-$SFN toFnInstant // {asInstant} -> {meta}
-  $IF @TY_FN_INSTANT$L1 $ELSE #0$L0 $END %RET
-
 $FN c_single // {asInstant} -> {}: compile a single token
   @SZA $LOCAL metaRef $END_LOCALS
 
@@ -1104,21 +1136,19 @@ $FN c_single // {asInstant} -> {}: compile a single token
   // If metaRefFn=null then already compiled, drop asInstant and metaRefFn
   %DUP %NOT $IF  %DRP %DRP %RET  $END // {asInstant metaRefFn}
 
-  %SWP %OVR $xsl isFnInstant $IF // {metaRef asInstant}
+  %SWP %OVR  // {metaRefFn asInstant metaRefFn}
+  $xsl isFnInstant $IF // {metaRef asInstant}
     @E_cReqInstant$L2 $xsl assert // assert asInstant
   $ELSE
-    // if ty was SMART, this will make it SMART_I, else INSTANT
-    $xsl toFnInstant $xsl metaSet
+    // if asInstant=TRUE and ty was SMART, this will make it SMART_I, else INSTANT
+    // if asInstant=FALSE this will not change metaRef
+    $IF @TY_FN_INSTANT$L1  $xsl metaSet $END
   $END // {metaRef}
 
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
     $SET metaRef  $GET c_compFn .4%XW  $GET metaRef
   $END
-
-  // %DUP $xsl isFnNormal
-  // $IF    $jmpl c_fn     $END
-  //        $jmpl execute
 
   %DUP $xsl isFnSmart $IF
     @FALSE$L0 %SWP $jmpl execute // smart: not instant. asInstant=FALSE
@@ -1160,7 +1190,7 @@ $FN _spor
   @D_comp$L0  %DVFT // compile next token as spor asm
   $GET compFn $SET c_compFn %RET
 
-$SFN spor $SMART%DRP $xl _spor %RET // compile as assembly
+$SFN spor $SMART $xsl assertNoInstant $xl _spor %RET // compile as assembly
 
 $FN _instant
   @SZA $LOCAL compFn $END_LOCALS
@@ -1169,9 +1199,9 @@ $FN _instant
   @TRUE$L0 $xl c_single  // compile next token as INSTANT
   $GET compFn $SET c_compFn %RET
 
-$SFN $ $SMART%DRP $xl _instant %RET // make instant
+$SFN $ $SMART $xsl assertNoInstant $xl _instant %RET // make instant
 
-$SFN ret $SMART%DRP $PRE  @RET $c1 %RET // ret 4, or just ret;
+$SFN ret $SMART $xsl assertNoInstant $PRE  @RET $c1 %RET // ret 4, or just ret;
 
 $SFN c_readNew // clear token buf and read bytes
   #0$L0 $SET c_tokenLen

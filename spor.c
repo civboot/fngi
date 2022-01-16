@@ -6,22 +6,42 @@
 #include <string.h>
 #include <setjmp.h>
 
-char dbgMode = 0x10;
+
+typedef enum {
+  LOG_SILENT    = 0x00,
+  LOG_USER      = 0x80,
+  LOG_TRACE     = 0x1F,
+  LOG_DEBUG     = 0x0F,
+  LOG_INFO      = 0x07,
+  LOG_WARN      = 0x03,
+  LOG_CRIT      = 0x01,
+} UsrLogLvl;
+
+typedef enum {
+  LOG_INSTR     = 0x01,
+  LOG_EXECUTE   = 0x02,
+  LOG_ASM       = 0x04,
+
+  LOG_INSTANT   = 0x10,
+} InstrLogLvl;
+
+// #define STARTING_INSTR_LOG_LVL    (0xFF)         // log everything
+#define STARTING_INSTR_LOG_LVL    (LOG_EXECUTE | LOG_INSTANT)
 
 // ********************************************
 // ** Core Types
 
 typedef uint8_t Bool;
-typedef uint8_t U8;
-typedef uint16_t U16;
-typedef uint32_t U32;
-typedef int8_t I8;
-typedef int16_t I16;
-typedef int32_t I32;
+typedef uint8_t U1;
+typedef uint16_t U2;
+typedef uint32_t U4;
+typedef int8_t I1;
+typedef int16_t I2;
+typedef int32_t I4;
 typedef uint32_t ASz;
 typedef ASz APtr;
 
-typedef U16 CSz;
+typedef U2 CSz;
 typedef CSz CPtr;
 
 // 256 64k module blocks
@@ -187,17 +207,18 @@ typedef enum {
   D_xsCatch = 0x09,
   D_memMove = 0x0A,
   D_memCmp  = 0x0B,
+  D_log     = 0x0C,
 } Device;
 
 #define SZ_MASK        0x30
 #define INSTR_CLASS(INSTR) (InstrClass)(0xC0 & INSTR)
-#define INSTR_NO_SZ(INSTR)  (Instr)(~SZ_MASK & (U8)INSTR)
+#define INSTR_NO_SZ(INSTR)  (Instr)(~SZ_MASK & (U1)INSTR)
 #define INSTR_SZI(INSTR) ((SzI) (INSTR & SZ_MASK))
 
 #define SzIA SzI4
 
 // Generic stack.
-typedef struct { U16 sp; U16 size; U8* mem; } Stk;
+typedef struct { U2 sp; U2 size; U1* mem; } Stk;
 
 // Environment
 typedef struct {
@@ -207,15 +228,17 @@ typedef struct {
   APtr* heap;
   APtr* topHeap;
   APtr* topMem;
-  U32* err;
-  U32* state;
-  U32* testIdx;
+  U4* err;
+  U4* state;
+  U4* testIdx;
+  U2* instrLogLvl;
+  U2* usrLogLvl;
+  U1 szI; // global instr sz
   Stk ls;
 
   // Separate from mem
   Stk ws;
   Stk cs;
-  U8 szI; // global instr sz
 } Env;
 
 #define LS_SP           (env.ls.mem - mem + env.ls.sp)
@@ -224,30 +247,30 @@ typedef struct {
 
 typedef struct {
   APtr buf;  // buffer of dicts
-  U16 heap;  // heap offset
-  U16 end;   // end offset
-  U16 lheap; // local heap
-  U16 _align;
+  U2 heap;  // heap offset
+  U2 end;   // end offset
+  U2 lheap; // local heap
+  U2 _align;
 } Dict;
 
 typedef struct {
   APtr buf;
-  U16 end;
-  U16* heap;
+  U2 end;
+  U2* heap;
 } DictRef;
 
 #define DEFAULT_DICT \
   {.buf = dict->buf, .end = dict->end, .heap = &dict->heap}
 
 typedef struct {
-  U32 value;
-  U8 len;
-  U8 s[];
+  U4 value;
+  U1 len;
+  U1 s[];
 } Key;
 #define keySizeWLen(LEN)  (4 + 1 + (LEN))
 
 // Get key len. The top two bits are used for metadata (i.e. constant)
-static inline U8 Key_len(Key* key) {
+static inline U1 Key_len(Key* key) {
   return 0x3F & key->len;
 }
 
@@ -260,14 +283,15 @@ typedef enum {
 
 typedef struct {
   APtr buf; // buffer.
-  U8 len;   // length of token
-  U8 size;  // characters buffered
-  U8 group;
+  U1 len;   // length of token
+  U1 size;  // characters buffered
+  U1 group;
 } TokenState;
 
 // Debugging
 void dbgEnv();
 void dbgMemUsage();
+static inline void logInstr(Instr instr);
 void dbgInstr(Instr instr, Bool lit);
 void dbgWs();
 void dbgWsFull();
@@ -276,24 +300,24 @@ void dbgToken();
 // ********************************************
 // ** Globals
 
-void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz);
+void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz);
 
 Env env;
-U8* mem = NULL;
+U1* mem = NULL;
 Dict* dict = NULL;
 TokenState* tokenState = NULL;
 char* compilingName;
 FILE* srcFile;
 Instr globalInstr = NOP;
 ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
-U32 line = 1;
+U4 line = 1;
 jmp_buf* err_jmp;
 long long unsigned int dbgCount = 0;
 
 // ********************************************
 // ** Utilities
 
-U8 szIToSz(SzI szI) {
+U1 szIToSz(SzI szI) {
   switch (szI) {
     case SzI1: return 1;
     case SzI2: return 2;
@@ -302,7 +326,7 @@ U8 szIToSz(SzI szI) {
   }
 }
 
-SzI szToSzI(U8 sz) {
+SzI szToSzI(U1 sz) {
   switch (sz) {
     case 1: return SzI1;
     case 2: return SzI2;
@@ -312,14 +336,14 @@ SzI szToSzI(U8 sz) {
   }
 }
 
-/*fn*/ APtr alignAPtr(APtr aPtr, U8 sz) {
-  U8 mod = aPtr % sz;
+/*fn*/ APtr alignAPtr(APtr aPtr, U1 sz) {
+  U1 mod = aPtr % sz;
   if(mod == 0) return aPtr;
   return aPtr + (sz - mod);
 }
 
 // Return value of ASCII hex char.
-/*fn*/ U8 charToHex(U8 c) {
+/*fn*/ U1 charToHex(U1 c) {
   c = c - '0';
   if(c <= 9) return c;
   c = c - ('A' - '0');
@@ -329,37 +353,37 @@ SzI szToSzI(U8 sz) {
   return c;
 }
 
-/*fn*/ void store(U8* mem, APtr aptr, U32 value, SzI szI) {
+/*fn*/ void store(U1* mem, APtr aptr, U4 value, SzI szI) {
   ASM_ASSERT(aptr, E_null);
   ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (szI) {
     case SzI1:
-      *(mem+aptr) = (U8)value;
+      *(mem+aptr) = (U1)value;
       return;
     case SzI2:
       ASM_ASSERT(aptr % 2 == 0, E_align2);
-      *((U16*) (mem+aptr)) = (U16)value;
+      *((U2*) (mem+aptr)) = (U2)value;
       return;
     case SzI4:
       ASM_ASSERT(aptr % 2 == 0, E_align4);
-      *((U32*) (mem+aptr)) = value;
+      *((U4*) (mem+aptr)) = value;
       return;
     default: SET_ERR(E_cSz);
   }
 }
 
-/*fn*/ U32 fetch(U8* mem, APtr aptr, SzI szI) {
+/*fn*/ U4 fetch(U1* mem, APtr aptr, SzI szI) {
   ASM_ASSERT(aptr, E_null);
   ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (szI) {
     case SzI1:
-      return (U32) *((U8*) (mem+aptr));
+      return (U4) *((U1*) (mem+aptr));
     case SzI2:
       ASM_ASSERT(aptr % 2 == 0, E_align2);
-      return (U32) *((U16*) (mem+aptr));
+      return (U4) *((U2*) (mem+aptr));
     case SzI4:
       ASM_ASSERT(aptr % 2 == 0, E_align4);
-      return (U32) *((U32*) (mem+aptr));
+      return (U4) *((U4*) (mem+aptr));
     default: SET_ERR(E_cSz);
   }
 }
@@ -371,31 +395,31 @@ SzI szToSzI(U8 sz) {
   ASM_ASSERT(SP - SZ >= 0, E_stkOvr)
 
 #define WS_PUSH(VALUE)  Stk_push(&env.ws, VALUE)
-/*fn*/ void Stk_push(Stk* stk, U32 value) {
+/*fn*/ void Stk_push(Stk* stk, U4 value) {
   _CHK_GROW(stk, ASIZE);
   store(stk->mem, stk->sp - ASIZE, value, SzIA);
   stk->sp -= ASIZE;
 }
 
 #define WS_POP()  Stk_pop(&env.ws)
-/*fn*/ U32 Stk_pop(Stk* stk) {
+/*fn*/ U4 Stk_pop(Stk* stk) {
   ASM_ASSERT(stk->sp + ASIZE <= stk->size, E_stkUnd);
-  U32 out = fetch(stk->mem, stk->sp, SzIA);
+  U4 out = fetch(stk->mem, stk->sp, SzIA);
   stk->sp += ASIZE;
   return out;
 }
 
-/*fn*/ void Stk_grow(Stk* stk, U16 sz) {
+/*fn*/ void Stk_grow(Stk* stk, U2 sz) {
   _CHK_GROW(stk, sz);
   stk->sp -= sz;
 }
 
-/*fn*/ void Stk_shrink(Stk* stk, U16 sz) {
+/*fn*/ void Stk_shrink(Stk* stk, U2 sz) {
   ASM_ASSERT(stk->sp + sz <= stk->size, E_stkUnd);
   stk->sp += sz;
 }
 
-APtr toAptr(U32 v, SzI szI) {
+APtr toAptr(U4 v, SzI szI) {
   switch (szI) {
     case SzI1: SET_ERR(E_cSzPtr);
     case SzI2: return ENV_MOD_HIGH() + v;
@@ -404,7 +428,7 @@ APtr toAptr(U32 v, SzI szI) {
   }
 }
 
-U8 mergeInstrSzI(SzI szI, U8 instr) {
+U1 mergeInstrSzI(SzI szI, U1 instr) {
   switch (INSTR_CLASS(instr)) {
     case C_OP:
     case C_SLIT: return instr;
@@ -419,7 +443,7 @@ U8 mergeInstrSzI(SzI szI, U8 instr) {
 
 void xImpl(APtr aptr) { // impl for "execute"
   // get amount to grow, must be multipled by APtr size .
-  U16 growLs = fetch(mem, aptr, SzI1);
+  U2 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
   // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
   Stk_push(&env.cs, (growLs << 24) + env.ep);
@@ -433,8 +457,8 @@ void xsImpl(APtr aptr) { // impl for "execute small"
   env.ep = aptr;
 }
 
-U32 popLit(SzI szI) {
-  U32 out = fetch(mem, env.ep, szI);
+U4 popLit(SzI szI) {
+  U4 out = fetch(mem, env.ep, szI);
   env.ep += szIToSz(szI);
   return out;
 }
@@ -460,24 +484,18 @@ U32 popLit(SzI szI) {
 /* returns: should escape */
 inline static void executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
-  if(dbgMode) {
-    printf(" |%.6u|L%.4u|", dbgCount, line);
-    dbgCount += 1;
-    printf("@%.4X", env.ep - 1);
-    dbgInstr(instr, TRUE);  
-    printf("\n");
-  }
-  U32 l, r;
-  U32 szMask = 0xFFFFFFFF; // TODO: remove
+  logInstr(instr);
+  U4 l, r;
+  U4 szMask = 0xFFFFFFFF; // TODO: remove
   SzI szI = SzI2;
-  switch ((U8)instr) {
+  switch ((U1)instr) {
     // Operation Cases
     case NOP: return;
     case RETZ:
       if(WS_POP()) return;
       // intentional fallthrough
     case RET:
-      U32 callMeta = Stk_pop(&env.cs);
+      U4 callMeta = Stk_pop(&env.cs);
       Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
       env.mp = MOD_HIGH_MASK & callMeta;
       env.ep = MAX_APTR & callMeta;
@@ -525,8 +543,8 @@ inline static void executeInstr(Instr instr) {
     case INV : WS_PUSH(~WS_POP()); return;
     case NEG : WS_PUSH(-WS_POP()); return;
     case NOT : WS_PUSH(0 == WS_POP()); return;
-    case CI1 : WS_PUSH((I32) ((I8) WS_POP())); return;
-    case CI2 : WS_PUSH((I32) ((I16) WS_POP())); return;
+    case CI1 : WS_PUSH((I4) ((I1) WS_POP())); return;
+    case CI2 : WS_PUSH((I4) ((I2) WS_POP())); return;
 
     case ADD : r = WS_POP(); WS_PUSH(WS_POP() + r); return;
     case SUB : r = WS_POP(); WS_PUSH(WS_POP() - r); return;
@@ -542,14 +560,14 @@ inline static void executeInstr(Instr instr) {
     case NEQ : r = WS_POP(); WS_PUSH(WS_POP() != r); return;
     case GE_U: r = WS_POP(); WS_PUSH(WS_POP() >= r); return;
     case LT_U: r = WS_POP(); WS_PUSH(WS_POP() < r); return;
-    case GE_S: r = WS_POP(); WS_PUSH((I32)WS_POP() >= (I32) r); return;
-    case LT_S: r = WS_POP(); WS_PUSH((I32)WS_POP() < (I32) r); return;
+    case GE_S: r = WS_POP(); WS_PUSH((I4)WS_POP() >= (I4) r); return;
+    case LT_S: r = WS_POP(); WS_PUSH((I4)WS_POP() < (I4) r); return;
     case MUL  :r = WS_POP(); WS_PUSH(WS_POP() * r); return;
     case DIV_U:r = WS_POP(); WS_PUSH(WS_POP() / r); return;
     case DIV_S:
       r = WS_POP();
       ASM_ASSERT(r, E_divZero);
-      WS_PUSH((I32) WS_POP() / (I32) r);
+      WS_PUSH((I4) WS_POP() / (I4) r);
       return;
 
     // Small literal (64 cases)
@@ -557,7 +575,7 @@ inline static void executeInstr(Instr instr) {
     CASE_32(C_SLIT+32) WS_PUSH(0x3F & instr); return;
 
     // Jmp Cases
-    case SzI1 + JMPL: r = env.ep; env.ep = toAptr(r + (I8)popLit(SzI1), SzI4); return;
+    case SzI1 + JMPL: r = env.ep; env.ep = toAptr(r + (I1)popLit(SzI1), SzI4); return;
     case SzI2 + JMPL: env.ep = toAptr(popLit(SzI2), SzI2); return;
     case SzI4 + JMPL: env.ep = toAptr(popLit(SzI4), SzI4); return;
 JMPW: case SzI2 + JMPW:
@@ -568,7 +586,7 @@ JMPW: case SzI2 + JMPW:
     case SzI1 + JZL:
       l = env.ep;
       r = popLit(SzI1);
-      if(!WS_POP()) { env.ep = toAptr(l + (I8)r, SzI4); }
+      if(!WS_POP()) { env.ep = toAptr(l + (I1)r, SzI4); }
       return;
     case SzI2 + JZL:
       r = popLit(SzI2);
@@ -648,8 +666,8 @@ SRGL: case SzI2 + SRGL:
   }
 }
 
-/*fn*/ void execute(U8 instr) {
-  U16 startingLen = Stk_len(env.cs);
+/*fn*/ void execute(U1 instr) {
+  U2 startingLen = Stk_len(env.cs);
   while(TRUE) {
     executeInstr(instr);
     if(Stk_len(env.cs) == startingLen) return;
@@ -659,28 +677,28 @@ SRGL: case SzI2 + SRGL:
 
 // ********************************************
 // ** Spore Dict
-// key/value map (not hashmap) where key is a cstr and value is U32.
+// key/value map (not hashmap) where key is a cstr and value is U4.
 
 #define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
 
-/*fn*/ U8 cstrEq(U8 slen0, U8 slen1, char* s0, char* s1) {
+/*fn*/ U1 cstrEq(U1 slen0, U1 slen1, char* s0, char* s1) {
   if(slen0 != slen1) return FALSE;
-  for(U8 i = 0; i < slen0; i += 1) {
+  for(U1 i = 0; i < slen0; i += 1) {
     if(s0[i] != s1[i]) return FALSE;
   }
   return TRUE;
 }
 
 // find key offset from dict. Else return dict.heap
-/*fn*/ U16 Dict_find(DictRef d, U8 slen, char* s) {
+/*fn*/ U2 Dict_find(DictRef d, U1 slen, char* s) {
   ASM_ASSERT(slen < 0x40, E_cKeyLen);
-  U16 offset = 0;
+  U2 offset = 0;
   assert(*d.heap < d.end);
 
   while(offset < *d.heap) {
     Key* key = Dict_key(d, offset);
     if(cstrEq(Key_len(key), slen, (char *)key->s, s)) return offset;
-    U16 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
+    U2 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
     offset += entrySz;
   }
 
@@ -688,12 +706,12 @@ SRGL: case SzI2 + SRGL:
   return offset;
 }
 
-/*fn*/ U16 Dict_set(DictRef d, U8 slen, char* s, U32 value) {
+/*fn*/ U2 Dict_set(DictRef d, U1 slen, char* s, U4 value) {
   // Set a key to a value, returning the offset
-  U16 offset = Dict_find(d, slen, s);
+  U2 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset == *d.heap, E_cKey)
   Key* key = Dict_key(d, offset);
-  U16 addedSize = alignAPtr(keySizeWLen(slen), 4);
+  U2 addedSize = alignAPtr(keySizeWLen(slen), 4);
   ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
   key->value = value;
   key->len = slen;
@@ -702,13 +720,13 @@ SRGL: case SzI2 + SRGL:
   return offset;
 }
 
-/*fn*/ U32 Dict_get(DictRef d, U8 slen, char* s) {
-  U16 offset = Dict_find(d, slen, s);
+/*fn*/ U4 Dict_get(DictRef d, U1 slen, char* s) {
+  U2 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset != *d.heap, E_cNoKey);
   return Dict_key(d, offset)->value;
 }
 
-/*fn*/ void Dict_forget(U8 slen, char* s) {
+/*fn*/ void Dict_forget(U1 slen, char* s) {
   DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
   dict->heap = Dict_find(d, slen, s);
 }
@@ -720,7 +738,7 @@ SRGL: case SzI2 + SRGL:
 #define tokenLen tokenState->len
 #define tokenBuf ((char*) mem + tokenState->buf)
 
-/*fn*/ TokenGroup toTokenGroup(U8 c) {
+/*fn*/ TokenGroup toTokenGroup(U1 c) {
   if(c <= ' ') return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
   if('a' <= c && c <= 'f') return T_HEX;
@@ -745,8 +763,8 @@ SRGL: case SzI2 + SRGL:
 /*fn*/ void shiftBuf() {
   // Shift buffer left from end of token
   if(tokenLen == 0) return;
-  U8 newStart = tokenLen;
-  U8 i = 0;
+  U1 newStart = tokenLen;
+  U1 i = 0;
   while(tokenLen < tokenBufSize) {
     tokenBuf[i] = tokenBuf[tokenLen];
     i += 1;
@@ -763,7 +781,7 @@ SRGL: case SzI2 + SRGL:
   while(TRUE) {
     if(tokenLen >= tokenBufSize) readNew();
     if(tokenBufSize == 0) return;
-    if (toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
+    if(toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
       shiftBuf();
       break;
     }
@@ -772,7 +790,7 @@ SRGL: case SzI2 + SRGL:
   }
   if(tokenBufSize < MAX_TOKEN) { readAppend(); }
 
-  U8 c = tokenBuf[tokenLen];
+  U1 c = tokenBuf[tokenLen];
   tokenState->group = toTokenGroup(c);
   if(tokenState->group == T_SINGLE) {
     tokenLen += 1;
@@ -792,10 +810,10 @@ SRGL: case SzI2 + SRGL:
   }
 }
 
-U8 scanInstr() {
+U1 scanInstr() {
   DictRef d = DEFAULT_DICT;
   scan();
-  U8 instr = Dict_get(d, tokenLen, tokenBuf);
+  U1 instr = Dict_get(d, tokenLen, tokenBuf);
   return mergeInstrSzI(env.szI, instr);
 }
 
@@ -818,10 +836,10 @@ U8 scanInstr() {
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
   scan();
-  if (dbgMode) { printf("# "); dbgToken(); printf("\n"); }
-  U32 v = 0;
-  for(U8 i = 0; i < tokenLen; i += 1) {
-    U8 c = tokenBuf[i];
+  if (LOG_ASM & *env.instrLogLvl) { printf("# "); dbgToken(); printf("\n"); }
+  U4 v = 0;
+  for(U1 i = 0; i < tokenLen; i += 1) {
+    U1 c = tokenBuf[i];
     if (c == '_') continue;
     ASM_ASSERT(toTokenGroup(c) <= T_HEX, E_cHex);
     v = (v << 4) + charToHex(c);
@@ -832,8 +850,8 @@ U8 scanInstr() {
 
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
-  if (dbgMode) { printf("= "); dbgWs(); dbgToken(); printf("\n"); }
-  U32 value = WS_POP();
+  if (LOG_ASM & *env.instrLogLvl) { printf("= "); dbgWs(); dbgToken(); printf("\n"); }
+  U4 value = WS_POP();
   DictRef d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value);
 }
@@ -841,37 +859,37 @@ U8 scanInstr() {
 /*fn*/ void cDictGet() { // `@`
   scan();
   DictRef d = DEFAULT_DICT;
-  U32 value = Dict_get(d, tokenLen, tokenBuf);
-  if (dbgMode) { printf("@ "); dbgToken(); printf("PUSH(0x%X)\n", value); }
+  U4 value = Dict_get(d, tokenLen, tokenBuf);
+  if (LOG_ASM & *env.instrLogLvl) { printf("@ "); dbgToken(); printf("PUSH(0x%X)\n", value); }
   WS_PUSH(value);
 }
 
 /*fn*/ void cWriteHeap() { // `,`
-  U32 value = WS_POP();
-  if (dbgMode) { printf(", #%X sz=%u\n", value, szIToSz(env.szI)); }
+  U4 value = WS_POP();
+  if (LOG_ASM & *env.instrLogLvl) { printf(", #%X sz=%u\n", value, szIToSz(env.szI)); }
   store(mem, *env.heap, value, env.szI);
   *env.heap += szIToSz(env.szI);
 }
 
 /*fn*/ void cWriteInstr() { // `%`
-  U8 instr = scanInstr();
-  store(mem, *env.heap, (U8)instr, SzI1);
-  if (dbgMode) { printf("%% "); dbgInstr(instr, FALSE); printf(" @%X\n", *env.heap); }
+  U1 instr = scanInstr();
+  store(mem, *env.heap, (U1)instr, SzI1);
+  if (LOG_ASM & *env.instrLogLvl) { printf("%% "); dbgInstr(instr, FALSE); printf(" @%X\n", *env.heap); }
   *env.heap += 1;
 }
 
 /*fn*/ void cExecuteInstr() { // ^
-  U8 instr = scanInstr();
-  if (dbgMode) { printf("^ "); printf("\n"); }
+  U1 instr = scanInstr();
+  if (LOG_ASM & *env.instrLogLvl) { printf("^ "); printf("\n"); }
   env.ep = 1;
   executeInstr(instr);
 }
 
 /*fn*/ void cExecute() { // $
   scan();
-  if(dbgMode) { printf("$ "); dbgWs(); dbgToken(); printf("\n"); }
+  if(LOG_ASM & *env.instrLogLvl) { printf("$ "); dbgWs(); dbgToken(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
-  U32 metaRef = Dict_get(d, tokenLen, tokenBuf);
+  U4 metaRef = Dict_get(d, tokenLen, tokenBuf);
   if(TY_FN_SMART & metaRef) {
     WS_PUSH(FALSE); // pass asInstant=FALSE
   }
@@ -921,10 +939,10 @@ U8 scanInstr() {
 }
 
 DictRef popDictRef() {
-  U32 rHeap = WS_POP();
-  U32 buf = WS_POP();
+  U4 rHeap = WS_POP();
+  U4 buf = WS_POP();
   return (DictRef) {
-    .heap = (U16*) (mem + rHeap),
+    .heap = (U2*) (mem + rHeap),
     .buf = buf,
     .end = dict->end,
   };
@@ -942,7 +960,7 @@ void deviceOp_dict(Bool isFetch) {
 void deviceOpRDict(Bool isFetch) {
   DictRef d = popDictRef();
   if(isFetch) {
-    U32 offset = Dict_find(d, tokenLen, tokenBuf);
+    U4 offset = Dict_find(d, tokenLen, tokenBuf);
     if(offset == *d.heap) {
       WS_PUSH(0);
       return; // not found
@@ -953,9 +971,9 @@ void deviceOpRDict(Bool isFetch) {
 
 void deviceOpCatch() {
   // cache ep, call and local stack.
-  U32 ep = env.ep;
-  U32 cs_sp = env.cs.sp;
-  U32 ls_sp = env.ls.sp;
+  U4 ep = env.ep;
+  U4 cs_sp = env.cs.sp;
+  U4 ls_sp = env.ls.sp;
 
   jmp_buf* prev_err_jmp = err_jmp;
   jmp_buf local_err_jmp;
@@ -977,7 +995,7 @@ void deviceOpCatch() {
   err_jmp = prev_err_jmp;
 
   // Push current error to WS and clear it.
-  U32 out = *env.err;
+  U4 out = *env.err;
   *env.err = 0;
   WS_PUSH(out);
 }
@@ -987,24 +1005,37 @@ void deviceOpCompile() {
 }
 
 void deviceOpMemMove() { // {dst src len} -> {}
-  U16 len = WS_POP();
+  U2 len = WS_POP();
   APtr src = WS_POP();
   APtr dst = WS_POP();
   memmove(mem + dst, mem + src, len);
 }
 
 void deviceOpMemCmp() { // {a b len} -> {cmp}
-  U16 len = WS_POP();
+  U2 len = WS_POP();
   APtr b = WS_POP();
   APtr a = WS_POP();
-  WS_PUSH((U32)(I32) memcmp(mem+a, mem+b, len));
+  WS_PUSH((U4)(I4) memcmp(mem+a, mem+b, len));
+}
+
+void printCStr(U1 len, char* s) { printf("%.*s", len, s); }
+void deviceOpLog(Bool isFetch) { // {len ref lvl}
+  U4 lvl = WS_POP();
+  U2 len = WS_POP();
+  U4 ref = WS_POP();
+  if(isFetch) {
+    if(!(*env.usrLogLvl & lvl)) return;
+  } else {
+    if(!(*env.instrLogLvl & lvl)) return;
+  }
+  printCStr(len, mem + ref);
 }
 
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
-void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
-  U32 op = WS_POP();
-  U32 tmp;
+void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
+  U4 op = WS_POP();
+  U4 tmp;
   switch(op) {
     case D_read: readAppend(); break;
     case D_scan: scan(); break;
@@ -1025,6 +1056,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
     case D_xsCatch: deviceOpCatch(); break;
     case D_memMove: deviceOpMemMove(); break;
     case D_memCmp: deviceOpMemMove(); break;
+    case D_log: deviceOpLog(isFetch); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1046,9 +1078,9 @@ ssize_t readSrc(size_t nbyte) {
 
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS)  \
   dbgCount = 0;                           \
-  U8 localMem[MS] = {0};                  \
-  U8 wsMem[WS];                           \
-  U8 callStkMem[RS];                      \
+  U1 localMem[MS] = {0};                  \
+  U1 wsMem[WS];                           \
+  U1 callStkMem[RS];                      \
   memset(&localMem, 0, MS);               \
   memset(&wsMem, 0, MS);               \
   memset(&callStkMem, 0, MS);               \
@@ -1060,18 +1092,22 @@ ssize_t readSrc(size_t nbyte) {
     .heap =    (APtr*) (mem + 0x4),       \
     .topHeap = (APtr*) (mem + 0x8),       \
     .topMem =  (APtr*) (mem + 0xC),       \
-    .err =     (U32*) (mem + 0x10),       \
-    .state =   (U32*) (mem + 0x14),       \
-    .testIdx = (U32*) (mem + 0x18),       \
+    .err =     (U4*) (mem + 0x10),       \
+    .state =   (U4*) (mem + 0x14),       \
+    .testIdx = (U4*) (mem + 0x18),       \
+    .instrLogLvl = (U2*) (mem + 0x1C),       \
+    .usrLogLvl   = (U2*) (mem + 0x1E),       \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
     .cs = \
       { .size = RS, .sp = RS, .mem = callStkMem }, \
     .szI = SzI4, \
   };                                      \
+  *env.instrLogLvl = STARTING_INSTR_LOG_LVL;\
+  *env.usrLogLvl = LOG_USER | LOG_CRIT;\
   /* configure heap+topheap */            \
   *env.heap = GS; /*bottom is globals*/   \
-  APtr glbls = 0x18 + 4;                  \
+  APtr glbls = 0x1E + 2;                  \
   dict = (Dict*) (mem + glbls);           \
   dict->heap = 0;                         \
   dict->end = DS;                         \
@@ -1121,8 +1157,6 @@ void compileFile(char* s) {
 void tests();
 
 /*fn*/ int main() {
-  // printf("compiling spor...:\n");
-
   tests();
   return 0;
 }
@@ -1132,7 +1166,7 @@ void tests();
 
 #include <string.h>
 
-U8 szIToSzSafe(SzI szI) {
+U1 szIToSzSafe(SzI szI) {
   switch (szI) {
     case SzI1: return 1;
     case SzI2: return 2;
@@ -1141,7 +1175,6 @@ U8 szIToSzSafe(SzI szI) {
   }
 }
 
-void printCStr(U8 len, char* s) { printf("%.*s", len, s); }
 void dbgToken() {
   printf(" \"%.*s\"", tokenLen, tokenBuf);
 }
@@ -1166,28 +1199,28 @@ void dbgEnv() {
 
 Key keyDNE = {.len = 3, .s = "???" };
 
-Key* Dict_findFn(U32 value) {
+Key* Dict_findFn(U4 value) {
   DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
-  U16 offset = 0;
+  U2 offset = 0;
   Key* key = &keyDNE;
 
   while(offset < dict->heap) {
     Key* atKey = Dict_key(d, offset);
     if(value == (REF_MASK & atKey->value)) key = atKey;
-    U16 entrySz = alignAPtr(keySizeWLen(Key_len(atKey)), 4);
+    U2 entrySz = alignAPtr(keySizeWLen(Key_len(atKey)), 4);
     offset += entrySz;
   }
   assert(offset == *d.heap);
   return key;
 }
 
-U32 max(I32 a, I32 b) {
+U4 max(I4 a, I4 b) {
   if (a > b) return a;
   return b;
 }
 
 void dbgWs() {
-  printf(" {%u... ", max(0, ((I32) WS_LEN) - 2));
+  printf(" {%u... ", max(0, ((I4) WS_LEN) - 2));
   if(WS_LEN > 0) {
     if(WS_LEN == 1) printf("   ----  |");
     else printf(" %+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, SzIA));
@@ -1198,7 +1231,7 @@ void dbgWs() {
 
 void dbgWsFull() {
   printf("  {{ ");
-  for(I8 i = WS_LEN - 1; i >= 0; i -= 1) {
+  for(I1 i = WS_LEN - 1; i >= 0; i -= 1) {
     printf("%X, ", fetch(env.ws.mem, env.ws.sp + (i << APO2), SzIA));
   }
   printf("}}\n");
@@ -1276,7 +1309,7 @@ char* instrStr(Instr instr) {
 
 
 Bool _dbgMemInvalid(SzI szI, APtr aptr) {
-  U8 sz = szIToSz(szI);
+  U1 sz = szIToSz(szI);
   if (aptr != alignAPtr(aptr, sz)) {
     printf(" !!ALIGN!! ");
     return TRUE;
@@ -1295,7 +1328,7 @@ Bool _dbgMemInvalid(SzI szI, APtr aptr) {
 void dbgJmp(Instr instr) {
   if (INSTR_CLASS(instr) != C_JMP) return;
 
-  U32 jloc = 0;
+  U4 jloc = 0;
   SzI szI = INSTR_SZI(instr);
 
   switch (INSTR_NO_SZ(instr)) {
@@ -1347,7 +1380,7 @@ void dbgMem(Instr instr) {
 
 void dbgIndent() {
   // printf(" + %+3u + ", X_DEPTH);
-  for(U16 i = 0; i < X_DEPTH; i += 1) printf("+");
+  for(U2 i = 0; i < X_DEPTH; i += 1) printf("+");
 }
 
 #define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
@@ -1376,24 +1409,50 @@ void dbgInstr(Instr instr, Bool lit) {
   }
 }
 
+static inline Bool isExecute(Instr instr) {
+  switch ((~SZ_MASK) & instr) {
+    case JMPL: return (SZ_MASK & instr) != SzI1;
+    case JMPW:
+    case XL:
+    case XW:
+    case XSL:
+    case XSW: return TRUE;
+    default: return instr == RET;
+  }
+}
+
+static inline Bool doLogInstr(Instr instr) {
+  if(LOG_INSTR & *env.instrLogLvl) return TRUE;
+  if((LOG_EXECUTE & *env.instrLogLvl) && isExecute(instr)) return TRUE;
+  return FALSE;
+}
+
+static inline void logInstr(Instr instr) {
+  dbgCount += 1;
+  if(!doLogInstr(instr)) return;
+  printf(" |%.8u|L%.4u|", dbgCount, line);
+  printf("@%.4X", env.ep - 1);
+  dbgInstr(instr, TRUE);
+  printf("\n");
+}
 
 #define TEST_ENV_BARE \
   globalInstr = NOP; \
   SMALL_ENV_BARE; \
-  U32 heapStart = *env.heap
+  U4 heapStart = *env.heap
 
 #define TEST_ENV \
   SMALL_ENV \
-  U32 heapStart = *env.heap
+  U4 heapStart = *env.heap
 
 
 char* testBuf = NULL;
-U16 testBufIdx = 0;
+U2 testBufIdx = 0;
 
 /*test*/ ssize_t testingRead() {
   size_t i = 0;
   while (i < (TOKEN_BUF - tokenState->size)) {
-    U8 c = testBuf[testBufIdx];
+    U1 c = testBuf[testBufIdx];
     if(c == 0) return i;
     tokenBuf[tokenBufSize] = c;
     tokenBufSize += 1;
@@ -1422,7 +1481,7 @@ void compileStr(char* s) {
   assert(WS_POP() == 0x10);
 
   compileStr("/comment\n.2 #10AF");
-  U32 result = WS_POP();
+  U4 result = WS_POP();
   assert(result == 0x10AF);
 
   compileStr(".4 #1002_3004");
@@ -1451,7 +1510,7 @@ void compileStr(char* s) {
   assert(0 == Dict_set(d, 3, "foo", 0xF00));
 
   // get
-  U32 result = Dict_get(d, 3, "foo");
+  U4 result = Dict_get(d, 3, "foo");
   assert(result == 0xF00);
 
   // assert(12 == Dict_set(d, 5, "bazaa", 0xBA2AA));
@@ -1502,7 +1561,7 @@ void compileStr(char* s) {
 //   compileStr(".A @D_sz ^DVFT");
 //   assert(0x04 == WS_POP());
 // 
-//   U32 expectDictHeap = (U8*)dict - mem + 4;
+//   U4 expectDictHeap = (U1*)dict - mem + 4;
 //   compileStr(".4 @c_tokenBuf #FF_FFFF ^BAND^FT"); assert(tokenState->buf == WS_POP());
 //   compileStr(".4 @topHeap #FF_FFFF ^BAND ^FT");  assert(*env.topHeap == WS_POP());
 //   compileStr(".4 @c_dictHeap #FF_FFFF ^BAND  assert(expectDictHeap == WS_POP());
@@ -1523,7 +1582,7 @@ void compileStr(char* s) {
   heapStart = *env.heap;
   compileStr("#7 $L0");
   assert(heapStart+1 == *env.heap);
-  U32 v1 = fetch(mem, heapStart, SzI1);
+  U4 v1 = fetch(mem, heapStart, SzI1);
   assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
 
   // Test h2

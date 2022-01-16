@@ -3,31 +3,77 @@
 
 $c_loop // starts fngi syntax
 
-SFN ==   PRE SMART IF() spor%EQ     ELSE $c1(EQ  )   END ret;
-SFN >=   PRE SMART IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
-SFN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
-SFN and  PRE SMART IF() spor%LAND   ELSE $c1(LAND)   END ret;
-SFN or   PRE SMART IF() spor%LOR    ELSE $c1(LOR )   END ret;
+
+// Stack operators. These are /not/ PRE since they directly modify the stack.
+SFN swp      SMART IF() spor%SWP    ELSE $c1(SWP )   END ret;
+SFN drp      SMART IF() spor%DRP    ELSE $c1(DRP )   END ret;
+SFN ovr      SMART IF() spor%OVR    ELSE $c1(OVR )   END ret;
+SFN dup      SMART IF() spor%DUP    ELSE $c1(DUP )   END ret;
+SFN dupn     SMART IF() spor%DUPN   ELSE $c1(DUPN)   END ret;
+
+// Standard operators that use PRE syntax
+SFN dvft PRE SMART IF() spor%DVFT   ELSE $c1(DVFT)   END ret;
+SFN dvsr PRE SMART IF() spor%DVSR   ELSE $c1(DVSR)   END ret;
+SFN inc  PRE SMART IF() spor%INC    ELSE $c1(INC )   END ret;
+SFN inc2 PRE SMART IF() spor%INC2   ELSE $c1(INC2)   END ret;
+SFN inc4 PRE SMART IF() spor%INC4   ELSE $c1(INC4)   END ret;
+SFN dec  PRE SMART IF() spor%DEC    ELSE $c1(DEC )   END ret;
+SFN inv  PRE SMART IF() spor%INV    ELSE $c1(INV )   END ret;
+SFN neg  PRE SMART IF() spor%NEG    ELSE $c1(NEG )   END ret;
+SFN not  PRE SMART IF() spor%NOT    ELSE $c1(NOT )   END ret;
+SFN i1to4 PRE SMART IF() spor%CI1    ELSE $c1(CI1 )   END ret;
+SFN i2to4 PRE SMART IF() spor%CI2    ELSE $c1(CI2 )   END ret;
+
+SFN +    PRE SMART IF() spor%ADD    ELSE $c1(ADD )   END ret;
+SFN -    PRE SMART IF() spor%SUB    ELSE $c1(SUB )   END ret;
+SFN %    PRE SMART IF() spor%MOD    ELSE $c1(MOD )   END ret;
+SFN <<   PRE SMART IF() spor%SHL    ELSE $c1(SHL )   END ret;
+SFN >>   PRE SMART IF() spor%SHR    ELSE $c1(SHR )   END ret;
 SFN &    PRE SMART IF() spor%BAND   ELSE $c1(BAND)   END ret;
 SFN |    PRE SMART IF() spor%BOR    ELSE $c1(BOR )   END ret;
 SFN xor  PRE SMART IF() spor%XOR    ELSE $c1(XOR )   END ret;
-SFN %    PRE SMART IF() spor%MOD    ELSE $c1(MOD )   END ret;
-SFN +    PRE SMART IF() spor%ADD    ELSE $c1(ADD )   END ret;
-SFN -    PRE SMART IF() spor%SUB    ELSE $c1(SUB )   END ret;
+SFN and  PRE SMART IF() spor%LAND   ELSE $c1(LAND)   END ret;
+SFN or   PRE SMART IF() spor%LOR    ELSE $c1(LOR )   END ret;
+SFN ==   PRE SMART IF() spor%EQ     ELSE $c1(EQ  )   END ret;
+SFN >=   PRE SMART IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
+SFN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
 SFN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
 SFN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
+
 // ftN(REF name): fetch a value of sz N from reference
 SFN ft1    PRE SMART IF() spor$(.1 %FT) ELSE $c1(SZ1|FT) END ret;
-// SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2|FT) END ret;
-// SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4|FT) END ret;
-//
-// srN(REF name, value): store a value of sz N to reference
-// SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1|SR) END ret;
-// SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2|SR) END ret;
-// SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4|SR) END ret;
+SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2|FT) END ret;
+SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4|FT) END ret;
 
-// // Block comment, allows nesting.
+// srN(REF name, value): store a value of sz N to reference
+SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1|SR) END ret;
+SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2|SR) END ret;
+SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4|SR) END ret;
+
+SFN memMove PRE  ret dvft(D_memMove) // {dst src len} -> {}
+
+SFN c_shiftBuf // shift buffer to clear current token
+  (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
+  $jmpl memMove
+
+SFN c_char // {} -> {c} get the next character
+  IF(GET c_tokenLen >= GET c_tokenSize) c_readNew; END
+  c_assertNoEof
+  ft1(GET c_tokenBuf + GET c_tokenLen) // {c}
+  // increment tokenLen and shift out 'c'
+  inc(GET c_tokenLen)
+  SET c_tokenLen
+  $jmpl c_shiftBuf
+
+// SFN readCharEsc // {} -> {char} read a character that can be escaped.
+
+// SFN ' SMART // interpret a character
+
+  // c_tokenBuf
+
+// TODO: it seems like INSTANT might be broken now?
+// Block comment, allows /*nesting*/.
 // SFN /*  // */
 //   INSTANT
 //   LOOP l
@@ -38,5 +84,15 @@ SFN ft1    PRE SMART IF() spor$(.1 %FT) ELSE $c1(SZ1|FT) END ret;
 //       or ft1(inc GET c_tokenBuf) == '*';
 //     IF _ ret
 //   AGAIN l
+
+
+// SFN cbytesUnpack PRE // {&cbytes} -> {len &bytes}
+//   ft1(dup) & 0x3F // {&cbytes len}
+//   swp inc() // {len &bytes}
+//   ret;
+// 
+// FN logBytes PRE SMART // {len &bytes lvl}
+//   IF()  dvft(_, _, _, D_log)
+//   ELSE  D_log c_lit $c1(DVFT)   END
 
 // /*(*/  SFN )  panic E_unclosed // prevent unclosed parens
