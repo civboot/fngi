@@ -126,8 +126,8 @@ typedef enum {
   MOD  = 0x22,
   SHL  = 0x23,
   SHR  = 0x24,
-  AND  = 0x25,
-  OR   = 0x26,
+  BAND = 0x25,
+  BOR  = 0x26,
   XOR  = 0x27,
   LAND = 0x28,
   LOR  = 0x29,
@@ -533,8 +533,8 @@ inline static void executeInstr(Instr instr) {
     case MOD : r = WS_POP(); WS_PUSH(WS_POP() % r); return;
     case SHL : r = WS_POP(); WS_PUSH(WS_POP() << r); return;
     case SHR : r = WS_POP(); WS_PUSH(WS_POP() >> r); return;
-    case AND : r = WS_POP(); WS_PUSH(WS_POP() & r); return;
-    case OR  : r = WS_POP(); WS_PUSH(WS_POP() | r); return;
+    case BAND: r = WS_POP(); WS_PUSH(WS_POP() & r); return;
+    case BOR : r = WS_POP(); WS_PUSH(WS_POP() | r); return;
     case XOR : r = WS_POP(); WS_PUSH(WS_POP() ^ r); return;
     case LAND: r = WS_POP(); WS_PUSH(WS_POP() && r); return;
     case LOR : r = WS_POP(); WS_PUSH(WS_POP() || r); return;
@@ -649,10 +649,10 @@ SRGL: case SzI2 + SRGL:
 }
 
 /*fn*/ void execute(U8 instr) {
-  env.ep = 1; // so dbg makes it 0
+  U16 startingLen = Stk_len(env.cs);
   while(TRUE) {
     executeInstr(instr);
-    if(Stk_len(env.cs) == 0) return;
+    if(Stk_len(env.cs) == startingLen) return;
     instr = popLit(SzI1);
   }
 }
@@ -872,9 +872,7 @@ U8 scanInstr() {
   if(dbgMode) { printf("$ "); dbgWs(); dbgToken(); printf("\n"); }
   DictRef d = DEFAULT_DICT;
   U32 metaRef = Dict_get(d, tokenLen, tokenBuf);
-  printf("??? executing %X isSmart=%X\n", metaRef, TY_FN_SMART & metaRef);
   if(TY_FN_SMART & metaRef) {
-    printf("??? is smart\n");
     WS_PUSH(FALSE); // pass asInstant=FALSE
   }
   WS_PUSH(REF_MASK & metaRef);
@@ -897,7 +895,7 @@ U8 scanInstr() {
     case '$': cExecute(); break;
     default:
       printf("!! invalid token: %c\n", tokenBuf[0]);
-      SET_ERR(E_cSz);
+      SET_ERR(E_cToken);
   }
   return FALSE;
 }
@@ -1017,7 +1015,7 @@ void deviceOp(Bool isFetch, SzI szI, U32 szMask, U8 sz) {
       else env.szI = szToSzI(WS_POP());
       break;
     case D_comp: deviceOpCompile(); break;
-    case D_assert: 
+    case D_assert:
       tmp = WS_POP();
       if(!tmp) SET_ERR(E_cErr);
       if(!WS_POP()) SET_ERR(tmp);
@@ -1056,7 +1054,7 @@ ssize_t readSrc(size_t nbyte) {
   memset(&callStkMem, 0, MS);               \
   mem = localMem;                         \
   env = (Env) {                           \
-    .ep = 0,                              \
+    .ep = 1,                              \
     .mp = 0,                              \
     .gb = 0,                              \
     .heap =    (APtr*) (mem + 0x4),       \
@@ -1237,8 +1235,8 @@ char* instrStr(Instr instr) {
     case MOD  :  return "MOD  ";
     case SHL  :  return "SHL  ";
     case SHR  :  return "SHR  ";
-    case AND  :  return "AND  ";
-    case OR   :  return "OR   ";
+    case BAND :  return "BAND ";
+    case BOR  :  return "BOR  ";
     case XOR  :  return "XOR  ";
     case LAND :  return "LAND ";
     case LOR  :  return "LOR  ";
@@ -1505,9 +1503,9 @@ void compileStr(char* s) {
 //   assert(0x04 == WS_POP());
 // 
 //   U32 expectDictHeap = (U8*)dict - mem + 4;
-//   compileStr(".4 @c_tokenBuf #FF_FFFF ^AND ^FT"); assert(tokenState->buf == WS_POP());
-//   compileStr(".4 @topHeap #FF_FFFF ^AND ^FT");  assert(*env.topHeap == WS_POP());
-//   compileStr(".4 @c_dictHeap #FF_FFFF ^AND");   assert(expectDictHeap == WS_POP());
+//   compileStr(".4 @c_tokenBuf #FF_FFFF ^BAND^FT"); assert(tokenState->buf == WS_POP());
+//   compileStr(".4 @topHeap #FF_FFFF ^BAND ^FT");  assert(*env.topHeap == WS_POP());
+//   compileStr(".4 @c_dictHeap #FF_FFFF ^BAND  assert(expectDictHeap == WS_POP());
 // }
 
 /*test*/ void testSpore() {
@@ -1554,6 +1552,8 @@ void compileStr(char* s) {
 /*test*/ void testFngi() {
   printf("## testFngi\n"); TEST_ENV;
   compileFile("fngi.fn");
+  if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+  compileFile("tests/testFngi.fn");
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
 }
 

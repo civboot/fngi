@@ -12,7 +12,7 @@ syn keyword elInstr
       \ NOP   RETZ  RET   SWP   DRP   OVR   DUP   DUPN  DVFT  DVSR
       \ RGFT  RGSR  FT    SR
       \ INC   INC2  INC4  DEC   INV   NEG   NOT   CI1   CI2
-      \ ADD   SUB   MOD   SHL   SHR   AND   OR    XOR   LAND  LOR
+      \ ADD   SUB   MOD   SHL   SHR   BAND  BOR   XOR   LAND  LOR
       \ EQ    NEQ   GE_U  LT_U  GE_S  LT_S
       \ MUL   DIV_U DIV_S
       \ SLIT  SZ1   SZ2   SZ4   SZA

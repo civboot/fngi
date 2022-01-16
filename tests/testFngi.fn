@@ -1,0 +1,16 @@
+$c_loop
+
+$tAssert(1)
+$tAssertNot(0)
+$tAssert(1 == 1)
+SFN useEq ret(1 == 2);
+$tAssertNot(useEq)
+
+$tAssert(0x42 >= 0x30)
+$tAssert(11 < 12)
+$tAssert(0x1 and 0x8 == TRUE)
+$tAssertEq(0x1 and 0x8, TRUE)
+$tAssertNot(0x1 & 0x8)
+$tAssertEq(0xFF & 0xC, 0xC)
+$tAssertEq(0x0 or 0x8, TRUE)
+$tAssertEq(0x0 |  0x8, 0x8)

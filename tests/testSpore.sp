@@ -40,8 +40,8 @@ $callMyXs #22 $tAssertEq
 $c_updateRKey ^DRP
 
 // assert @rKey == @(&dict.buf + &dict.heap)
-  @c_rKey @REF_MASK ^AND .4^FT
-  @c_dictBuf @REF_MASK ^AND .4^FT   @c_dictHeap @REF_MASK ^AND .2^FT   .4^ADD
+  @c_rKey @REF_MASK ^BAND .4^FT
+  @c_dictBuf @REF_MASK ^BAND .4^FT   @c_dictHeap @REF_MASK ^BAND .2^FT   .4^ADD
   $tAssertEq
 
 
@@ -92,10 +92,10 @@ $ha2 #1 $h1 // misalign heap
 
 // Testing Gloabls
 #12345 @SZ4 $GLOBAL myG1   $assertWsEmpty
-@myG1 #FF_FFFF ^AND .4^FT  #12345 $tAssertEq
+@myG1 #FF_FFFF ^BAND .4^FT  #12345 $tAssertEq
 
 $SFN myG1Ref  $REF myG1 %RET
-$myG1Ref  @myG1 #FF_FFFF ^AND  $tAssertEq
+$myG1Ref  @myG1 #FF_FFFF ^BAND  $tAssertEq
 
 $SFN myG1Get  $GET myG1 %RET
 $myG1Get  #12345 $tAssertEq
@@ -117,7 +117,7 @@ $ldictGet shadowed #45 $tAssertEq
 $FN fooLocals
   @SZ2 $LOCAL myLocal
   $ldictGet myLocal
-  @TY_LOCAL  @SZ2 #4 ^SHR  ^OR  #18 ^SHL
+  @TY_LOCAL  @SZ2 #4 ^SHR  ^BOR  #18 ^SHL
   $tAssertEq
 
 // test R_LP
@@ -199,7 +199,7 @@ $SFN testFngiSingleOne @fngiSingle $comp1 two %RET
 $testFngiSingleOne #2 $tAssertEq
 
 $() // does nothing
-$( SFN hi 32 one %%RET )
+$( SFN hi 32 one spor%RET )
 $hi
   #1 $tAssertEq
   #20 $tAssertEq

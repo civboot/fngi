@@ -3,10 +3,29 @@
 
 $c_loop // starts fngi syntax
 
-$tAssert(1)
+SFN ==   PRE SMART IF() spor%EQ     ELSE $c1(EQ  )   END ret;
+SFN >=   PRE SMART IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
+SFN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
+SFN and  PRE SMART IF() spor%LAND   ELSE $c1(LAND)   END ret;
+SFN or   PRE SMART IF() spor%LOR    ELSE $c1(LOR )   END ret;
+SFN &    PRE SMART IF() spor%BAND   ELSE $c1(BAND)   END ret;
+SFN |    PRE SMART IF() spor%BOR    ELSE $c1(BOR )   END ret;
+SFN xor  PRE SMART IF() spor%XOR    ELSE $c1(XOR )   END ret;
+SFN %    PRE SMART IF() spor%MOD    ELSE $c1(MOD )   END ret;
+SFN +    PRE SMART IF() spor%ADD    ELSE $c1(ADD )   END ret;
+SFN -    PRE SMART IF() spor%SUB    ELSE $c1(SUB )   END ret;
+SFN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
+SFN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
-$SFN == $c1(EQ) ret;
-$SFN >= $c1(GE_U) ret;
+// ftN(REF name): fetch a value of sz N from reference
+SFN ft1    PRE SMART IF() spor$(.1 %FT) ELSE $c1(SZ1|FT) END ret;
+// SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2|FT) END ret;
+// SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4|FT) END ret;
+//
+// srN(REF name, value): store a value of sz N to reference
+// SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1|SR) END ret;
+// SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2|SR) END ret;
+// SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4|SR) END ret;
 
 // // Block comment, allows nesting.
 // SFN /*  // */
