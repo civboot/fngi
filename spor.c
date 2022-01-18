@@ -6,7 +6,6 @@
 #include <string.h>
 #include <setjmp.h>
 
-
 typedef enum {
   LOG_SILENT    = 0x00,
   LOG_USER      = 0x80,
@@ -25,8 +24,8 @@ typedef enum {
   LOG_INSTANT   = 0x10,
 } InstrLogLvl;
 
-// #define STARTING_INSTR_LOG_LVL    (0xFF)         // log everything
-#define STARTING_INSTR_LOG_LVL    (LOG_EXECUTE | LOG_INSTANT)
+#define STARTING_INSTR_LOG_LVL    (0xFF)         // log everything
+// #define STARTING_INSTR_LOG_LVL    (LOG_EXECUTE | LOG_INSTANT)
 
 // ********************************************
 // ** Core Types
@@ -793,7 +792,7 @@ SRGL: case SzI2 + SRGL:
   U1 c = tokenBuf[tokenLen];
   tokenState->group = toTokenGroup(c);
   if(tokenState->group == T_SINGLE) {
-    tokenLen += 1;
+    tokenLen += 1; // SINGLE: always single-char token
     return;
   }
 

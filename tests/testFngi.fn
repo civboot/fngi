@@ -14,3 +14,19 @@ $tAssertNot(0x1 & 0x8)
 $tAssertEq(0xFF & 0xC, 0xC)
 $tAssertEq(0x0 or 0x8, TRUE)
 $tAssertEq(0x0 |  0x8, 0x8)
+
+$tAssertEq('\t', 0x09)
+$tAssertEq('\n', 0x0A)
+$tAssertEq(' ' , 0x20)
+$tAssertEq('a' , 0x61)
+
+// $tAssertEq(testSET(3), 4)
+FN testSET PRE
+  $SZ4 LOCAL a  END_LOCALS
+  SET a  ;
+  // inc(GET a)
+  // ret(GET a)
+
+// $assertWsEmpty
+// 
+// $testSET(3)

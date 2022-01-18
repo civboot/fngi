@@ -318,6 +318,7 @@
 #E0EE  =E_cUnclosed   // unclosed paren/brace/etc
 #E0EF  =E_cReqInstant // fn is INSTANT but no '$' used
 #E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
+#E0F0  =E_cStr        // invalid string
 
 
 // **********
@@ -849,18 +850,27 @@ $FN _instrLitImpl $PRE
   .1%FTLL #1$h1 %BOR $xsl h1 // compile (szInstr | instr) {metaRO}
   .1%FTLL #0$h1  $jmpl hN // compile literal of proper instrSz
 
-$FN _getSetImpl $PRE // {localInstrSz localInstr globalInstrSz globalInstr}
+$SFN anyDictGetR // {} -> {&metaRef isFromLocal}
+  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    @TRUE$L0 %RET
+  $END %DRP
+  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    @FALSE$L0 %RET
+  $END @E_cNotType$L2 $xsl panic
+
+$FN _getSetImpl $PRE // {&metaRef isFromLocal localInstrSz localInstr globalInstrSz globalInstr}
   #1 $h1 // locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 // 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 // 0=localInstrSz 1=localInstr
-  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+  // {&metaRef isFromLocal}
+  $IF
     $xsl _lSetup %DUP $xsl _metaRefSzI // {metaRef szInstr}
-    .1%FTLL#0$h1 .1%FTLL#1$h1  $xl _instrLitImpl %RET
-  $END %DRP
-  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    .1%FTLL#0$h1 .1%FTLL#1$h1
+  $ELSE
     $xsl _gSetup %DUP $xsl _metaRefSzI // {metaRef szInstr}
-    .1%FTLL#2$h1 .1%FTLL#3$h1  $xl _instrLitImpl %RET
-  $END @E_cNotType$L2 $xsl panic
+    .1%FTLL#2$h1 .1%FTLL#3$h1
+  $END
+  $xl _instrLitImpl %RET
 
 // (create _xxxImpl for fngi to use)
 $SFN _getImpl
@@ -884,8 +894,8 @@ $SFN _refImpl
   $END @E_cNotType$L2 $xsl panic
 
 $SFN REF  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _refImpl
-$SFN GET  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _getImpl
-$SFN SET  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _setImpl
+$SFN GET  $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _getImpl
+$SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _setImpl
 
 $SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
   #4$L0 %SHR  @TY_GLOBAL$L1  %BOR  $_jmpl c_makeTy
@@ -928,13 +938,13 @@ $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
   .1%SRLL#0$h1 // set szI {value}
   $xsl c_updateRKey // {value &metaRef}
   $GET c_gheap .1%FTLL#0$h1  $xl align // {value &metaRef alignedGHeap}
-  %DUP $SET c_gheap // update gheap to aligned value {value &metaRef alignedGHeap}
+  %DUP $_SET c_gheap // update gheap to aligned value {value &metaRef alignedGHeap}
   $xsl dictSet      // create dictionary entry at alignedGHeap {value &metaRef}
 
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
   %SWP $xsl c_keySetTy // update key ty {value}
   $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srN // store global value
-  $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $SET c_gheap // gheap += sz
+  $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap // gheap += sz
   %RET
 
 
@@ -944,7 +954,7 @@ $SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
   $GET c_dictBuf   $GET c_dictHeap  %ADD // ldict.buf
   $GET c_dictLHeap                        // ldict.heap
   %ADD // {&newLkey}
-  %DUP $SET c_rLKey  %RET
+  %DUP $_SET c_rLKey  %RET
 
 // implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
@@ -962,7 +972,7 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
   $GET c_localOffset // {meta loff}
   .1%FTLL#0$h1  $xsl alignSzI // align local offset {meta loff}
   // c_localOffset = offset + sz
-  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $SET c_localOffset
+  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $_SET c_localOffset
   $xsl c_updateRLKey // {meta loff &metaRef}
   %SWP $xsl ldictSet  // set to localOffset {meta &metaRef}
   $xsl c_keySetTy %RET
@@ -1015,18 +1025,18 @@ $FN c_parseNumber // {} -> {value isNumber}
   @SZ1 $LOCAL i
   @SZ1 $LOCAL base
   $END_LOCALS
-  #A$L0 $SET base
-  #0$L0 $SET value
-  #0$L0 $SET i
+  #A$L0 $_SET base
+  #0$L0 $_SET value
+  #0$L0 $_SET i
 
   // Get correct base
   $GET c_tokenBuf .1%FT #30$L0 %EQ $IF // if c0 == '0' {}
     $GET c_tokenBuf %INC .1%FT %DUP // {c1 c1}
     #62$L1 %EQ  $IF // if .tokenBuf@1=='b' {c}
-      #2$L0  $SET base  #2$L0 $SET i
+      #2$L0  $_SET base  #2$L0 $_SET i
     $END
     #78$L1 %EQ  $IF // if .tokenBuf@1=='x' {}
-      #10$L0 $SET base  #2$L0 $SET i
+      #10$L0 $_SET base  #2$L0 $_SET i
     $END
   $END
 
@@ -1038,8 +1048,8 @@ $FN c_parseNumber // {} -> {value isNumber}
     %DUP $GET base %GE_U $IF  @FALSE$L0 %RET  $END
 
     $GET base  $GET value %MUL // {base * value}
-    %ADD $SET value // value = v + value*10
-    $GET i %INC $SET i // i += 1
+    %ADD $_SET value // value = v + value*10
+    $GET i %INC $_SET i // i += 1
   $AGAIN l0  $END_BREAK b0
 
   $GET i %NOT $IF  #0$L0 @FALSE$L0 %RET  $END // no token
@@ -1050,7 +1060,7 @@ $assertWsEmpty
 $SFN c_stateCompile $GET c_state @C_COMPILE$L2 %BAND %RET // {} -> state
 $SFN c_stateInstant $GET c_state @C_INSTANT$L2 %BAND %RET // {} -> state
 
-$SFN lit  $PRE $INSTANT
+$SFN lit  $PRE
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
@@ -1124,7 +1134,7 @@ $SFN _compFnAsInstant $PRE
 
 $SFN _updateCompFn // {newCompFnMetaRef} -> {prevCompFnRef}
   $xsl toRef
-  $GET c_compFn %SWP $SET c_compFn %RET
+  $GET c_compFn %SWP $_SET c_compFn %RET
 
 $SFN c_scanNoEof $xsl c_scan  $xsl c_isEof @E_eof$L2 $jmpl assertNot
 
@@ -1147,7 +1157,7 @@ $FN c_single // {asInstant} -> {}: compile a single token
 
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
-    $SET metaRef  $GET c_compFn .4%XW  $GET metaRef
+    $_SET metaRef  $GET c_compFn .4%XW  $GET metaRef
   $END
 
   %DUP $xsl isFnSmart $IF
@@ -1172,7 +1182,7 @@ $SFN c_peekChr // {} -> {c} peek at a character
   $xsl c_scan
   $xsl c_isEof $IF  #0$L0 %RET  $END
   $GET c_tokenBuf .1%FT // {c}
-  #0$L0 $SET c_tokenLen %RET // reset scanner for next scan
+  #0$L0 $_SET c_tokenLen %RET // reset scanner for next scan
 
 $SFN (  $SMART%DRP  // parens ()
   $xsl c_assertNoEof
@@ -1185,27 +1195,27 @@ $SFN (  $SMART%DRP  // parens ()
 
 $FN _spor
   @SZA $LOCAL compFn $END_LOCALS
-  @_spor$L2  $xsl _updateCompFn $SET compFn // update c_compFn and cache
+  @_spor$L2  $xsl _updateCompFn $_SET compFn // update c_compFn and cache
   $xsl c_scanNoEof
   @D_comp$L0  %DVFT // compile next token as spor asm
-  $GET compFn $SET c_compFn %RET
+  $GET compFn $_SET c_compFn %RET
 
 $SFN spor $SMART $xsl assertNoInstant $xl _spor %RET // compile as assembly
 
 $FN _instant
   @SZA $LOCAL compFn $END_LOCALS
-  @_instant $L2  $xsl _updateCompFn $SET compFn // update c_compFn and cache
+  @_instant $L2  $xsl _updateCompFn $_SET compFn // update c_compFn and cache
   $xsl c_scanNoEof
   @TRUE$L0 $xl c_single  // compile next token as INSTANT
-  $GET compFn $SET c_compFn %RET
+  $GET compFn $_SET c_compFn %RET
 
 $SFN $ $SMART $xsl assertNoInstant $xl _instant %RET // make instant
 
 $SFN ret $SMART $xsl assertNoInstant $PRE  @RET $c1 %RET // ret 4, or just ret;
 
 $SFN c_readNew // clear token buf and read bytes
-  #0$L0 $SET c_tokenLen
-  #0$L0 $SET c_tokenSize
+  #0$L0 $_SET c_tokenLen
+  #0$L0 $_SET c_tokenSize
   @D_read$L0 %DVFT %RET
 
 $SFN // // Define a line comment
@@ -1217,7 +1227,7 @@ $SFN // // Define a line comment
     $GET c_tokenSize %RETZ
     // if(tokenBuf[tokenLen] == '\n') return
     $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT #A$L0 $reteq
-    $GET c_tokenLen %INC $SET c_tokenLen
+    $GET c_tokenLen %INC $_SET c_tokenLen
   $AGAIN l
 
 // These do nothing and are used for more readable code.

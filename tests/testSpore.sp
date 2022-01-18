@@ -100,7 +100,7 @@ $myG1Ref  @myG1 #FF_FFFF ^BAND  $tAssertEq
 $SFN myG1Get  $GET myG1 %RET
 $myG1Get  #12345 $tAssertEq
 
-$SFN myG1Set  $SET myG1 %RET
+$SFN myG1Set  $_SET myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
 // *****
@@ -130,7 +130,7 @@ $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 // test local variables
 $FN useLocal
   @SZ2 $LOCAL a   $END_LOCALS
-  #12345$L4 $SET a
+  #12345$L4 $_SET a
   $GET a
   %RET
 
@@ -148,7 +148,7 @@ $FN badMultiply // {a b -- a*b} uses loop to implement multiply
     // out = out + a
     $GET a  %ADD
     // b = b - 1
-    $GET b  %DEC  $SET b
+    $GET b  %DEC  $_SET b
   $AGAIN l0  $END_BREAK b0
   %RET
 
