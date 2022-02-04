@@ -34,8 +34,7 @@ $tAssertEq(0x42, testXsw)
 // 
 //   4 _SET a
 // 
-//   SET a
-//     inc(GET a)
+//   SET a inc(GET a)
 //   ret(GET a)
 // $tAssertEq(testSET, 5)
 

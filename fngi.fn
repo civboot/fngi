@@ -95,7 +95,7 @@ FN SET  SMART // SET name value
   $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
   assertNoInstant
   c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
-  $xw(GET c_compFn)
+  GET c_compFn   $xw
   _setImpl(GET rMetaRef, GET isFromLocal)
   ret;
 
