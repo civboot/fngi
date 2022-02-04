@@ -205,7 +205,19 @@ $hi
   #20 $tAssertEq
 
 $SFN add1 $PRE %INC %RET // {a} -> {a+1}
-$( SFN three ret add1(2) )
+$( SFN three ret(add1(2)) )
 $three  #3 $tAssertEq
+
+$FN withLocals
+  @SZ4 $LOCAL s4 @SZ1 $LOCAL s1 $END_LOCALS
+  %RET
+
+@withLocals $toRef .1^FT  #2 $tAssertEq
+
+#1 #0 #3 $between $tAssert
+#0 #0 #3 $between $tAssert
+#3 #0 #3 $between $tAssert
+
+
 
 $assertWsEmpty

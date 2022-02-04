@@ -161,6 +161,7 @@ typedef enum {
   DIV_U= 0x31,
   DIV_S= 0x32,
 
+  // Jmps
   JMPL = 0x80,
   JMPW = 0x81,
   JZL  = 0x82,
@@ -277,7 +278,12 @@ static inline U1 Key_len(Key* key) {
 #define TOKEN_BUF 0x7D
 
 typedef enum {
-  T_NUM, T_HEX, T_ALPHA, T_SINGLE, T_SYMBOL, T_WHITE
+  T_NUM = 0,
+  T_HEX = 1,
+  T_ALPHA = 2,
+  T_SINGLE = 3,
+  T_SYMBOL = 4,
+  T_WHITE = 5,
 } TokenGroup;
 
 typedef struct {

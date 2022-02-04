@@ -1,3 +1,5 @@
+//  |00322998|L0027|@158D {0...      72C4|        1} [JMPL  U2] +++ "a" ((_setImpl   0x1527)) 
+
 // This file bootstraps spor from the native (i.e. C) implementation into
 // a more full-featured language with helpful macros.
 //
@@ -206,6 +208,8 @@
 #8000 =C_COMPILE     // default compile (not execute) tokens.
 #4000 =C_INSTANT     // "$" sets this. Toggles INSTANT for next.
 
+// Token group
+#4 =TOKEN_SYMBOL
 
 //*****
 //* Log levels
@@ -246,6 +250,7 @@
 #0000_002C =c_tokenBuf   // [APtr] TokenBuf struct
 #0000_0030 =c_tokenLen   // [U1] length of token
 #0000_0031 =c_tokenSize  // [U1] characters buffered
+#0000_0032 =c_tokenGroup // [U1] token group
 
 // Global Compiler Variables
 #0000_0034 =c_rKey         // [U4] rKey, ref to current dict key.
@@ -319,6 +324,7 @@
 #E0EF  =E_cReqInstant // fn is INSTANT but no '$' used
 #E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
 #E0F0  =E_cStr        // invalid string
+#E0F1  =E_cFnArg      // invalid fn arg (must be '(' or ';')
 
 
 // **********
@@ -878,7 +884,7 @@ $SFN _getImpl
   @SZ2$L1  @FTGL$L1  // global sz + instr
   $xl _getSetImpl %RET
 
-$SFN _setImpl
+$SFN _setImpl // {&metaRef isFromLocal}
   @SZ1$L1  @SRLL$L1  // local sz + instr
   @SZ2$L1  @SRGL$L1  // global sz + instr
   $xl _getSetImpl %RET
@@ -913,18 +919,19 @@ $SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
 @SZA $c_makeGlobal c_tokenBuf
 @SZ1 $c_makeGlobal c_tokenLen
 @SZ1 $c_makeGlobal c_tokenSize
+@SZ1 $c_makeGlobal c_tokenGroup
 @SZ4 $c_makeGlobal c_rKey
 @SZ4 $c_makeGlobal c_rLKey
 @SZ4 $c_makeGlobal c_gheap
 @SZ2 $c_makeGlobal c_localOffset
 
-$FN align $PRE // {aptr sz}: return the aptr aligned properly with szI
+$FN align $PRE // {aptr sz}: return the aptr aligned properly with sz
   #1 $h1 // locals [sz:U1]
   .1%SRLL#0$h1 // cache sz
   %DUP // {aptr aptr}
   .1%FTLL#0$h1 %MOD // {aptr aptr%sz}
   %DUP $IF
-    .1%FTLL#0$h1 %SWP %SUB // sz - aptr%sz
+    .1%FTLL#0$h1 %SWP %SUB // {aptr (sz - aptr%sz)}
     %ADD %RET // aptr + (sz - aptr%sz)
   $END
   %DRP %RET
@@ -979,7 +986,7 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
 
 // #<szI> $LOCAL myLocal: declare a local variable of sz
 // This stores the offset and sz for lRef, lGet and lSet to use.
-$SFN LOCAL $SMART $xsl assertNoInstant  #0             $L1 $xl _localImpl %RET
+$SFN LOCAL $SMART $xsl assertNoInstant  #0             $L0 $xl _localImpl %RET
 $SFN INPUT $SMART $xsl assertNoInstant  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
 
 $SFN Dict_keyLen   $PRE %INC4 .1%FT  #3F$L1 %BAND %RET             // {&key} -> {len:U1}
@@ -1003,7 +1010,7 @@ $FN _compileInputs $PRE
 
 // - Updates the number of slots for the FN
 // - compiles SRLL for each INPUT in reverse order.
-$SFN END_LOCALS
+$SFN END_LOCALS  $SMART $xsl assertNoInstant
   $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $xsl h1 // update number of slots
   $xsl ldictBuf $xl _compileInputs %RET
@@ -1011,14 +1018,22 @@ $SFN END_LOCALS
 // **********
 // * Fngi Compile Loop
 
+$FN between // {value a b} -> a <= value <= b
+  @SZ4 $INPUT b   $END_LOCALS // {value a}
+  %OVR %SWP // {value value a}
+  // if (value<a) return FALSE;
+  %LT_U $IF %DRP @FALSE$L0 %RET $END
+  $GET b %SWP // {b value}
+  %LT_U %NOT %RET // return not(b<value)
+
 $SFN charToInt // {c} -> {U8}
-  #30$L0 %SUB // c = c - '0'
-  %DUP #A$L0 %LT_U %NOT %RETZ // if(c <= 9) return c;
-  #11$L0 %SUB // c = c - ('A' - '0')
-  // if(c <= 5) return c + 10;
-  %DUP #6$L0 %LT_U $IF #A$L0 %ADD %RET $END
-  #30$L0 %SUB // c = c - ('a' - 'A') + 10;
-  %RET
+  // '0' - '9'
+  %DUP #30$L0 #39$L0 $xl between $IF #30$L0 %SUB %RET $END
+  // 'A' - 'Z'
+  %DUP #41$L1 #5A$L1 $xl between $IF #41$L1 %SUB #A$L0 %ADD %RET $END
+  // 'a' - 'z'
+  %DUP #61$L1 #7A$L1 $xl between $IF #61$L1 %SUB #A$L0 %ADD %RET $END
+  %DRP #FF$L1 %RET
 
 $FN c_parseNumber // {} -> {value isNumber}
   @SZ4 $LOCAL value
@@ -1138,6 +1153,19 @@ $SFN _updateCompFn // {newCompFnMetaRef} -> {prevCompFnRef}
 
 $SFN c_scanNoEof $xsl c_scan  $xsl c_isEof @E_eof$L2 $jmpl assertNot
 
+$SFN c_peekChr // {} -> {c} peek at a character
+  $xsl c_scan
+  $xsl c_isEof $IF  #0$L0 %RET  $END
+  $GET c_tokenBuf .1%FT // {c}
+  #0$L0 $_SET c_tokenLen %RET // reset scanner for next scan
+
+$SFN c_chkPre // check PRE call
+  // symbol tokens have no requirements on using parens.
+  $GET c_tokenGroup @TOKEN_SYMBOL$L0 $reteq
+  // Assert next character is '(' or ';'
+  $xsl c_peekChr %DUP #28$L0 %EQ %SWP #3B$L0 %EQ %LOR
+  @E_cFnArg$L2 $jmpl assert
+
 $FN c_single // {asInstant} -> {}: compile a single token
   @SZA $LOCAL metaRef $END_LOCALS
 
@@ -1157,6 +1185,7 @@ $FN c_single // {asInstant} -> {}: compile a single token
 
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
+    $xsl c_chkPre
     $_SET metaRef  $GET c_compFn .4%XW  $GET metaRef
   $END
 
@@ -1177,12 +1206,6 @@ $FN fngiSingle $END_LOCALS // actually empty locals
 @fngiSingle $_updateCompFn ^DRP
 
 $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number.
-
-$SFN c_peekChr // {} -> {c} peek at a character
-  $xsl c_scan
-  $xsl c_isEof $IF  #0$L0 %RET  $END
-  $GET c_tokenBuf .1%FT // {c}
-  #0$L0 $_SET c_tokenLen %RET // reset scanner for next scan
 
 $SFN (  $SMART%DRP  // parens ()
   $xsl c_assertNoEof
@@ -1231,10 +1254,12 @@ $SFN // // Define a line comment
   $AGAIN l
 
 // These do nothing and are used for more readable code.
-$SFN _ $SMART%DRP %RET   $SFN , $SMART%DRP %RET   $SFN ; $SMART%DRP %RET
+$SFN _ $SMART%DRP %RET
+$SFN , $SMART%DRP %RET
+$SFN ; $SMART%DRP %RET
 
-$SFN c_loop
+$SFN c_fngi
   $LOOP l0
-    $GET c_tokenLen %RETZ // exit on EOF
+    $GET c_tokenSize %RETZ // exit on EOF
     $GET c_compFn .4%XW
   $AGAIN l0

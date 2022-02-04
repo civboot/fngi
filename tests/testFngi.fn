@@ -1,4 +1,4 @@
-$c_loop
+$c_fngi
 
 $tAssert(1)
 $tAssertNot(0)
@@ -8,25 +8,38 @@ $tAssertNot(useEq)
 
 $tAssert(0x42 >= 0x30)
 $tAssert(11 < 12)
-$tAssert(0x1 and 0x8 == TRUE)
-$tAssertEq(0x1 and 0x8, TRUE)
-$tAssertNot(0x1 & 0x8)
-$tAssertEq(0xFF & 0xC, 0xC)
-$tAssertEq(0x0 or 0x8, TRUE)
-$tAssertEq(0x0 |  0x8, 0x8)
+$tAssert(lAnd(0x1, 0x8) == TRUE)
+$tAssertEq(lAnd(0x1, 0x8), TRUE)
+$tAssertNot(bAnd(0x1, 0x8))
+$tAssertEq(bAnd(0xFF, 0xC), 0xC)
+$tAssertEq(lOr(0x0, 0x8), TRUE)
+$tAssertEq(bOr(0x0, 0x8), 0x8)
 
 $tAssertEq('\t', 0x09)
 $tAssertEq('\n', 0x0A)
 $tAssertEq(' ' , 0x20)
 $tAssertEq('a' , 0x61)
+$tAssertEq(2, ft1(bAnd(0xFFFFFF, dictGet SET)))
 
-// $tAssertEq(testSET(3), 4)
-FN testSET PRE
-  $SZ4 LOCAL a  END_LOCALS
-  SET a  ;
-  // inc(GET a)
-  // ret(GET a)
+SFN daAnswer ret(0x42)
+SFN testXsw
+  $lit(toRef(dictGet daAnswer))
+  $xsw
+  ret;
+
+$tAssertEq(0x42, testXsw)
+
+// FN testSET PRE
+//   $SZ4 LOCAL a  END_LOCALS
+// 
+//   4 _SET a
+// 
+//   SET a
+//     inc(GET a)
+//   ret(GET a)
+// $tAssertEq(testSET, 5)
 
 // $assertWsEmpty
 // 
 // $testSET(3)
+// $testXw

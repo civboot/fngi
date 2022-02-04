@@ -1,7 +1,7 @@
 // Fngi bootstrap script: this script bootstraps the fngi language.
 // Requires: spore.sp
 
-$c_loop // starts fngi syntax
+$c_fngi // starts fngi syntax
 
 
 // Stack operators. These are /not/ PRE since they directly modify the stack.
@@ -29,11 +29,11 @@ SFN -    PRE SMART IF() spor%SUB    ELSE $c1(SUB )   END ret;
 SFN %    PRE SMART IF() spor%MOD    ELSE $c1(MOD )   END ret;
 SFN <<   PRE SMART IF() spor%SHL    ELSE $c1(SHL )   END ret;
 SFN >>   PRE SMART IF() spor%SHR    ELSE $c1(SHR )   END ret;
-SFN &    PRE SMART IF() spor%BAND   ELSE $c1(BAND)   END ret;
-SFN |    PRE SMART IF() spor%BOR    ELSE $c1(BOR )   END ret;
+SFN bAnd PRE SMART IF() spor%BAND   ELSE $c1(BAND)   END ret;
+SFN bOr  PRE SMART IF() spor%BOR    ELSE $c1(BOR )   END ret;
 SFN xor  PRE SMART IF() spor%XOR    ELSE $c1(XOR )   END ret;
-SFN and  PRE SMART IF() spor%LAND   ELSE $c1(LAND)   END ret;
-SFN or   PRE SMART IF() spor%LOR    ELSE $c1(LOR )   END ret;
+SFN lAnd PRE SMART IF() spor%LAND   ELSE $c1(LAND)   END ret;
+SFN lOr  PRE SMART IF() spor%LOR    ELSE $c1(LOR )   END ret;
 SFN ==   PRE SMART IF() spor%EQ     ELSE $c1(EQ  )   END ret;
 SFN !=   PRE SMART IF() spor%NEQ    ELSE $c1(NEQ )   END ret;
 SFN >=   PRE SMART IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
@@ -41,19 +41,20 @@ SFN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
 SFN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
 SFN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
-SFN xw   PRE SMART assertNoInstant $c1(SZ4 | XW) ret;
+SFN xsw  INSTANT $c1(SZA+XSW) ret;
+SFN xw   INSTANT $c1(SZA+XW)  ret;
 
-// ftN(REF name): fetch a value of sz N from reference
-SFN ft1    PRE SMART IF() spor$(.1 %FT) ELSE $c1(SZ1|FT) END ret;
-SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2|FT) END ret;
-SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4|FT) END ret;
+// ftN(REF name): fetch a value of sz N from reference.
+SFN ft1    PRE SMART IF() spor$(.1%FT) ELSE $c1(SZ1+FT) END ret;
+SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2+FT) END ret;
+SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4+FT) END ret;
 
 // srN(REF name, value): store a value of sz N to reference
-SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1|SR) END ret;
-SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2|SR) END ret;
-SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4|SR) END ret;
+SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
+SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
+SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 
-SFN memMove PRE  ret dvft(D_memMove) // {dst src len} -> {}
+SFN memMove PRE  ret(dvft(D_memMove)) // {dst src len} -> {}
 
 SFN c_shiftBuf // shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
@@ -67,7 +68,7 @@ SFN c_charNext
   END
   ft1(GET c_tokenBuf + GET c_tokenLen)
   inc(GET c_tokenLen) _SET c_tokenLen
-  ret _
+  ret()
 
 // {} -> {char unknownEscape} read a character that can be escaped.
 SFN c_readCharEsc
@@ -90,11 +91,13 @@ SFN ' SMART // interpret a character
   END
   (c_charNext == 0x27, E_cStr) $jmpl assert // assert next is '
 
-SFN SET  SMART // SET name value
+FN SET  SMART // SET name value
+  $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
   assertNoInstant
-  c_scan anyDictGetR // {&metaRef isFromLocal}
-  xw(GET c_compFn)
-  $jmpl _setImpl
+  c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
+  $xw(GET c_compFn)
+  _setImpl(GET rMetaRef, GET isFromLocal)
+  ret;
 
 // TODO: it seems like INSTANT might be broken now?
 // Block comment, allows /*nesting*/.
