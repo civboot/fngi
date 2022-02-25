@@ -191,22 +191,18 @@
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
-// FN meta bits [TTTL TT-P] L=locals T=fnTy P=pre
+// FN meta bits [TTTL TTSP] L=locals T=fnTy S=syntax P=pre
 #0C =TY_FN_TY_MASK // 0b1100
-#01 =TY_FN_PRE     // always run immediately and passed compile state.
-#00 =TY_FN_NORMAL  // normally compiled, can use $ to make instant
-#04 =TY_FN_INSTANT // required to be run as instant (must use $)
-#08 =TY_FN_SMART   // always run immediately, compiler will pass asInstant
-#0C =TY_FN_SMART_I // (runtime only) a smart function was called as asInstant
+#01 =TY_FN_PRE     // Compile next token first. Creates pre-order arguments.
+#00 =TY_FN_NORMAL  // Normally compiled, can use $ to make instant
+#04 =TY_FN_INSTANT // Required to be run as instant (must use $)
+#08 =TY_FN_SMART   // Always run immediately, compiler will pass asInstant
+#0C =TY_FN_SMART_I // A smart function was called as asInstant (runtime only)
 
 #10 =TY_FN_LOCALS  // has locals (called with XL or XW)
 
 // Local meta bits [TTTI --SS] I=input S=szI
 #10 =TY_LOCAL_INPUT
-
-// Compiler State
-#8000 =C_COMPILE     // default compile (not execute) tokens.
-#4000 =C_INSTANT     // "$" sets this. Toggles INSTANT for next.
 
 // Token group
 #4 =TOKEN_SYMBOL
@@ -306,6 +302,7 @@
 #E0CF  =E_cErr    // D_assert err code invalid
 #E0D0  =E_cKeyLen // Key len too large
 #E0D1  =E_cReg    // Register error
+#E0D2  =E_cStr    // Str invalid
 
 #E0E0  =E_cNotGlobal // using a non-global as global
 #E0E1  =E_cIsX       // using an XS for an X
@@ -324,8 +321,7 @@
 #E0EF  =E_cReqInstant // fn is INSTANT but no '$' used
 #E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
 #E0F0  =E_cStr        // invalid string
-#E0F1  =E_cFnArg      // invalid fn arg (must be '(' or ';')
-#E0F2  =E_cUnknownEsc // unknown character escape
+#E0F1  =E_cUnknownEsc // unknown character escape
 
 
 // **********
@@ -533,7 +529,6 @@ $loc isTyped  // {&metaRef} dict value is a constant
   %INC4 .1%FT @KEY_HAS_TY$L1 %BAND %RET
 
 // These take {metaRef} and tell information about it
-
 $loc isTyFn      $toMeta  @META_TY_MASK$L1 %BAND  @TY_FN$L1  %EQ %RET
 $loc isFnLocals  $toMeta  @TY_FN_LOCALS$L1 %BAND %RET
 $loc assertNotNull @E_null$L2 $_jmpl assert
@@ -1135,9 +1130,6 @@ $FN c_parseNumber // {} -> {value isNumber}
 
 $assertWsEmpty
 
-$SFN c_stateCompile $GET c_state @C_COMPILE$L2 %BAND %RET // {} -> state
-$SFN c_stateInstant $GET c_state @C_INSTANT$L2 %BAND %RET // {} -> state
-
 $SFN lit  $PRE
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
@@ -1218,14 +1210,10 @@ $SFN c_peekChr // {} -> {c} peek at a character
   $GET c_tokenBuf .1%FT // {c}
   #0$L0 $_SET c_tokenLen %RET // reset scanner for next scan
 
-$SFN c_chkPre // check PRE call
-  // symbol tokens have no requirements on using parens.
-  $GET c_tokenGroup @TOKEN_SYMBOL$L0 $reteq
-  // Assert next character is '(' or ';'
-  $xsl c_peekChr %DUP #28$L0 %EQ %SWP #3B$L0 %EQ %LOR
-  @E_cFnArg$L2 $jmpl assert
-
-$FN c_single // {asInstant} -> {}: compile a single token
+// {asInstant} -> {}: compile a single token.
+// This is the primary function that all compilation steps (besides spor
+// compilation) reduce to.
+$FN c_single
   @SZA $LOCAL metaRef $END_LOCALS
 
   // Handle constants
@@ -1244,7 +1232,6 @@ $FN c_single // {asInstant} -> {}: compile a single token
 
   // if pre, recursively call fngiSingle (compile next token first)
   %DUP $xsl isFnPre $IF
-    $xsl c_chkPre
     $_SET metaRef  $GET c_compFn .4%XW  $GET metaRef
   $END
 

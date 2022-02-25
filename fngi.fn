@@ -41,8 +41,8 @@ SFN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
 SFN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
 SFN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
-SFN xsw  INSTANT $c1(SZA+XSW) ret;
-SFN xw   INSTANT $c1(SZA+XW)  ret;
+SFN xsw  PRE SMART assertNoInstant $c1(SZA+XSW) ret;
+SFN xw   PRE SMART assertNoInstant $c1(SZA+XW)  ret;
 
 // ftN(REF name): fetch a value of sz N from reference.
 SFN ft1    PRE SMART IF() spor$(.1%FT) ELSE $c1(SZ1+FT) END ret;
@@ -54,19 +54,28 @@ SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
 SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
 SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 
-SFN memMove PRE  ret(dvft(D_memMove)) // {dst src len} -> {}
+// FN_REF <function>: &fn (as literal or instant)
+SFN FN_REF   SMART
+  dictGetR; assertTyped(dup) // {asInst &metaRef}
+  ft4(_)    assertFn(dup)    // {asInst metaRef}
+  toRef(_)  swp              // {&fn asInst}
+  ret(IF(_) _ ELSE lit(_) END)
+
+// memMove(dst, src len)
+// Conceptually think of as "dst = src" (of len)
+SFN memMove PRE  ret dvft(D_memMove) // {dst src len} -> {}
 
 SFN c_shiftBuf // shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
   $jmpl memMove
 
-// FN SET  SMART // SET name value
-//   $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
-//   assertNoInstant
-//   c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
-//   GET c_compFn   $xw
-//   _setImpl(GET rMetaRef, GET isFromLocal)
-//   ret;
+FN SET  SMART // SET name value
+  $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
+  assertNoInstant
+  c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
+  xw(GET c_compFn)
+  _setImpl(GET rMetaRef, GET isFromLocal)
+  ret;
 
 // TODO: it seems like INSTANT might be broken now?
 // Block comment, allows /*nesting*/.

@@ -56,6 +56,9 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
+#define ZOAB_JOIN 0x80
+#define ZOAB_ARR  0x40
+
 #define SET_ERR(E)  if(TRUE) { assert(E); *env.err = E; longjmp(*err_jmp, 1); }
 #define ASSERT_NO_ERR() assert(!*env.err)
 #define ASM_ASSERT(C, E) /* Assert return void */  \
@@ -101,6 +104,7 @@ typedef CSz CPtr;
 #define E_cErr      0xE0CF // D_assert err code invalid
 #define E_cKeyLen   0xE0D0 // Key len too large
 #define E_cReg      0xE0D1 // Register error
+#define E_cStr      0xE0D2 // Str invalid
 
 #define REF_MASK    0xFFFFFF
 #define IS_FN        (0x20 << 0x18)
@@ -349,13 +353,10 @@ SzI szToSzI(U1 sz) {
 
 // Return value of ASCII hex char.
 /*fn*/ U1 charToHex(U1 c) {
-  c = c - '0';
-  if(c <= 9) return c;
-  c = c - ('A' - '0');
-  if(c <= 5) return c + 10;
-  c = c - ('a' - 'A') + 10;
-  ASM_ASSERT(c < 16, E_cHex);
-  return c;
+  if ('0' <= c && c <= '9') return c - '0';
+  if ('A' <= c && c <= 'F') return c - 'A';
+  ASM_ASSERT('a' <= c && c <= 'f', E_cHex);
+  return c - 'a';
 }
 
 /*fn*/ void store(U1* mem, APtr aptr, U4 value, SzI szI) {
@@ -837,6 +838,93 @@ U1 scanInstr() {
   }
 }
 
+// typedef struct { U1 c; Bool unknownEscape; } CharResult;
+// 
+// /*fn*/ CharResult parseChar() {
+//   CharResult out = {.c = tokenBuf[tokenLen], .unknownEscape = 0};
+//   ASM_ASSERT(out.c != '\n', E_cStr);
+//   if (out.c != '\') {
+//     return out;
+//   }
+//   tokenLen += 1;
+//   if (tokenLen >= tokenBufSize) readNew();
+//   ASM_ASSERT(tokenBufSize > 0, E_cStr);
+//   switch (tokenBuf[tokenLen]) {
+//     case 'n': out.c = '\n'; break;
+//     case 't': out.c = '\t'; break;
+//     case 's':
+//     case ' ': out.c = ' '; break;
+//     case '\\': out.c = '\\'; break;
+//     case '|': out.c = '|'; break;
+//     case '{': out.c = '{'; break;
+//     case '}': out.c = '}'; break;
+//     case 'x':
+//       tokenLen += 1;
+//       if (tokenLen >= tokenBufSize) readNew();
+//       ASM_ASSERT(tokenBufSize >= 2, E_cStr);
+//       out.c =
+//           (charToHex(tokenBuf[tokenLen]) << 4)
+//           + charToHex(tokenBuf[tokenLen + 1]);
+//       tokenLen += 2;
+//     default:
+//       out.c = tokenBuf[tokenLen];
+//       out.unknownEscape = 1;
+//   }
+//   return out;
+// }
+// 
+// void ignoreWhitespace() {
+//   while(TRUE) {
+//     if (tokenLen >= tokenBufSize) readNew();
+//     if (tokenBuf[tokenLen] > 0x20) return;
+//     tokenLen += 1;
+//   }
+// }
+// 
+// // Parse the str into buffer, returning the end of the str.
+// /*fn*/ APtr parseStr(APtr buffer, U4 maxLen) { // |
+//   U1 len = 0;
+//   APtr start = buffer; // start of current segment.
+//   buffer += 1; // reserve space for first "count" byte
+//   ignoreWhitespace();
+//   while(TRUE) {
+//     if (tokenLen >= tokenBufSize) readNew();
+//     if (tokenBufSize == 0) return buffer;
+//     CharResult r;
+//     r = parseChar();
+//     if (r.unkownEscape) {
+//       switch (r.c) {
+//         case '\n': ignoreWhitespace(); continue; // \<newline>
+//         case '{':
+//         case '}':
+//         case '|': break; // valid escaped literal character
+//         default: SET_ERR(E_cStr);
+//       }
+//     } else {
+//       switch (r.c) {
+//         case '\n':
+//           ignoreWhitespace();
+//           r.c = ' ';
+//           break;
+//         case '{':
+//         case '}': tokenLen = 0; // rewind token, intentional fallthrough
+//         case '|':
+//           store(mem, start, len, SzI1);
+//           return buffer;
+//         default: SET_ERR(E_cStr);
+//     }
+//     if (len >= 63) {
+//       // Overflow of single segment, make start a join segment and start anew.
+//       store(mem, start, ZOAB_JOIN + len, SzI1);
+//       start = buffer;
+//       buffer += 1;
+//       len = 0;
+//     }
+//     store(mem, buffer, r.c, SzI1);
+//     buffer += 1;
+//   }
+// }
+
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
@@ -967,8 +1055,8 @@ void deviceOpRDict(Bool isFetch) {
   if(isFetch) {
     U4 offset = Dict_find(d, tokenLen, tokenBuf);
     if(offset == *d.heap) {
-      WS_PUSH(0);
-      return; // not found
+      WS_PUSH(0); // not found
+      return;
     }
     WS_PUSH(d.buf + offset);
   } else Dict_forget(tokenLen, tokenBuf);
@@ -1024,16 +1112,16 @@ void deviceOpMemCmp() { // {a b len} -> {cmp}
 }
 
 void printCStr(U1 len, char* s) { printf("%.*s", len, s); }
-void deviceOpLog(Bool isFetch) { // {len ref lvl}
-  U4 lvl = WS_POP();
-  U2 len = WS_POP();
+void deviceOpLog() { // {len ref lvl}
+  U4 len = WS_POP();
   U4 ref = WS_POP();
-  if(isFetch) {
-    if(!(*env.usrLogLvl & lvl)) return;
-  } else {
-    if(!(*env.instrLogLvl & lvl)) return;
+  if(!len) {
+    WS_PUSH(0);
+    return;
   }
+  ASM_ASSERT(len < 63, E_io);
   printCStr(len, mem + ref);
+  WS_PUSH(0);
 }
 
 // Device Operations
@@ -1061,7 +1149,7 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
     case D_xsCatch: deviceOpCatch(); break;
     case D_memMove: deviceOpMemMove(); break;
     case D_memCmp: deviceOpMemMove(); break;
-    case D_log: deviceOpLog(isFetch); break;
+    case D_log: deviceOpLog(); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1574,6 +1662,12 @@ void compileStr(char* s) {
 
 /*test*/ void testSpore() {
   printf("## testSpore\n"); TEST_ENV;
+  char* logit = "... printing works";
+  memcpy(mem + *env.heap, logit, strlen(logit));
+  WS_PUSH(*env.heap);  WS_PUSH(strlen(logit));
+  deviceOpLog();
+  assert(!WS_POP());
+  assert(FALSE);
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
 
   // Test h1
