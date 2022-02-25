@@ -26,6 +26,9 @@ Read more:
 * [fngi.md](./fngi.md)
 * [Unstructured Notes](./notes/)
 
+> Fngi and civboot should be considred an [Obsolete
+> Technology](http://xkcd.com/1891)
+
 # Goals
 fngi's goal is to evolve into nothing less than the primary programming language
 and operating system for [Civboot](http://civboot.org). There are many steps

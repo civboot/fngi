@@ -166,6 +166,17 @@ $c_number 0b11100  $tAssert   #1C    $tAssertEq
 $c_number 0b11102  $tAssertNot      ^DRP // not valid binary
 $c_number notNum   $tAssertNot      ^DRP // not a number
 
+// characters
+$c_number 0cA   $tAssert   #41 $tAssertEq
+$c_number 0ca   $tAssert   #61 $tAssertEq
+$c_number 0cb   $tAssert   #62 $tAssertEq
+$c_number 0cc   $tAssert   #63 $tAssertEq
+$c_number 0c\t  $tAssert   #09 $tAssertEq
+$c_number 0c\n  $tAssert   #0A $tAssertEq
+$c_number 0c    $tAssert   #20 $tAssertEq
+$c_number 0c\   $tAssert   #20 $tAssertEq
+$c_number 0c\s  $tAssert   #20 $tAssertEq
+
 // Test compiler internals
 
 @TRUE #123 $c_lit #123 $tAssertEq  $assertWsEmpty
@@ -198,16 +209,6 @@ $testFngiSingleNum #C $tAssertEq
 $SFN testFngiSingleOne @fngiSingle $comp1 two %RET
 $testFngiSingleOne #2 $tAssertEq
 
-$() // does nothing
-$( SFN hi 32 one spor%RET )
-$hi
-  #1 $tAssertEq
-  #20 $tAssertEq
-
-$SFN add1 $PRE %INC %RET // {a} -> {a+1}
-$( SFN three ret(add1(2)) )
-$three  #3 $tAssertEq
-
 $FN withLocals
   @SZ4 $LOCAL s4 @SZ1 $LOCAL s1 $END_LOCALS
   %RET
@@ -218,6 +219,14 @@ $FN withLocals
 #0 #0 #3 $between $tAssert
 #3 #0 #3 $between $tAssert
 
+$() // does nothing
+$( SFN hi 32 one spor%RET )
+$hi
+  #1 $tAssertEq
+  #20 $tAssertEq
 
+$SFN add1 $PRE %INC %RET // {a} -> {a+1}
+$( SFN three ret(add1(2)) )
+$three  #3 $tAssertEq
 
 $assertWsEmpty

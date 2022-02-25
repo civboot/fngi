@@ -60,44 +60,13 @@ SFN c_shiftBuf // shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
   $jmpl memMove
 
-// {} -> {c}: read next character from AFTER tokenLen.
-// Increments tokenLen. This is destructive to token, use with care.
-SFN c_charNext
-  IF(GET c_tokenLen >= GET c_tokenSize)
-    c_readNew; c_assertNoEof;
-  END
-  ft1(GET c_tokenBuf + GET c_tokenLen)
-  inc(GET c_tokenLen) _SET c_tokenLen
-  ret()
-
-// {} -> {char unknownEscape} read a character that can be escaped.
-SFN c_readCharEsc
-  c_charNext
-  IF(dup != 0x5C) ret(_, FALSE) END // if(c != '\\') ret;
-  drp c_charNext // {c}  case \c
-  IF(dup == 0x74) drp ret(0x09, FALSE); END // '\t': tab
-  IF(dup == 0x6E) drp ret(0x0A, FALSE); END // '\n': newline
-  IF(dup == 0x78) // \xHH
-    drp charToInt(c_charNext) << 8 + charToInt(c_charNext)
-    assertNot(dup < inc(0xFF), E_cStr)
-    ret(_, FALSE)
-  END
-  ret(_, TRUE) // just return the character as-is but unknownEscape=true
-
-SFN ' SMART // interpret a character
-  c_readCharEsc drp // {asInstant c}
-  swp IF()     // if(asInstant): leave on stack
-  ELSE lit(_)  // else: compile as a literal
-  END
-  (c_charNext == 0x27, E_cStr) $jmpl assert // assert next is '
-
-FN SET  SMART // SET name value
-  $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
-  assertNoInstant
-  c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
-  GET c_compFn   $xw
-  _setImpl(GET rMetaRef, GET isFromLocal)
-  ret;
+// FN SET  SMART // SET name value
+//   $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
+//   assertNoInstant
+//   c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
+//   GET c_compFn   $xw
+//   _setImpl(GET rMetaRef, GET isFromLocal)
+//   ret;
 
 // TODO: it seems like INSTANT might be broken now?
 // Block comment, allows /*nesting*/.

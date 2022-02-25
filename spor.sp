@@ -325,6 +325,7 @@
 #E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
 #E0F0  =E_cStr        // invalid string
 #E0F1  =E_cFnArg      // invalid fn arg (must be '(' or ';')
+#E0F2  =E_cUnknownEsc // unknown character escape
 
 
 // **********
@@ -1035,6 +1036,59 @@ $SFN charToInt // {c} -> {U8}
   %DUP #61$L1 #7A$L1 $xl between $IF #61$L1 %SUB #A$L0 %ADD %RET $END
   %DRP #FF$L1 %RET
 
+$SFN null2 @NULL$L0 %DUP %RET
+$SFN c_isEof $GET c_tokenLen %NOT %RET
+$SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert // {} -> {}
+
+$SFN c_readNew // clear token buf and read bytes
+  #0$L0 $_SET c_tokenLen
+  #0$L0 $_SET c_tokenSize
+  @D_read$L0 %DVFT %RET
+
+// {} -> {c}: read next character from AFTER tokenLen.
+// Increments tokenLen. This is destructive to token, use with care.
+$SFN c_charNext
+  // IF(GET c_tokenLen >= GET c_tokenSize)
+  $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
+    $xsl c_readNew  $xsl c_assertNoEof
+  $END
+  $GET c_tokenBuf  $GET c_tokenLen  %ADD .1%FT
+  $GET c_tokenLen %INC  $_SET c_tokenLen %RET
+
+// // {} -> {char unknownEscape} read a character that can be escaped.
+// SFN c_readCharEsc
+//   c_charNext
+//   IF(dup != 0x5C) ret(_, FALSE) END // if(c != '\\') ret;
+//   drp c_charNext // {c}  case \c
+//   IF(dup == 0x74) drp ret(0x09, FALSE); END // '\t': tab
+//   IF(dup == 0x6E) drp ret(0x0A, FALSE); END // '\n': newline
+//   IF(dup == 0x78) // \xHH
+//     drp charToInt(c_charNext) << 8 + charToInt(c_charNext)
+//     assertNot(dup < inc(0xFF), E_cStr)
+//     ret(_, FALSE)
+//   END
+//   ret(_, TRUE) // just return the character as-is but unknownEscape=true
+
+// {} -> {char unknownEscape} read a character that can be escaped.
+$SFN c_readCharEsc
+  $xsl c_charNext // {char}
+  %DUP #5C$L1 %NEQ $IF @FALSE$L0 %RET $END // if(c != '\\') ret;
+  // c is an escape character: \
+  %DRP $xsl c_charNext
+  %DUP #74$L1 %EQ $IF %DRP #09$L0 @FALSE$L0 %RET $END // \t: tab
+  %DUP #6E$L1 %EQ $IF %DRP #0A$L0 @FALSE$L0 %RET $END // \n: newline
+  %DUP #20$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END // \ : space (raw)
+  %DUP #73$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END // \s: space (explicit)
+  %DUP #78$L1 %EQ $IF // \xHH
+    // charToInt(c_charNext) << 8 + charToInt(c_charNext)
+    %DRP $xsl c_charNext  $xsl charToInt #8$L0  %SHL
+    $xsl c_charNext       $xsl charToInt %ADD
+    // assertNot(dup < inc(0xFF), E_cStr)
+    %DUP #FF$L1 %INC %LT_U  @E_cStr$L2  $xsl assertNot
+    @FALSE$L0 %RET
+  $END
+  @TRUE$L0 %RET // just return the character as-is but unknownEscape=true
+
 $FN c_parseNumber // {} -> {value isNumber}
   @SZ4 $LOCAL value
   @SZ1 $LOCAL i
@@ -1046,8 +1100,17 @@ $FN c_parseNumber // {} -> {value isNumber}
 
   // Get correct base
   $GET c_tokenBuf .1%FT #30$L0 %EQ $IF // if c0 == '0' {}
-    $GET c_tokenBuf %INC .1%FT %DUP // {c1 c1}
-    #62$L1 %EQ  $IF // if .tokenBuf@1=='b' {c}
+    $GET c_tokenBuf %INC .1%FT %DUP
+    // First handle 0c: character literal
+    #63$L1 %EQ  $IF // if .tokenBuf@1=='c' {c1}
+      // set tokenLen=2 to treat anything after 0c as next character.
+      %DRP #2$L0 $_SET c_tokenLen
+      $xsl c_readCharEsc  @E_cUnknownEsc$L2 $xsl assertNot
+      @TRUE$L0 %RET
+    $END
+
+    %DUP // {c1 c1}
+    #62$L1 %EQ  $IF // if .tokenBuf@1=='b' {c1}
       #2$L0  $_SET base  #2$L0 $_SET i
     $END
     #78$L1 %EQ  $IF // if .tokenBuf@1=='x' {}
@@ -1101,10 +1164,6 @@ $SFN execute // {metaRef} -> {...}: execute a function
   %DUP $xsl toRef %SWP // {ref metaRef}
   $xsl isFnLocals  $IF .4%XW %RET $END
   .4%JMPW
-
-$SFN null2 @NULL$L0 %DUP %RET
-$SFN c_isEof $GET c_tokenLen %NOT %RET
-$SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert // {} -> {}
 
 $SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
   $xl c_parseNumber // {asInstant value isNumber}
@@ -1235,11 +1294,6 @@ $FN _instant
 $SFN $ $SMART $xsl assertNoInstant $xl _instant %RET // make instant
 
 $SFN ret $SMART $xsl assertNoInstant $PRE  @RET $c1 %RET // ret 4, or just ret;
-
-$SFN c_readNew // clear token buf and read bytes
-  #0$L0 $_SET c_tokenLen
-  #0$L0 $_SET c_tokenSize
-  @D_read$L0 %DVFT %RET
 
 $SFN // // Define a line comment
   $SMART%DRP
