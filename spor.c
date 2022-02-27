@@ -212,6 +212,7 @@ typedef enum {
   D_memMove = 0x0A,
   D_memCmp  = 0x0B,
   D_log     = 0x0C,
+  D_zoa     = 0x0D,
 } Device;
 
 #define SZ_MASK        0x30
@@ -354,9 +355,9 @@ SzI szToSzI(U1 sz) {
 // Return value of ASCII hex char.
 /*fn*/ U1 charToHex(U1 c) {
   if ('0' <= c && c <= '9') return c - '0';
-  if ('A' <= c && c <= 'F') return c - 'A';
+  if ('A' <= c && c <= 'F') return 10 + c - 'A';
   ASM_ASSERT('a' <= c && c <= 'f', E_cHex);
-  return c - 'a';
+  return 10 + c - 'a';
 }
 
 /*fn*/ void store(U1* mem, APtr aptr, U4 value, SzI szI) {
@@ -838,93 +839,6 @@ U1 scanInstr() {
   }
 }
 
-// typedef struct { U1 c; Bool unknownEscape; } CharResult;
-// 
-// /*fn*/ CharResult parseChar() {
-//   CharResult out = {.c = tokenBuf[tokenLen], .unknownEscape = 0};
-//   ASM_ASSERT(out.c != '\n', E_cStr);
-//   if (out.c != '\') {
-//     return out;
-//   }
-//   tokenLen += 1;
-//   if (tokenLen >= tokenBufSize) readNew();
-//   ASM_ASSERT(tokenBufSize > 0, E_cStr);
-//   switch (tokenBuf[tokenLen]) {
-//     case 'n': out.c = '\n'; break;
-//     case 't': out.c = '\t'; break;
-//     case 's':
-//     case ' ': out.c = ' '; break;
-//     case '\\': out.c = '\\'; break;
-//     case '|': out.c = '|'; break;
-//     case '{': out.c = '{'; break;
-//     case '}': out.c = '}'; break;
-//     case 'x':
-//       tokenLen += 1;
-//       if (tokenLen >= tokenBufSize) readNew();
-//       ASM_ASSERT(tokenBufSize >= 2, E_cStr);
-//       out.c =
-//           (charToHex(tokenBuf[tokenLen]) << 4)
-//           + charToHex(tokenBuf[tokenLen + 1]);
-//       tokenLen += 2;
-//     default:
-//       out.c = tokenBuf[tokenLen];
-//       out.unknownEscape = 1;
-//   }
-//   return out;
-// }
-// 
-// void ignoreWhitespace() {
-//   while(TRUE) {
-//     if (tokenLen >= tokenBufSize) readNew();
-//     if (tokenBuf[tokenLen] > 0x20) return;
-//     tokenLen += 1;
-//   }
-// }
-// 
-// // Parse the str into buffer, returning the end of the str.
-// /*fn*/ APtr parseStr(APtr buffer, U4 maxLen) { // |
-//   U1 len = 0;
-//   APtr start = buffer; // start of current segment.
-//   buffer += 1; // reserve space for first "count" byte
-//   ignoreWhitespace();
-//   while(TRUE) {
-//     if (tokenLen >= tokenBufSize) readNew();
-//     if (tokenBufSize == 0) return buffer;
-//     CharResult r;
-//     r = parseChar();
-//     if (r.unkownEscape) {
-//       switch (r.c) {
-//         case '\n': ignoreWhitespace(); continue; // \<newline>
-//         case '{':
-//         case '}':
-//         case '|': break; // valid escaped literal character
-//         default: SET_ERR(E_cStr);
-//       }
-//     } else {
-//       switch (r.c) {
-//         case '\n':
-//           ignoreWhitespace();
-//           r.c = ' ';
-//           break;
-//         case '{':
-//         case '}': tokenLen = 0; // rewind token, intentional fallthrough
-//         case '|':
-//           store(mem, start, len, SzI1);
-//           return buffer;
-//         default: SET_ERR(E_cStr);
-//     }
-//     if (len >= 63) {
-//       // Overflow of single segment, make start a join segment and start anew.
-//       store(mem, start, ZOAB_JOIN + len, SzI1);
-//       start = buffer;
-//       buffer += 1;
-//       len = 0;
-//     }
-//     store(mem, buffer, r.c, SzI1);
-//     buffer += 1;
-//   }
-// }
-
 // Parse a hex token from the tokenLen and shift it out.
 // The value is pushed to the ws.
 /*fn*/ void cHex() {
@@ -1112,7 +1026,7 @@ void deviceOpMemCmp() { // {a b len} -> {cmp}
 }
 
 void printCStr(U1 len, char* s) { printf("%.*s", len, s); }
-void deviceOpLog() { // {len ref lvl}
+void deviceOpLog() { // {len ref -> ioRes}
   U4 len = WS_POP();
   U4 ref = WS_POP();
   if(!len) {
@@ -1122,6 +1036,109 @@ void deviceOpLog() { // {len ref lvl}
   ASM_ASSERT(len < 63, E_io);
   printCStr(len, mem + ref);
   WS_PUSH(0);
+}
+
+typedef enum {
+  CharNoEscape = 1,
+  CharEscapeKnown = 2,
+  CharEscapeUnknown = 3,
+} CharStatus;
+
+typedef struct { U1 c; CharStatus status; } CharResult;
+
+/*fn*/ CharResult parseChar() {
+  CharResult out = {.c = tokenBuf[tokenLen], .status = CharNoEscape};
+  tokenLen += 1;
+  if (out.c != '\\') {
+    return out;
+  }
+  out.status = CharEscapeKnown;
+  if (tokenLen >= tokenBufSize) readNew();
+  ASM_ASSERT(tokenBufSize > 0, E_cStr);
+  out.c = tokenBuf[tokenLen];
+  tokenLen += 1;
+  switch (out.c) {
+    case 'n': out.c = '\n'; break;
+    case 't': out.c = '\t'; break;
+    case 's':
+    case ' ': out.c = ' '; break;
+    case '\\': out.c = '\\'; break;
+    case '|': out.c = '|'; break;
+    case '{': out.c = '{'; break;
+    case '}': out.c = '}'; break;
+    case 'x':
+      if (tokenLen >= tokenBufSize) readNew();
+      ASM_ASSERT(tokenBufSize >= 2, E_cStr);
+      out.c =
+          (charToHex(tokenBuf[tokenLen]) << 4)
+          + charToHex(tokenBuf[tokenLen + 1]);
+      tokenLen += 2;
+    default:
+      out.status = CharEscapeUnknown;
+  }
+  return out;
+}
+
+void ignoreWhitespace() {
+  while(TRUE) {
+    if (tokenLen >= tokenBufSize) readNew();
+    if (tokenBuf[tokenLen] > 0x20) return;
+    tokenLen += 1;
+  }
+}
+
+// Parse the str into buffer, returning the end of the str.
+/*fn*/ APtr parseStr(APtr buffer, U4 maxLen) { // |
+  U1 len = 0;
+  APtr start = buffer; // start of current segment.
+  buffer += 1; // reserve space for first "count" byte
+  ignoreWhitespace();
+  while(TRUE) {
+    if (tokenLen >= tokenBufSize) readNew();
+    if (tokenBufSize == 0) {
+      store(mem, start, len, SzI1);
+      return buffer;
+    }
+    CharResult r;
+    r = parseChar();
+    switch (r.status) {
+      case CharNoEscape:
+        switch (r.c) {
+          case '{':
+          case '}': tokenLen = 0; // rewind token, intentional fallthrough
+          case '|':
+            store(mem, start, len, SzI1);
+            return buffer;
+        }
+        break;
+      case CharEscapeKnown: break; // known escapes: use as-is
+      case CharEscapeUnknown:
+        switch (r.c) {
+          case '\n': ignoreWhitespace(); continue; // \<newline>
+          default: SET_ERR(E_cStr);
+        }
+        break;
+    }
+    if (len >= 63) {
+      // Overflow of single segment, make join segment and start anew.
+      store(mem, start, ZOAB_JOIN + len, SzI1);
+      start = buffer;
+      buffer += 1;
+      len = 0;
+    }
+    store(mem, buffer, r.c, SzI1);
+    len += 1;
+    buffer += 1;
+    printf("  + end loop\n");
+  }
+}
+
+// {&buf, maxLen} Parse zoa string fragment into a buffer.
+// return the new end of the buffer.
+void deviceOpZoa() {
+  U4 maxLen = WS_POP();
+  APtr buffer = WS_POP();
+  WS_PUSH(parseStr(buffer, maxLen));
 }
 
 // Device Operations
@@ -1150,6 +1167,7 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
     case D_memMove: deviceOpMemMove(); break;
     case D_memCmp: deviceOpMemMove(); break;
     case D_log: deviceOpLog(); break;
+    case D_zoa: deviceOpZoa(); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1662,12 +1680,17 @@ void compileStr(char* s) {
 
 /*test*/ void testSpore() {
   printf("## testSpore\n"); TEST_ENV;
-  char* logit = "... printing works";
+  char* logit = "\nTEST printing works!\n";
   memcpy(mem + *env.heap, logit, strlen(logit));
   WS_PUSH(*env.heap);  WS_PUSH(strlen(logit));
   deviceOpLog();
   assert(!WS_POP());
-  assert(FALSE);
+
+  // Test zoa str
+  heapStart = *env.heap;
+  compileStr("$| \\nzoa!\\n|");
+  assert(6 == fetch(mem, heapStart, SzI1));
+  assert(0 == memcmp("\nzoa!\n", mem + heapStart + 1, 6));
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
 
   // Test h1

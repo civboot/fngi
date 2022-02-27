@@ -95,9 +95,5 @@ FN SET  SMART // SET name value
 //   ft1(dup) & 0x3F // {&cbytes len}
 //   swp inc() // {len &bytes}
 //   ret;
-// 
-// FN logBytes PRE SMART // {len &bytes lvl}
-//   IF()  dvft(_, _, _, D_log)
-//   ELSE  D_log c_lit $c1(DVFT)   END
 
 // /*(*/  SFN )  panic E_unclosed // prevent unclosed parens

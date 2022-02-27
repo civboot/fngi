@@ -173,7 +173,8 @@
 #09 =D_xsCatch
 #0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
-#0C =D_log     // {&msg len lvl} -> {}: log at lvl {FT=usr log, SR=instr log}
+#0C =D_log     // {&msg len} -> {ioResult}: write to debug stream
+#0D =D_zoa     // {} -> {}
 
 // **********
 // * 3. Constants
@@ -206,6 +207,12 @@
 
 // Token group
 #4 =TOKEN_SYMBOL
+
+//*****
+//* Zoa
+#80 =ZOAB_JOIN // bitmask: join type
+#40 =ZOAB_ARR  // bitmask: arr type
+#C0 =ZOAB_PTR  // equality: next 4 bytes are a pointer.
 
 //*****
 //* Log levels
@@ -320,8 +327,8 @@
 #E0EE  =E_cUnclosed   // unclosed paren/brace/etc
 #E0EF  =E_cReqInstant // fn is INSTANT but no '$' used
 #E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
-#E0F0  =E_cStr        // invalid string
-#E0F1  =E_cUnknownEsc // unknown character escape
+#E0F0  =E_cUnknownEsc // unknown character escape
+#E0F1  =E_cZoab       // Zoab invalid
 
 
 // **********
@@ -664,6 +671,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 #0                    $c_makeFn dictGetR
 #0                    $c_makeFn dictArgs
 #0                    $c_makeFn getHeap
+#0                    $c_makeFn getTopHeap
 @TY_FN_PRE            $c_makeFn setHeap
 @TY_FN_PRE            $c_makeFn hpad
 #0                    $c_makeFn hal2
@@ -720,6 +728,7 @@ $SFN panic   $PRE #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
 $SFN unreach @E_unreach$L2 $jmpl panic // {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
+
 
 $SFN ldictBuf // {} -> {ldict.buf:APtr}
   $hal2 .4%FTGL @c_dictBuf$h2
@@ -1010,6 +1019,66 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
   $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $xsl h1 // update number of slots
   $xsl ldictBuf $xl _compileInputs %RET
+
+// **********
+// * Zoa strings and logging
+
+// |zoa string literal|
+// Creates a zoa string in the heap.
+$SFN |
+  $xsl getHeap
+  // maxLen: (topHeap - heap)
+  %DUP $xsl getTopHeap %SWP %SUB
+  @D_zoa$L0 %DVFT $jmpl setHeap
+
+$FN c_logAll // {&writeStruct len &buf }
+  $END_LOCALS // no locals, but used in XW.
+  %DRP
+  $LOOP l0
+    %OVR %OVR
+    @D_log$L0 %DVFT
+    %NOT $IF %DRP %DRP %RET $END
+  $AGAIN l0
+
+$SFN ft4BE // {&a -> U4} fetch4 unaligned big-endian
+  %DUP%INC %DUP%INC %DUP%INC .1%FT // {&a &a+1 &a+2                 a@3 }
+  %SWP .1%FT #08$L0%SHL %ADD       // {&a &a+1            (a@2<<8 + a@3)}
+  %SWP .1%FT #10$L0%SHL %ADD       // {&a       (a@1<<16 + a@2<<8 + a@3)}
+  %SWP .1%FT #18$L0%SHL %ADD       // {a@0<<24 + a@1<<16 + a@2<<8 + a@3 }
+  %RET
+
+// {&s &writeStruct &writeFn} write a zoa string (verbatim) to the writeFn
+$FN writeZoaStr
+  @SZA $INPUT s
+  @SZA $INPUT writeStruct
+  @SZA $INPUT writeFn
+  $END_LOCALS
+
+  $LOOP l0 // {}
+    $xsl assertWsEmpty
+    $GET s  %DUP .1%FT // {&zoa zTy}
+    // %DUP @ZOAB_PTR$L1 %EQ $IF
+    //   %DRP %INC  $xsl ft4BE  $_SET s
+    //   $AGAIN l0
+    // $END
+
+    %DUP @ZOAB_ARR$L1 %BAND @E_cZoab$L2 $xsl assertNot
+
+    #3F$L0 %BAND %INC // {&zoa zLen} log the zoa str including ty byte.
+    %OVR %OVR $GET writeStruct  $GET writeFn  .4%XW // {&zoa zLen}
+    %ADD // {&newZoa}
+    $GET s  .1%FT @ZOAB_JOIN$L1 %BAND %NOT $IF // return if not join type
+      %DRP
+      %RET
+    $END
+    $_SET s // join type: update to next string start
+  $AGAIN l0
+$assertWsEmpty
+
+$SFN logZoaStr // {&s} log a zoa string (verbatim) to dbg output.
+  #0$L0  @c_logAll$toRef$L4  $xl writeZoaStr %RET
+
+$assertWsEmpty
 
 // **********
 // * Fngi Compile Loop

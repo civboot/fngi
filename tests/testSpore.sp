@@ -229,4 +229,11 @@ $SFN add1 $PRE %INC %RET // {a} -> {a+1}
 $( SFN three ret(add1(2)) )
 $three  #3 $tAssertEq
 
+$loc sporMsg
+  $| \n\n??? This is a message from spor!\n\n|
+
+$assertWsEmpty
+
+@sporMsg $logZoaStr
+
 $assertWsEmpty
