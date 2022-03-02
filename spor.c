@@ -216,6 +216,7 @@ typedef enum {
   D_memCmp  = 0x0B,
   D_log     = 0x0C,
   D_zoa     = 0x0D,
+  D_dictDump= 0x0E,
 } Device;
 
 #define SZ_MASK        0x30
@@ -265,10 +266,11 @@ typedef struct {
   APtr buf;
   U2 end;
   U2* heap;
+  U1 isLocal;
 } DictRef;
 
 #define DEFAULT_DICT \
-  {.buf = dict->buf, .end = dict->end, .heap = &dict->heap}
+  {.buf = dict->buf, .end = dict->end, .heap = &dict->heap, .isLocal=FALSE}
 
 typedef struct {
   U4 value;
@@ -276,6 +278,9 @@ typedef struct {
   U1 s[];
 } Key;
 #define keySizeWLen(LEN)  (4 + 1 + (LEN))
+#define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
+#define KEY_HAS_TY 0x40   // if 1, dict entry is a non-constant
+
 
 // Get key len. The top two bits are used for metadata (i.e. constant)
 static inline U1 Key_len(Key* key) {
@@ -402,6 +407,21 @@ void zoab_info(U1* str) {
   zoab_start(); zoab_arr(2, FALSE);
   zoab_int(LOG_INFO); zoab_ntStr(str, FALSE);
   fflush(stdout);
+}
+
+void zoab_dict(DictRef d, U4 offset) {
+  Key* key = Dict_key(d, offset);
+
+  zoab_start();
+  zoab_arr(8, /*join=*/ FALSE);
+  zoab_data(2, LOG_DICT_PTR, /*join=*/ FALSE);
+  zoab_data(Key_len(key), (char *)key->s, /*join=*/ FALSE); // key
+  zoab_int(key->value);
+  zoab_int(d.buf);  // buffer
+  zoab_int(offset);
+  zoab_int(*env.heap);
+  zoab_int(!(KEY_HAS_TY & key->len));
+  zoab_int(d.isLocal);
 }
 
 void zoab_err(U4 err, U1 isCaught) {
@@ -780,8 +800,6 @@ SRGL: case SzI2 + SRGL:
 // ** Spore Dict
 // key/value map (not hashmap) where key is a cstr and value is U4.
 
-#define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
-
 /*fn*/ U1 cstrEq(U1 slen0, U1 slen1, char* s0, char* s1) {
   if(slen0 != slen1) return FALSE;
   for(U1 i = 0; i < slen0; i += 1) {
@@ -814,21 +832,11 @@ SRGL: case SzI2 + SRGL:
   Key* key = Dict_key(d, offset);
   U2 addedSize = alignAPtr(keySizeWLen(slen), 4);
 
-  if((LOG_COMPILER & *env.instrLogLvl)) {
-    zoab_start();
-    zoab_arr(6, /*join=*/ FALSE);
-    zoab_data(2, LOG_DICT_PTR, /*join=*/ FALSE);
-    zoab_data(slen, s, /*join=*/ FALSE); // key
-    zoab_int(value);
-    zoab_int(d.buf);  // buffer
-    zoab_int(offset);
-    zoab_int(*env.heap);
-  }
-
   ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
   key->value = value;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
+  if((LOG_COMPILER & *env.instrLogLvl)) zoab_dict(d, offset);
   *d.heap += alignAPtr(keySizeWLen(slen), 4);
   return offset;
 }
@@ -840,7 +848,7 @@ SRGL: case SzI2 + SRGL:
 }
 
 /*fn*/ void Dict_forget(U1 slen, char* s) {
-  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
+  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap, .isLocal=FALSE};
   dict->heap = Dict_find(d, slen, s);
 }
 
@@ -1031,7 +1039,6 @@ U1 scanInstr() {
   err_jmp = &local_err_jmp;
 
   if(setjmp(local_err_jmp)) {
-    zoab_info("!!! ERROR !!!");
     zoab_err(*env.err, FALSE);
     // printf("\n!!! ERROR\n!!! Env:");
     // dbgEnv();
@@ -1048,13 +1055,14 @@ U1 scanInstr() {
 }
 
 DictRef popDictRef() {
-  // U1 isLocal = WS_POP();
+  U1 isLocal = WS_POP();
   U4 rHeap = WS_POP();
   U4 buf = WS_POP();
   return (DictRef) {
     .heap = (U2*) (mem + rHeap),
     .buf = buf,
     .end = dict->end,
+    .isLocal = isLocal,
   };
 }
 
@@ -1243,6 +1251,18 @@ void deviceOpZoa() {
   WS_PUSH(parseStr(buffer, maxLen));
 }
 
+void deviceOpDictDump() {
+  DictRef d = popDictRef();
+  U2 offset = 0;
+
+  while(offset < *d.heap) {
+    Key* key = Dict_key(d, offset);
+    zoab_dict(d, offset);
+    U2 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
+    offset += entrySz;
+  }
+}
+
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
@@ -1270,6 +1290,7 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
     case D_memCmp: deviceOpMemMove(); break;
     case D_log: deviceOpLog(); break;
     case D_zoa: deviceOpZoa(); break;
+    case D_dictDump: deviceOpDictDump(); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1677,7 +1698,7 @@ U2 testBufIdx = 0;
 }
 
 void compileStr(char* s) {
-  zoab_file(7, "RAW STR");
+  zoab_file(7, "RAW_STR");
   compilingName = s;
   testBuf = s;
   testBufIdx = 0;
@@ -1847,6 +1868,8 @@ void compileStr(char* s) {
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
   compileFile("tests/testFngi.fn");
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+
+  // compileStr("#0 $tAssert");
 }
 
 

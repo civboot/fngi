@@ -160,7 +160,7 @@
 // Device operations with DVFT and DVSR
 #00 =D_read   // read from src, filling up tokenBuf
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
-#02 =D_dict   // [&buf &heap] FT=get SR=set dict key=tokenBuf
+#02 =D_dict   // [&buf &heap isLocal] FT=get SR=set dict key=tokenBuf
 #03 =D_rdict  // [&buf &heap] FT=get reference to val  SR=forget including key
 #04 =D_sz     // get/set current sz in bytes
 #05 =D_comp   // compile (assemble) the token in tokenBuf
@@ -168,13 +168,15 @@
 #07 =D_wslen  // get working stack length (in slots)
 #08 =D_cslen  // get call stack lengh (in slots)
 // {-> err} D_xsCatch executes small function from WS but catches a panic.
+// The errCode is returned (or 0 if no error).
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
 #09 =D_xsCatch
 #0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
 #0C =D_log     // {&msg len} -> {ioResult}: write to debug stream
-#0D =D_zoa     // {} -> {}
+#0D =D_zoa     // {} -> {} parse zoa to heap
+#0E =D_dictDump// [..dict] log a full dictionary
 
 // **********
 // * 3. Constants
@@ -184,7 +186,7 @@
 #0001_0000 =cAllowPanicMask
 
 // Meta types
-#40 =KEY_HAS_TY // dict entry is a non-constant
+#40 =KEY_HAS_TY // if 1, dict entry is a non-constant
 #E0 =META_TY_MASK // # Upper three bits determine type
 #20 =TY_FN    // function, can be called and has an fnMeta
 #40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
@@ -394,8 +396,8 @@ $getHeap =dictArgs // args for dict.
   // put {dict.buf &dict.heap isLocal=FALSE} on stack
             .4%FTGL @c_dictBuf $h2
   %NOP      .2%LIT @c_dictHeap $h2
-  // #0$L0     %RET   %NOP // (unaligned)
-  %RET // (unaligned)
+  #0$L0     %RET // isLocal=FALSE
+  %NOP // (unaligned)
 
 $getHeap =_dict // setup for dict.
   // Scan next token
@@ -739,9 +741,9 @@ $SFN ldictBuf // {} -> {ldict.buf:APtr}
 $SFN ldictArgs // {} -> dictArgs
   $xsl ldictBuf
   @c_dictLHeap$L2  // &ldict.heap
-  // #1$L0 // isLocal=TRUE TODO
+  #1$L0 // isLocal=TRUE
   %RET
-$SFN ldictHeap $xsl ldictArgs .2%FT %ADD %RET // {} -> ldictHeap
+$SFN ldictHeap $xsl ldictArgs %DRP .2%FT %ADD %RET // {} -> ldictHeap
 
 $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET

@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+"""
+For why this exists see harness.md
+"""
+
 
 import re
 import os
@@ -90,6 +94,8 @@ class DictEvent(Event):
   buf: int
   offset: int
   heap: int
+  isConstant: bool
+  isLocal: bool
 
   @classmethod
   def from_(cls, z):
@@ -99,7 +105,9 @@ class DictEvent(Event):
       value=integerBE(z[2]),
       buf=integerBE(z[3]),
       offset=integerBE(z[4]),
-      heap=integerBE(z[5]))
+      heap=integerBE(z[5]),
+      isConstant=bool(integerBE(z[6])),
+      isLocal=bool(integerBE(z[7])))
 
 @dataclass
 class ErrEvent(Event):
@@ -152,7 +160,7 @@ def waitForStart(io):
       print(f"??? Unknown byte: {hex(buf[0])} {c}")
 
 SP_REGEX = re.compile(
-  r'^#(?P<value>[\w_]+)\s+=(?P<name>E_[\w_]+)',
+  r'^#(?P<value>[\w_]+)\s+=(?P<name>E_.+)$',
   re.MULTILINE)
 
 def findErrorCodes():
@@ -203,15 +211,15 @@ def harness(env):
       env.dicts[ev.buf][ev.key] = ev
       continue
     if isinstance(ev, ErrEvent):
-      print(f"ERROR {ev.errName}({hex(ev.errCode)})  ", end="")
       file = env.file
       try: file = file.decode('utf-8')
       except ValueError: pass
-      print(file, f"[{ev.lineNo}]")
+      print(f"!! ERROR (file: {file} [{ev.lineNo}])", end="")
+      print(f" [{hex(ev.errCode)}] \"{ev.errName}\"  ")
       continue
     if isinstance(ev, FileEvent):
       env.file = ev.file
-      if ev.file != b'RAW STR': print(f"File changed: {ev.file}")
+      if ev.file != b'RAW_STR': print(f"File changed: {ev.file}")
       continue
 
     print(f"{ev.lvl}[{i:>8d}]: ", end='')
@@ -228,6 +236,6 @@ if __name__ == '__main__':
     harness(env)
   except zoa.Eof:
     print("Program terminated")
-  # pprint.pprint(env.dicts)
+  pprint.pprint(env.dicts)
   # for key, value in env.codes.items():
   #   print(f"  {hex(key)}: {value}")

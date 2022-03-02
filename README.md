@@ -24,6 +24,7 @@ hardware support for memory maangement, thread handling, etc.
 Read more:
 * [spor.md](./spor.md)
 * [fngi.md](./fngi.md)
+* [harness and zoab](./harness.md)
 * [Unstructured Notes](./notes/)
 
 > Fngi and civboot should be considred an [Obsolete
@@ -57,7 +58,18 @@ along the way, some of them complete.
 
 [zoa]: http://github.com/vitiral/zoa
 
-# Hacking
+# Helping / Hacking
+
+The current command I use to run fngi and all tests is below. Eventually
+I'll incorporate all this into the harness itself:
+
+```
+gcc *.c && sleep 0.3 && \
+  ./a.out | PYTHONPATH="$PWD/zoa:$PYTHONPATH" \
+  python3 harness.py
+```
+
+## Contributing
 
 When opening a PR to submit code to this repository you must include the
 following disclaimer in your first commit message:
