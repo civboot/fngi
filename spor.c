@@ -8,7 +8,9 @@
 
 typedef enum {
   LOG_SILENT    = 0x00,
-  LOG_USER      = 0x80,
+  LOG_SYS       = 0x80,
+  LOG_APP       = 0x40, // Application controled logging levels.
+  LOG_USER      = 0x20, // TODO: remove
   LOG_TRACE     = 0x1F,
   LOG_DEBUG     = 0x0F,
   LOG_INFO      = 0x07,
@@ -17,16 +19,18 @@ typedef enum {
 } UsrLogLvl;
 
 typedef enum {
-  LOG_INSTR     = 0x01,
-  LOG_EXECUTE   = 0x02,
-  LOG_ASM       = 0x04,
+  LOG_INSTANT   = 0x20,
 
-  LOG_INSTANT   = 0x10,
+  LOG_INSTR     = 0x1F,
+  LOG_EXECUTE   = 0x07,
+  LOG_ASM       = 0x03,
+  LOG_COMPILER  = 0x01,
 } InstrLogLvl;
+
 
 // #define STARTING_INSTR_LOG_LVL    (0xFF)         // log everything
 // #define STARTING_INSTR_LOG_LVL    (LOG_EXECUTE | LOG_INSTANT)
-#define STARTING_INSTR_LOG_LVL    (0)
+#define STARTING_INSTR_LOG_LVL    (LOG_COMPILER)
 
 // ********************************************
 // ** Core Types
@@ -341,7 +345,7 @@ void zoab_arr(U1 len, U1 join) {
 }
 
 // Write a string of length and join bit.
-void zoab_str(U2 len, U1* str, U1 join) {
+void zoab_data(U2 len, U1* str, U1 join) {
   while(TRUE) {
     if(len <= 63) {
       if(join) outbuf[0] = ZOAB_JOIN | len;
@@ -368,23 +372,51 @@ void zoab_int(U4 value) {
   outbuf[10] = value >> 8;
   outbuf[11] = value;
   if (value <= 0xFF) {
-    zoab_str(1, outbuf+11, FALSE);
+    zoab_data(1, outbuf+11, FALSE);
   } else if (value <= 0xFFFF) {
-    zoab_str(2, outbuf+10, FALSE);
+    zoab_data(2, outbuf+10, FALSE);
   } else {
-    zoab_str(4, outbuf+8, FALSE);
+    zoab_data(4, outbuf+8, FALSE);
   }
 }
 
 // Write a null-terminated string.
 void zoab_ntStr(U1* str, U1 join) {
-  zoab_str(strlen(str), str, join);
+  zoab_data(strlen(str), str, join);
 }
 
 U1* START_BYTES = "\x80\x03";
 
 // Start a zoab log entry.
 void zoab_start() { assert(fwrite(START_BYTES, 1, 2, stdout)); }
+
+#define LOG_DICT 0x01
+#define LOG_ERR  0x02
+#define LOG_FILE  0x03
+
+U1 LOG_DICT_PTR[] = {LOG_SYS | LOG_DICT, 0};
+U1 LOG_ERR_PTR[] = {LOG_SYS | LOG_ERR, 0};
+U1 LOG_FILE_PTR[] = {LOG_SYS | LOG_FILE, 0};
+
+void zoab_info(U1* str) {
+  zoab_start(); zoab_arr(2, FALSE);
+  zoab_int(LOG_INFO); zoab_ntStr(str, FALSE);
+  fflush(stdout);
+}
+
+void zoab_err(U4 err, U1 isCaught) {
+  zoab_start(); zoab_arr(4, FALSE);
+  zoab_data(2, LOG_ERR_PTR, FALSE);
+  zoab_int(err);  zoab_int(isCaught);
+  zoab_int(line);
+  fflush(stdout);
+}
+
+void zoab_file(U2 len, char* file) {
+  zoab_start(); zoab_arr(2, FALSE);
+  zoab_data(2, LOG_FILE_PTR, FALSE);
+  zoab_data(len, file, FALSE);
+}
 
 // ********************************************
 // ** Utilities
@@ -553,7 +585,7 @@ U4 popLit(SzI szI) {
 /* returns: should escape */
 inline static void executeInstr(Instr instr) {
   globalInstr = instr; // for debugging
-  logInstr(instr);
+  // logInstr(instr);
   U4 l, r;
   U4 szMask = 0xFFFFFFFF; // TODO: remove
   SzI szI = SzI2;
@@ -781,6 +813,18 @@ SRGL: case SzI2 + SRGL:
   ASM_ASSERT(offset == *d.heap, E_cKey)
   Key* key = Dict_key(d, offset);
   U2 addedSize = alignAPtr(keySizeWLen(slen), 4);
+
+  if((LOG_COMPILER & *env.instrLogLvl)) {
+    zoab_start();
+    zoab_arr(6, /*join=*/ FALSE);
+    zoab_data(2, LOG_DICT_PTR, /*join=*/ FALSE);
+    zoab_data(slen, s, /*join=*/ FALSE); // key
+    zoab_int(value);
+    zoab_int(d.buf);  // buffer
+    zoab_int(offset);
+    zoab_int(*env.heap);
+  }
+
   ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
   key->value = value;
   key->len = slen;
@@ -987,10 +1031,12 @@ U1 scanInstr() {
   err_jmp = &local_err_jmp;
 
   if(setjmp(local_err_jmp)) {
-    printf("\n!!! ERROR\n!!! Env:");
-    dbgEnv();
-    printf("!!! code=#%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
-    printf("!!! "); dbgMemUsage();
+    zoab_info("!!! ERROR !!!");
+    zoab_err(*env.err, FALSE);
+    // printf("\n!!! ERROR\n!!! Env:");
+    // dbgEnv();
+    // printf("!!! code=#%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
+    // printf("!!! "); dbgMemUsage();
   } else {
     while(TRUE) {
       scan();
@@ -1002,6 +1048,7 @@ U1 scanInstr() {
 }
 
 DictRef popDictRef() {
+  // U1 isLocal = WS_POP();
   U4 rHeap = WS_POP();
   U4 buf = WS_POP();
   return (DictRef) {
@@ -1299,6 +1346,7 @@ ssize_t readSrc(size_t nbyte) {
   NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x2000, 0x100)
 
 void compileFile(char* s) {
+  zoab_file(strlen(s), s);
   compilingName = s;
   // printf("# Compiling: %s\n", s);
   line = 1;
@@ -1629,6 +1677,7 @@ U2 testBufIdx = 0;
 }
 
 void compileStr(char* s) {
+  zoab_file(7, "RAW STR");
   compilingName = s;
   testBuf = s;
   testBufIdx = 0;
@@ -1641,7 +1690,7 @@ void compileStr(char* s) {
 // ** Tests
 
 /*test*/ void testHex() {
-  // printf("## testHex...\n");
+  zoab_info("## testDictDeps");
   TEST_ENV_BARE;
 
   compileStr(".1 #10");
@@ -1662,7 +1711,7 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testDictDeps() {
-  // printf("## testDictDeps...\n");
+  zoab_info("## testDictDeps");
   TEST_ENV_BARE;
   DictRef d = DEFAULT_DICT;
   assert(cstrEq(1, 1, "a", "a"));
@@ -1687,7 +1736,7 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testDict() {
-  // printf("## testDict\n");
+  zoab_info("## testDict");
   TEST_ENV_BARE;
 
   compileStr(".2 #0F00 =foo  .4 #000B_A2AA =bazaa"
@@ -1698,7 +1747,7 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testWriteHeap() { // test , and ;
-  // printf("## testWriteHeap\n");
+  zoab_info("## testWriteHeap");
   TEST_ENV_BARE;
   compileStr(".4 #77770101, .2 #0F00, .1 #0,");
   assert(0x77770101 == fetch(mem, heapStart, SzI4));
@@ -1709,7 +1758,7 @@ void compileStr(char* s) {
 
 // These were useful for initial development
 // /*test*/ void testExecuteInstr() {
-//   printf("## testExecuteInstr\n"); TEST_ENV;
+//   zoab_info("## testExecuteInstr");
 //   compileStr(".4 @E_general");
 //   assert(0xE000 == WS_POP());
 // 
@@ -1738,7 +1787,7 @@ void compileStr(char* s) {
 // }
 
 /*test*/ void testSpore() {
-  // printf("## testSpore\n");
+  zoab_info("## testSpore");
   TEST_ENV;
   // TODO: refactor
   // char* logit = "\nTEST printing works!\n";
@@ -1792,7 +1841,7 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testFngi() {
-  // printf("## testFngi\n");
+  zoab_info("## testFngi");
   TEST_ENV;
   compileFile("fngi.fn");
   if(WS_LEN) { dbgWsFull(); assert(FALSE); }
@@ -1803,8 +1852,7 @@ void compileStr(char* s) {
 
 
 /*test*/ void tests() {
-  zoab_start();
-  zoab_ntStr("Message received", /*join=*/ FALSE);
+  zoab_info("# Tests");
 
   testHex();
   testDictDeps();
@@ -1814,4 +1862,5 @@ void compileStr(char* s) {
   testFngi();
 
   assert(0 == WS_LEN);
+  zoab_info("++ Tests Complete ++");
 }

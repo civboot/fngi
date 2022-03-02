@@ -391,9 +391,10 @@ $getHeap =h4  // h4: {val:4} push 4bytes from stack to heap
   %RET // (unaligned)
 
 $getHeap =dictArgs // args for dict.
-  // put {dict.buf &dict.heap} on stack
+  // put {dict.buf &dict.heap isLocal=FALSE} on stack
             .4%FTGL @c_dictBuf $h2
   %NOP      .2%LIT @c_dictHeap $h2
+  // #0$L0     %RET   %NOP // (unaligned)
   %RET // (unaligned)
 
 $getHeap =_dict // setup for dict.
@@ -738,6 +739,7 @@ $SFN ldictBuf // {} -> {ldict.buf:APtr}
 $SFN ldictArgs // {} -> dictArgs
   $xsl ldictBuf
   @c_dictLHeap$L2  // &ldict.heap
+  // #1$L0 // isLocal=TRUE TODO
   %RET
 $SFN ldictHeap $xsl ldictArgs .2%FT %ADD %RET // {} -> ldictHeap
 

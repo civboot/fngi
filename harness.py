@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import re
+import os
 import collections
 import sys
 import enum
@@ -17,20 +19,18 @@ NOSZ_MASK = 0xCF
 
 # Fngi log level byte
 class Lvl(enum.Enum):
-  LOG_SILENT    = 0x00
-  LOG_USER      = 0x80
-  LOG_SYS       = 0x20
-  LOG_TRACE     = 0x1F
-  LOG_DEBUG     = 0x0F
-  LOG_INFO      = 0x07
-  LOG_WARN      = 0x03
-  LOG_CRIT      = 0x01
+  SILENT    = 0x00
+  SYS       = 0x80
+  USER      = 0x20
+  TRACE     = 0x1F
+  DEBUG     = 0x0F
+  INFO      = 0x07
+  WARN      = 0x03
+  CRIT      = 0x01
 
-TRACE_INSTR = 0x00
-TRACE_FILE = 0x01
-TRACE_FILE_POS = 0x02
-TRACE_ERR = 0x03
-TRACE_TY = 0x04
+LOG_DICT = 0x01
+LOG_ERR  = 0x02
+LOG_FILE = 0x03
 
 class InstrClass(enum.Enum):
   C_OP   = 0x00
@@ -44,14 +44,23 @@ FIELD_MSG = 0x02
 # https://docs.python.org/3/library/sys.html#sys.stdin
 IO_STREAM = sys.stdin.buffer
 
-def intergerBE(data):
+def integerBE(data):
   if len(data) == 1:
     return data[0]
   if len(data) == 2:
-    return data[0] << 8 + data[1]
+    return (data[0] << 8) + data[1]
   if len(data) == 4:
-    return data[0] << 24 + data[1] << 16 + data[2] << 8 + data[3]
+    return (data[0] << 24) + (data[1] << 16) + (data[2] << 8) + data[3]
   raise ValueError(data)
+
+
+@dataclass
+class FngiEnv:
+  """A Map of the Fngi env from trace logs."""
+  dicts: dict
+  codes: dict
+  file: str = None
+  pos: int = None
 
 @dataclass
 class WorkingStack:
@@ -69,18 +78,53 @@ class Event:
   pass
 
 @dataclass
-class FileEvent(Event):
-  file: bytes
+class BasicEvent(Event):
+  lvl: Lvl
+  payload: List
 
 @dataclass
-class FilePosEvent(Event):
-  pos: int
+class DictEvent(Event):
+  isConst: bool
+  key: bytes
+  value: int
+  buf: int
+  offset: int
+  heap: int
+
+  @classmethod
+  def from_(cls, z):
+    return cls(
+      isConst=bool(z[0][1]), # after lvl
+      key=z[1],
+      value=integerBE(z[2]),
+      buf=integerBE(z[3]),
+      offset=integerBE(z[4]),
+      heap=integerBE(z[5]))
 
 @dataclass
 class ErrEvent(Event):
+  errCode: int
+  errName: str
   isCaught: bool
-  err: int
-  callStkDepth: int
+  lineNo: int
+
+  @classmethod
+  def from_(cls, z, env):
+    code = integerBE(z[1])
+    return cls(
+      errCode=code,
+      errName=env.codes.get(code, "Unknown Err"),
+      isCaught=bool(integerBE(z[2])),
+      lineNo=integerBE(z[3])
+    )
+
+@dataclass
+class FileEvent(Event):
+  file: str
+
+  @classmethod
+  def from_(cls, z):
+    return cls(file=z[1])
 
 RETZ = 0x01
 RET  = 0x02
@@ -90,128 +134,6 @@ XSL  = 0x86,
 XSW  = 0x87,
 
 CALLSTACK_INSTRS = {XL, XW, XSL, XSW}
-
-@dataclass
-class OpEvent(Event):
-  instr: int
-  ws: WorkingStack
-
-@dataclass
-class JmpEvent(Event):
-  instr: int
-  loc: int
-  ws: WorkingStack
-
-  def szI(self):
-    return SZ_MASK & self.instr
-
-@dataclass
-class OtherEvent(Event):
-  lvl: int
-  msg: str
-  err: int
-  payload: dict
-
-def inputs_stream(io):
-  buf = bytearray()
-  while True:
-    buf.clear()
-    readexact(io, buf, 2)
-    assert buf[0] == 0x80, f"Unknown control: {hex(buf[0])}"
-    assert buf[1] == 0x00, f"Unknown stream type for logging."
-    z = zoa.from_zoab(io)
-    assert z.arr, "Log is not an array."
-    control = z.arr[0].data  # control value
-
-    lvl = control[0]
-    if Lvl.LOG_SYS.value & lvl and Lvl.LOG_TRACE.value & lvl == Lvl.LOG_TRACE.value:
-      trace = control[1]
-      if trace == TRACE_FILE: yield FileEvent(z.arr[1].data)
-      if trace == TRACE_FILE_POS: yield FilePosEvent(integerBE(z.arr[1].data))
-      if trace == TRACE_ERR: yield ErrEvent(
-        isCaught=control[2],
-        err=integerBE(z.arr[1].data),
-        callStkDepth=integerBE(z.arr[2].data))
-      assert trace == TRACE_INSTR, f"Unknown trace: {trace}"
-
-      instr = control[2]
-      instrClass = 0xC0 & instr
-      if instrClass == InstrClass.C_OP.value:
-        return OpEvent(instr=instr, ws=WorkingStack.from_zoa(z.arr[1]))
-      elif instrClass == InstrClass.C_SLIT.value:
-        literal = integerBE(z.arr[1].data)
-        assert False, "not impl"
-      elif instrClass == InstrClass.C_JMP.value:
-        yield JmpEvent(
-          instr=instr,
-          loc=integerBE(z.arr[1].data),
-          ws=WorkingStack.from_zoa(z.arr[2]))
-      elif instrClass == InstrClass.C_MEM.value:
-        memLoc = integerBE(z.arr[1].data)
-        memValue = integerBE(z.arr[2].data)
-        assert False, "not impl"
-      else: assert False, "Unknown instr class"
-
-    assert not Lvl.LOG_SYS.value & lvl, "Unknown system log"
-    assert Lvl.LOG_USER.value & lvl, "Not a user log"
-    lvl = Lvl(LOG_TRACE.value & lvl)
-    msg = None
-    errCode = None
-    payload = {}
-
-    for i, item in enumerate(z.arr[1:]):
-      i += 1
-      assert len(item) > 1, f"index={i} has only 1 item"
-      key = item[0]
-      assert key.data, f"index={i} key is not data"
-      if len(key.data) == 1:
-        if key.data[0] == FIELD_ERR_CODE:
-          errCode = integerBE(item[1].data)
-        elif key.data[0] == FIELD_MSG:
-          msg = integerBE(item[1].data)
-        else:
-          assert False, f"index={i} unknown single-length key: {key.data[0]}"
-      else:
-        payload[key.data] = [v.to_py() for v in item[1:]]
-
-    yield OtherEvent(lvl=lvl, msg=msg, err=err, payload=payload)
-
-
-@dataclass
-class Ty:
-  pass
-
-@dataclass
-class FngiEnv:
-  """A Map of the Fngi env from trace logs."""
-  file: str = None
-  pos: int = None
-  callstack: List[Event] = list
-  events: Deque[Event] = collections.deque
-
-
-def harness():
-  env = FngiEnv()
-  for event in inputs_stream(IO_STREAM):
-    if isinstance(event, OpEvent):
-      if event.instr == RET:
-        env.callstack.pop()
-      if event.instr == RETZ and len(event.ws) > 0 and event.ws[0] == 0:
-        env.callstack.pop()
-    elif isinstance(event, JmpEvent) and NOSZ_MASK & event.instr in CALLSTACK_INSTRS:
-      env.callstack.push(event)
-    elif isinstance(event, FileEvent):
-      env.file = event.file
-      env.pos = None
-    elif isinstance(event, FilePosEvent):
-      env.pos = event.pos
-    elif isinstance(event, ErrEvent):
-      del env.callstack[event.callStkDepth:]
-
-    env.events.pushright(event)
-    if len(env.events) > 5000:
-      env.events.popleft()
-
 
 def waitForStart(io):
   buf = bytearray()
@@ -229,21 +151,83 @@ def waitForStart(io):
       except ValueError: pass
       print(f"??? Unknown byte: {hex(buf[0])} {c}")
 
+SP_REGEX = re.compile(
+  r'^#(?P<value>[\w_]+)\s+=(?P<name>E_[\w_]+)',
+  re.MULTILINE)
 
-def inputs_stream2(io):
+def findErrorCodes():
+  codes = {}
+  for root, _, files in os.walk(".", topdown=False):
+    for fname in files:
+      if fname.endswith('.sp'): regex = SP_REGEX
+      elif fname.endswith('.fn'): continue # TODO: not implemented yet
+      else: continue
+
+      with open(os.path.join(root, fname), 'r') as f:
+        text = f.read()
+
+      for m in re.finditer(regex, text):
+
+        codes[int(m.group('value'), 16)] = m.group('name')
+
+  return codes
+
+def sysEvent(env, z):
+  control = z[0]
+  sysTy = Lvl.TRACE.value & control[0]
+  if sysTy == LOG_DICT:
+    return DictEvent.from_(z)
+  if sysTy == LOG_ERR:
+    return ErrEvent.from_(z, env)
+  if sysTy == LOG_FILE:
+    return FileEvent.from_(z)
+
+def inputs_stream(env, io):
   while True:
     waitForStart(io)
-    z = zoa.from_zoab(io)
-    yield z.to_py()
+    z = zoa.from_zoab(io).to_py()
+    control = z[0]
+    if Lvl.SYS.value & control[0]:
+      yield sysEvent(env, z)
+      continue
 
-def harness2():
+    lvl = Lvl(control[0])
+    payload = list(z[1:])
+
+    yield BasicEvent(lvl=lvl, payload=payload)
+
+def harness(env):
   print("Starting harness")
-  for i, event in enumerate(inputs_stream2(IO_STREAM)):
-    print(f"LOG[{i:>8d}]: ", end='')
-    pprint.pprint(event)
+  for i, ev in enumerate(inputs_stream(env, IO_STREAM)):
+    if isinstance(ev, DictEvent):
+      env.dicts[ev.buf][ev.key] = ev
+      continue
+    if isinstance(ev, ErrEvent):
+      print(f"ERROR {ev.errName}({hex(ev.errCode)})  ", end="")
+      file = env.file
+      try: file = file.decode('utf-8')
+      except ValueError: pass
+      print(file, f"[{ev.lineNo}]")
+      continue
+    if isinstance(ev, FileEvent):
+      env.file = ev.file
+      if ev.file != b'RAW STR': print(f"File changed: {ev.file}")
+      continue
+
+    print(f"{ev.lvl}[{i:>8d}]: ", end='')
+    payload = ev.payload
+    if len(payload) == 1: payload = payload[0]
+    pprint.pprint(payload)
+
 
 if __name__ == '__main__':
+  env = FngiEnv(
+    dicts = collections.defaultdict(dict),
+    codes = findErrorCodes())
   try:
-    harness2()
+    harness(env)
   except zoa.Eof:
     print("Program terminated")
+  # pprint.pprint(env.dicts)
+  # for key, value in env.codes.items():
+  #   print(f"  {hex(key)}: {value}")
