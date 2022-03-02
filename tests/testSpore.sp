@@ -237,3 +237,12 @@ $three  #3 $tAssertEq
 // @sporMsg $logZoaStr
 
 $assertWsEmpty
+
+$FN failRecursively // {n} -> {n-1}
+  @SZ4 $INPUT n $END_LOCALS
+  $GET n %NOT $IF
+    #1$L0 #2$L0  $xsl tAssertEq
+  $END
+  $GET n %DEC $xl failRecursively
+
+#10 $failRecursively

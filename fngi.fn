@@ -97,3 +97,5 @@ FN SET  SMART // SET name value
 //   ret;
 
 // /*(*/  SFN )  panic E_unclosed // prevent unclosed parens
+
+$c_dictDump

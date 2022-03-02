@@ -21,6 +21,17 @@ ZOAB_LOG  = 0x03
 SZ_MASK   = 0x30
 NOSZ_MASK = 0xCF
 
+def wantStr(b):
+  try: return b.decode('utf-8')
+  except ValueError: return b
+
+def nice(value):
+  if isinstance(value, bytes):
+    return wantStr(value)
+  if isinstance(value, int):
+    return hex(value)
+
+
 # Fngi log level byte
 class Lvl(enum.Enum):
   SILENT    = 0x00
@@ -109,21 +120,63 @@ class DictEvent(Event):
       isConstant=bool(integerBE(z[6])),
       isLocal=bool(integerBE(z[7])))
 
+  def meta(self):
+    return self.value >> 24
+
+  def ref(self):
+    return 0xFFFFFF & self.value
+
+  def __repr__(self):
+    if self.isConstant:
+      return f"DictConstant[{hex(self.value)}]"
+    return f"DictFn[{hex(self.meta())} @{hex(self.ref())}]"
+
+
+ERR_DATA_NONE  = 0x00
+ERR_DATA_INT1  = 0x01
+ERR_DATA_DATA1 = 0x02
+ERR_DATA_INT2  = 0x03
+ERR_DATA_DATA2 = 0x04
+
+def errData(z):
+  print(z)
+  if not z: return z
+  ty = ord(z[0])
+  if ty == ERR_DATA_INT1: return (integerBE(z[1]),)
+  if ty == ERR_DATA_INT2: return (integerBE(z[1]), integerBE(z[2]))
+  return z[1:]
+
+
 @dataclass
 class ErrEvent(Event):
   errCode: int
   errName: str
   isCaught: bool
   lineNo: int
+  data: list
+  callStkLen: int
+  callStk: bytes
+  localsStk: bytes
+
 
   @classmethod
   def from_(cls, z, env):
     code = integerBE(z[1])
+    isCaught = bool(integerBE(z[2]))
+    callStk, localsStk = None, None
+    if isCaught: callStkLen = integerBE(z[5])
+    else:
+      callStk, localsStk = z[5]
+      callStkLen = len(callStk) // 4
     return cls(
       errCode=code,
       errName=env.codes.get(code, "Unknown Err"),
-      isCaught=bool(integerBE(z[2])),
-      lineNo=integerBE(z[3])
+      isCaught=isCaught,
+      lineNo=integerBE(z[3]),
+      data=errData(z[4]),
+      callStkLen=callStkLen,
+      callStk=callStk,
+      localsStk=localsStk,
     )
 
 @dataclass
@@ -211,15 +264,27 @@ def harness(env):
       env.dicts[ev.buf][ev.key] = ev
       continue
     if isinstance(ev, ErrEvent):
-      file = env.file
-      try: file = file.decode('utf-8')
-      except ValueError: pass
-      print(f"!! ERROR (file: {file} [{ev.lineNo}])", end="")
+      file = wantStr(env.file)
+
+      if ev.isCaught: print(" -- Caught Error", end="")
+      else:           print(" !! ERROR", end="")
+
+      print(f" (file: {file} [{ev.lineNo}])", end="")
       print(f" [{hex(ev.errCode)}] \"{ev.errName}\"  ")
+      if len(ev.data) == 1:
+        print("  V:", nice(ev.data[0]))
+      if len(ev.data) == 2:
+        print("  A:", nice(ev.data[0]))
+        print("  B:", nice(ev.data[1]))
+
+      print(ev.callStkLen)
+      print(ev.callStk)
+      print(ev.localsStk)
+
       continue
     if isinstance(ev, FileEvent):
       env.file = ev.file
-      if ev.file != b'RAW_STR': print(f"File changed: {ev.file}")
+      if ev.file != b'RAW_STR': print(f"Compiling file: {ev.file}")
       continue
 
     print(f"{ev.lvl}[{i:>8d}]: ", end='')
@@ -236,6 +301,6 @@ if __name__ == '__main__':
     harness(env)
   except zoa.Eof:
     print("Program terminated")
-  pprint.pprint(env.dicts)
+  # pprint.pprint(env.dicts)
   # for key, value in env.codes.items():
   #   print(f"  {hex(key)}: {value}")

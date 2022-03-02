@@ -180,10 +180,8 @@
 
 // **********
 // * 3. Constants
-#0 =NULL
 #0 =FALSE
 #1 =TRUE
-#0001_0000 =cAllowPanicMask
 
 // Meta types
 #40 =KEY_HAS_TY // if 1, dict entry is a non-constant
@@ -257,12 +255,27 @@
 #0000_0031 =c_tokenSize  // [U1] characters buffered
 #0000_0032 =c_tokenGroup // [U1] token group
 
+// Global Error Variables
+#0000_0034 =c_errValTy     // [U1]
+#0000_0038 =c_dataASz      // [U2]
+#0000_003A =c_dataBSz      // [U2]
+#0000_003C =c_errVal1      // [U4]
+#0000_0040 =c_errVal2      // [U4]
+#0000_0044 =c_msg          // [APtr]
+
 // Global Compiler Variables
-#0000_0034 =c_rKey         // [U4] rKey, ref to current dict key.
-#0000_0038 =c_rLKey        // [U4] rLKey, ref to current L dict key.
-#0000_003C =c_gheap        // [U4] global heap
-#0000_0040 =c_localOffset  // [U2] Local Offset (for local var setup)
-@c_gheap #0000_0044 .4^SR  // initial value of global heap
+#0000_0048 =c_rKey         // [U4] rKey, ref to current dict key.
+#0000_004C =c_rLKey        // [U4] rLKey, ref to current L dict key.
+#0000_0050 =c_gheap        // [U4] global heap
+#0000_0054 =c_localOffset  // [U2] Local Offset (for local var setup)
+
+#00  =ERR_DATA_NONE
+#01  =ERR_DATA_INT1
+#02  =ERR_DATA_DATA1
+#03  =ERR_DATA_INT2
+#04  =ERR_DATA_DATA2
+
+@c_gheap #0000_0058 .4^SR  // initial value of global heap
 
 // **********
 // * 4. Errors
@@ -356,7 +369,7 @@
 // assertNot [cond errCode]
 //
 // Test Assertions: these panic with E_test if the cond is not met.
-// tAssert, tAssertNot, tAssertEq, tAssertNe
+// tAssert, tAssertNot, tAssertEq
 // Spore assembly constants.
 
 %NOP // (unaligned) Note: heap is still on the stack!
@@ -452,6 +465,16 @@ $loc _hal // {align} heap align (for) literal
 $loc hal2   #2$L0          .2%JMPL @_hal $h2 // (aligned)
 $loc hal4   #4$L0          .2%JMPL @_hal $h2 // (aligned)
 
+$hal2 $loc _ha // {align} heap align (with NOPs)
+                .2%XSL @getHeap $h2 // {align heap}
+  .4%SWP        .4%MOD // {heap%align}
+  $hal2 .2%JMPL @hpad $h2
+
+// haN: {align} heap align N byte.
+#2 $_ha
+$loc ha2   #2$L0   .2%JMPL @_ha $h2
+$loc ha4   #4$L0   .2%JMPL @_ha $h2
+
 
 // Assert checks a condition or panics with an error
 // ex: <some check> @E_myError assert
@@ -467,18 +490,13 @@ $hal2 $loc tAssert
   $hal2 %JMPL @assert $h2
 
 $loc tAssertNot     .4%NOT $hal2 .2%JMPL @tAssert,
-$loc tAssertEq      .4%EQ  $hal2 .2%JMPL @tAssert,
-$loc tAssertNe      .4%NEQ $hal2 .2%JMPL @tAssert,
 
-$hal2 $loc _ha // {align} heap align (with NOPs)
-                .2%XSL @getHeap $h2 // {align heap}
-  .4%SWP        .4%MOD // {heap%align}
-  $hal2 .2%JMPL @hpad $h2
-
-// haN: {align} heap align N byte.
-#2 $_ha
-$loc ha2   #2$L0   .2%JMPL @_ha $h2
-$loc ha4   #4$L0   .2%JMPL @_ha $h2
+$ha2 $loc tAssertEq // {a b}
+   @ERR_DATA_INT2$L0  .1%SRGL @c_errValTy$h2
+   %NOP               .4%SRGL @c_errVal2$h2 // b {a}
+   %DUP               .4%SRGL @c_errVal1$h2 // a {a}
+   %NOP               .4%FTGL @c_errVal2$h2 // {a b}
+  .4%EQ  $hal2 .2%JMPL @tAssert,
 
 // **********
 // * Jmp and Literal Macros
@@ -703,7 +721,6 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn tAssert
 @TY_FN_PRE            $c_makeFn tAssertNot
 @TY_FN_PRE            $c_makeFn tAssertEq
-@TY_FN_PRE            $c_makeFn tAssertNe
 @TY_FN_PRE            $c_makeFn assertFn
 @TY_FN_PRE            $c_makeFn assertFnSmall
 @TY_FN_PRE            $c_makeFn assertFnLocals
@@ -732,6 +749,9 @@ $SFN unreach @E_unreach$L2 $jmpl panic // {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
 
+// Update the harness with the new dictionary
+$SFN c_dictDump  $xsl dictArgs @D_dictDump$L0 %DVFT %RET
+$c_dictDump
 
 $SFN ldictBuf // {} -> {ldict.buf:APtr}
   $hal2 .4%FTGL @c_dictBuf$h2
@@ -1104,7 +1124,7 @@ $SFN charToInt // {c} -> {U8}
   %DUP #61$L1 #7A$L1 $xl between $IF #61$L1 %SUB #A$L0 %ADD %RET $END
   %DRP #FF$L1 %RET
 
-$SFN null2 @NULL$L0 %DUP %RET
+$SFN null2 #0$L0 %DUP %RET
 $SFN c_isEof $GET c_tokenLen %NOT %RET
 $SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert // {} -> {}
 
@@ -1377,3 +1397,5 @@ $SFN c_fngi
     $GET c_tokenSize %RETZ // exit on EOF
     $GET c_compFn .4%XW
   $AGAIN l0
+
+$c_dictDump

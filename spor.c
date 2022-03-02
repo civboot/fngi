@@ -229,6 +229,26 @@ typedef enum {
 // Generic stack.
 typedef struct { U2 sp; U2 size; U1* mem; } Stk;
 
+typedef enum {
+  ERR_DATA_NONE  = 0x00,
+  ERR_DATA_INT1  = 0x01,
+  ERR_DATA_DATA1 = 0x02,
+  ERR_DATA_INT2  = 0x03,
+  ERR_DATA_DATA2 = 0x04,
+} ErrValTy;
+
+typedef struct {
+  U1 valTy;
+  U1 _align;
+  U2 _align2;
+
+  U2 valueASz;
+  U2 valueBSz;
+  U4 valueA;
+  U4 valueB;
+  APtr msg;
+} ErrData;
+
 // Environment
 typedef struct {
   APtr ep;  // execution pointer
@@ -242,6 +262,7 @@ typedef struct {
   U4* testIdx;
   U2* instrLogLvl;
   U2* usrLogLvl;
+  ErrData* errData;
   U1 szI; // global instr sz
   Stk ls;
 
@@ -304,16 +325,13 @@ typedef struct {
   U1 len;   // length of token
   U1 size;  // characters buffered
   U1 group;
+  U1 _align;
 } TokenState;
 
 // Debugging
-void dbgEnv();
 void dbgMemUsage();
 static inline void logInstr(Instr instr);
 void dbgInstr(Instr instr, Bool lit);
-void dbgWs();
-void dbgWsFull();
-void dbgToken();
 
 // ********************************************
 // ** Globals
@@ -399,13 +417,18 @@ void zoab_start() { assert(fwrite(START_BYTES, 1, 2, stdout)); }
 #define LOG_ERR  0x02
 #define LOG_FILE  0x03
 
+
 U1 LOG_DICT_PTR[] = {LOG_SYS | LOG_DICT, 0};
 U1 LOG_ERR_PTR[] = {LOG_SYS | LOG_ERR, 0};
 U1 LOG_FILE_PTR[] = {LOG_SYS | LOG_FILE, 0};
 
-void zoab_info(U1* str) {
-  zoab_start(); zoab_arr(2, FALSE);
+void zoab_infoStart(U1* str, U2 extraLen) {
+  zoab_start(); zoab_arr(2 + extraLen, FALSE);
   zoab_int(LOG_INFO); zoab_ntStr(str, FALSE);
+}
+
+void zoab_info(U1* str) {
+  zoab_infoStart(str, 0);
   fflush(stdout);
 }
 
@@ -424,13 +447,6 @@ void zoab_dict(DictRef d, U4 offset) {
   zoab_int(d.isLocal);
 }
 
-void zoab_err(U4 err, U1 isCaught) {
-  zoab_start(); zoab_arr(4, FALSE);
-  zoab_data(2, LOG_ERR_PTR, FALSE);
-  zoab_int(err);  zoab_int(isCaught);
-  zoab_int(line);
-  fflush(stdout);
-}
 
 void zoab_file(U2 len, char* file) {
   zoab_start(); zoab_arr(2, FALSE);
@@ -512,6 +528,7 @@ SzI szToSzI(U1 sz) {
 #define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
 #define X_DEPTH       Stk_len(env.cs)
+#define WS_TOP()      fetch(env.ws.mem, env.ws.sp, SzIA)
 #define _CHK_GROW(SP, SZ) \
   ASM_ASSERT(SP - SZ >= 0, E_stkOvr)
 
@@ -557,6 +574,52 @@ U1 mergeInstrSzI(SzI szI, U1 instr) {
     case C_MEM: return szI + instr;
     default: assert(FALSE);
   }
+}
+
+U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
+
+// dump the first n elements of the working stack [totalLen, data]
+void zoab_ws(U2 n) {
+  zoab_int(WS_LEN);
+  zoab_data(min(WS_LEN, n) << APO2, env.ws.mem + env.ws.sp, /*join=*/ FALSE);
+}
+
+// Dump the call stack
+void zoab_cs() {
+  zoab_data(X_DEPTH << APO2, env.cs.mem + env.cs.sp, /*join=*/ FALSE);
+}
+
+// Dump the locals stack
+void zoab_ls() {
+  zoab_data(Stk_len(env.ls) << APO2, env.ls.mem + env.ls.sp, /*join=*/ FALSE);
+}
+
+void zoab_err(U4 err, U1 isCaught) {
+  zoab_start(); zoab_arr(6, FALSE);
+  zoab_data(2, LOG_ERR_PTR, FALSE);
+  zoab_int(err);
+  zoab_int(isCaught);
+  zoab_int(line);
+
+  switch (env.errData->valTy) {
+    case ERR_DATA_NONE:
+      zoab_arr(0, FALSE);
+      break;
+    case ERR_DATA_INT2:
+      zoab_arr(3, FALSE);
+      zoab_int(env.errData->valTy);
+      zoab_int(env.errData->valueA);
+      zoab_int(env.errData->valueB);
+      break;
+    default: assert(FALSE);
+  }
+
+  if(isCaught) zoab_int(X_DEPTH); // just update the execution depth
+  else {
+    zoab_arr(2, FALSE); zoab_cs(); zoab_ls();
+  }
+
+  fflush(stdout);
 }
 
 // ********************************************
@@ -1040,10 +1103,6 @@ U1 scanInstr() {
 
   if(setjmp(local_err_jmp)) {
     zoab_err(*env.err, FALSE);
-    // printf("\n!!! ERROR\n!!! Env:");
-    // dbgEnv();
-    // printf("!!! code=#%X  test=#%X  line=%u\n", *env.err, *env.testIdx, line);
-    // printf("!!! "); dbgMemUsage();
   } else {
     while(TRUE) {
       scan();
@@ -1282,6 +1341,7 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
       tmp = WS_POP();
       if(!tmp) SET_ERR(E_cErr);
       if(!WS_POP()) SET_ERR(tmp);
+      env.errData->valTy = ERR_DATA_NONE;
       break;
     case D_wslen: WS_PUSH(WS_LEN); break;
     case D_cslen: WS_PUSH(Stk_len(env.cs)); break;
@@ -1346,9 +1406,16 @@ ssize_t readSrc(size_t nbyte) {
   dict->heap = 0;                         \
   dict->end = DS;                         \
   glbls += sizeof(Dict);                  \
+  assert(0x2C == glbls);                  \
   /* Then Token State*/                   \
   tokenState = (TokenState*) (mem + glbls); \
   glbls += sizeof(TokenState);            \
+  assert(0x34 == glbls);                  \
+  /* Then errData*/                       \
+  env.errData = (ErrData*) (mem + glbls); \
+  memset(env.errData, 0, sizeof(ErrData));\
+  glbls += sizeof(ErrData);               \
+  assert(0x48 == glbls);                  \
   /* Configure topHeap */                 \
   *env.topHeap = MS;                      \
   *env.topMem = MS;                       \
@@ -1386,7 +1453,6 @@ void compileFile(char* s) {
   /*      MS      WS     RS     LS     DICT    GS*/    \
   NEW_ENV(0x8000, 0x40, 0x100, 0x200, 0x2000, 0x1000)
 
-
 // ********************************************
 // ** Main
 void tests();
@@ -1399,170 +1465,21 @@ void tests();
 // ********************************************
 // ** Testing
 
-#include <string.h>
-
-U1 szIToSzSafe(SzI szI) {
-  switch (szI) {
-    case SzI1: return 1;
-    case SzI2: return 2;
-    case SzI4: return 4;
-    default: return 0;
-  }
-}
-
-void dbgToken() {
-  printf(" \"%.*s\"", tokenLen, tokenBuf);
-}
-
-void dbgMemUsage() {
-  printf("heap = %X/%X   ", *env.heap, *env.topHeap);
-  printf("dict = %X / %X\n", dict->heap, dict->end);
-}
-
-void dbgEnv() {
-  printf("  token[%u, %u]=", tokenLen, tokenBufSize);
-  dbgToken();
-  printf("stklen:%u ", WS_LEN);
-  printf("tokenGroup=%u  ", tokenState->group);
-  printf("instr=#%X ", globalInstr);
-  printf("sz=%u\n", szIToSzSafe(env.szI));
-
-}
-
-
-#define ENUM_STR(V) case V: return "V"
-
-Key keyDNE = {.len = 3, .s = "???" };
-
-Key* Dict_findFn(U4 value) {
-  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap};
-  U2 offset = 0;
-  Key* key = &keyDNE;
-
-  while(offset < dict->heap) {
-    Key* atKey = Dict_key(d, offset);
-    if(value == (REF_MASK & atKey->value)) key = atKey;
-    U2 entrySz = alignAPtr(keySizeWLen(Key_len(atKey)), 4);
-    offset += entrySz;
-  }
-  assert(offset == *d.heap);
-  return key;
-}
-
-U4 max(I4 a, I4 b) {
-  if (a > b) return a;
-  return b;
-}
-
-void dbgWs() {
-  printf(" {%u... ", max(0, ((I4) WS_LEN) - 2));
-  if(WS_LEN > 0) {
-    if(WS_LEN == 1) printf("   ----  |");
-    else printf(" %+8X|", fetch(env.ws.mem, env.ws.sp + ASIZE, SzIA));
-    printf(" %+8X}", fetch(env.ws.mem, env.ws.sp, SzIA));
-  } else printf("   ----  |   ----  }");
-  printf(" ");
-}
-
-void dbgWsFull() {
-  printf("  {{ ");
-  for(I1 i = WS_LEN - 1; i >= 0; i -= 1) {
-    printf("%X, ", fetch(env.ws.mem, env.ws.sp + (i << APO2), SzIA));
-  }
-  printf("}}\n");
-}
-
-
-char* instrStr(Instr instr) {
-  switch (instr) {
-    case NOP  :  return "NOP  ";
-    case RETZ :  return "RETZ ";
-    case RET  :  return "RET  ";
-    case SWP  :  return "SWP  ";
-    case DRP  :  return "DRP  ";
-    case OVR  :  return "OVR  ";
-    case DUP  :  return "DUP  ";
-    case DUPN :  return "DUPN ";
-    case DVFT :  return "DVFT ";
-    case DVSR :  return "DVSR ";
-    case RGFT :  return "RGFT ";
-    case RGSR :  return "RGSR ";
-
-    case INC  :  return "INC  ";
-    case INC2 :  return "INC2 ";
-    case INC4 :  return "INC4 ";
-    case DEC  :  return "DEC  ";
-    case INV  :  return "INV  ";
-    case NEG  :  return "NEG  ";
-    case NOT  :  return "NOT  ";
-    case CI1  :  return "CI1  ";
-    case CI2  :  return "CI2  ";
-
-    case ADD  :  return "ADD  ";
-    case SUB  :  return "SUB  ";
-    case MOD  :  return "MOD  ";
-    case SHL  :  return "SHL  ";
-    case SHR  :  return "SHR  ";
-    case BAND :  return "BAND ";
-    case BOR  :  return "BOR  ";
-    case XOR  :  return "XOR  ";
-    case LAND :  return "LAND ";
-    case LOR  :  return "LOR  ";
-    case EQ   :  return "EQ   ";
-    case NEQ  :  return "NEQ  ";
-    case GE_U :  return "GE_U ";
-    case LT_U :  return "LT_U ";
-    case GE_S :  return "GE_S ";
-    case LT_S :  return "LT_S ";
-    case MUL  :  return "MUL  ";
-    case DIV_U:  return "DIV_U";
-    case DIV_S:  return "DIV_S";
-    default:
-  }
-
-  switch ((~SZ_MASK) & instr) {
-    case LIT:   return "LIT  ";
-    case FT:    return "FT   ";
-    case FTLL:  return "FTLL ";
-    case FTGL:  return "FTGL ";
-    case SR:    return "SR   ";
-    case SRLL:  return "SRLL ";
-    case SRGL:  return "SRGL ";
-
-    case JMPL:  return "JMPL ";
-    case JMPW:  return "JMPW ";
-    case JZL:   return "JZL  ";
-    case JTBL:  return "JTBL ";
-    case XL:    return "XL   ";
-    case XW:    return "XW   ";
-    case XSL:   return "XSL  ";
-    case XSW:   return "XSW  ";
-  }
-
-  return "instr?";
-}
-
+#define LOG_OP   0x08
+#define LOG_LIT  0x08
+#define LOG_JMP  0x08
+#define LOG_MEM  0x08
+#define LOG_RET_SUCCESS  0x08
 
 Bool _dbgMemInvalid(SzI szI, APtr aptr) {
   U1 sz = szIToSz(szI);
-  if (aptr != alignAPtr(aptr, sz)) {
-    printf(" !!ALIGN!! ");
-    return TRUE;
-  }
-  if (aptr == 0) {
-    printf(" !!ep=0!! ");
-    return TRUE;
-  }
-  if (aptr + sz > *env.topHeap) {
-    printf(" !!ep>=topHeap!! ");
-    return TRUE;
-  }
+  if (aptr != alignAPtr(aptr, sz))  return TRUE;
+  if (aptr == 0)                    return TRUE;
+  if (aptr + sz > *env.topHeap)     return TRUE;
   return FALSE;
 }
 
 void dbgJmp(Instr instr) {
-  if (INSTR_CLASS(instr) != C_JMP) return;
-
   U4 jloc = 0;
   SzI szI = INSTR_SZI(instr);
 
@@ -1573,33 +1490,21 @@ void dbgJmp(Instr instr) {
     case XSL:
       if(_dbgMemInvalid(szI, env.ep)) break;
       jloc = toAptr(fetch(mem, env.ep, szI), SzI2);
-      if(!jloc) { printf(" !!jloc=0!! "); }
       break;
     case JMPW:
     case XW:
     case XSW:
-      if (!WS_LEN) { printf(" ((!WS EMPTY!)) "); break; }
+      if (!WS_LEN) return;
       jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
   }
-  if(!jloc) return;
-  if(SzI1 == szI) {
-      printf(" (( relative %c0x%X ))", (jloc<0) ? '-' : ' ', (jloc<0) ?-jloc : jloc);
-      return;
-  }
-  Key* k = Dict_findFn(jloc);
-  printf(" ((");
-  if(k == &keyDNE) {
-    printf("?? 0x%.4X", jloc);
-  } else {
-    printf("%-10.*s", Key_len(k), k->s);
-    printf(" 0x%.4X", jloc);
-  }
-  printf(")) ");
+  zoab_start();
+  zoab_arr(4, FALSE);
+  zoab_int(LOG_SYS | LOG_JMP);  zoab_int(instr);
+  zoab_int(jloc);
+  zoab_ws(WS_LEN);
 }
 
 void dbgMem(Instr instr) {
-  if (INSTR_CLASS(instr) != C_MEM) return;
-
   SzI szI;
   switch (INSTR_NO_SZ(instr)) {
     case LIT: szI = INSTR_SZI(instr); break;
@@ -1610,37 +1515,33 @@ void dbgMem(Instr instr) {
     default: return;
   }
   if(_dbgMemInvalid(szI, env.ep)) return;
-  printf("{0x%X}", fetch(mem, env.ep, szI));
+  zoab_arr(3, FALSE);
+  zoab_int(LOG_SYS | LOG_MEM);  zoab_int(instr);
+  zoab_int(fetch(mem, env.ep, szI));
+  return;
 }
 
-void dbgIndent() {
-  // printf(" + %+3u + ", X_DEPTH);
-  for(U2 i = 0; i < X_DEPTH; i += 1) printf("+");
-}
-
-#define dbgInstrFmt(SZ, NAME) printf(".%X %s] ", SZ, NAME);
 void dbgInstr(Instr instr, Bool lit) {
-  dbgWs();
-  printf("["); // printf("0x%-2X ", instr);
-  if(INSTR_CLASS(instr) == C_SLIT) {
-    printf("SL      ] ");
-    dbgIndent();
-    printf(" [0x%X]",  0x3F & instr);
+  SzI szI;
 
-    return;
+  if (instr == RET || (instr == RETZ && WS_LEN && (WS_TOP() == 0))) {
+      zoab_start();   zoab_arr(3, FALSE);
+      zoab_int(LOG_SYS | LOG_RET_SUCCESS);  zoab_int(instr);
+      zoab_ws(WS_LEN);
+      return;
   }
-  printf("%s", instrStr(instr));
+
   switch (INSTR_CLASS(instr)) {
-    case C_JMP:
-    case C_MEM: printf(" U%u", szIToSz(INSTR_SZI(instr))); break;
-    default: printf("   ");
-  }
-  printf("] ");
-  dbgIndent();
-  if (lit) {
-    dbgToken();
-    dbgJmp(instr);
-    dbgMem(instr);
+    case C_OP:
+      zoab_start();   zoab_arr(3, FALSE);
+      zoab_int(LOG_SYS | LOG_OP); zoab_int(instr); zoab_ws(2);
+      return;
+    case C_SLIT:
+      zoab_start();  zoab_arr(2, FALSE);
+      zoab_int(LOG_SYS | LOG_LIT);  zoab_int(0x3F & instr);
+      return;
+    case C_MEM: return dbgMem(instr);
+    case C_JMP: return dbgJmp(instr);
   }
 }
 
@@ -1665,10 +1566,7 @@ static inline Bool doLogInstr(Instr instr) {
 static inline void logInstr(Instr instr) {
   dbgCount += 1;
   if(!doLogInstr(instr)) return;
-  printf(" |%.8u|L%.4u|", dbgCount, line);
-  printf("@%.4X", env.ep - 1);
   dbgInstr(instr, TRUE);
-  printf("\n");
 }
 
 #define TEST_ENV_BARE \
@@ -1774,38 +1672,11 @@ void compileStr(char* s) {
   assert(0x77770101 == fetch(mem, heapStart, SzI4));
   assert(0x0F00 == fetch(mem, heapStart+4, SzI2));
   assert(0 == fetch(mem, heapStart+6, SzI1));
-  // dbgWs(); dbgEnv();
 }
 
-// These were useful for initial development
-// /*test*/ void testExecuteInstr() {
-//   zoab_info("## testExecuteInstr");
-//   compileStr(".4 @E_general");
-//   assert(0xE000 == WS_POP());
-// 
-//   compileStr(".2");
-//   assert(SzI2 == env.szI);
-// 
-//   compileStr(".4 #5006 #7008 .2 ^DRP");
-//   assert(0x5006 == WS_POP());
-// 
-//   compileStr(".1 #01 #02  ^ADD");
-//   assert(0x03 == WS_POP());
-// 
-//   compileStr(".4 #8 #5 ^SUB");
-//   assert(0x03 == WS_POP());
-// 
-//   compileStr(".4 #8000 #4 ^SUB");
-//   assert(0x7FFC == WS_POP());
-// 
-//   compileStr(".A @D_sz ^DVFT");
-//   assert(0x04 == WS_POP());
-// 
-//   U4 expectDictHeap = (U1*)dict - mem + 4;
-//   compileStr(".4 @c_tokenBuf #FF_FFFF ^BAND^FT"); assert(tokenState->buf == WS_POP());
-//   compileStr(".4 @topHeap #FF_FFFF ^BAND ^FT");  assert(*env.topHeap == WS_POP());
-//   compileStr(".4 @c_dictHeap #FF_FFFF ^BAND  assert(expectDictHeap == WS_POP());
-// }
+void assertNoWs() {
+  if(WS_LEN) { zoab_start(); zoab_ws(WS_LEN); assert(FALSE); }
+}
 
 /*test*/ void testSpore() {
   zoab_info("## testSpore");
@@ -1822,7 +1693,7 @@ void compileStr(char* s) {
   compileStr("$| \\nzoa!\\n|");
   assert(6 == fetch(mem, heapStart, SzI1));
   assert(0 == memcmp("\nzoa!\n", mem + heapStart + 1, 6));
-  if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+  assertNoWs();
 
   // Test h1
   heapStart = *env.heap;
@@ -1865,17 +1736,14 @@ void compileStr(char* s) {
   zoab_info("## testFngi");
   TEST_ENV;
   compileFile("fngi.fn");
-  if(WS_LEN) { dbgWsFull(); assert(FALSE); }
+  assertNoWs();
   compileFile("tests/testFngi.fn");
-  if(WS_LEN) { dbgWsFull(); assert(FALSE); }
-
-  // compileStr("#0 $tAssert");
+  assertNoWs();
 }
-
-
 
 /*test*/ void tests() {
   zoab_info("# Tests");
+  assert(20 == sizeof(ErrData));
 
   testHex();
   testDictDeps();
