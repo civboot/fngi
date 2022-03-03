@@ -6,6 +6,10 @@
 #include <string.h>
 #include <setjmp.h>
 
+// print to stderr
+#define eprintf(format, args...)   fprintf (stderr, format, args)
+
+
 typedef enum {
   LOG_SILENT    = 0x00,
   LOG_SYS       = 0x80,
@@ -595,10 +599,11 @@ void zoab_ls() {
 }
 
 void zoab_err(U4 err, U1 isCaught) {
-  zoab_start(); zoab_arr(6, FALSE);
+  zoab_start(); zoab_arr(7, FALSE);
   zoab_data(2, LOG_ERR_PTR, FALSE);
   zoab_int(err);
   zoab_int(isCaught);
+  zoab_int(env.ep);
   zoab_int(line);
 
   switch (env.errData->valTy) {
@@ -626,6 +631,7 @@ void zoab_err(U4 err, U1 isCaught) {
 // ** Executing Instructions2
 
 void xImpl(APtr aptr) { // impl for "execute"
+  // eprintf("??? X  0x%X\n", aptr);
   // get amount to grow, must be multipled by APtr size .
   U2 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
@@ -636,6 +642,7 @@ void xImpl(APtr aptr) { // impl for "execute"
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
+  // eprintf("??? XS 0x%X\n", aptr);
   Stk_push(&env.cs, env.ep);
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr;

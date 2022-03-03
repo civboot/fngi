@@ -238,11 +238,23 @@ $three  #3 $tAssertEq
 
 $assertWsEmpty
 
+$SFN failRecursively2 // {n} -> {n-1}
+  %DUP %NOT $IF
+    %DRP
+    #1$L0 #7$L0  $xsl tAssertEq
+    %RET
+  $END
+  %DEC $xsl failRecursively2
+
 $FN failRecursively // {n} -> {n-1}
   @SZ4 $INPUT n $END_LOCALS
   $GET n %NOT $IF
-    #1$L0 #2$L0  $xsl tAssertEq
+    #5$L0 $xsl failRecursively2
+    %RET
   $END
   $GET n %DEC $xl failRecursively
 
-#10 $failRecursively
+$assertWsEmpty
+$c_dictDump
+
+#5 $failRecursively

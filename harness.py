@@ -29,7 +29,7 @@ def nice(value):
   if isinstance(value, bytes):
     return wantStr(value)
   if isinstance(value, int):
-    return hex(value)
+    return f"0x{value:X}"
 
 
 # Fngi log level byte
@@ -66,6 +66,16 @@ def integerBE(data):
     return (data[0] << 8) + data[1]
   if len(data) == 4:
     return (data[0] << 24) + (data[1] << 16) + (data[2] << 8) + data[3]
+  raise ValueError(data)
+
+def integerLE(data, l=None):
+  if l is None: l = len(data)
+  if l == 1:
+    return data[0]
+  if l == 2:
+    return data[0] + (data[1] << 8)
+  if l == 4:
+    return data[0] + (data[1] << 8) + (data[2] << 16) + (data[3] << 24)
   raise ValueError(data)
 
 
@@ -128,8 +138,8 @@ class DictEvent(Event):
 
   def __repr__(self):
     if self.isConstant:
-      return f"DictConstant[{hex(self.value)}]"
-    return f"DictFn[{hex(self.meta())} @{hex(self.ref())}]"
+      return f"DictConstant[{nice(self.value)}]"
+    return f"DictFn[{nice(self.meta())} @{nice(self.ref())}]"
 
 
 ERR_DATA_NONE  = 0x00
@@ -152,6 +162,7 @@ class ErrEvent(Event):
   errCode: int
   errName: str
   isCaught: bool
+  ep: int
   lineNo: int
   data: list
   callStkLen: int
@@ -164,16 +175,17 @@ class ErrEvent(Event):
     code = integerBE(z[1])
     isCaught = bool(integerBE(z[2]))
     callStk, localsStk = None, None
-    if isCaught: callStkLen = integerBE(z[5])
+    if isCaught: callStkLen = integerBE(z[6])
     else:
-      callStk, localsStk = z[5]
+      callStk, localsStk = z[6]
       callStkLen = len(callStk) // 4
     return cls(
       errCode=code,
       errName=env.codes.get(code, "Unknown Err"),
       isCaught=isCaught,
-      lineNo=integerBE(z[3]),
-      data=errData(z[4]),
+      ep=integerBE(z[3]),
+      lineNo=integerBE(z[4]),
+      data=errData(z[5]),
       callStkLen=callStkLen,
       callStk=callStk,
       localsStk=localsStk,
@@ -205,12 +217,12 @@ def waitForStart(io):
       buf.clear(); readexact(io, buf, 1)
       if buf[0] == ZOAB_LOG:
         return
-      print(f"??? Unknown byte after 0x80: {hex(buf[0])}")
+      print(f"??? Unknown byte after 0x80: {nice(buf[0])}")
     else:
       c = 0
       try: chr(buf[0])
       except ValueError: pass
-      print(f"??? Unknown byte: {hex(buf[0])} {c}")
+      print(f"??? Unknown byte: {nice(buf[0])} {c}")
 
 SP_REGEX = re.compile(
   r'^#(?P<value>[\w_]+)\s+=(?P<name>E_.+)$',
@@ -257,6 +269,81 @@ def inputs_stream(env, io):
 
     yield BasicEvent(lvl=lvl, payload=payload)
 
+
+@dataclass
+class CallStkItem:
+  ep: int
+  fn: DictEvent
+  fnNext: DictEvent
+  localData: bytes
+
+def orderFns(dicts):
+  fns = []
+  for d in dicts.values():
+    for f in d.values():
+      if f.isLocal or f.isConstant: continue
+      fns.append(f)
+
+  fns.sort(key=DictEvent.ref)
+  return fns
+
+def findFnLesser(fns, addr):
+  # A few notes:
+  # - The ep that gets put on the call stack is the one where execution
+  #   will CONTINUE.
+  # - Therefore if the addr=fn.ref() then the previous function called
+  #   something and bleeds into the next function on return
+  #   (this may be intentional fall-through or they expect failure).
+  if addr == 0: return None
+  if fns[0].ref() > addr: return None
+  if fns[-1].ref() < addr: return len(fns) - 1
+  i = 0
+  while i < len(fns):
+    if fns[i].ref() >= addr:
+      return i - 1
+    i += 1
+
+def getFnAndNext(fns, fnI):
+  if fnI is None: return None, None
+  fn, fnNext = fns[fnI], None
+  if fnI < len(fns) - 1: fnNext = fns[fnI + 1]
+  return fn, fnNext
+
+def extractCallStack(fns, ev):
+  out = []
+  cs_i = 0
+  ls_i = 0
+  while cs_i < len(ev.callStk):
+    lszRef = integerLE(ev.callStk[cs_i:cs_i+4])
+    lszBytes = (lszRef >> 24) * 4
+    ep = 0xFFFFFF & lszRef
+    lsData = ev.localsStk[ls_i:ls_i+lszBytes]
+    fnI = findFnLesser(fns, ep)
+    fn, fnNext = getFnAndNext(fns, fnI)
+    out.append(CallStkItem(ep=ep, fn=fn, fnNext=fnNext, localData=lsData))
+
+    cs_i += 4
+    ls_i += lszBytes
+  return out
+
+def printCallStack(callStk):
+  for i, item in enumerate(callStk):
+    ep, key, ref = nice(item.ep), "BASE", 0
+    if item.fn:
+      key, ref = nice(item.fn.key), nice(item.fn.ref())
+    loc = "in"
+    if ref:
+      loc = f"{item.ep - item.fn.ref():>5} bytes"
+      if item.fnNext:
+        p = (item.ep - item.fn.ref()) / (item.fnNext.ref() - item.fn.ref())
+        p = int(100 * p)
+        loc = loc + f" ({p:>3}%) into"
+      else: loc += "        into"
+
+    if i == 0: print("    Failure      ", end="")
+    else:      print("    + Called from", end="")
+    print(f" @{ep:<10} {loc} {key} (defined @{ref})")
+
 def harness(env):
   print("Starting harness")
   for i, ev in enumerate(inputs_stream(env, IO_STREAM)):
@@ -270,16 +357,26 @@ def harness(env):
       else:           print(" !! ERROR", end="")
 
       print(f" (file: {file} [{ev.lineNo}])", end="")
-      print(f" [{hex(ev.errCode)}] \"{ev.errName}\"  ")
+      print(f" [{nice(ev.errCode)}] \"{ev.errName}\"  ")
       if len(ev.data) == 1:
         print("  V:", nice(ev.data[0]))
       if len(ev.data) == 2:
-        print("  A:", nice(ev.data[0]))
-        print("  B:", nice(ev.data[1]))
+        print("  ERROR VALUES")
+        print("    A:", nice(ev.data[0]))
+        print("    B:", nice(ev.data[1]))
 
-      print(ev.callStkLen)
-      print(ev.callStk)
-      print(ev.localsStk)
+      if   not ev.callStkLen: pass
+      else:
+        print(f"  Call Stack (depth={ev.callStkLen})")
+        if not ev.callStk: continue
+        fns = orderFns(env.dicts)
+        callStk = extractCallStack(fns, ev)
+        lastFnI = findFnLesser(fns, ev.ep)
+        fn, fnNext = getFnAndNext(fns, lastFnI)
+        lastCs = CallStkItem(ep=ev.ep, fn=fn, fnNext=fnNext, localData=b'')
+        callStk.insert(0, lastCs)
+
+        printCallStack(callStk)
 
       continue
     if isinstance(ev, FileEvent):
@@ -303,4 +400,4 @@ if __name__ == '__main__':
     print("Program terminated")
   # pprint.pprint(env.dicts)
   # for key, value in env.codes.items():
-  #   print(f"  {hex(key)}: {value}")
+  #   print(f"  {nice(key)}: {value}")
