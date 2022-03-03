@@ -633,14 +633,15 @@ $loc c_keySetTyped // {&metaRef} -> []
   .1%FT @KEY_HAS_TY$L1 %BOR // {&len tyKeyLen}
   .1%SR %RET            // update tyKeyLen
 
-$loc c_keySetTy // {meta:U1 &metaRef} -> {} meta current key's meta to be a Ty
-  %DUP $_xsl c_keySetTyped // make key "typed" {meta &metaRef}
-  %SWP $_xsl rMetaSet
-  %RET
+$loc c_keySetTy // {<dictArgs> meta:U1 &metaRef} -> {} meta current key's meta to be a Ty
+  %SWP %OVR // {<dictArgs> &metaRef meta &metRef}
+  %DUP $_xsl c_keySetTyped // make key "typed" {<dictArgs> &metaRef meta &metaRef}
+  %SWP $_xsl rMetaSet // {<dictArgs> &metaRef}
+  $_jmpl c_dictDumpEntry
 
-$hal2 $loc _declFn // [meta]
-  @TY_FN$L1 %BOR // {meta}
-  $_xsl c_updateRKey // {meta &metaRef}
+$hal2 $loc _declFn // [<dictArgs> meta]
+  @TY_FN$L1 %BOR // {<dictArgs> meta}
+  $_xsl c_updateRKey // {<dictArgs> meta &metaRef}
   $_xsl loc
   $_xsl c_keySetTy
   $ha2
@@ -650,10 +651,10 @@ $hal2 $loc _declFn // [meta]
   %RET
 
 $hal2 $loc SFN  // SMART $SFN <token>: define location of small function
-  $_xsl assertNoInstant #0$L0         $_jmpl _declFn
+  $_xsl assertNoInstant $_xsl dictArgs #0$L0         $_jmpl _declFn
 
 $ha2 $loc FN  // SMART $FN <token>: define location of function with locals
-  $_xsl assertNoInstant @TY_FN_LOCALS$L1 $_jmpl _declFn
+  $_xsl assertNoInstant $_xsl dictArgs @TY_FN_LOCALS$L1 $_jmpl _declFn
 
 $ha2
 $loc SMART // {} modify current function to be smart
@@ -664,12 +665,15 @@ $loc INSTANT // {} modify current function to be smart
   %DRP .4%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl rMetaSet
 
 // Backfill the fn meta
-$loc c_makeTy // {meta} make an existing symbol a type.
+$loc c_makeTy // {<dictArgs> meta} make an existing symbol a type.
   $_xsl dictGetR   // {meta &metaRef}
   $_xsl c_keySetTy
   %RET
 
-$loc c_makeFn // {meta} <token>: set meta for token to be a small function.
+#0 // manually insert asInstant=False (since compiler doesn't know it's smart yet)
+$FN c_makeFn // {meta} <token>: set meta for token to be a small function.
+  #1$h1  // locals: 0=meta:U1
+  .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 // {<dictArgs> meta}
   @TY_FN$L1 %BOR  $_jmpl c_makeTy
 
 $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
@@ -717,8 +721,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn c_dictDumpEntry
 @TY_FN_PRE            $c_makeFn c_keySetTyped
 @TY_FN_PRE            $c_makeFn c_keySetTy
-#0                  $c_makeFn c_makeTy
-#0                  $c_makeFn c_makeFn
+#0                    $c_makeFn c_makeTy
 
 @TY_FN_PRE            $c_makeFn assert
 @TY_FN_PRE            $c_makeFn assertNot
@@ -937,7 +940,9 @@ $SFN REF  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _refImpl
 $SFN GET  $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _getImpl
 $SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _setImpl
 
-$SFN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
+$FN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
+  #1$h1 // locals 0=szI:u1
+  .1%SRLL#0$h1  $xsl dictArgs .1%FTLL#0$h1 // {<dictArgs> locals}
   #4$L0 %SHR  @TY_GLOBAL$L1  %BOR  $_jmpl c_makeTy
 
 @SZA $c_makeGlobal heap
@@ -974,7 +979,7 @@ $SFN align4 $PRE #4$L0 $xl align %RET
 $SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET
 
 $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
-  #1 $h1  $SMART $xsl assertNoInstant  // 1 local [szI:U1]
+  #2$h1  $SMART $xsl assertNoInstant  // locals 0=szI 1=meta 4=&metaRef
   %DUP $xsl assertSzI // {value szI}
   .1%SRLL#0$h1 // set szI {value}
   $xsl c_updateRKey // {value &metaRef}
@@ -983,7 +988,9 @@ $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
   $xsl dictSet      // create dictionary entry at alignedGHeap {value &metaRef}
 
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
-  %SWP $xsl c_keySetTy // update key ty {value}
+  // make stack to be: {value <dictArgs> meta &metaRef}
+  .1%SRLL#1$h1 .4%SRLL#4$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 
+  $xsl c_keySetTy // update key ty {value}
   $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srN // store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap // gheap += sz
   %RET
@@ -999,7 +1006,7 @@ $SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
 
 // implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
-  #2 $h1 // 0=szI:U1  1=meta:U1 4=&metaRef
+  #2$h1 // locals: 0=szI  1=meta  4=&metaRef
 
   // assert current function is valid
   .4%FTGL @c_rKey$h2 %DUP $xsl assertTyped .4%FT // {szI meta fnMetaRef}
@@ -1016,9 +1023,8 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
   %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $_SET c_localOffset // {meta loff}
   $xsl c_updateRLKey // {meta loff &metaRef}
   %SWP $xsl ldictSet  // set to localOffset {meta &metaRef}
-  %DUP .4%SRLL#4$h1 // cache &metaRef {meta &metaRef}
-  $xsl c_keySetTy
-  $xsl ldictArgs  .4%FTLL#4$h1 $xsl c_dictDumpEntry %RET
+  .4%SRLL#4$h1 .1%SRLL#1$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1
+  $xsl c_keySetTy %RET
 
 // #<szI> $LOCAL myLocal: declare a local variable of sz
 // This stores the offset and sz for lRef, lGet and lSet to use.

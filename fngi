@@ -1,8 +1,7 @@
 #!/usr/bin/python3
 """
-For why this exists see harness.md
+See ./harness.md for full documentation.
 """
-
 
 import re
 import os
@@ -10,11 +9,15 @@ import collections
 import sys
 import enum
 import pprint
+import time
 from typing import Dict, Tuple, List, Deque
 from dataclasses import dataclass
+import subprocess
+import argparse
 
 import zoa
 from zoa import readexact
+
 
 SZ_MASK   = 0x30
 NOSZ_MASK = 0xCF
@@ -42,7 +45,7 @@ def nice(value):
   if isinstance(value, int):
     return f"0x{value:X}"
 
-
+def toRef(metaRef): return 0xFFFFFF & metaRef
 def isTyLocal(meta):  return TY_LOCAL == (META_TY_MASK & meta)
 def isTyFn(meta):     return TY_FN == (META_TY_MASK & meta)
 def isTyGlobal(meta): return TY_GLOBAL == (META_TY_MASK & meta)
@@ -80,8 +83,6 @@ class InstrClass(enum.Enum):
 FIELD_ERR_CODE = 0x01
 FIELD_MSG = 0x02
 
-# https://docs.python.org/3/library/sys.html#sys.stdin
-IO_STREAM = sys.stdin.buffer
 
 def integerBE(data):
   if len(data) == 1:
@@ -108,6 +109,7 @@ class FngiEnv:
   """A Map of the Fngi env from trace logs."""
   dicts: dict
   codes: dict
+  uncaughtErr: "ErrEvent" = None
   file: str = None
   pos: int = None
   currentFn: "DictEvent" = None
@@ -142,18 +144,28 @@ class DictEvent(Event):
   offset: int
   isConstant: bool
   inLocalDict: bool
+  localOffsets: dict
 
   @classmethod
-  def from_(cls, z):
+  def from_(cls, z, env):
+    key = z[1]
+    value = integerBE(z[2])
+    buf = integerBE(z[3])
+
+    localOffsets = {}
+    existing = env.dicts.get(buf, {}).get(key)
+    if existing and toRef(existing.value) == toRef(value):
+      localOffsets = existing.localOffsets  # keep existing locals
+
     return cls(
       isConst=bool(z[0][1]), # after lvl
-      key=z[1],
-      value=integerBE(z[2]),
-      buf=integerBE(z[3]),
+      key=key,
+      value=value,
+      buf=buf,
       offset=integerBE(z[4]),
       isConstant=bool(integerBE(z[5])),
       inLocalDict=bool(integerBE(z[6])),
-      localOffsets={},
+      localOffsets=localOffsets,
     )
 
   def isFn(self): return not self.isConstant and isTyFn(self.meta())
@@ -166,7 +178,7 @@ class DictEvent(Event):
 
   def ref(self):
     assert self.isGlobal() or self.isFn()
-    return 0xFFFFFF & self.value
+    return toRef(self.value)
 
   def localOffset(self):
     assert self.isLocal()
@@ -180,7 +192,6 @@ class DictEvent(Event):
 
     return (f"DictFn[{nice(self.meta())} @{nice(self.ref())} "
           + f"numLocals={len(self.localOffsets)}]")
-
 
 ERR_DATA_NONE  = 0x00
 ERR_DATA_INT1  = 0x01
@@ -209,6 +220,8 @@ class ErrEvent(Event):
   callStk: bytes
   localsStk: bytes
 
+  def __repr__(self):
+    return f"ErrEvent(code={nice(self.errCode)} name={self.errName.split()[0]})"
 
   @classmethod
   def from_(cls, z, env):
@@ -289,7 +302,7 @@ def sysEvent(env, z):
   control = z[0]
   sysTy = Lvl.TRACE.value & control[0]
   if sysTy == LOG_DICT:
-    return DictEvent.from_(z)
+    return DictEvent.from_(z, env)
   if sysTy == LOG_ERR:
     return ErrEvent.from_(z, env)
   if sysTy == LOG_FILE:
@@ -321,8 +334,7 @@ def orderFns(dicts):
   fns = []
   for d in dicts.values():
     for f in d.values():
-      if f.isLocal or f.isConstant: continue
-      fns.append(f)
+      if f.isFn(): fns.append(f)
 
   fns.sort(key=DictEvent.ref)
   return fns
@@ -356,7 +368,7 @@ def extractCallStack(fns, ev):
   while cs_i < len(ev.callStk):
     lszRef = integerLE(ev.callStk[cs_i:cs_i+4])
     lszBytes = (lszRef >> 24) * 4
-    ep = 0xFFFFFF & lszRef
+    ep = toRef(lszRef)
     lsData = ev.localsStk[ls_i:ls_i+lszBytes]
     fnI = findFnLesser(fns, ep)
     fn, fnNext = getFnAndNext(fns, fnI)
@@ -384,20 +396,29 @@ def printCallStack(callStk):
     else:      print("    + Called from", end="")
     print(f" @{ep:<10} {loc} {key} (defined @{ref})")
 
-def harness(env):
+def harness(env, io):
+  """Harness for spor.
+
+  Note: if using io=stdi, use stdin.buffer
+    https://docs.python.org/3/library/sys.html#sys.stdin
+  """
+
   print("Starting harness")
-  for i, ev in enumerate(inputs_stream(env, IO_STREAM)):
+  for i, ev in enumerate(inputs_stream(env, io)):
     if isinstance(ev, DictEvent):
       env.dicts[ev.buf][ev.key] = ev
       if not ev.isConst:
-        if ev.isLocal(): env.currentFn.localOffsets[ev.localOffset()] = ev
+        if ev.isLocal():
+          env.currentFn.localOffsets[ev.localOffset()] = ev
         elif ev.isFn(): env.currentFn = ev
       continue
     if isinstance(ev, ErrEvent):
       file = wantStr(env.file)
 
       if ev.isCaught: print(" -- Caught Error", end="")
-      else:           print(" !! ERROR", end="")
+      else:
+        print(" !! ERROR", end="")
+        env.uncaughtErr = ev
 
       print(f" (file: {file} [{ev.lineNo}])", end="")
       print(f" [{nice(ev.errCode)}] \"{ev.errName}\"  ")
@@ -418,9 +439,7 @@ def harness(env):
         fn, fnNext = getFnAndNext(fns, lastFnI)
         lastCs = CallStkItem(ep=ev.ep, fn=fn, fnNext=fnNext, localData=b'')
         callStk.insert(0, lastCs)
-
         printCallStack(callStk)
-
       continue
     if isinstance(ev, FileEvent):
       env.file = ev.file
@@ -432,15 +451,42 @@ def harness(env):
     if len(payload) == 1: payload = payload[0]
     pprint.pprint(payload)
 
+def compileSpore():
+  subprocess.run(["gcc", "spor.c"], check=True)
+  time.sleep(0.3) # For gcc error logging
 
-if __name__ == '__main__':
+def main():
+  compileSpore()
+
   env = FngiEnv(
     dicts = collections.defaultdict(dict),
     codes = findErrorCodes())
+
+  p = subprocess.Popen(
+      args = ['./spor'],
+      stdin=subprocess.PIPE,
+      stdout=subprocess.PIPE,
+      stderr=sys.stderr)
+
   try:
-    harness(env)
-  except zoa.Eof:
-    print("Program terminated")
+    harness(env, p.stdout)
+  except zoa.Eof: pass
+  if p.returncode:
+    print("!! Got error rc:", p.returncode)
+    sys.exit(p.returncode)
+  if env.uncaughtErr:
+    print("!!", env.uncaughtErr)
+
+if __name__ == '__main__':
+  main()
+
+  # env = FngiEnv(
+  #   dicts = collections.defaultdict(dict),
+  #   codes = findErrorCodes())
+  # try:
+  #   harness(env)
+  # except zoa.Eof:
+  #   print("Program terminated")
   # pprint.pprint(env.dicts)
   # for key, value in env.codes.items():
   #   print(f"  {nice(key)}: {value}")
