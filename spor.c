@@ -358,6 +358,10 @@ long long unsigned int dbgCount = 0;
 // ** Zoab
 
 U1 outbuf[16];
+U1* START_BYTES = "\x80\x03";
+
+// Start a zoab log entry.
+void zoab_start() { assert(fwrite(START_BYTES, 1, 2, stdout)); }
 
 void writeOutbuf(U1 len) {
   assert(fwrite(outbuf, 1, len, stdout));
@@ -412,11 +416,6 @@ void zoab_ntStr(U1* str, U1 join) {
   zoab_data(strlen(str), str, join);
 }
 
-U1* START_BYTES = "\x80\x03";
-
-// Start a zoab log entry.
-void zoab_start() { assert(fwrite(START_BYTES, 1, 2, stdout)); }
-
 #define LOG_DICT 0x01
 #define LOG_ERR  0x02
 #define LOG_FILE  0x03
@@ -440,13 +439,12 @@ void zoab_dict(DictRef d, U4 offset) {
   Key* key = Dict_key(d, offset);
 
   zoab_start();
-  zoab_arr(8, /*join=*/ FALSE);
+  zoab_arr(7, /*join=*/ FALSE);
   zoab_data(2, LOG_DICT_PTR, /*join=*/ FALSE);
   zoab_data(Key_len(key), (char *)key->s, /*join=*/ FALSE); // key
   zoab_int(key->value);
-  zoab_int(d.buf);  // buffer
+  zoab_int(d.buf);
   zoab_int(offset);
-  zoab_int(*env.heap);
   zoab_int(!(KEY_HAS_TY & key->len));
   zoab_int(d.isLocal);
 }
@@ -1317,15 +1315,17 @@ void deviceOpZoa() {
   WS_PUSH(parseStr(buffer, maxLen));
 }
 
-void deviceOpDictDump() {
+void deviceOpDictDump(U1 isFetch) {
+  APtr entry = 0;
+  if (isFetch) entry = WS_POP();
   DictRef d = popDictRef();
-  U2 offset = 0;
+  if (isFetch) return zoab_dict(d, entry - d.buf); // single entry
 
+  U2 offset = 0;
   while(offset < *d.heap) {
-    Key* key = Dict_key(d, offset);
     zoab_dict(d, offset);
-    U2 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
-    offset += entrySz;
+    Key* key = Dict_key(d, offset);
+    offset += alignAPtr(keySizeWLen(Key_len(key)), 4);
   }
 }
 
@@ -1357,7 +1357,7 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
     case D_memCmp: deviceOpMemMove(); break;
     case D_log: deviceOpLog(); break;
     case D_zoa: deviceOpZoa(); break;
-    case D_dictDump: deviceOpDictDump(); break;
+    case D_dictDump: deviceOpDictDump(isFetch); break;
     default: SET_ERR(E_cDevOp);
   }
 }

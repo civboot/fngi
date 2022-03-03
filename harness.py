@@ -16,10 +16,21 @@ from dataclasses import dataclass
 import zoa
 from zoa import readexact
 
-ZOAB_LOG  = 0x03
-
 SZ_MASK   = 0x30
 NOSZ_MASK = 0xCF
+
+SZ1 = 0x00
+SZ2 = 0x10
+SZ4 = 0x20
+SZA = 0x20
+
+META_TY_MASK = 0xE0 # Upper three bits determine type
+TY_LOCAL     = 0x40 # local variable, has varMeta. Accessed with FTLL/SRLL
+TY_FN        = 0x20 # function, can be called and has an fnMeta
+TY_LOCAL     = 0x40 # local variable, has varMeta. Accessed with FTLL/SRLL
+TY_GLOBAL    = 0x60 # global variable, has varMeta. Accessed with FTGL/SRGL
+
+ZOAB_LOG = 0x03
 
 def wantStr(b):
   try: return b.decode('utf-8')
@@ -31,6 +42,19 @@ def nice(value):
   if isinstance(value, int):
     return f"0x{value:X}"
 
+
+def isTyLocal(meta):  return TY_LOCAL == (META_TY_MASK & meta)
+def isTyFn(meta):     return TY_FN == (META_TY_MASK & meta)
+def isTyGlobal(meta): return TY_GLOBAL == (META_TY_MASK & meta)
+def metaSzI(meta):
+  assert isTyLocal(meta) or isTyGlobal(meta)
+  return (0x3 & meta) << 4
+
+def szIToBytes(szI):
+  if szI == SZ1: return 1
+  if szI == SZ2: return 2
+  if szI == SZ4: return 4
+  raise ValueError(szI)
 
 # Fngi log level byte
 class Lvl(enum.Enum):
@@ -86,6 +110,7 @@ class FngiEnv:
   codes: dict
   file: str = None
   pos: int = None
+  currentFn: "DictEvent" = None
 
 @dataclass
 class WorkingStack:
@@ -109,14 +134,14 @@ class BasicEvent(Event):
 
 @dataclass
 class DictEvent(Event):
+  localOffsets: Dict[int, "DictEvent"]
   isConst: bool
   key: bytes
   value: int
   buf: int
   offset: int
-  heap: int
   isConstant: bool
-  isLocal: bool
+  inLocalDict: bool
 
   @classmethod
   def from_(cls, z):
@@ -126,20 +151,35 @@ class DictEvent(Event):
       value=integerBE(z[2]),
       buf=integerBE(z[3]),
       offset=integerBE(z[4]),
-      heap=integerBE(z[5]),
-      isConstant=bool(integerBE(z[6])),
-      isLocal=bool(integerBE(z[7])))
+      isConstant=bool(integerBE(z[5])),
+      inLocalDict=bool(integerBE(z[6])),
+      localOffsets={},
+    )
+
+  def isFn(self): return not self.isConstant and isTyFn(self.meta())
+  def isLocal(self): return not self.isConstant and isTyLocal(self.meta())
+  def isGlobal(self): return not self.isConstant and isTyGlobal(self.meta())
 
   def meta(self):
+    assert not self.isConstant
     return self.value >> 24
 
   def ref(self):
+    assert self.isGlobal() or self.isFn()
     return 0xFFFFFF & self.value
+
+  def localOffset(self):
+    assert self.isLocal()
+    return 0xFF & self.value
 
   def __repr__(self):
     if self.isConstant:
       return f"DictConstant[{nice(self.value)}]"
-    return f"DictFn[{nice(self.meta())} @{nice(self.ref())}]"
+    if self.isLocal():
+      return f"DictLocal[{nice(self.localOffset())}]"
+
+    return (f"DictFn[{nice(self.meta())} @{nice(self.ref())} "
+          + f"numLocals={len(self.localOffsets)}]")
 
 
 ERR_DATA_NONE  = 0x00
@@ -349,6 +389,9 @@ def harness(env):
   for i, ev in enumerate(inputs_stream(env, IO_STREAM)):
     if isinstance(ev, DictEvent):
       env.dicts[ev.buf][ev.key] = ev
+      if not ev.isConst:
+        if ev.isLocal(): env.currentFn.localOffsets[ev.localOffset()] = ev
+        elif ev.isFn(): env.currentFn = ev
       continue
     if isinstance(ev, ErrEvent):
       file = wantStr(env.file)

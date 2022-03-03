@@ -176,7 +176,8 @@
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
 #0C =D_log     // {&msg len} -> {ioResult}: write to debug stream
 #0D =D_zoa     // {} -> {} parse zoa to heap
-#0E =D_dictDump// [..dict] log a full dictionary
+#0E =D_dictDump// {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
+
 
 // **********
 // * 3. Constants
@@ -185,7 +186,7 @@
 
 // Meta types
 #40 =KEY_HAS_TY // if 1, dict entry is a non-constant
-#E0 =META_TY_MASK // # Upper three bits determine type
+#E0 =META_TY_MASK // upper three bits determine type
 #20 =TY_FN    // function, can be called and has an fnMeta
 #40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
 #60 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTGL/SRGL
@@ -203,6 +204,7 @@
 #10 =TY_FN_LOCALS  // has locals (called with XL or XW)
 
 // Local meta bits [TTTI --SS] I=input S=szI
+// Full 4 byte (hex): { MM -- -- OO} M=meta O=offset
 #10 =TY_LOCAL_INPUT
 
 // Token group
@@ -624,6 +626,8 @@ $loc rMetaSet // {&metaRef meta:U1} -> U4 : apply meta to &metaRef
   $_xsl metaSet   // {&metaRef newMetaRef}
   .4%SR %RET
 
+$loc c_dictDumpEntry  @D_dictDump$L0 %DVFT %RET // {<dictArgs> &metaRef}
+
 $loc c_keySetTyped // {&metaRef} -> []
   %INC4 %DUP // {&len &len}
   .1%FT @KEY_HAS_TY$L1 %BOR // {&len tyKeyLen}
@@ -710,6 +714,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn isCurMod
 @TY_FN_PRE            $c_makeFn isFnLocals
 #0                    $c_makeFn c_updateRKey
+@TY_FN_PRE            $c_makeFn c_dictDumpEntry
 @TY_FN_PRE            $c_makeFn c_keySetTyped
 @TY_FN_PRE            $c_makeFn c_keySetTy
 #0                  $c_makeFn c_makeTy
@@ -750,7 +755,7 @@ $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
 
 // Update the harness with the new dictionary
-$SFN c_dictDump  $xsl dictArgs @D_dictDump$L0 %DVFT %RET
+$SFN c_dictDump       $xsl dictArgs @D_dictDump$L0 %DVSR %RET // {}
 $c_dictDump
 
 $SFN ldictBuf // {} -> {ldict.buf:APtr}
@@ -994,24 +999,26 @@ $SFN c_updateRLKey // [] -> [&metaRef] update and return current local key
 
 // implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
-  #1 $h1 // 0=szI:U1  1=meta:U1
+  #2 $h1 // 0=szI:U1  1=meta:U1 4=&metaRef
 
   // assert current function is valid
   .4%FTGL @c_rKey$h2 %DUP $xsl assertTyped .4%FT // {szI meta fnMetaRef}
     $xsl assertFnLocals // {szI meta}
 
-  .1%SRLL#1$h1 // 1=meta
+  .1%SRLL#1$h1 // 1=meta {szI}
   %DUP  $xsl assertSzI // {szI}
-  %DUP  .1%SRLL#0$h1 // {szI} cache szI
+  %DUP  .1%SRLL#0$h1 // cache szI {szI}
   @TY_LOCAL$L1  .1%FTLL#1$h1 %BOR // update full meta {szI meta}
   %SWP  $xsl joinSzTyMeta  // {meta}
   $GET c_localOffset // {meta loff}
   .1%FTLL#0$h1  $xsl alignSzI // align local offset {meta loff}
   // c_localOffset = offset + sz
-  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $_SET c_localOffset
+  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $_SET c_localOffset // {meta loff}
   $xsl c_updateRLKey // {meta loff &metaRef}
   %SWP $xsl ldictSet  // set to localOffset {meta &metaRef}
-  $xsl c_keySetTy %RET
+  %DUP .4%SRLL#4$h1 // cache &metaRef {meta &metaRef}
+  $xsl c_keySetTy
+  $xsl ldictArgs  .4%FTLL#4$h1 $xsl c_dictDumpEntry %RET
 
 // #<szI> $LOCAL myLocal: declare a local variable of sz
 // This stores the offset and sz for lRef, lGet and lSet to use.
@@ -1032,7 +1039,7 @@ $FN _compileInputs $PRE
   .4%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs // get the next key and recurse {}
   .4%FTLL#0$h1  %DUP $xsl isTyped %SWP .4%FT // {hasTy metaRef}
   %DUP $xsl isLocalInput %SWP // {hasTy isLocal metaRef}
-  $xsl isLocalInput %LAND %LAND %RETZ // {}
+  $xsl isLocalInput %LAND %LAND %RETZ // {} check (hasTy and isLocal and isLocalInput)
   .4%FTLL#0$h1  .4%FT  %DUP $xsl _metaRefSzI // {metaRef szInstr}
   @SZ1$L1 @SRLL$L1 $xl _instrLitImpl
   %RET
@@ -1055,7 +1062,7 @@ $SFN |
   %DUP $xsl getTopHeap %SWP %SUB
   @D_zoa$L0 %DVFT $jmpl setHeap
 
-$FN c_logAll // {&writeStruct len &buf }
+$FN c_logAll // {&writeStruct len &buf } Write raw data to log output
   $END_LOCALS // no locals, but used in XW.
   %DRP
   $LOOP l0
@@ -1071,36 +1078,37 @@ $SFN ft4BE // {&a -> U4} fetch4 unaligned big-endian
   %SWP .1%FT #18$L0%SHL %ADD       // {a@0<<24 + a@1<<16 + a@2<<8 + a@3 }
   %RET
 
-// {&s &writeStruct &writeFn} write a zoa string (verbatim) to the writeFn
-$FN writeZoaStr
-  @SZA $INPUT s
+
+// {&z &writeStruct &writeFn} write zoa data to the writeFn
+$FN zoab_zdata
+  @SZA $INPUT z
   @SZA $INPUT writeStruct
   @SZA $INPUT writeFn
   $END_LOCALS
 
   $LOOP l0 // {}
     $xsl assertWsEmpty
-    $GET s  %DUP .1%FT // {&zoa zTy}
+    $GET z  %DUP .1%FT // {&zoa zTy}
     // %DUP @ZOAB_PTR$L1 %EQ $IF
-    //   %DRP %INC  $xsl ft4BE  $_SET s
+    //   %DRP %INC  $xsl ft4BE  $_SET z
     //   $AGAIN l0
     // $END
 
     %DUP @ZOAB_ARR$L1 %BAND @E_cZoab$L2 $xsl assertNot
 
-    #3F$L0 %BAND %INC // {&zoa zLen} log the zoa str including ty byte.
+    #3F$L0 %BAND %INC // {&zoa zLen} write the zoa str including ty byte.
     %OVR %OVR $GET writeStruct  $GET writeFn  .4%XW // {&zoa zLen}
     %ADD // {&newZoa}
-    $GET s  .1%FT @ZOAB_JOIN$L1 %BAND %NOT $IF // return if not join type
+    $GET z  .1%FT @ZOAB_JOIN$L1 %BAND %NOT $IF // return if not join type
       %DRP
       %RET
     $END
-    $_SET s // join type: update to next string start
+    $_SET z // join type: update to next string start
   $AGAIN l0
 $assertWsEmpty
 
-$SFN logZoaStr // {&s} log a zoa string (verbatim) to dbg output.
-  #0$L0  @c_logAll$toRef$L4  $xl writeZoaStr %RET
+$SFN log_zdata // {&z} log a zoa string (verbatim) to dbg output.
+  #0$L0  @c_logAll$toRef$L4  $xl zoab_zdata %RET
 
 $assertWsEmpty
 
