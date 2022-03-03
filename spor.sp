@@ -174,10 +174,11 @@
 #09 =D_xsCatch
 #0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
-#0C =D_log     // {&msg len} -> {ioResult}: write to debug stream
+#0C =D_com     // {&msg len} -> {ioResult}: write to debug stream
 #0D =D_zoa     // {} -> {} parse zoa to heap
 #0E =D_dictDump// {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
-
+#0F =D_comZoab // FT{U4}  SR{len &data join}
+#10 =D_comDone // signifies end of one com. On linux this is a flush.
 
 // **********
 // * 3. Constants
@@ -212,6 +213,7 @@
 
 //*****
 //* Zoa
+#C0 =ZOAB_TY   // bitmask: all types
 #80 =ZOAB_JOIN // bitmask: join type
 #40 =ZOAB_ARR  // bitmask: arr type
 #C0 =ZOAB_PTR  // equality: next 4 bytes are a pointer.
@@ -220,8 +222,9 @@
 //* Log levels
 #00 =LOG_SILENT
 
-// User level logs
-#80 =LOG_USER
+// Log Levels
+#40 =LOG_SYS
+#20 =LOG_USER
 #1F =LOG_TRACE
 #0F =LOG_DEBUG
 #07 =LOG_INFO
@@ -929,8 +932,9 @@ $SFN _setImpl // {&metaRef isFromLocal}
 $SFN _refImpl
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _lSetup // {metaOffset}
-    $xsl toRef  %RGFT @R_LP$h1  %ADD // add to local stk ptr
-    $jmpl L1
+    $xsl toRef $xsl L0 // compile offset as literal
+    @RGFT$c1 @R_LP$c1 @ADD$c1  // compile: %RGFT @R_LP$h1 %ADD
+    %RET
   $END %DRP
   $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _gSetup  $xsl toRef $jmpl L4 // write literal directly TODO: use c_lit
@@ -1073,7 +1077,7 @@ $FN c_logAll // {&writeStruct len &buf } Write raw data to log output
   %DRP
   $LOOP l0
     %OVR %OVR
-    @D_log$L0 %DVFT
+    @D_com$L0 %DVFT
     %NOT $IF %DRP %DRP %RET $END
   $AGAIN l0
 
@@ -1085,36 +1089,41 @@ $SFN ft4BE // {&a -> U4} fetch4 unaligned big-endian
   %RET
 
 
-// {&z &writeStruct &writeFn} write zoa data to the writeFn
-$FN zoab_zdata
-  @SZA $INPUT z
-  @SZA $INPUT writeStruct
-  @SZA $INPUT writeFn
-  $END_LOCALS
+$SFN com  @D_com$L0 %DVSR %RET // {len &raw} communicate directly
+$SFN comDone  @D_comDone$L0 %DVFT %RET
 
-  $LOOP l0 // {}
-    $xsl assertWsEmpty
-    $GET z  %DUP .1%FT // {&zoa zTy}
-    // %DUP @ZOAB_PTR$L1 %EQ $IF
-    //   %DRP %INC  $xsl ft4BE  $_SET z
-    //   $AGAIN l0
-    // $END
+$loc LOG_ZOAB_START  #80$h1 #03$h1
+$SFN comzStart #2$L0 @LOG_ZOAB_START$L4  @D_com$L0 %DVSR %RET
+$SFN comzU4    @D_comZoab$L0 %DVFT %RET
+$SFN comzData  @D_comZoab$L0 %DVSR %RET // {len &raw join}
 
-    %DUP @ZOAB_ARR$L1 %BAND @E_cZoab$L2 $xsl assertNot
 
-    #3F$L0 %BAND %INC // {&zoa zLen} write the zoa str including ty byte.
-    %OVR %OVR $GET writeStruct  $GET writeFn  .4%XW // {&zoa zLen}
-    %ADD // {&newZoa}
-    $GET z  .1%FT @ZOAB_JOIN$L1 %BAND %NOT $IF // return if not join type
-      %DRP
-      %RET
-    $END
-    $_SET z // join type: update to next string start
-  $AGAIN l0
-$assertWsEmpty
+$loc TODO #0$h1
+$FN comzArr // {len join}
+  @SZ1 $LOCAL b0 $END_LOCALS // b0 is used as an array for com
 
-$SFN log_zdata // {&z} log a zoa string (verbatim) to dbg output.
-  #0$L0  @c_logAll$toRef$L4  $xl zoab_zdata %RET
+  // $IF @ZOAB_JOIN$L1 $ELSE #0$L0 $END %SWP // join -> joinTy       {joinTy len}
+  // %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert // assert len <= 0x3F {joinTy len}
+  // %BOR $_SET b0
+  // #33$L0 $REF b0 $jmpl com // send via com
+
+  %DRP // ignore join TODO
+  @ZOAB_ARR$L1 %BOR // len->arrLen
+  @TODO$L2 %SWP .1%SR // store len @TODO
+  #1$L0 @TODO$L2 $jmpl com // send via com
+
+$SFN comzLogStart // {lvl extraLen}  extraLen is in addition to sending the lvl
+  $xsl comzStart // TODO: check return code once it's added
+  %INC @FALSE$L0 $xl comzArr
+  $jmpl comzU4 // send lvl
+
+$SFN print // {len &raw}: print data to user
+  @LOG_USER$L1 #1$L0 $xsl comzLogStart
+  @FALSE$L0 $jmpl comzData
+
+$SFN _printz // {&z}: print zoab bytes to user. (single segment)
+  %DUP .1%FT %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert // {len}
+  %SWP %INC  $jmpl print
 
 $assertWsEmpty
 

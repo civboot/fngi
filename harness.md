@@ -1,7 +1,11 @@
 # Harness and Zoab
 
-Fngi doesn't interface directly with the linux environment in a typical fashion.
-The primary differences are:
+> Fngi/spor uses a "harness" for passing arguments and interfacing with the
+> operating system. The harness is located in [./fngi](./fngi), which is an
+> executable python script.
+
+Fngi doesn't interface directly with the linux environment in the typical
+fashion. The primary differences are:
 
   1. It uses zoab for it's configuration and logging, receiving/sending
      structured data.
@@ -19,12 +23,12 @@ Why is it implemented this way? There are several reasons:
 
 So logging will exist anyway, why not just use text logs?
 
-There are gobs of useful information to be had when an error occurs that help a
-developer triage it more quickly. Automating the finding of this information
-(with only a little bit of context) is next to trivial when using a
-full-featured langauge to code the automation. On the flip side, finding this
-information within fngi/spor, which are ultra-simple kernels that unroll into
-more full-fetured languages, would bloat them unnecessarily.
+There are gobs of useful information to be had when an error occurs which help a
+developer triage the issue. Automating the finding of this information (with
+only a little bit of context) is next to trivial when using a full-featured
+langauge to code the automation. On the flip side, finding this information
+within fngi/spor, which are ultra-simple kernels that unroll into more
+full-fetured languages, would bloat them unnecessarily.
 
 For example: trying to format and log the entire stack trace (with function
 names, local variable breakdown, etc) would add an absurd amount of complexity

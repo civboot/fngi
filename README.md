@@ -60,13 +60,11 @@ along the way, some of them complete.
 
 # Helping / Hacking
 
-The current command I use to run fngi and all tests is below. Eventually
-I'll incorporate all this into the harness itself:
+The command to compile and run fngi and all tests is below. This will continue
+to be evolved.
 
 ```
-gcc *.c && sleep 0.3 && \
-  ./a.out | PYTHONPATH="$PWD/zoa:$PYTHONPATH" \
-  python3 harness.py
+./fngi --compile --test --log=LOG_INFO
 ```
 
 ## Contributing

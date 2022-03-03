@@ -1,3 +1,9 @@
+// Spor binary kernel.
+// This C file implements spor, see ./spor.md for documentation.
+//
+// The executable produced is intended to be run by a harness,
+// see ./harness.md and ./fngi for details.
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -7,13 +13,13 @@
 #include <setjmp.h>
 
 // print to stderr
+#define eprint(str)   fprintf (stderr, str)
 #define eprintf(format, args...)   fprintf (stderr, format, args)
 
 
 typedef enum {
   LOG_SILENT    = 0x00,
-  LOG_SYS       = 0x80,
-  LOG_APP       = 0x40, // Application controled logging levels.
+  LOG_SYS       = 0x40,
   LOG_USER      = 0x20, // TODO: remove
   LOG_TRACE     = 0x1F,
   LOG_DEBUG     = 0x0F,
@@ -29,12 +35,8 @@ typedef enum {
   LOG_EXECUTE   = 0x07,
   LOG_ASM       = 0x03,
   LOG_COMPILER  = 0x01,
-} InstrLogLvl;
+} SysLogLvl;
 
-
-// #define STARTING_INSTR_LOG_LVL    (0xFF)         // log everything
-// #define STARTING_INSTR_LOG_LVL    (LOG_EXECUTE | LOG_INSTANT)
-#define STARTING_INSTR_LOG_LVL    (LOG_COMPILER)
 
 // ********************************************
 // ** Core Types
@@ -114,6 +116,8 @@ typedef CSz CPtr;
 #define E_cKeyLen   0xE0D0 // Key len too large
 #define E_cReg      0xE0D1 // Register error
 #define E_cStr      0xE0D2 // Str invalid
+
+#define E_cZoab     0xE0F1 // Zoab invalid
 
 #define REF_MASK    0xFFFFFF
 #define IS_FN        (0x20 << 0x18)
@@ -218,9 +222,11 @@ typedef enum {
   D_xsCatch = 0x09,
   D_memMove = 0x0A,
   D_memCmp  = 0x0B,
-  D_log     = 0x0C,
+  D_com     = 0x0C,
   D_zoa     = 0x0D,
   D_dictDump= 0x0E,
+  D_comZoab = 0x0F,
+  D_comDone = 0x10,
 } Device;
 
 #define SZ_MASK        0x30
@@ -264,7 +270,7 @@ typedef struct {
   U4* err;
   U4* state;
   U4* testIdx;
-  U2* instrLogLvl;
+  U2* sysLogLvl;
   U2* usrLogLvl;
   ErrData* errData;
   U1 szI; // global instr sz
@@ -340,6 +346,10 @@ void dbgInstr(Instr instr, Bool lit);
 // ********************************************
 // ** Globals
 
+// From cmdline
+U2 startingSysLogLvl = 0;
+U2 startingUsrLogLvl = 0;
+
 void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz);
 
 Env env;
@@ -361,7 +371,7 @@ U1 outbuf[16];
 U1* START_BYTES = "\x80\x03";
 
 // Start a zoab log entry.
-void zoab_start() { assert(fwrite(START_BYTES, 1, 2, stdout)); }
+void zoab_start() { ASM_ASSERT(fwrite(START_BYTES, 1, 2, stdout), E_io); }
 
 void writeOutbuf(U1 len) {
   assert(fwrite(outbuf, 1, len, stdout));
@@ -431,8 +441,10 @@ void zoab_infoStart(U1* str, U2 extraLen) {
 }
 
 void zoab_info(U1* str) {
-  zoab_infoStart(str, 0);
-  fflush(stdout);
+  if(LOG_INFO & *env.usrLogLvl) {
+    zoab_infoStart(str, 0);
+    fflush(stdout);
+  }
 }
 
 void zoab_dict(DictRef d, U4 offset) {
@@ -629,7 +641,6 @@ void zoab_err(U4 err, U1 isCaught) {
 // ** Executing Instructions2
 
 void xImpl(APtr aptr) { // impl for "execute"
-  // eprintf("??? X  0x%X\n", aptr);
   // get amount to grow, must be multipled by APtr size .
   U2 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
@@ -640,7 +651,6 @@ void xImpl(APtr aptr) { // impl for "execute"
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
-  // eprintf("??? XS 0x%X\n", aptr);
   Stk_push(&env.cs, env.ep);
   env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr;
@@ -706,8 +716,7 @@ inline static void executeInstr(Instr instr) {
       switch (r) {
         case R_MP: WS_PUSH(env.mp); return;
         case R_EP: WS_PUSH(env.ep); return;
-        case R_LP:
-          WS_PUSH(LS_SP); return;
+        case R_LP: WS_PUSH(LS_SP); return;
         case R_CP: WS_PUSH(CS_SP); return;
         case R_GB: WS_PUSH(env.gb); return;
         default: SET_ERR(E_cReg);
@@ -904,7 +913,7 @@ SRGL: case SzI2 + SRGL:
   key->value = value;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
-  if((LOG_COMPILER & *env.instrLogLvl)) zoab_dict(d, offset);
+  if((LOG_COMPILER & *env.sysLogLvl)) zoab_dict(d, offset);
   *d.heap += alignAPtr(keySizeWLen(slen), 4);
   return offset;
 }
@@ -1038,7 +1047,6 @@ U1 scanInstr() {
 
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
-  // if (LOG_ASM & *env.instrLogLvl) { printf("= "); dbgWs(); dbgToken(); printf("\n"); }
   U4 value = WS_POP();
   DictRef d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value);
@@ -1095,7 +1103,6 @@ U1 scanInstr() {
     case '^': cExecuteInstr(); break;
     case '$': cExecute(); break;
     default:
-      printf("!! invalid token: %c\n", tokenBuf[0]);
       SET_ERR(E_cToken);
   }
   return FALSE;
@@ -1107,6 +1114,7 @@ U1 scanInstr() {
   err_jmp = &local_err_jmp;
 
   if(setjmp(local_err_jmp)) {
+    eprintf("\n\n!!! ERROR (stderr): 0x%X\n\n", *env.err);
     zoab_err(*env.err, FALSE);
   } else {
     while(TRUE) {
@@ -1200,17 +1208,34 @@ void deviceOpMemCmp() { // {a b len} -> {cmp}
   WS_PUSH((U4)(I4) memcmp(mem+a, mem+b, len));
 }
 
-void printCStr(U1 len, char* s) { printf("%.*s", len, s); }
-void deviceOpLog() { // {len ref -> ioRes}
-  U4 len = WS_POP();
-  U4 ref = WS_POP();
-  if(!len) {
-    WS_PUSH(0);
-    return;
+// Useful when printing is not working.
+// void dbgRaw(U4 len, U1* data) {
+//   if (len > 63) return;
+//   for(U2 i = 0; i < len; i++) eprintf("%2X ", data[i]);
+//   eprint("\n Str: ");
+//   for(U2 i = 0; i < len; i++) eprintf("%2c ", data[i]);
+//   eprint("\n");
+// }
+
+void deviceOpCom(U1 isFetch) { // {len ref -> ioRes}
+  if (isFetch) {
+    assert(FALSE); // not impl
+  } else {
+    U4 ref = WS_POP();
+    U4 len = WS_POP();
+    if(!len) {
+      // WS_PUSH(0);
+      return;
+    }
+    ASM_ASSERT(len <= 0x1000, E_io);
+    U4 chk = fwrite(mem + ref, 1, len, stdout);
+    ASM_ASSERT(chk == len, E_io);
+    // WS_PUSH(0);
   }
-  ASM_ASSERT(len < 63, E_io);
-  printCStr(len, mem + ref);
-  WS_PUSH(0);
+}
+
+void deviceOpComDone() { // {len ref -> ioRes}
+  fflush(stdout);
 }
 
 typedef enum {
@@ -1329,6 +1354,19 @@ void deviceOpDictDump(U1 isFetch) {
   }
 }
 
+void deviceOpComZoab(U1 isFetch) {
+  if(isFetch) {
+    U4 i = WS_POP();
+    zoab_int(i);
+  }
+  else {  // {len aptr join}
+    U1 join = WS_POP();
+    APtr aptr = WS_POP();
+    U2 len = WS_POP();
+    zoab_data(len, mem + aptr, join);
+  }
+}
+
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
@@ -1355,9 +1393,11 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
     case D_xsCatch: deviceOpCatch(); break;
     case D_memMove: deviceOpMemMove(); break;
     case D_memCmp: deviceOpMemMove(); break;
-    case D_log: deviceOpLog(); break;
+    case D_com: deviceOpCom(isFetch); break;
     case D_zoa: deviceOpZoa(); break;
     case D_dictDump: deviceOpDictDump(isFetch); break;
+    case D_comZoab: deviceOpComZoab(isFetch); break;
+    case D_comDone: deviceOpComDone(); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1393,19 +1433,19 @@ ssize_t readSrc(size_t nbyte) {
     .heap =    (APtr*) (mem + 0x4),       \
     .topHeap = (APtr*) (mem + 0x8),       \
     .topMem =  (APtr*) (mem + 0xC),       \
-    .err =     (U4*) (mem + 0x10),       \
-    .state =   (U4*) (mem + 0x14),       \
-    .testIdx = (U4*) (mem + 0x18),       \
-    .instrLogLvl = (U2*) (mem + 0x1C),       \
-    .usrLogLvl   = (U2*) (mem + 0x1E),       \
+    .err =     (U4*) (mem + 0x10),        \
+    .state =   (U4*) (mem + 0x14),        \
+    .testIdx = (U4*) (mem + 0x18),        \
+    .sysLogLvl   = (U2*) (mem + 0x1C),    \
+    .usrLogLvl   = (U2*) (mem + 0x1E),    \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
     .cs = \
       { .size = RS, .sp = RS, .mem = callStkMem }, \
     .szI = SzI4, \
   };                                      \
-  *env.instrLogLvl = STARTING_INSTR_LOG_LVL;\
-  *env.usrLogLvl = LOG_USER | LOG_CRIT;\
+  *env.sysLogLvl = startingSysLogLvl;     \
+  *env.usrLogLvl = startingUsrLogLvl;     \
   /* configure heap+topheap */            \
   *env.heap = GS; /*bottom is globals*/   \
   APtr glbls = 0x1E + 2;                  \
@@ -1443,7 +1483,6 @@ ssize_t readSrc(size_t nbyte) {
 void compileFile(char* s) {
   zoab_file(strlen(s), s);
   compilingName = s;
-  // printf("# Compiling: %s\n", s);
   line = 1;
   readAppend = &readSrc;
   srcFile = fopen(s, "rb");
@@ -1464,8 +1503,23 @@ void compileFile(char* s) {
 // ** Main
 void tests();
 
-/*fn*/ int main() {
-  tests();
+U4 strToHex(U1 len, U1* s) {
+  U4 out = 0;
+  for(U1 i = 0; i < len; i++) {
+    out = (out << 4) + charToHex(s[i]);
+  }
+  return out;
+}
+
+/*fn*/ int main(int argc, char** argv) {
+  if(argc != 4) return 1;
+
+  U1 runTests        = '0' !=      argv[1][0];
+  startingSysLogLvl  = strToHex(2, argv[2]);
+  startingUsrLogLvl  = strToHex(2, argv[3]);
+
+  if(runTests) tests();
+
   return 0;
 }
 
@@ -1565,8 +1619,8 @@ static inline Bool isExecute(Instr instr) {
 }
 
 static inline Bool doLogInstr(Instr instr) {
-  if(LOG_INSTR & *env.instrLogLvl) return TRUE;
-  if((LOG_EXECUTE & *env.instrLogLvl) && isExecute(instr)) return TRUE;
+  if(LOG_INSTR & *env.sysLogLvl) return TRUE;
+  if((LOG_EXECUTE & *env.sysLogLvl) && isExecute(instr)) return TRUE;
   return FALSE;
 }
 
@@ -1616,8 +1670,8 @@ void compileStr(char* s) {
 // ** Tests
 
 /*test*/ void testHex() {
-  zoab_info("## testDictDeps");
   TEST_ENV_BARE;
+  zoab_info("## testDictDeps");
 
   compileStr(".1 #10");
   assert(WS_POP() == 0x10);
@@ -1637,8 +1691,8 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testDictDeps() {
-  zoab_info("## testDictDeps");
   TEST_ENV_BARE;
+  zoab_info("## testDictDeps");
   DictRef d = DEFAULT_DICT;
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
@@ -1662,8 +1716,8 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testDict() {
-  zoab_info("## testDict");
   TEST_ENV_BARE;
+  zoab_info("## testDict");
 
   compileStr(".2 #0F00 =foo  .4 #000B_A2AA =bazaa"
       " @bazaa @foo .2 @foo");
@@ -1673,8 +1727,8 @@ void compileStr(char* s) {
 }
 
 /*test*/ void testWriteHeap() { // test , and ;
-  zoab_info("## testWriteHeap");
   TEST_ENV_BARE;
+  zoab_info("## testWriteHeap");
   compileStr(".4 #77770101, .2 #0F00, .1 #0,");
   assert(0x77770101 == fetch(mem, heapStart, SzI4));
   assert(0x0F00 == fetch(mem, heapStart+4, SzI2));
@@ -1686,13 +1740,13 @@ void assertNoWs() {
 }
 
 /*test*/ void testSpore() {
-  zoab_info("## testSpore");
   TEST_ENV;
+  zoab_info("## testSpore");
   // TODO: refactor
   // char* logit = "\nTEST printing works!\n";
   // memcpy(mem + *env.heap, logit, strlen(logit));
   // WS_PUSH(*env.heap);  WS_PUSH(strlen(logit));
-  // deviceOpLog();
+  // deviceOpCom();
   // assert(!WS_POP());
 
   // Test zoa str
@@ -1740,8 +1794,8 @@ void assertNoWs() {
 }
 
 /*test*/ void testFngi() {
-  zoab_info("## testFngi");
   TEST_ENV;
+  zoab_info("## testFngi");
   compileFile("fngi.fn");
   assertNoWs();
   compileFile("tests/testFngi.fn");
@@ -1749,8 +1803,8 @@ void assertNoWs() {
 }
 
 /*test*/ void tests() {
-  zoab_info("# Tests");
   assert(20 == sizeof(ErrData));
+  if (LOG_INFO & startingUsrLogLvl) zoab_infoStart("++ Starting Tests ++", 0);
 
   testHex();
   testDictDeps();
@@ -1760,5 +1814,8 @@ void assertNoWs() {
   testFngi();
 
   assert(0 == WS_LEN);
-  zoab_info("++ Tests Complete ++");
+  if (LOG_INFO & startingUsrLogLvl) zoab_infoStart("++ Tests Complete ++", 0);
+
+  zoab_start(); zoab_arr(2, FALSE);
+  zoab_int(LOG_USER); zoab_ntStr("Hello world from spor.c!", FALSE);
 }
