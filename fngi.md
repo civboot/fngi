@@ -32,8 +32,8 @@ postfix notation, also called reverse polish notation. However, most "modern"
 notation. Fngi uses mostly prefix notation. Here are two examples to add 1 and
 2:
 
-prefix: `add(1, 2)`
-postfix: `1 2 add`
+- prefix: `add(1, 2)`
+- postfix: `1 2 add`
 
 In fngi, functions that accept arguments are almost always labeled as PRE
 meaning they use prefix notation (the exception is purely stack-altering
@@ -46,17 +46,18 @@ only the next token, then compling themselves.
 
 This means: `myFn 1`
 
-Gets compiled as: `#1 $xsl myFn`
+Gets compiled as: `#1$L0 $xsl myFn`
 
-> Note: this is spor assembly. #1 is the hex number, xsl means "execute small"
-> See [spor.md](./spor.md) for more details.
+> Note: this is spor assembly. #1 is the hex number, `$L0` compiles it as a "0
+> byte" literal (fits in the instr) and  xsl means "execute small". See
+> [spor.md](./spor.md) for more details.
 
 So how do we pass more than one argument? It's easy, we use parenthesis!
 `(` will continue to compile tokens until it hits `)`
 
 So we can do: `myFn2(1 2 + 3)  // in C: myFn(1, 2 + 3)`
 
-Fngi has one more element used for documentation (and a few syntaxers, which
+Fngi has one more element used for documentation (and a few syntax-fns, which
 we'll get to). It defines `,` and `;` as "instantly do nothing".
 
 This allows you to write: `myFn(1, 2 + 3)  // , to visually separate args`
@@ -69,11 +70,11 @@ There's one more "instant do nothing" function, `_`. By convention this means
 
 So you might write: `myFn(_, 2 + 3)  // first arg is from stack`
 
-Again the `_,` does absolutely nothing. But it sure helps you read it doesn't
-it?
+Again the `_` does absolutely nothing except communicate to the programmer than
+an argument is from the stack.
 
-Example fngi function to calculate fibronacci recursively. Also included
-is the equivalent C code.
+Below is an example fngi function to calculate fibronacci recursively. Also
+included is the equivalent C code.
 
 ```
 fn fib [n:U4] -> U4 do (
@@ -84,35 +85,34 @@ fn fib [n:U4] -> U4 do (
 
 Let's explain a few details on how the parser/compiler stays extremely minimal:
 
-- `fn` is an INSTANT function, meaning the compiler executes it instead of
+- `fn` is an SMART function, meaning the compiler executes it instead of
   compiling it to the heap. It compiles the next token/s using the
-  `c_fnInputOutput` function (simply another function to compile inputs), then
-  expects `do` for syntactic surgar, then compiles the next token (note: just _1
-  token_, not some kind of special-purpose syntax) as the function body. This is
-  where `()` come in.
+  `c_fnInputOutput` function which is called a syntax-fn since it reads tokens
+  and constructs a small abstract syntax tree. The `fn` syntax-fn expects the
+  syntax to be structured as follows: 
+    `fn [fn-name] [inputs] -> [outputs] do [code]`
 - `(..)` is NOT an expression. `(` is simply an instant function that compiles
   until it encounters the token `)`. In this case, what is between them is the
   function body.
-- `if` is an instant function (we call instant functions that operate on
-  semi-complex syntax "syntaxers") that compiles the next token to determine the
-  if clause, then it expects `do` for sugar, then the next token determines the
-  body. It inserts appropriate `JZL` (jump zero literal) instructions around
-  these. It can also handle `elif` and `else` tokens (not described here).
-- `.` is a syntaxer that does "variable" compilation. It is used for fetching
-  and storing variables of all types (globals, inputs or locals).
+- `if` is another smart syntax-fn which expects syntax of the form
+  `if [check] do [code]`. It can also peek, if the next token is `elif` or
+  `eldo` then it can look like:
+  `if [check] do [code] elif [check] do [code] ... eldo [code]`
+- `.` is another syntax-fn that does "variable" compilation. It is used for
+  fetching and storing variables of all types (globals, inputs or locals),
+  as well as references, module lookups, etc.
 - If a token can be interpreted as a number, then it is a number. Otherwise it's
-  treated as a function (which might be INSTANT).
-
+  treated as a function (which might be SMART/INSTANT).
 
 # Similarities to FORTH
 Like FORTH, fngi allows you to define functions that are either compiled or
 run instantly (affecting compilation, often called "macros" in other
 languages). Also like FORTH, fngi's functions operate by push/poping from a
-working stack, while function calls use a call stack to track address changes.
-In addition, both FORTH and fngi have very low requirements for implementation.
-Fngi is implemented in about 1000 lines of spor assembly, which itself is
-implemented in about 1000 lines of C. Like FORTH, it does not come with memory
-management or any other bells or whistles. It practically bootstraps itself from
+working stack and uses a call stack to track calls/returns.  In addition, both
+FORTH and fngi have very low requirements for implementation.  Fngi is
+implemented in about 1000 lines of spor assembly, and spor is implemented in
+about 1000 lines of C. Like FORTH, fngi/spor do not come with memory management
+or any other bells or whistles. They practically bootstraps themselves from
 nothing.
 
 Spore diverges from FORTH in the following ways:
@@ -121,13 +121,12 @@ Spore diverges from FORTH in the following ways:
 - Although it is stack-based, all functions (except those with no stack inputs
   or pure stack manipulation like dup/drp/ovr) cause the next token to be
   compiled before them. This means that syntax is typically written in C like
-  standard polish notation instead of FORTH's (hard to read) reverse-polish
+  standard-polish notation instead of FORTH's (hard to read) reverse-polish
   notation.
 - Far more inclusive support of locals. Has a separate locals stack and
   execution mechanisms which automatically allocate space for locals when
   executed and deallocate when returned.
-- Has less dependence on the working stack (called data stack in FORTH).
-
+- Has less dependence on the working stack (data stack in FORTH).
 
 ```
 // Fngi Syntax
@@ -146,4 +145,4 @@ uint32_t fib(uint32_t n) {
 
 For those familiar with FORTH the above will seem like syntax that _must_
 require a far-too complicated parser. The truth is the opposite: the parser for
-the above is basically no more complicated than FORTH's. 
+the above is basically no more complicated than FORTH's.

@@ -467,8 +467,8 @@ def harness(env, io):
       continue
     if isinstance(ev, BasicEvent) and ev.lvl == Lvl.USER:
       assert len(ev.payload) == 1 and isinstance(ev.payload[0], bytes), "invalid LOG_USER"
-      print(ev.payload[0].decode('utf-8'))
-      return
+      print(ev.payload[0].decode('utf-8'), end="")
+      continue
 
     print(f"{ev.lvl}[{i:>8d}]: ", end='')
     payload = ev.payload
@@ -513,7 +513,7 @@ def main():
 
   try:
     harness(env, p.stdout)
-  except zoa.Eof: pass
+  except zoa.Eof: print("Got EOF")
   except Exception:
     time.sleep(1)
     raise

@@ -1067,6 +1067,7 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
 // |zoa string literal|
 // Creates a zoa string in the heap.
 $SFN |
+  $SMART $xsl assertNoInstant
   $xsl getHeap
   // maxLen: (topHeap - heap)
   %DUP $xsl getTopHeap %SWP %SUB
@@ -1093,13 +1094,13 @@ $SFN com  @D_com$L0 %DVSR %RET // {len &raw} communicate directly
 $SFN comDone  @D_comDone$L0 %DVFT %RET
 
 $loc LOG_ZOAB_START  #80$h1 #03$h1
-$SFN comzStart #2$L0 @LOG_ZOAB_START$L4  @D_com$L0 %DVSR %RET
-$SFN comzU4    @D_comZoab$L0 %DVFT %RET
-$SFN comzData  @D_comZoab$L0 %DVSR %RET // {len &raw join}
+$SFN comzStart  #2$L0 @LOG_ZOAB_START$L4  @D_com$L0 %DVSR %RET
+$SFN comzU4     $PRE @D_comZoab$L0 %DVFT %RET // {U4}
+$SFN comzData   $PRE @D_comZoab$L0 %DVSR %RET // {len &raw join}
 
 
 $loc TODO #0$h1
-$FN comzArr // {len join}
+$FN comzArr  $PRE // {len join}
   @SZ1 $LOCAL b0 $END_LOCALS // b0 is used as an array for com
 
   // $IF @ZOAB_JOIN$L1 $ELSE #0$L0 $END %SWP // join -> joinTy       {joinTy len}
@@ -1112,18 +1113,20 @@ $FN comzArr // {len join}
   @TODO$L2 %SWP .1%SR // store len @TODO
   #1$L0 @TODO$L2 $jmpl com // send via com
 
-$SFN comzLogStart // {lvl extraLen}  extraLen is in addition to sending the lvl
+$SFN comzLogStart  $PRE // {lvl extraLen}  extraLen is in addition to sending the lvl
   $xsl comzStart // TODO: check return code once it's added
   %INC @FALSE$L0 $xl comzArr
   $jmpl comzU4 // send lvl
 
-$SFN print // {len &raw}: print data to user
+$SFN print  $PRE // {len &raw}: print data to user
   @LOG_USER$L1 #1$L0 $xsl comzLogStart
   @FALSE$L0 $jmpl comzData
 
-$SFN _printz // {&z}: print zoab bytes to user. (single segment)
+$SFN _printz  $PRE // {&z}: print zoab bytes to user. (single segment)
   %DUP .1%FT %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert // {len}
-  %SWP %INC  $jmpl print
+  %SWP %INC  $xsl print 
+  $xsl comDone
+  %RET
 
 $assertWsEmpty
 

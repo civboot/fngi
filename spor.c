@@ -374,7 +374,7 @@ U1* START_BYTES = "\x80\x03";
 void zoab_start() { ASM_ASSERT(fwrite(START_BYTES, 1, 2, stdout), E_io); }
 
 void writeOutbuf(U1 len) {
-  assert(fwrite(outbuf, 1, len, stdout));
+  U4 out = fwrite(outbuf, 1, len, stdout);
 }
 
 // Start an array of length and join bit.
@@ -392,9 +392,7 @@ void zoab_data(U2 len, U1* str, U1 join) {
       if(join) outbuf[0] = ZOAB_JOIN | len;
       else outbuf[0] = len;
       writeOutbuf(1);
-      if(len > 0) {
-        assert(fwrite(str, 1, len, stdout));
-      }
+      if(len) assert(fwrite(str, 1, len, stdout));
       return;
     }
     // Write a join byte

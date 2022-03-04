@@ -18,6 +18,11 @@ $tAssertEq(0c\t, 0x09)
 
 $tAssertEq(FN_REF useEq, toRef(dictGet useEq))
 
+$loc fngiMsg  | Hello world from fngi.fn!\n|
+$_printz(fngiMsg)
+
+// $tAssert FALSE
+
 // SFN daAnswer ret(0x42)
 // SFN testXsw
 //   xsw($lit(toRef(dictGet daAnswer)))
