@@ -1,5 +1,13 @@
 # Fngi details
 
+Fngi is a general purpose concrete syntax[1] language with similar constraints
+to C. Unlike C it has a rich macro system allowing for rich syntax extensions.
+It targets a bare-bones virtual machine called [spor](./spor.md).
+
+[1] a "concrete syntax" is (tounge-in-cheek) the opposite of an "abstract
+syntax". It is defined as a syntax where the compiler only reads a token stream
+and never creates an abstract syntax tree of any kind.
+
 ## Fngi basics:
 
 "Single tokens": these tokens are never grouped together

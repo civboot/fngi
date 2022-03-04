@@ -17,9 +17,14 @@ syntax. Spor itself is self-bootstrapped from an extremely lean native
 implementation, which is currently ~1-2 thousand lines of C but is intended to
 be writeable in a hex editor (when targeting a simple processor).
 
-Fngi itself is intended to bootstrap a full-featured OS in very minimal amounts
-of code that is runnable on microcontrollers with 64k of memory or less and zero
-hardware support for memory maangement, thread handling, etc.
+Fngi itself has the following space targets:
+- >=32KiB microcontroller/processor: can bootstrap a text-based OS providing
+  human-editable source and assembly that can be recompiled on the
+  microcontroller (aka self-bootstrapping). The processor does _not_ need to
+  have memory-mapping, thread management, etc -- it can be a very bare-bones
+  device.
+- >=4KiB microcontroller: can run pre-compiled spor assembly. Does not need to
+  be self-bootstrapping.
 
 Read more:
 * [spor.md](./spor.md)
