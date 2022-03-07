@@ -1152,12 +1152,16 @@ $SFN charToInt // {c} -> {U8}
 
 $SFN null2 #0$L0 %DUP %RET
 $SFN c_isEof $GET c_tokenLen %NOT %RET
-$SFN c_assertNoEof $GET c_tokenLen @E_eof$L2 $jmpl assert // {} -> {}
+// $SFN c_assertToken $GET c_tokenLen @E_eof$L2 $jmpl assert // {} Assert there is a token
+$SFN c_assertToken $GET c_tokenLen #4444$L2 $jmpl assert // {} Assert there is a token
 
-$SFN c_readNew // clear token buf and read bytes
+$SFN c_assertNoEof @E_eof$L2 $jmpl assertNot // {numRead}
+$SFN c_read // { -> numRead} attempt to read bytes
+  #1$L0 @D_read$L0 %DVFT %RET
+$SFN c_readNew // { -> numRead} clear token buf and read bytes
   #0$L0 $_SET c_tokenLen
   #0$L0 $_SET c_tokenSize
-  @D_read$L0 %DVFT %RET
+  #1$L0 @D_read$L0 %DVFT %RET
 
 // {} -> {c}: read next character from AFTER tokenLen.
 // Increments tokenLen. This is destructive to token, use with care.
@@ -1214,7 +1218,8 @@ $FN c_parseNumber // {} -> {value isNumber}
 
   // Get correct base
   $GET c_tokenBuf .1%FT #30$L0 %EQ $IF // if c0 == '0' {}
-    $GET c_tokenBuf %INC .1%FT %DUP
+    $GET c_tokenBuf %INC .1%FT %DUP // {c1 c1} if there was a char
+
     // First handle 0c: character literal
     #63$L1 %EQ  $IF // if .tokenBuf@1=='c' {c1}
       // set tokenLen=2 to treat anything after 0c as next character.
@@ -1226,7 +1231,7 @@ $FN c_parseNumber // {} -> {value isNumber}
     %DUP // {c1 c1}
     #62$L1 %EQ  $IF // if .tokenBuf@1=='b' {c1}
       #2$L0  $_SET base  #2$L0 $_SET i
-    $END
+    $END // {c1}
     #78$L1 %EQ  $IF // if .tokenBuf@1=='x' {}
       #10$L0 $_SET base  #2$L0 $_SET i
     $END
@@ -1373,11 +1378,11 @@ $FN fngiSingle $END_LOCALS // actually empty locals
 $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number.
 
 $SFN (  $SMART%DRP  // parens ()
-  $xsl c_assertNoEof
+  $xsl c_assertToken
   $xsl c_peekChr #29$L0 %EQ $IF  $xsl c_scan %RET  $END // return if we hit ")"
   $LOOP l0
     $GET c_compFn .4%XW
-    $xsl c_assertNoEof
+    $xsl c_assertToken
     $xsl c_peekChr #29$L0 %EQ $IF  $xsl c_scan %RET  $END // return if we hit ")"
   $AGAIN l0
 
@@ -1405,9 +1410,8 @@ $SFN // // Define a line comment
   $SMART%DRP
   $LOOP l
     $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
-      $xsl c_readNew
+      $xsl c_readNew %RETZ // return on EOF
     $END
-    $GET c_tokenSize %RETZ
     // if(tokenBuf[tokenLen] == '\n') return
     $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT #A$L0 $reteq
     $GET c_tokenLen %INC $_SET c_tokenLen

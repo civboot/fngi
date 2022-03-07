@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <setjmp.h>
+#include <errno.h>
 
 // print to stderr
 #define eprint(str)   fprintf (stderr, str)
@@ -333,7 +334,7 @@ typedef enum {
 typedef struct {
   APtr buf; // buffer.
   U1 len;   // length of token
-  U1 size;  // characters buffered
+  U1 size;  // total characters buffered
   U1 group;
   U1 _align;
 } TokenState;
@@ -359,7 +360,7 @@ TokenState* tokenState = NULL;
 char* compilingName;
 FILE* srcFile;
 Instr globalInstr = NOP;
-ssize_t (*readAppend)() = NULL; // Read bytes incrementing tokenBufSize
+U1 (*readAtLeast)(U1 num) = NULL; // Read num bytes into tokenBuf
 U4 line = 1;
 jmp_buf* err_jmp;
 long long unsigned int dbgCount = 0;
@@ -950,10 +951,10 @@ SRGL: case SzI2 + SRGL:
 }
 
 // clear token buf and read bytes
-/*fn*/ void readNew() {
+void readNewAtLeast(U1 num) {
   tokenLen = 0;
   tokenBufSize = 0;
-  readAppend();
+  readAtLeast(num);
 }
 
 /*fn*/ void shiftBuf() {
@@ -975,16 +976,14 @@ SRGL: case SzI2 + SRGL:
 
   // Skip whitespace
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew();
+    if(tokenLen >= tokenBufSize) readNewAtLeast(1);
     if(tokenBufSize == 0) return;
-    if(toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) {
-      shiftBuf();
-      break;
-    }
+    if(toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) break;
     if(tokenBuf[tokenLen] == '\n') line += 1;
     tokenLen += 1;
   }
-  if(tokenBufSize < MAX_TOKEN) { readAppend(); }
+  shiftBuf();
+  if(tokenBufSize < MAX_TOKEN) { readAtLeast(1); }
 
   U1 c = tokenBuf[tokenLen];
   tokenState->group = toTokenGroup(c);
@@ -994,7 +993,10 @@ SRGL: case SzI2 + SRGL:
   }
 
   // Parse token until the group changes.
-  while(tokenLen < tokenBufSize) {
+  while (TRUE) {
+    if (tokenLen >= tokenBufSize) readAtLeast(1);
+    if (tokenLen >= tokenBufSize) break;
+
     ASM_ASSERT(tokenLen < MAX_TOKEN, E_cTLen);
     c = tokenBuf[tokenLen];
 
@@ -1014,14 +1016,14 @@ U1 scanInstr() {
 }
 
 /*fn*/ void cSz() { // `.`
-  if(tokenLen >= tokenBufSize) readAppend();
+  if(tokenLen >= tokenBufSize) readAtLeast(1);
   env.szI = szToSzI(charToHex(tokenBuf[tokenLen]));
   tokenLen += 1;
 }
 
 /*fn*/ void cComment() {
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNew();
+    if (tokenLen >= tokenBufSize) readNewAtLeast(1);
     if (tokenBufSize == 0) return;
     if (tokenBuf[tokenLen] == '\n') return;
     tokenLen += 1;
@@ -1101,6 +1103,9 @@ U1 scanInstr() {
     case '^': cExecuteInstr(); break;
     case '$': cExecute(); break;
     default:
+      eprint("!! Invalid ASM token: ");
+      fwrite(tokenBuf, 1, tokenLen, stderr);
+      eprint("\n");
       SET_ERR(E_cToken);
   }
   return FALSE;
@@ -1113,6 +1118,7 @@ U1 scanInstr() {
 
   if(setjmp(local_err_jmp)) {
     eprintf("\n\n!!! ERROR (stderr): 0x%X\n\n", *env.err);
+
     zoab_err(*env.err, FALSE);
   } else {
     while(TRUE) {
@@ -1251,7 +1257,7 @@ typedef struct { U1 c; CharStatus status; } CharResult;
     return out;
   }
   out.status = CharEscapeKnown;
-  if (tokenLen >= tokenBufSize) readNew();
+  if (tokenLen >= tokenBufSize) readNewAtLeast(1);
   ASM_ASSERT(tokenBufSize > 0, E_cStr);
   out.c = tokenBuf[tokenLen];
   tokenLen += 1;
@@ -1265,7 +1271,7 @@ typedef struct { U1 c; CharStatus status; } CharResult;
     case '{': out.c = '{'; break;
     case '}': out.c = '}'; break;
     case 'x':
-      if (tokenLen >= tokenBufSize) readNew();
+      if (tokenLen >= tokenBufSize) readNewAtLeast(2);
       ASM_ASSERT(tokenBufSize >= 2, E_cStr);
       out.c =
           (charToHex(tokenBuf[tokenLen]) << 4)
@@ -1279,7 +1285,7 @@ typedef struct { U1 c; CharStatus status; } CharResult;
 
 void ignoreWhitespace() {
   while(TRUE) {
-    if (tokenLen >= tokenBufSize) readNew();
+    if (tokenLen >= tokenBufSize) readNewAtLeast(1);
     if (tokenBuf[tokenLen] > 0x20) return;
     tokenLen += 1;
   }
@@ -1292,7 +1298,7 @@ void ignoreWhitespace() {
   buffer += 1; // reserve space for first "count" byte
   ignoreWhitespace();
   while(TRUE) {
-    if (tokenLen >= tokenBufSize) readNew();
+    if (tokenLen >= tokenBufSize) readNewAtLeast(1);
     if (tokenBufSize == 0) {
       store(mem, start, len, SzI1);
       return buffer;
@@ -1371,7 +1377,7 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
   U4 op = WS_POP();
   U4 tmp;
   switch(op) {
-    case D_read: readAppend(); break;
+    case D_read: WS_PUSH(readAtLeast(WS_POP())); break;
     case D_scan: scan(); break;
     case D_dict: deviceOp_dict(isFetch); break;
     case D_rdict: deviceOpRDict(isFetch); break;
@@ -1402,8 +1408,37 @@ void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
 
 // ********************************************
 // ** Initialization
-//
-ssize_t readSrc(size_t nbyte) {
+
+U4 max(U4 a, U4 b) { if (a > b) return a; return b; }
+
+// Read at least num bytes into tokenBuf.
+// If EOF is reached return the number of bytes read.
+// If this would overflow tokenBuf, return the number of bytes actually read.
+U1 readSrcAtLeast(U1 num) {
+  U1 out = 0;
+  num = min(TOKEN_BUF, num);
+  assert(num);
+  while (TRUE) {
+    ssize_t numRead = read(
+      fileno(srcFile),                      // filedes
+      tokenBuf + tokenBufSize,              // buf
+      max(num, TOKEN_BUF - tokenBufSize));  // nbyte
+    assert(!errno);
+    assert(numRead >= 0);
+    tokenBufSize += numRead;
+    out += numRead;
+    if(!numRead) break; // EOF
+    if(TOKEN_BUF - tokenBufSize == 0) break;
+    if(numRead >= num) break;
+  }
+  // eprintf("??? readSrcAtLeast read bytes=%3u: ", out);
+  // fwrite(tokenBuf + tokenBufSize - out, 1, out, stderr);
+  // eprint("\n");
+  return out;
+}
+
+
+ssize_t readSrc() {
   ssize_t numRead = fread(
     tokenBuf + tokenState->size,
     1, // size
@@ -1412,6 +1447,9 @@ ssize_t readSrc(size_t nbyte) {
   assert(!ferror(srcFile));
   if(numRead < 0) return 0;
   tokenBufSize += numRead;
+  eprintf("??? readSrc        read bytes=%3u: ", numRead);
+  fwrite(tokenBuf + tokenBufSize - numRead, 1, numRead, stderr);
+  eprint("\n");
   return 0;
 }
 
@@ -1482,7 +1520,7 @@ void compileFile(char* s) {
   zoab_file(strlen(s), s);
   compilingName = s;
   line = 1;
-  readAppend = &readSrc;
+  readAtLeast = &readSrcAtLeast;
   srcFile = fopen(s, "rb");
   assert(srcFile > 0);
   compileLoop(); ASSERT_NO_ERR();
@@ -1509,6 +1547,19 @@ U4 strToHex(U1 len, U1* s) {
   return out;
 }
 
+void compileStdin() {
+  SMALL_ENV;
+  compileFile("fngi.fn");
+
+  eprint("??? Start stin\n");
+  zoab_file(5, "INPUT");
+  readAtLeast = &readSrcAtLeast;
+  srcFile = stdin;
+  compileLoop(); ASSERT_NO_ERR();
+  eprint("??? End stin\n");
+}
+
+
 /*fn*/ int main(int argc, char** argv) {
   if(argc != 4) return 1;
 
@@ -1517,6 +1568,7 @@ U4 strToHex(U1 len, U1* s) {
   startingUsrLogLvl  = strToHex(2, argv[3]);
 
   if(runTests) tests();
+  // compileStdin();
 
   return 0;
 }
@@ -1641,17 +1693,22 @@ static inline void logInstr(Instr instr) {
 char* testBuf = NULL;
 U2 testBufIdx = 0;
 
-/*test*/ ssize_t testingRead() {
-  size_t i = 0;
-  while (i < (TOKEN_BUF - tokenState->size)) {
+// Note: `n` is completely ignored, just fill the buffer if possible.
+/*test*/ U1 testingReadAtLeast(U1 n) {
+  U1 numRead = 0;
+  while (tokenState->size < TOKEN_BUF) {
     U1 c = testBuf[testBufIdx];
-    if(c == 0) return i;
+    if(c == 0) return numRead;
     tokenBuf[tokenBufSize] = c;
     tokenBufSize += 1;
     testBufIdx += 1;
-    i += 1;
+    numRead += 1;
   }
-  return i;
+  return numRead;
+}
+
+/*test*/ ssize_t testingRead() {
+  return testingReadAtLeast(1);
 }
 
 void compileStr(char* s) {
@@ -1660,7 +1717,7 @@ void compileStr(char* s) {
   testBuf = s;
   testBufIdx = 0;
   line = 1;
-  readAppend = &testingRead;
+  readAtLeast = &testingReadAtLeast;
   compileLoop(); ASSERT_NO_ERR();
 }
 
@@ -1738,6 +1795,7 @@ void assertNoWs() {
 }
 
 /*test*/ void testSpore() {
+  eprint("## Test Spore\n");
   TEST_ENV;
   zoab_info("## testSpore");
   // TODO: refactor

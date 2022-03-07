@@ -3,6 +3,8 @@
 See ./harness.md for full documentation.
 """
 
+import threading
+import select
 import re
 import os
 import collections
@@ -40,6 +42,29 @@ TY_LOCAL     = 0x40 # local variable, has varMeta. Accessed with FTLL/SRLL
 TY_GLOBAL    = 0x60 # global variable, has varMeta. Accessed with FTGL/SRGL
 
 ZOAB_LOG = 0x03
+
+KILL = False
+ERRORS = []
+
+class KillableReader:
+  """A reader that can be killed."""
+  def __init__(self, fd):
+    self.fd = fd
+
+  def read(self, n, orNewline=False):
+    out = bytearray()
+    while n:
+      if KILL: break # killed will always look like EOF
+      (rdRdy, wrRdy, xRdy) = select.select([self.fd.fileno()], [], [], 0.2)
+      assert not wrRdy
+      assert not xRdy
+      if rdRdy:
+        b = os.read(self.fd.fileno(), n)
+        if not b: break  # EOF
+        out.extend(b)
+        n -= len(b)
+      if orNewline and b'\n' in out: break
+    return out
 
 def wantStr(b):
   try: return b.decode('utf-8')
@@ -448,6 +473,15 @@ def handleErrEvent(env, ev):
     printCallStack(callStk)
 
 def harness(env, io):
+  try:
+    return _harness(env, io)
+  except zoa.Eof: print("Got EOF")
+  except Exception as e:
+    time.sleep(1)
+    ERRORS.append(e)
+    raise
+
+def _harness(env, io):
   """Harness for spor.
 
   Note: if using io=stdi, use stdin.buffer
@@ -480,6 +514,37 @@ def compileSpore():
   subprocess.run(["gcc", "spor.c", "-o", "spor"], check=True)
   time.sleep(0.3) # For gcc error logging
 
+def readPassLoop(inp, toOut):
+  try: _readPassLoop(inp, toOut)
+  except Exception as e:
+    ERRORS.append(e)
+    raise
+
+def _readPassLoop(inp, toOut):
+  """Reads from input and passes directly to output but is killable.
+
+  Yes, this is really necessary to allow it to be killable. Yes, this complexity
+  is all from python/linux/whatever.
+  """
+  writeBuf = bytearray()
+  eof = False
+
+  while not KILL:
+    (rdRdy, wrRdy, xRdy) = select.select([inp.fileno()], [toOut.fileno()], [], 0.2)
+    if rdRdy:
+      b = os.read(inp.fileno(), 1024)
+      if b: writeBuf.extend(b)
+      else: eof = True
+
+    if wrRdy and writeBuf:
+      print("Writing:", writeBuf)
+      written = os.write(toOut.fileno(), writeBuf)
+      toOut.flush()
+      writeBuf = writeBuf[written:]
+
+    if eof and not writeBuf:
+      return
+
 def main():
   args = parser.parse_args()
   if args.compile: compileSpore()
@@ -511,17 +576,32 @@ def main():
       stdout=subprocess.PIPE,
       stderr=sys.stderr)
 
+  procOut = KillableReader(p.stdout)
+  harnessTh = threading.Thread(target=harness, args=(env, procOut))
+  p.stdin.close() # TODO: remove and uncomment below
+  # readTh = threading.Thread(target=readPassLoop, args=(sys.stdin, p.stdin))
   try:
-    harness(env, p.stdout)
-  except zoa.Eof: print("Got EOF")
-  except Exception:
-    time.sleep(1)
-    raise
+    harnessTh.start()
+    # readTh.start()
+    while p.returncode is None and harnessTh.is_alive():
+      time.sleep(0.2)
+      p.poll()
+  except KeyboardInterrupt: pass
+  finally:
+    KILL = True
+    harnessTh.join()
+    # readTh.join()
+    p.poll()
+
   if p.returncode:
     print("!! Got error rc:", p.returncode)
     sys.exit(p.returncode)
   if env.uncaughtErr:
     print("!!", env.uncaughtErr)
+
+  if ERRORS:
+    print("!! Got errors:", ERRORS)
+    raise ERRORS[0]
 
 if __name__ == '__main__':
   main()
