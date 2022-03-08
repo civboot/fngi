@@ -3,6 +3,7 @@
 See ./harness.md for full documentation.
 """
 
+import signal
 import threading
 import select
 import re
@@ -16,6 +17,13 @@ from typing import Dict, Tuple, List, Deque
 from dataclasses import dataclass
 import subprocess
 import argparse
+
+DONE = False
+def sigint(signal, frame):
+  global DONE
+  DONE = True
+
+signal.signal(signal.SIGINT, sigint)
 
 parser = argparse.ArgumentParser(description='Fngi linux harness.')
 parser.add_argument('--compile', action='store_true', help="Recompile spore binary")
@@ -43,10 +51,9 @@ TY_GLOBAL    = 0x60 # global variable, has varMeta. Accessed with FTGL/SRGL
 
 ZOAB_LOG = 0x03
 
-KILL = False
 ERRORS = []
 
-class KillableReader:
+class CheckDoneReader:
   """A reader that can be killed."""
   def __init__(self, fd):
     self.fd = fd
@@ -54,7 +61,6 @@ class KillableReader:
   def read(self, n, orNewline=False):
     out = bytearray()
     while n:
-      if KILL: break # killed will always look like EOF
       (rdRdy, wrRdy, xRdy) = select.select([self.fd.fileno()], [], [], 0.2)
       assert not wrRdy
       assert not xRdy
@@ -63,6 +69,9 @@ class KillableReader:
         if not b: break  # EOF
         out.extend(b)
         n -= len(b)
+      elif DONE:
+        # Read from bytestream until there is nothing, then respect DONE
+        break # DONE looks like EOF
       if orNewline and b'\n' in out: break
     return out
 
@@ -348,7 +357,7 @@ def inputs_stream(env, io):
   while True:
     waitForStart(io)
     z = zoa.from_zoab(io).to_py()
-    if not z: print("?? Got empty array"); continue
+    if not z: continue
     control = z[0]
     if isinstance(control, int):
       print("?? got int control?"); continue
@@ -475,9 +484,8 @@ def handleErrEvent(env, ev):
 def harness(env, io):
   try:
     return _harness(env, io)
-  except zoa.Eof: print("Got EOF")
+  except zoa.Eof: pass
   except Exception as e:
-    time.sleep(1)
     ERRORS.append(e)
     raise
 
@@ -515,7 +523,11 @@ def compileSpore():
   time.sleep(0.3) # For gcc error logging
 
 def readPassLoop(inp, toOut):
-  try: _readPassLoop(inp, toOut)
+  try:
+    try: _readPassLoop(inp, toOut)
+    except ValueError as e:
+      if str(e) == 'I/O operation on closed file': pass
+      else: raise
   except Exception as e:
     ERRORS.append(e)
     raise
@@ -529,15 +541,17 @@ def _readPassLoop(inp, toOut):
   writeBuf = bytearray()
   eof = False
 
-  while not KILL:
+  while not DONE:
+    time.sleep(0.5)
     (rdRdy, wrRdy, xRdy) = select.select([inp.fileno()], [toOut.fileno()], [], 0.2)
     if rdRdy:
       b = os.read(inp.fileno(), 1024)
+      print("[py]  Read:", b)
       if b: writeBuf.extend(b)
       else: eof = True
 
     if wrRdy and writeBuf:
-      print("Writing:", writeBuf)
+      print("[py] Wrote:", writeBuf)
       written = os.write(toOut.fileno(), writeBuf)
       toOut.flush()
       writeBuf = writeBuf[written:]
@@ -546,6 +560,7 @@ def _readPassLoop(inp, toOut):
       return
 
 def main():
+  global DONE
   args = parser.parse_args()
   if args.compile: compileSpore()
 
@@ -576,21 +591,18 @@ def main():
       stdout=subprocess.PIPE,
       stderr=sys.stderr)
 
-  procOut = KillableReader(p.stdout)
+  procOut = CheckDoneReader(p.stdout)
   harnessTh = threading.Thread(target=harness, args=(env, procOut))
-  p.stdin.close() # TODO: remove and uncomment below
-  # readTh = threading.Thread(target=readPassLoop, args=(sys.stdin, p.stdin))
+  readTh = threading.Thread(target=readPassLoop, args=(sys.stdin, p.stdin))
   try:
     harnessTh.start()
-    # readTh.start()
+    readTh.start()
     while p.returncode is None and harnessTh.is_alive():
       time.sleep(0.2)
       p.poll()
-  except KeyboardInterrupt: pass
   finally:
-    KILL = True
-    harnessTh.join()
-    # readTh.join()
+    # time.sleep(0.5) # Allow some time for buffers to flush
+    DONE = True
     p.poll()
 
   if p.returncode:

@@ -1,8 +1,7 @@
 // Fngi bootstrap script: this script bootstraps the fngi language.
 // Requires: spore.sp
 
-$c_fngi // starts fngi syntax
-
+$c_fngi
 
 // Stack operators. These are /not/ PRE since they directly modify the stack.
 SFN swp      SMART IF() spor%SWP    ELSE $c1(SWP )   END ret;
@@ -77,6 +76,9 @@ FN SET  SMART // SET name value
   _setImpl(GET rMetaRef, GET isFromLocal)
   ret;
 
+// TODO: dict cannot find for some reason?
+// $loc fngiMsg  | Hello world from fngi.fn!\n|
+// $_printz(fngiMsg)
 
 // TODO: it seems like INSTANT might be broken now?
 // Block comment, allows /*nesting*/.

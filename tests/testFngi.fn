@@ -18,8 +18,8 @@ $tAssertEq(0c\t, 0x09)
 
 $tAssertEq(FN_REF useEq, toRef(dictGet useEq))
 
-$loc fngiMsg  | Hello world from fngi.fn!\n|
-$_printz(fngiMsg)
+$loc testFngiMsg  | Hello world from testFngi.fn!\n|
+$_printz(testFngiMsg)
 
 // $tAssert FALSE
 

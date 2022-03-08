@@ -982,8 +982,8 @@ void readNewAtLeast(U1 num) {
     if(tokenBuf[tokenLen] == '\n') line += 1;
     tokenLen += 1;
   }
-  shiftBuf();
-  if(tokenBufSize < MAX_TOKEN) { readAtLeast(1); }
+  shiftBuf(); // Moves buffer to the left (tokenLen=0)
+  if(!tokenBufSize) { readAtLeast(1); }
 
   U1 c = tokenBuf[tokenLen];
   tokenState->group = toTokenGroup(c);
@@ -1118,7 +1118,6 @@ U1 scanInstr() {
 
   if(setjmp(local_err_jmp)) {
     eprintf("\n\n!!! ERROR (stderr): 0x%X\n\n", *env.err);
-
     zoab_err(*env.err, FALSE);
   } else {
     while(TRUE) {
@@ -1437,22 +1436,6 @@ U1 readSrcAtLeast(U1 num) {
   return out;
 }
 
-
-ssize_t readSrc() {
-  ssize_t numRead = fread(
-    tokenBuf + tokenState->size,
-    1, // size
-    TOKEN_BUF - tokenState->size, // count
-    srcFile);
-  assert(!ferror(srcFile));
-  if(numRead < 0) return 0;
-  tokenBufSize += numRead;
-  eprintf("??? readSrc        read bytes=%3u: ", numRead);
-  fwrite(tokenBuf + tokenBufSize - numRead, 1, numRead, stderr);
-  eprint("\n");
-  return 0;
-}
-
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS)  \
   dbgCount = 0;                           \
   U1 localMem[MS] = {0};                  \
@@ -1516,13 +1499,18 @@ ssize_t readSrc() {
   /*           MS       WS     RS     LS     DICT    GS*/    \
   NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x2000, 0x100)
 
-void compileFile(char* s) {
+
+void setCompileFile(char* s) {
   zoab_file(strlen(s), s);
   compilingName = s;
   line = 1;
   readAtLeast = &readSrcAtLeast;
   srcFile = fopen(s, "rb");
   assert(srcFile > 0);
+}
+
+void compileFile(char* s) {
+  setCompileFile(s);
   compileLoop(); ASSERT_NO_ERR();
 }
 
@@ -1547,19 +1535,6 @@ U4 strToHex(U1 len, U1* s) {
   return out;
 }
 
-void compileStdin() {
-  SMALL_ENV;
-  compileFile("fngi.fn");
-
-  eprint("??? Start stin\n");
-  zoab_file(5, "INPUT");
-  readAtLeast = &readSrcAtLeast;
-  srcFile = stdin;
-  compileLoop(); ASSERT_NO_ERR();
-  eprint("??? End stin\n");
-}
-
-
 /*fn*/ int main(int argc, char** argv) {
   if(argc != 4) return 1;
 
@@ -1568,7 +1543,6 @@ void compileStdin() {
   startingUsrLogLvl  = strToHex(2, argv[3]);
 
   if(runTests) tests();
-  // compileStdin();
 
   return 0;
 }
@@ -1850,11 +1824,17 @@ void assertNoWs() {
 }
 
 /*test*/ void testFngi() {
+  eprint("## testFngi\n");
   TEST_ENV;
   zoab_info("## testFngi");
+  eprint("Compiling fngi.fn\n");
   compileFile("fngi.fn");
+  fclose(srcFile);
   assertNoWs();
+  eprint("Compiling testFngi.fn\n");
   compileFile("tests/testFngi.fn");
+  fclose(srcFile);
+
   assertNoWs();
 }
 
@@ -1871,6 +1851,7 @@ void assertNoWs() {
 
   assert(0 == WS_LEN);
   if (LOG_INFO & startingUsrLogLvl) zoab_infoStart("++ Tests Complete ++", 0);
+  eprint("++ Tests Complete\n");
 
   zoab_start(); zoab_arr(2, FALSE);
   zoab_int(LOG_USER); zoab_ntStr("Hello world from spor.c!", FALSE);
