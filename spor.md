@@ -72,6 +72,6 @@ $c_sfn add1
 For `add2` `xsl` means "eXecute Small Literal". It looks up the address to
 execute as a literal. "Small" means the function has no locals stack.
 
-Read the full documentation in [spor/spor.sp](./spor/spor.sp). There is vim
+Read the full documentation in [spor.sp](./spor.sp). There is vim
 syntax highlighting in `etc/spor.vim`
 
