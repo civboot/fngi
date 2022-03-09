@@ -77,8 +77,12 @@ FN SET  SMART // SET name value
   ret;
 
 // TODO: dict cannot find for some reason?
-// $loc fngiMsg  | Hello world from fngi.fn!\n|
-// $_printz(fngiMsg)
+// I think this is somehow related to local variables
+// interacting poorly with loc?
+// No, it's related to lookup.
+$loc fngiMsg
+| Hello world from fngi.fn!\n|
+$_printz(dictGet fngiMsg)
 
 // TODO: it seems like INSTANT might be broken now?
 // Block comment, allows /*nesting*/.

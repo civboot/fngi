@@ -377,7 +377,7 @@
 // tAssert, tAssertNot, tAssertEq
 // Spore assembly constants.
 
-%NOP // (unaligned) Note: heap is still on the stack!
+%NOP // (unaligned) Note: below is using value pushed by compiler.
 ^INC =getHeap
                 .4%FTGL @heap.2,
     %RET // (unaligned)
@@ -439,8 +439,11 @@ $getHeap =dictGetR // dictGetR: Get the &metaRef of the next token.
   %RET // (unaligned)
 
 $getHeap =loc // $loc <name>: define a location
-            @heap$L0
-  %FT       .2%XSL @dictSet $h2
+            .4%FTGL @heap$h2
+  %NOP      .2%XSL @dictSet$h2
+  // Clear ldict (locals dict)
+  #0$L0        .2%SRGL @c_localOffset $h2  // zero localDict.offset
+  #0$L0        .4%SRGL @c_dictLHeap $h2    // zero localDict.heap
   %RET // (unaligned)
 
 $loc setHeap     %SRGL @heap $h2      %RET // (unaligned)
@@ -646,12 +649,7 @@ $hal2 $loc _declFn // [<dictArgs> meta]
   @TY_FN$L1 %BOR // {<dictArgs> meta}
   $_xsl c_updateRKey // {<dictArgs> meta &metaRef}
   $_xsl loc
-  $_xsl c_keySetTy
-  $ha2
-  // clear locals by setting localDict.heap=dict.heap (start of localDict.buf)
-  #0$L0        .2%SRGL @c_localOffset $h2  // zero localDict.offset
-  #0$L0        .4%SRGL @c_dictLHeap $h2    // zero localDict.heap
-  %RET
+  $_jmpl c_keySetTy
 
 $hal2 $loc SFN  // SMART $SFN <token>: define location of small function
   $_xsl assertNoInstant $_xsl dictArgs #0$L0         $_jmpl _declFn
@@ -738,6 +736,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn assertCurMod
 @TY_FN_PRE            $c_makeFn assertTyped
 #0                    $c_makeFn assertNoInstant
+
 
 $SFN isFnPre     $PRE $toMeta  @TY_FN_PRE$L1 %BAND %RET
 $SFN isFnNormal  $PRE $toMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_NORMAL$L1  %EQ %RET

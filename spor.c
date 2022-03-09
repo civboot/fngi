@@ -780,14 +780,12 @@ SRGL: case SzI2 + SRGL:
   ASM_ASSERT(slen < 0x40, E_cKeyLen);
   U2 offset = 0;
   assert(*d.heap < d.end);
-
   while(offset < *d.heap) {
     Key* key = Dict_key(d, offset);
     if(cstrEq(Key_len(key), slen, (char *)key->s, s)) return offset;
     U2 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
     offset += entrySz;
   }
-
   assert(offset == *d.heap);
   return offset;
 }
