@@ -19,25 +19,18 @@
 
 
 typedef enum {
-  LOG_SILENT    = 0x00,
-  LOG_SYS       = 0x40,
-  LOG_USER      = 0x20, // TODO: remove
-  LOG_TRACE     = 0x1F,
-  LOG_DEBUG     = 0x0F,
-  LOG_INFO      = 0x07,
-  LOG_WARN      = 0x03,
-  LOG_CRIT      = 0x01,
+  LOG_SILENT    = 0x00, LOG_SYS       = 0x40, LOG_USER      = 0x20,
+
+  LOG_TRACE     = 0x1F, LOG_DEBUG     = 0x0F, LOG_INFO      = 0x07,
+  LOG_WARN      = 0x03, LOG_CRIT      = 0x01,
 } UsrLogLvl;
 
 typedef enum {
   LOG_INSTANT   = 0x20,
 
-  LOG_INSTR     = 0x1F,
-  LOG_EXECUTE   = 0x07,
-  LOG_ASM       = 0x03,
+  LOG_INSTR     = 0x1F, LOG_EXECUTE   = 0x07, LOG_ASM       = 0x03,
   LOG_COMPILER  = 0x01,
 } SysLogLvl;
-
 
 // ********************************************
 // ** Core Types
@@ -56,7 +49,6 @@ typedef U2 CSz;
 typedef CSz CPtr;
 
 // 256 64k module blocks
-/*get aptr  */ #define MAX_APTR 0xFFFFFF
 /*get module*/ #define MOD_HIGH_MASK 0xFF0000
 
 #define APO2  2
@@ -72,22 +64,11 @@ typedef CSz CPtr;
 #define ZOAB_ARR  0x40
 
 #define SET_ERR(E)  if(TRUE) { assert(E); *env.err = E; longjmp(*err_jmp, 1); }
-#define ASSERT_NO_ERR() assert(!*env.err)
-#define ASM_ASSERT(C, E) /* Assert return void */  \
-  if(!(C)) SET_ERR(E);
+#define ASSERT_NO_ERR()    assert(!*env.err)
+#define ASM_ASSERT(C, E)   if(!(C)) { SET_ERR(E); }
 
 // Error classes
-#define E_ok           0 // no error
-#define E_general 0xE000 // general errors [E000-E010)
 #define E_io      0xE010 // IO error class
-#define E_asm     0xE0A0 // assembly error class (cause in asm).
-#define E_comp    0xE0C0 // compiler error class (cause in comp).
-#define E_test    0xA000 // [AXXX] (assert) test case error.
-
-#define E_intern  0xE001 // internal (undefined) error
-#define E_undef   0xE002 // undefined error
-#define E_unreach 0xE003 // unreachable code
-#define E_todo    0xE004 // executed incomplete (to do) code
 #define E_wsEmpty 0xE005 // the WS was expected empty
 
 #define E_null    0xE0A1 // null access
@@ -108,7 +89,6 @@ typedef CSz CPtr;
 #define E_cSz       0xE0C7 // invalid Sz selected
 #define E_cSzPtr    0xE0C8 // invalid Sz for a pointer
 #define E_cRet      0xE0C9 // invalid RET
-#define E_cDblSr    0xE0CA // Double store
 #define E_cDevOp    0xE0CB // device op not impl
 #define E_cDictOvr  0xE0CC // dict overflow
 #define E_cXHasL    0xE0CD // xs/jmp to non-small
@@ -121,112 +101,49 @@ typedef CSz CPtr;
 #define E_cZoab     0xE0F1 // Zoab invalid
 
 #define REF_MASK    0xFFFFFF
-#define IS_FN        (0x20 << 0x18)
 #define TY_FN_LOCALS (0x10 << 0x18)
 #define TY_FN_SMART  (0x08 << 0x18)
 
 typedef enum {
-  C_OP   = 0x00,
-  C_SLIT = 0x40,
-  C_JMP =  0x80,
-  C_MEM =  0xC0,
+  C_OP   = 0x00, C_SLIT = 0x40, C_JMP =  0x80, C_MEM =  0xC0,
 } InstrClass;
 
 typedef enum {
-  NOP  = 0x00,
-  RETZ = 0x01,
-  RET  = 0x02,
-  SWP  = 0x03,
-  DRP  = 0x04,
-  OVR  = 0x05,
-  DUP  = 0x06,
-  DUPN = 0x07,
-  DVFT = 0x08,
-  DVSR = 0x09,
-  RGFT = 0x0A,
-  RGSR = 0x0B,
+  NOP  = 0x00, RETZ = 0x01, RET  = 0x02, SWP  = 0x03,
+  DRP  = 0x04, OVR  = 0x05, DUP  = 0x06, DUPN = 0x07,
+  DVFT = 0x08, DVSR = 0x09, RGFT = 0x0A, RGSR = 0x0B,
 
-  INC  = 0x10,
-  INC2 = 0x11,
-  INC4 = 0x12,
-  DEC  = 0x13,
-  INV  = 0x14,
-  NEG  = 0x15,
-  NOT  = 0x16,
-  CI1  = 0x17,
+  INC  = 0x10, INC2 = 0x11, INC4 = 0x12, DEC  = 0x13,
+  INV  = 0x14, NEG  = 0x15, NOT  = 0x16, CI1  = 0x17,
   CI2  = 0x18,
 
-  ADD  = 0x20,
-  SUB  = 0x21,
-  MOD  = 0x22,
-  SHL  = 0x23,
-  SHR  = 0x24,
-  BAND = 0x25,
-  BOR  = 0x26,
-  XOR  = 0x27,
-  LAND = 0x28,
-  LOR  = 0x29,
-  EQ   = 0x2A,
-  NEQ  = 0x2B,
-  GE_U = 0x2C,
-  LT_U = 0x2D,
-  GE_S = 0x2E,
-  LT_S = 0x2F,
+  ADD  = 0x20, SUB  = 0x21, MOD  = 0x22, SHL  = 0x23,
+  SHR  = 0x24, BAND = 0x25, BOR  = 0x26, XOR  = 0x27,
+  LAND = 0x28, LOR  = 0x29, EQ   = 0x2A, NEQ  = 0x2B,
+  GE_U = 0x2C, LT_U = 0x2D, GE_S = 0x2E, LT_S = 0x2F,
 
-  MUL  = 0x30,
-  DIV_U= 0x31,
-  DIV_S= 0x32,
+  MUL  = 0x30, DIV_U= 0x31, DIV_S= 0x32,
 
   // Jmps
-  JMPL = 0x80,
-  JMPW = 0x81,
-  JZL  = 0x82,
-  JTBL = 0x83,
-  XL   = 0x84,
-  XW   = 0x85,
-  XSL  = 0x86,
-  XSW  = 0x87,
+  JMPL = 0x80, JMPW = 0x81, JZL  = 0x82, JTBL = 0x83,
+  XL   = 0x84, XW   = 0x85, XSL  = 0x86, XSW  = 0x87,
 
-  LIT  = 0xC0,
-  FT   = 0xC1,
-  FTLL = 0xC2,
-  FTGL = 0xC3,
-  SR   = 0xC4,
-  SRLL = 0xC5,
-  SRGL = 0xC6,
+  LIT  = 0xC0, FT   = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
+  SR   = 0xC4, SRLL = 0xC5, SRGL = 0xC6,
 } Instr;
 
 typedef enum {
-  R_MP = 0x0,
-  R_EP = 0x1,
-  R_LP = 0x2,
-  R_CP = 0x3,
+  R_MP = 0x0, R_EP = 0x1, R_LP = 0x2, R_CP = 0x3,
   R_GB = 0x4,
 } Reg;
 
-typedef enum {
-  SzI1 = 0x00,
-  SzI2 = 0x10,
-  SzI4 = 0x20,
-} SzI;
+typedef enum { SzI1 = 0x00, SzI2 = 0x10, SzI4 = 0x20, } SzI;
 
 typedef enum {
-  D_read    = 0x00,
-  D_scan    = 0x01,
-  D_dict    = 0x02,
-  D_rdict   = 0x03,
-  D_sz      = 0x04,
-  D_comp    = 0x05,
-  D_assert  = 0x06,
-  D_wslen   = 0x07,
-  D_cslen   = 0x08,
-  D_xsCatch = 0x09,
-  D_memMove = 0x0A,
-  D_memCmp  = 0x0B,
-  D_com     = 0x0C,
-  D_zoa     = 0x0D,
-  D_dictDump= 0x0E,
-  D_comZoab = 0x0F,
+  D_read    = 0x00, D_scan    = 0x01, D_dict    = 0x02, D_rdict   = 0x03,
+  D_sz      = 0x04, D_comp    = 0x05, D_assert  = 0x06, D_wslen   = 0x07,
+  D_cslen   = 0x08, D_xsCatch = 0x09, D_memMove = 0x0A, D_memCmp  = 0x0B,
+  D_com     = 0x0C, D_zoa     = 0x0D, D_dictDump= 0x0E, D_comZoab = 0x0F,
   D_comDone = 0x10,
 } Device;
 
@@ -313,7 +230,6 @@ typedef struct {
 #define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
 #define KEY_HAS_TY 0x40   // if 1, dict entry is a non-constant
 
-
 // Get key len. The top two bits are used for metadata (i.e. constant)
 static inline U1 Key_len(Key* key) {
   return 0x3F & key->len;
@@ -340,7 +256,6 @@ typedef struct {
 } TokenState;
 
 // Debugging
-void dbgMemUsage();
 static inline void logInstr(Instr instr);
 void dbgInstr(Instr instr, Bool lit);
 
@@ -351,22 +266,20 @@ void dbgInstr(Instr instr, Bool lit);
 U2 startingSysLogLvl = 0;
 U2 startingUsrLogLvl = 0;
 
-void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz);
+void deviceOp(Bool isFetch, SzI szI, U1 sz);
 
 Env env;
 U1* mem = NULL;
 Dict* dict = NULL;
 TokenState* tokenState = NULL;
-char* compilingName;
 FILE* srcFile;
-Instr globalInstr = NOP;
 U1 (*readAtLeast)(U1 num) = NULL; // Read num bytes into tokenBuf
 U4 line = 1;
 jmp_buf* err_jmp;
 long long unsigned int dbgCount = 0;
 
 // ********************************************
-// ** Zoab
+// ** Zoab: See https://github.com/civboot/zoa
 
 U1 outbuf[16];
 U1* START_BYTES = "\x80\x03";
@@ -637,7 +550,7 @@ void zoab_err(U4 err, U1 isCaught) {
 }
 
 // ********************************************
-// ** Executing Instructions2
+// ** Executing Instructions
 
 void xImpl(APtr aptr) { // impl for "execute"
   // get amount to grow, must be multipled by APtr size .
@@ -679,12 +592,8 @@ U4 popLit(SzI szI) {
 
 #define GOTO_SZ(I, SZ) case SZ + I: szI = SZ; goto I;
 
-/* returns: should escape */
 inline static void executeInstr(Instr instr) {
-  globalInstr = instr; // for debugging
-  // logInstr(instr);
   U4 l, r;
-  U4 szMask = 0xFFFFFFFF; // TODO: remove
   SzI szI = SzI2;
   switch ((U1)instr) {
     // Operation Cases
@@ -696,7 +605,7 @@ inline static void executeInstr(Instr instr) {
       U4 callMeta = Stk_pop(&env.cs);
       Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
       env.mp = MOD_HIGH_MASK & callMeta;
-      env.ep = MAX_APTR & callMeta;
+      env.ep = REF_MASK & callMeta;
       return;
     case SWP:
       r = WS_POP();
@@ -708,8 +617,8 @@ inline static void executeInstr(Instr instr) {
     case OVR : r = WS_POP(); l = WS_POP(); WS_PUSH(l); WS_PUSH(r); WS_PUSH(l); return;
     case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      return;
     case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); return;
-    case DVFT: deviceOp(TRUE, SzI4, szMask, 4); return;
-    case DVSR: deviceOp(FALSE, SzI4, szMask, 4); return;
+    case DVFT: deviceOp(TRUE, SzI4, 4); return;
+    case DVSR: deviceOp(FALSE, SzI4, 4); return;
     case RGFT:
       r = popLit(SzI1);
       switch (r) {
@@ -724,12 +633,8 @@ inline static void executeInstr(Instr instr) {
       switch (r) {
         case R_MP: env.mp = WS_POP(); return;
         case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
-        case R_LP:
-          env.ls.sp = WS_POP() - (env.ls.mem - mem);
-          return;
-        case R_CP:
-          env.cs.sp = WS_POP() - (env.cs.mem - mem);
-          return;
+        case R_LP: env.ls.sp = WS_POP() - (env.ls.mem - mem); return;
+        case R_CP: env.cs.sp = WS_POP() - (env.cs.mem - mem); return;
         case R_GB: env.gb = WS_POP(); return;
         default: SET_ERR(E_cReg);
       }
@@ -769,7 +674,7 @@ inline static void executeInstr(Instr instr) {
 
     // Small literal (64 cases)
     CASE_32(C_SLIT)
-    CASE_32(C_SLIT+32) WS_PUSH(0x3F & instr); return;
+    CASE_32(C_SLIT+32) return WS_PUSH(0x3F & instr);
 
     // Jmp Cases
     case SzI1 + JMPL: r = env.ep; env.ep = toAptr(r + (I1)popLit(SzI1), SzI4); return;
@@ -797,65 +702,51 @@ JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
     GOTO_SZ(JTBL, SzI1)
     GOTO_SZ(JTBL, SzI4)
 XL: case SzI2 + XL:
-      xImpl(toAptr(popLit(szI), szI));
-      return;
+      return xImpl(toAptr(popLit(szI), szI));
     GOTO_SZ(XL, SzI1)
     GOTO_SZ(XL, SzI4)
-XW:
-    case SzI2 + XW:
-      xImpl(toAptr(WS_POP(), szI));
-      return;
+XW: case SzI2 + XW:
+      return xImpl(toAptr(WS_POP(), szI));
     GOTO_SZ(XW, SzI1)
     GOTO_SZ(XW, SzI4)
 XSL: case SzI2 + XSL:
-      xsImpl(toAptr(popLit(szI), szI)); return;
-      return;
+      return xsImpl(toAptr(popLit(szI), szI));
     GOTO_SZ(XSL, SzI1)
     GOTO_SZ(XSL, SzI4)
 XSW: case SzI2 + XSW:
-      xsImpl(toAptr(WS_POP(), szI));
-      return;
+      return xsImpl(toAptr(WS_POP(), szI));
     GOTO_SZ(XSW, SzI1)
     GOTO_SZ(XSW, SzI4)
 
     // Mem Cases
 LIT: case SzI2 + LIT:
-      WS_PUSH(popLit(szI));
-      return;
+      return WS_PUSH(popLit(szI));
     GOTO_SZ(LIT, SzI1)
     GOTO_SZ(LIT, SzI4)
 FT: case SzI2 + FT:
-      WS_PUSH(fetch(mem, WS_POP(), szI));
-      return;
+      return WS_PUSH(fetch(mem, WS_POP(), szI));
     GOTO_SZ(FT, SzI1)
     GOTO_SZ(FT, SzI4)
 FTLL: case SzI2 + FTLL:
-      WS_PUSH(fetch(mem, LS_SP + popLit(SzI1), szI));
-      return;
+      return WS_PUSH(fetch(mem, LS_SP + popLit(SzI1), szI));
     GOTO_SZ(FTLL, SzI1)
     GOTO_SZ(FTLL, SzI4)
 FTGL: case SzI2 + FTGL:
-      WS_PUSH(fetch(mem, env.gb + popLit(SzI2), szI));
-      return;
+      return WS_PUSH(fetch(mem, env.gb + popLit(SzI2), szI));
     GOTO_SZ(FTGL, SzI1)
     GOTO_SZ(FTGL, SzI4)
-SR: case SzI2 + SR: r = WS_POP(); store(mem, WS_POP(), r, szI); return;
-// SR: case SzI2 + SR:
-//       r = WS_POP(); // Removing this will cause invalid order. stackoverflow.com/questions/376278
-//       store(mem, r, WS_POP(), szI);
-//       return;
+SR: case SzI2 + SR:
+      r = WS_POP(); return store(mem, WS_POP(), r, szI);
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
 SRLL: case SzI2 + SRLL:
-      store(mem, LS_SP + popLit(SzI1), WS_POP(), szI);
-      return;
+      return store(mem, LS_SP + popLit(SzI1), WS_POP(), szI);
     GOTO_SZ(SRLL, SzI1)
     GOTO_SZ(SRLL, SzI4)
 SRGL: case SzI2 + SRGL:
       l = WS_POP();
       r = env.gb + popLit(SzI2);
-      store(mem, r, l, szI);
-      return;
+      return store(mem, r, l, szI);
     GOTO_SZ(SRGL, SzI1)
     GOTO_SZ(SRGL, SzI4)
 
@@ -1372,7 +1263,7 @@ void deviceOpComZoab(U1 isFetch) {
 
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
-void deviceOp(Bool isFetch, SzI szI, U4 szMask, U1 sz) {
+void deviceOp(Bool isFetch, SzI szI, U1 sz) {
   U4 op = WS_POP();
   U4 tmp;
   switch(op) {
@@ -1502,7 +1393,6 @@ U1 readSrcAtLeast(U1 num) {
 
 void setCompileFile(char* s) {
   zoab_file(strlen(s), s);
-  compilingName = s;
   line = 1;
   readAtLeast = &readSrcAtLeast;
   srcFile = fopen(s, "rb");
@@ -1655,7 +1545,6 @@ static inline void logInstr(Instr instr) {
 }
 
 #define TEST_ENV_BARE \
-  globalInstr = NOP; \
   SMALL_ENV_BARE; \
   U4 heapStart = *env.heap
 
@@ -1687,7 +1576,6 @@ U2 testBufIdx = 0;
 
 void compileStr(char* s) {
   zoab_file(7, "RAW_STR");
-  compilingName = s;
   testBuf = s;
   testBufIdx = 0;
   line = 1;
@@ -1854,5 +1742,5 @@ void assertNoWs() {
   eprint("++ Tests Complete\n");
 
   zoab_start(); zoab_arr(2, FALSE);
-  zoab_int(LOG_USER); zoab_ntStr("Hello world from spor.c!", FALSE);
+  zoab_int(LOG_USER); zoab_ntStr("Hello world from spor.c!\n", FALSE);
 }
