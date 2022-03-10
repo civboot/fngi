@@ -56,8 +56,6 @@ SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 SFN setSysLogLvl PRE _SET sysLogLvl ret; // {logLvl}
 SFN setUsrLogLvl PRE _SET usrLogLvl ret; // {logLvl}
 
-$setSysLogLvl(LOG_EXECUTE)
-
 // FN_REF <function>: &fn (as literal or instant)
 SFN FN_REF   SMART
   dictGetR; assertTyped(dup) // {asInst &metaRef}

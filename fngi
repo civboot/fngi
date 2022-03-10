@@ -346,8 +346,8 @@ class JmpEvent(ExecutionEvent):
 
   def __repr__(self):
     return (
-        f"{fmtXDepth(self.xDepth):<10} {self.name:>4}"
-        + f"[{self.fnName}@{nice(self.jloc):<10} {self.ws}]"
+        f"{fmtXDepth(self.xDepth):<10} {str(self.ws):<42} {self.name:>4}"
+        + f"[{self.fnName}@{nice(self.jloc):<10}]"
     )
 
 
@@ -371,7 +371,10 @@ class RetSuccessEvent(ExecutionEvent):
     )
 
   def __repr__(self):
-    return f"{fmtXDepth(self.xDepth):<10} {self.name:>4}[@{nice(self.jloc):<10} {str(self.ws):>14}]"
+    return (
+      f"{fmtXDepth(self.xDepth):<10} {str(self.ws):<42} {self.name:>4}"
+      + f"[@{nice(self.jloc):<10}]"
+    )
 
 RETZ = 0x01
 RET  = 0x02

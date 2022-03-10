@@ -21,25 +21,15 @@ $tAssertEq(FN_REF useEq, toRef(dictGet useEq))
 $loc testFngiMsg  | Hello world from testFngi.fn!\n|
 $_printz(testFngiMsg)
 
-// $tAssert FALSE
+SFN daAnswer ret 0x42
+SFN testXsw  ret xsw($lit(FN_REF daAnswer))
+$tAssertEq(0x42, testXsw)
 
-// SFN daAnswer ret(0x42)
-// SFN testXsw
-//   xsw($lit(toRef(dictGet daAnswer)))
-//   ret;
-// 
-// $tAssertEq(0x42, testXsw)
-// 
-// FN testSET PRE
-//   $SZ4 LOCAL a  END_LOCALS
-// 
-//   4 _SET a
-//   SET a
-//     inc(GET a)
-//   ret(GET a)
-// $tAssertEq(testSET, 5)
 
-// $assertWsEmpty
-// 
-// $testSET(3)
-// $testXw
+FN testSET PRE
+  $SZ4 LOCAL a  END_LOCALS
+  $assertWsEmpty
+  4 _SET a
+  SET a  inc(GET a)
+  ret(GET a)
+$tAssertEq(testSET, 5)

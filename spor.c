@@ -110,7 +110,7 @@ typedef CSz CPtr;
 #define E_cZoab     0xE0F1 // Zoab invalid
 
 #define REF_MASK    0xFFFFFF
-#define TY_FN_LOCALS (0x10 << 0x18)
+#define TY_FN_LARGE  (0x10 << 0x18)
 #define TY_FN_SMART  (0x08 << 0x18)
 
 typedef enum {
@@ -983,7 +983,7 @@ U1 scanInstr() {
     WS_PUSH(FALSE); // pass asInstant=FALSE
   }
   WS_PUSH(REF_MASK & metaRef);
-  if(TY_FN_LOCALS & metaRef) execute(SzI4 + XW);
+  if(TY_FN_LARGE & metaRef) execute(SzI4 + XW);
   else                       execute(SzI4 + XSW);
 }
 

@@ -202,7 +202,7 @@
 #08 =TY_FN_SMART   // Always run immediately, compiler will pass asInstant
 #0C =TY_FN_SMART_I // A smart function was called as asInstant (runtime only)
 
-#10 =TY_FN_LOCALS  // has locals (called with XL or XW)
+#10 =TY_FN_LARGE  // has locals (called with XL or XW)
 
 // Local meta bits [TTTI --SS] I=input S=szI
 // Full 4 byte (hex): { MM -- -- OO} M=meta O=offset
@@ -567,7 +567,7 @@ $loc isTyped  // {&metaRef} dict value is a constant
 
 // These take {metaRef} and tell information about it
 $loc isTyFn      $toMeta  @META_TY_MASK$L1 %BAND  @TY_FN$L1  %EQ %RET
-$loc isFnLocals  $toMeta  @TY_FN_LOCALS$L1 %BAND %RET
+$loc isFnLarge   $toMeta  @TY_FN_LARGE$L1 %BAND %RET
 $loc assertNotNull @E_null$L2 $_jmpl assert
 
 $loc assertTyped // [&metaRef]
@@ -577,11 +577,11 @@ $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert // [metaRef] -> []
 
 $loc assertFnSmall // [metaRef]
   %DUP $_xsl assertFn
-  $_xsl isFnLocals  @E_cIsX $L2  $_jmpl assertNot
+  $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assertNot
 
 $loc assertFnLocals // [metaRef]
   %DUP $_xsl assertFn
-  $_xsl isFnLocals  @E_cIsX $L2  $_jmpl assert
+  $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
 
 $hal4 $loc toMod @MOD_MASK $L4 %BAND %RET // {ref} -> {mod}
 $loc isSameMod // {metaRef metaRef} -> {sameMod}
@@ -656,7 +656,7 @@ $hal2 $loc SFN  // SMART $SFN <token>: define location of small function
   $_xsl assertNoInstant $_xsl dictArgs #0$L0         $_jmpl _declFn
 
 $ha2 $loc FN  // SMART $FN <token>: define location of function with locals
-  $_xsl assertNoInstant $_xsl dictArgs @TY_FN_LOCALS$L1 $_jmpl _declFn
+  $_xsl assertNoInstant $_xsl dictArgs @TY_FN_LARGE$L1 $_jmpl _declFn
 
 $ha2
 $loc SMART // {} modify current function to be smart
@@ -718,7 +718,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn isTyFn
 @TY_FN_PRE            $c_makeFn isSameMod
 @TY_FN_PRE            $c_makeFn isCurMod
-@TY_FN_PRE            $c_makeFn isFnLocals
+@TY_FN_PRE            $c_makeFn isFnLarge
 #0                    $c_makeFn c_updateRKey
 @TY_FN_PRE            $c_makeFn c_dictDumpEntry
 @TY_FN_PRE            $c_makeFn c_keySetTyped
@@ -926,17 +926,17 @@ $FN _getSetImpl $PRE
   $xl _instrLitImpl %RET
 
 // (create _xxxImpl for fngi to use)
-$SFN _getImpl
+$SFN _getImpl $PRE // {&metaRef isFromLocal}
   @SZ1$L1  @FTLL$L1  // local sz + instr
   @SZ2$L1  @FTGL$L1  // global sz + instr
   $xl _getSetImpl %RET
 
-$SFN _setImpl // {&metaRef isFromLocal}
+$SFN _setImpl $PRE // {&metaRef isFromLocal}
   @SZ1$L1  @SRLL$L1  // local sz + instr
   @SZ2$L1  @SRGL$L1  // global sz + instr
   $xl _getSetImpl %RET
 
-$SFN _refImpl
+$SFN _refImpl // {}
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _lSetup // {metaOffset}
     $xsl toRef $xsl L0 // compile offset as literal
@@ -988,8 +988,8 @@ $FN align $PRE // {aptr sz}: return the aptr aligned properly with sz
   $END
   %DRP %RET
 
-$SFN align4 $PRE #4$L0 $xl align %RET
-$SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET
+$SFN align4 $PRE #4$L0 $xl align %RET // {addr -> aligned4Addr}
+$SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET // {addr szI -> addrAlignedSzI}
 
 $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
   #2$h1  $SMART $xsl assertNoInstant  // locals 0=szI 1=meta 4=&metaRef
@@ -1044,9 +1044,9 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
 $SFN LOCAL $SMART $xsl assertNoInstant  #0             $L0 $xl _localImpl %RET
 $SFN INPUT $SMART $xsl assertNoInstant  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
 
-$SFN Dict_keyLen   $PRE %INC4 .1%FT  #3F$L1 %BAND %RET             // {&key} -> {len:U1}
+$SFN Dict_keyLen   $PRE %INC4 .1%FT  #3F$L1 %BAND %RET            // {&key} -> {len:U1}
 $SFN Dict_keySz    $PRE $xsl Dict_keyLen #5$L0 %ADD $jmpl align4  // {&key} -> {sz:U1}
-$SFN Dict_nextKey  $PRE %DUP $xsl Dict_keySz %ADD %RET                 // {&key} -> {&key}
+$SFN Dict_nextKey  $PRE %DUP $xsl Dict_keySz %ADD %RET            // {&key} -> {&key}
 
 // {&key} -> {} recursive function to compile INPUTs
 // Inputs are "compiled" (i.e. a SRLL is compiled) in reverse order.
@@ -1082,7 +1082,7 @@ $SFN |
   %DUP $xsl getTopHeap %SWP %SUB
   @D_zoa$L0 %DVFT $jmpl setHeap
 
-$FN c_logAll // {&writeStruct len &buf } Write raw data to log output
+$FN c_logAll $PRE // {&writeStruct len &buf } Write raw data to log output
   $END_LOCALS // no locals, but used in XW.
   %DRP
   $LOOP l0
@@ -1091,7 +1091,7 @@ $FN c_logAll // {&writeStruct len &buf } Write raw data to log output
     %NOT $IF %DRP %DRP %RET $END
   $AGAIN l0
 
-$SFN ft4BE // {&a -> U4} fetch4 unaligned big-endian
+$SFN ft4BE $PRE // {&a -> U4} fetch4 unaligned big-endian
   %DUP%INC %DUP%INC %DUP%INC .1%FT // {&a &a+1 &a+2                 a@3 }
   %SWP .1%FT #08$L0%SHL %ADD       // {&a &a+1            (a@2<<8 + a@3)}
   %SWP .1%FT #10$L0%SHL %ADD       // {&a       (a@1<<16 + a@2<<8 + a@3)}
@@ -1099,7 +1099,7 @@ $SFN ft4BE // {&a -> U4} fetch4 unaligned big-endian
   %RET
 
 
-$SFN com  @D_com$L0 %DVSR %RET // {len &raw} communicate directly
+$SFN com $PRE @D_com$L0 %DVSR %RET // {len &raw} communicate directly
 $SFN comDone  @D_comDone$L0 %DVFT %RET
 
 $loc LOG_ZOAB_START  #80$h1 #03$h1
@@ -1142,7 +1142,7 @@ $assertWsEmpty
 // **********
 // * Fngi Compile Loop
 
-$FN between // {value a b} -> a <= value <= b
+$FN between $PRE // {value a b} -> a <= value <= b
   @SZ4 $INPUT b   $END_LOCALS // {value a}
   %OVR %SWP // {value value a}
   // if (value<a) return FALSE;
@@ -1150,7 +1150,7 @@ $FN between // {value a b} -> a <= value <= b
   $GET b %SWP // {b value}
   %LT_U %NOT %RET // return not(b<value)
 
-$SFN charToInt // {c} -> {U8}
+$SFN charToInt $PRE // {c} -> {U8}
   // '0' - '9'
   %DUP #30$L0 #39$L0 $xl between $IF #30$L0 %SUB %RET $END
   // 'A' - 'Z'
@@ -1163,7 +1163,7 @@ $SFN null2 #0$L0 %DUP %RET
 $SFN c_isEof $GET c_tokenLen %NOT %RET
 $SFN c_assertToken $GET c_tokenLen @E_cNeedToken$L2 $jmpl assert // {} Assert there is a token
 
-$SFN c_assertNoEof @E_eof$L2 $jmpl assertNot // {numRead}
+$SFN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot // {numRead}
 $SFN c_read // { -> numRead} attempt to read bytes
   #1$L0 @D_read$L0 %DVFT %RET
 $SFN c_readNew // { -> numRead} clear token buf and read bytes
@@ -1180,20 +1180,6 @@ $SFN c_charNext
   $END
   $GET c_tokenBuf  $GET c_tokenLen  %ADD .1%FT
   $GET c_tokenLen %INC  $_SET c_tokenLen %RET
-
-// // {} -> {char unknownEscape} read a character that can be escaped.
-// SFN c_readCharEsc
-//   c_charNext
-//   IF(dup != 0x5C) ret(_, FALSE) END // if(c != '\\') ret;
-//   drp c_charNext // {c}  case \c
-//   IF(dup == 0x74) drp ret(0x09, FALSE); END // '\t': tab
-//   IF(dup == 0x6E) drp ret(0x0A, FALSE); END // '\n': newline
-//   IF(dup == 0x78) // \xHH
-//     drp charToInt(c_charNext) << 8 + charToInt(c_charNext)
-//     assertNot(dup < inc(0xFF), E_cStr)
-//     ret(_, FALSE)
-//   END
-//   ret(_, TRUE) // just return the character as-is but unknownEscape=true
 
 // {} -> {char unknownEscape} read a character that can be escaped.
 $SFN c_readCharEsc
@@ -1280,16 +1266,16 @@ $SFN xSzI $PRE // {metaRef} -> {szI}: return the size requirement of the X instr
 $SFN c_fn $PRE // {metaRef}: compile a function
   %DUP $xsl assertFn // {metaRef}
   %DUP $xsl xSzI     // {metaRef szLit}
-  %OVR $xsl isFnLocals $IF @XL$L1 $ELSE @XSL$L1 $END // {metaRef instrSzI instr}
+  %OVR $xsl isFnLarge  $IF @XL$L1 $ELSE @XSL$L1 $END // {metaRef instrSzI instr}
   %OVR %SWP // {metaRef instrSzI litSzI instr} instr & lit are same sz
   $xl _instrLitImpl %RET
 
 $SFN execute // {metaRef} -> {...}: execute a function
   %DUP $xsl toRef %SWP // {ref metaRef}
-  $xsl isFnLocals  $IF .4%XW %RET $END
+  $xsl isFnLarge  $IF .4%XW %RET $END
   .4%JMPW
 
-$SFN _compConstant // {asInstant} -> {asInstant metaRefFn[nullable]}
+$SFN _compConstant $PRE // {asInstant} -> {asInstant metaRefFn[nullable]}
   $xl c_parseNumber // {asInstant value isNumber}
   $IF // {asInstant value}
     $xsl c_lit $jmpl null2
@@ -1330,7 +1316,7 @@ $SFN _compFnAsInstant $PRE
 
 #0 @SZ4 $GLOBAL c_compFn // must be a small fn.
 
-$SFN _updateCompFn // {newCompFnMetaRef} -> {prevCompFnRef}
+$SFN _updateCompFn $PRE // {newCompFnMetaRef} -> {prevCompFnRef}
   $xsl toRef
   $GET c_compFn %SWP $_SET c_compFn %RET
 
@@ -1345,7 +1331,7 @@ $SFN c_peekChr // {} -> {c} peek at a character
 // {asInstant} -> {}: compile a single token.
 // This is the primary function that all compilation steps (besides spor
 // compilation) reduce to.
-$FN c_single
+$FN c_single $PRE
   @SZA $LOCAL metaRef $END_LOCALS
 
   // Handle constants
@@ -1375,11 +1361,10 @@ $FN c_single
     $jmpl execute // regular instant. Just call immediately.
   $END $jmpl c_fn // otherwise compile the function.
 
-$FN fngiSingle $END_LOCALS // actually empty locals
+$FN fngiSingle
+  $END_LOCALS // not really any locals (but this is used as a pointer)
   $xsl c_scan $GET c_tokenLen %RETZ
   @FALSE$L0 $xl c_single %RET
-  // @FALSE$L0 $_jmpl c_single // Note: jmp to full fn allowed if args are identical
-
 
 @fngiSingle $_updateCompFn ^DRP
 
@@ -1403,7 +1388,7 @@ $FN _spor
 
 $SFN spor $SMART $xsl assertNoInstant $xl _spor %RET // compile as assembly
 
-$FN _instant
+$FN _instant // used in $ to make next call instant.
   @SZA $LOCAL compFn $END_LOCALS
   @_instant $L2  $xsl _updateCompFn $_SET compFn // update c_compFn and cache
   $xsl c_scanNoEof
@@ -1412,9 +1397,9 @@ $FN _instant
 
 $SFN $ $SMART $xsl assertNoInstant $xl _instant %RET // make instant
 
-$SFN ret $SMART $xsl assertNoInstant $PRE  @RET $c1 %RET // ret 4, or just ret;
+$SFN ret $PRE $SMART $xsl assertNoInstant @RET $c1 %RET // ret 4, or just ret;
 
-$SFN // // Define a line comment
+$SFN // // Define a line comment for fngi
   $SMART%DRP
   $LOOP l
     $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
