@@ -1293,7 +1293,7 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
     case D_cslen: WS_PUSH(Stk_len(env.cs)); break;
     case D_xsCatch: deviceOpCatch(); break;
     case D_memMove: deviceOpMemMove(); break;
-    case D_memCmp: deviceOpMemMove(); break;
+    case D_memCmp: deviceOpMemCmp(); break;
     case D_com: deviceOpCom(isFetch); break;
     case D_zoa: deviceOpZoa(); break;
     case D_dictDump: deviceOpDictDump(isFetch); break;

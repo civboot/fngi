@@ -30,6 +30,6 @@ FN testSET PRE
   $SZ4 LOCAL a  END_LOCALS
   $assertWsEmpty
   4 _SET a
-  SET a  inc(GET a)
+  SET a = inc(GET a)
   ret(GET a)
 $tAssertEq(testSET, 5)

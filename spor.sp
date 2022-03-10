@@ -755,7 +755,7 @@ $SFN setSz     $PRE  @D_sz$L0          %DVSR %RET
 $SFN getWsLen        @D_wslen$L0       %DVFT %RET
 $SFN c_xsCatch $PRE  @D_xsCatch$L0     %DVFT %RET
 $SFN c_scan          @D_scan$L0        %DVFT %RET
-$SFN panic   $PRE #0 $L0 %SWP  $jmpl assert // {errCode}: panic with errCode
+$SFN panic   $PRE #0$L0 %SWP  $jmpl assert // {errCode}: panic with errCode
 $SFN unreach @E_unreach$L2 $jmpl panic // {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
 $assertWsEmpty
@@ -816,7 +816,9 @@ $SFN ELSE $SMART $xsl assertNoInstant // {&ifNotJmpTo} -> {&elseBlockJmpTo}
 // $LOOP ... $BREAK0 ... $AGAIN $END
 $SFN LOOP   $SMART $xsl assertNoInstant $xsl getHeap  $jmpl ldictSet
 $SFN BREAK0 $PRE $SMART   $xsl IF $jmpl ldictSet
-$SFN BREAK_EQ $PRE $SMART @NEQ$c1  $jmpl BREAK0 // break if equal
+$SFN BREAK_IF  $PRE $SMART @NOT$c1  $jmpl BREAK0 // break if true
+$SFN BREAK_EQ  $PRE $SMART @NEQ$c1  $jmpl BREAK0 // break if equal
+$SFN BREAK_NEQ $PRE $SMART @EQ$c1  $jmpl BREAK0 // break if equal
 $SFN AGAIN $SMART $xsl assertNoInstant
   @JMPL $c1  // compile jmp
   $xsl getHeap  // {heap}

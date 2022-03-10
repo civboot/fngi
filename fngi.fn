@@ -53,8 +53,15 @@ SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
 SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
 SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 
+SFN ) SMART drp panic(E_cUnclosed) // prevent unclosed parens
 SFN setSysLogLvl PRE _SET sysLogLvl ret; // {logLvl}
 SFN setUsrLogLvl PRE _SET usrLogLvl ret; // {logLvl}
+SFN memcmp PRE  ret dvft(D_memCmp) // {&a &b len -> cmp}
+SFN memMove PRE  ret dvft(D_memMove) // {dst src len} "dst = src"
+
+SFN c_shiftBuf // shift buffer to clear current token
+  (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
+  $jmpl memMove
 
 // FN_REF <function>: &fn (as literal or instant)
 SFN FN_REF   SMART
@@ -63,40 +70,25 @@ SFN FN_REF   SMART
   toRef(_)  swp              // {&fn asInst}
   ret(IF(_) _ ELSE lit(_) END)
 
-// memMove(dst, src len)
-// Conceptually think of as "dst = src" (of len)
-SFN memMove PRE  ret dvft(D_memMove) // {dst src len} -> {}
+FN strEq PRE // {aLen &a bLen &b}
+  // $SZ2 INPUT aLen $SZ4 INPUT a
+  $SZ2 INPUT bLen  $SZ4 INPUT b END_LOCALS
+  swp // {&a aLen}
+  IF(_ != GET bLen)  drp ret FALSE;  END // {&a}
+  ret(memcmp(_, GET b, GET bLen) == 0)
 
-SFN c_shiftBuf // shift buffer to clear current token
-  (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
-  $jmpl memMove
+SFN assertToken PRE // {zStr}
+  ft1(dup) swp; inc(_) // {expectLen &expect}
+  strEq(_, _, GET c_tokenLen, GET c_tokenBuf)
+  ret assert(_, E_cNeedToken)
 
-FN SET  SMART // SET name value
+$loc TOKEN_EQ | =|
+FN SET  SMART // SET <name> = <value>
   $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
-  assertNoInstant
-  c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
-  xw(GET c_compFn)
+  assertNoInstant;
+  c_scan; anyDictGetR;  _SET isFromLocal  _SET rMetaRef // cache <name>
+  c_scan; assertToken(TOKEN_EQ) // =
+  xw(GET c_compFn) // <value>
   ret _setImpl(GET rMetaRef, GET isFromLocal)
-
-// TODO: it seems like INSTANT might be broken now?
-// Block comment, allows /*nesting*/.
-// SFN /*  // */
-//   INSTANT
-//   LOOP l
-//     c_scan   assert(GET c_tokenLen, E_eof)
-//     IF(GET c_tokenLen < 2) AGAIN l
-// 
-//     ft1(GET c_tokenBuf) == '/'
-//       or ft1(inc GET c_tokenBuf) == '*';
-//     IF _ ret
-//   AGAIN l
-
-
-// SFN cbytesUnpack PRE // {&cbytes} -> {len &bytes}
-//   ft1(dup) & 0x3F // {&cbytes len}
-//   swp inc() // {len &bytes}
-//   ret;
-
-// /*(*/  SFN )  panic E_unclosed // prevent unclosed parens
 
 $c_dictDump
