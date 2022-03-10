@@ -53,6 +53,11 @@ SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
 SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
 SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 
+SFN setSysLogLvl PRE _SET sysLogLvl ret; // {logLvl}
+SFN setUsrLogLvl PRE _SET usrLogLvl ret; // {logLvl}
+
+$setSysLogLvl(LOG_EXECUTE)
+
 // FN_REF <function>: &fn (as literal or instant)
 SFN FN_REF   SMART
   dictGetR; assertTyped(dup) // {asInst &metaRef}
@@ -73,16 +78,7 @@ FN SET  SMART // SET name value
   assertNoInstant
   c_scan  anyDictGetR  _SET isFromLocal  _SET rMetaRef
   xw(GET c_compFn)
-  _setImpl(GET rMetaRef, GET isFromLocal)
-  ret;
-
-// TODO: dict cannot find for some reason?
-// I think this is somehow related to local variables
-// interacting poorly with loc?
-// No, it's related to lookup.
-$loc fngiMsg
-| Hello world from fngi.fn!\n|
-$_printz(dictGet fngiMsg)
+  ret _setImpl(GET rMetaRef, GET isFromLocal)
 
 // TODO: it seems like INSTANT might be broken now?
 // Block comment, allows /*nesting*/.

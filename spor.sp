@@ -232,10 +232,10 @@
 #01 =LOG_CRIT
 
 // Language Level (builtin) Logs
-#01 =LOG_INSTR
-#02 =LOG_EXECUTE
-#04 =LOG_ASM
-#10 =LOG_INSTANT
+#1F =LOG_INSTR
+#07 =LOG_EXECUTE
+#03 =LOG_ASM
+#01 =LOG_COMPILER
 
 // **********
 // * 4. Globals
@@ -245,7 +245,7 @@
 #0000_0010 =err
 #0000_0014 =c_state
 #0000_0018 =testIdx
-#0000_001C =instrLogLvl
+#0000_001C =sysLogLvl
 #0000_001E =usrLogLvl
 
 // Dictionary Struct
@@ -349,6 +349,7 @@
 #E0EF  =E_cCompOnly   // fn is SMART and requires no $ used.
 #E0F0  =E_cUnknownEsc // unknown character escape
 #E0F1  =E_cZoab       // Zoab invalid
+#E0F2  =E_cNeedToken  // token not present
 
 
 // **********
@@ -903,7 +904,14 @@ $SFN anyDictGetR // {} -> {&metaRef isFromLocal}
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
-$FN _getSetImpl $PRE // {&metaRef isFromLocal localInstrSz localInstr globalInstrSz globalInstr}
+// Compile a get or set instruction.
+// Args:
+//   &metaRef: contains the reference (global/local offset) and metadata needed to
+//             compile correctly.
+//   isFromLocal: whether the value to compile is a local or global.
+//   localInstrSz localInstr: if isFromLocal: use these as the literal sz and instr.
+//   globalInstrSz globalInstr: if NOT isFromLocal: use these as the literal sz and instr.
+$FN _getSetImpl $PRE
   #1 $h1 // locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 // 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 // 0=localInstrSz 1=localInstr
@@ -954,6 +962,8 @@ $FN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
 @SZ4 $c_makeGlobal err
 @SZ4 $c_makeGlobal c_state
 @SZ4 $c_makeGlobal testIdx
+@SZ2 $c_makeGlobal sysLogLvl
+@SZ2 $c_makeGlobal usrLogLvl
 @SZA $c_makeGlobal c_dictBuf
 @SZ2 $c_makeGlobal c_dictHeap
 @SZ2 $c_makeGlobal c_dictEnd
@@ -1151,8 +1161,7 @@ $SFN charToInt // {c} -> {U8}
 
 $SFN null2 #0$L0 %DUP %RET
 $SFN c_isEof $GET c_tokenLen %NOT %RET
-// $SFN c_assertToken $GET c_tokenLen @E_eof$L2 $jmpl assert // {} Assert there is a token
-$SFN c_assertToken $GET c_tokenLen #4444$L2 $jmpl assert // {} Assert there is a token
+$SFN c_assertToken $GET c_tokenLen @E_cNeedToken$L2 $jmpl assert // {} Assert there is a token
 
 $SFN c_assertNoEof @E_eof$L2 $jmpl assertNot // {numRead}
 $SFN c_read // { -> numRead} attempt to read bytes

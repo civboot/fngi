@@ -32,6 +32,15 @@ typedef enum {
   LOG_COMPILER  = 0x01,
 } SysLogLvl;
 
+#define LOG_DICT  0x02
+#define LOG_ERR   0x05
+#define LOG_FILE  0x06
+#define LOG_JMP   0x08
+#define LOG_OP    0x09
+#define LOG_LIT   0x0A
+#define LOG_RET_SUCCESS   0x0B
+#define LOG_MEM   0x0C
+
 // ********************************************
 // ** Core Types
 
@@ -338,9 +347,6 @@ void zoab_ntStr(U1* str, U1 join) {
   zoab_data(strlen(str), str, join);
 }
 
-#define LOG_DICT 0x01
-#define LOG_ERR  0x02
-#define LOG_FILE  0x03
 
 
 U1 LOG_DICT_PTR[] = {LOG_SYS | LOG_DICT, 0};
@@ -506,6 +512,7 @@ U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
 
 // dump the first n elements of the working stack [totalLen, data]
 void zoab_ws(U2 n) {
+  zoab_arr(2, FALSE);
   zoab_int(WS_LEN);
   zoab_data(min(WS_LEN, n) << APO2, env.ws.mem + env.ws.sp, /*join=*/ FALSE);
 }
@@ -594,6 +601,8 @@ U4 popLit(SzI szI) {
 
 inline static void executeInstr(Instr instr) {
   U4 l, r;
+  logInstr(instr);
+
   SzI szI = SzI2;
   switch ((U1)instr) {
     // Operation Cases
@@ -1429,6 +1438,7 @@ U4 strToHex(U1 len, U1* s) {
   U1 runTests        = '0' !=      argv[1][0];
   startingSysLogLvl  = strToHex(2, argv[2]);
   startingUsrLogLvl  = strToHex(2, argv[3]);
+  eprintf("sysLog=%X  usrLog=%X\n", startingSysLogLvl, startingUsrLogLvl);
 
   if(runTests) tests();
 
@@ -1437,12 +1447,6 @@ U4 strToHex(U1 len, U1* s) {
 
 // ********************************************
 // ** Testing
-
-#define LOG_OP   0x08
-#define LOG_LIT  0x08
-#define LOG_JMP  0x08
-#define LOG_MEM  0x08
-#define LOG_RET_SUCCESS  0x08
 
 Bool _dbgMemInvalid(SzI szI, APtr aptr) {
   U1 sz = szIToSz(szI);
@@ -1471,10 +1475,9 @@ void dbgJmp(Instr instr) {
       jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
   }
   zoab_start();
-  zoab_arr(4, FALSE);
+  zoab_arr(5, FALSE);
   zoab_int(LOG_SYS | LOG_JMP);  zoab_int(instr);
-  zoab_int(jloc);
-  zoab_ws(WS_LEN);
+  zoab_int(jloc); zoab_ws(WS_LEN); zoab_int(X_DEPTH);
 }
 
 void dbgMem(Instr instr) {
@@ -1498,9 +1501,11 @@ void dbgInstr(Instr instr, Bool lit) {
   SzI szI;
 
   if (instr == RET || (instr == RETZ && WS_LEN && (WS_TOP() == 0))) {
-      zoab_start();   zoab_arr(3, FALSE);
+      zoab_start();   zoab_arr(5, FALSE);
       zoab_int(LOG_SYS | LOG_RET_SUCCESS);  zoab_int(instr);
-      zoab_ws(WS_LEN);
+      if(env.cs.sp == env.cs.size) zoab_int(0);
+      else zoab_int(fetch(env.cs.mem, env.cs.sp, SzI4));
+      zoab_ws(WS_LEN); zoab_int(X_DEPTH);
       return;
   }
 
@@ -1531,8 +1536,9 @@ static inline Bool isExecute(Instr instr) {
 }
 
 static inline Bool doLogInstr(Instr instr) {
-  if(LOG_INSTR & *env.sysLogLvl) return TRUE;
-  if((LOG_EXECUTE & *env.sysLogLvl) && isExecute(instr)) return TRUE;
+  if(LOG_INSTR == (LOG_INSTR & *env.sysLogLvl)) return TRUE;
+  if((LOG_EXECUTE == (LOG_EXECUTE & *env.sysLogLvl))
+     && isExecute(instr)) return TRUE;
   return FALSE;
 }
 

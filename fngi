@@ -30,6 +30,7 @@ parser.add_argument('--compile', action='store_true', help="Recompile spore bina
 parser.add_argument('--test', action='store_true', help="Run tests")
 parser.add_argument('--valgrind', action='store_true', help="Run with valgrind")
 parser.add_argument('--log', default='LOG_USER', help="The log level, i.e. LOG_INFO.")
+parser.add_argument('--syslog', default='LOG_COMPILER', help="The log level, i.e. LOG_INFO.")
 
 import zoa
 from zoa import readexact
@@ -94,12 +95,12 @@ def metaSzI(meta):
   return (0x3 & meta) << 4
 
 def szIToBytes(szI):
+  szI = SZ_MASK & szI
   if szI == SZ1: return 1
   if szI == SZ2: return 2
   if szI == SZ4: return 4
   raise ValueError(szI)
 
-# Fngi log level byte
 class Lvl(enum.Enum):
   SILENT    = 0x00
   SYS       = 0x40
@@ -110,9 +111,16 @@ class Lvl(enum.Enum):
   WARN      = 0x03
   CRIT      = 0x01
 
-LOG_DICT = 0x01
-LOG_ERR  = 0x02
-LOG_FILE = 0x03
+LOG_SYS = 0x40
+
+LOG_DICT = 0x02
+LOG_ERR  = 0x05
+LOG_FILE = 0x06
+LOG_JMP   = 0x08
+LOG_OP    = 0x09
+LOG_LIT   = 0x0A
+LOG_RET_SUCCESS = 0x0B
+LOG_MEM   = 0x0C
 
 class InstrClass(enum.Enum):
   C_OP   = 0x00
@@ -148,24 +156,14 @@ def integerLE(data, l=None):
 class FngiEnv:
   """A Map of the Fngi env from trace logs."""
   dicts: dict
+  fnLookup: dict
   glbls: dict
   codes: dict
   uncaughtErr: "ErrEvent" = None
   file: str = None
   pos: int = None
   currentFn: "DictEvent" = None
-
-@dataclass
-class WorkingStack:
-  size: int
-  data: List[int] # sometimes only partial
-
-  @classmethod
-  def from_zoa(cls, zoaArr):
-    size = integerBE(zoaArr[0].data)
-    data = [integerBE(v.data) for v in zoaArr[1:]]
-    assert size >= len(data)
-    return cls(size=size, data=data)
+  instrLookup: dict = None
 
 class Event:
   pass
@@ -293,6 +291,88 @@ class FileEvent(Event):
   def from_(cls, z):
     return cls(file=z[1])
 
+
+@dataclass
+class WorkingStk:
+  totalLen: int
+  data: List[int]
+
+  @classmethod
+  def from_(cls, z):
+    data = [integerLE(z[1][i:i+4]) for i in range(len(z[1]) // 4)]
+    data.reverse()
+    return cls(
+      totalLen=integerBE(z[0]),
+      data=data,
+    )
+
+  def __repr__(self):
+    andMore = ''
+    if len(self.data) < self.totalLen:
+      andMore = f'{self.totalLen - len(self.data):>3}... '
+
+    data = ' '.join(f'#{v:<8X}' for v in self.data)
+    return f"{{{andMore}{data}}}"
+
+class ExecutionEvent(Event):
+  pass
+
+def fmtXDepth(xDepth):
+  return '+' * xDepth
+
+@dataclass
+class JmpEvent(ExecutionEvent):
+  instr: int
+  name: str
+  fnName: str
+  szBytes: int
+  jloc: int
+  ws: WorkingStk
+  xDepth: int
+
+  @classmethod
+  def from_(cls, z, env):
+    instr = integerBE(z[1])
+    jloc = integerBE(z[2])
+    return cls(
+      instr=instr,
+      name=env.instrLookup.get(NOSZ_MASK & instr),
+      fnName=env.fnLookup.get(jloc),
+      szBytes=szIToBytes(instr),
+      jloc=jloc,
+      ws=WorkingStk.from_(z[3]),
+      xDepth=integerBE(z[4]),
+    )
+
+  def __repr__(self):
+    return (
+        f"{fmtXDepth(self.xDepth):<10} {self.name:>4}"
+        + f"[{self.fnName}@{nice(self.jloc):<10} {self.ws}]"
+    )
+
+
+@dataclass
+class RetSuccessEvent(ExecutionEvent):
+  instr: int
+  name: str
+  jloc: int
+  ws: WorkingStk
+  xDepth: int
+
+  @classmethod
+  def from_(cls, z, env):
+    instr = integerBE(z[1])
+    return cls(
+      instr=instr,
+      name=env.instrLookup.get(instr),
+      jloc=integerBE(z[2]),
+      ws=WorkingStk.from_(z[3]),
+      xDepth=integerBE(z[4]),
+    )
+
+  def __repr__(self):
+    return f"{fmtXDepth(self.xDepth):<10} {self.name:>4}[@{nice(self.jloc):<10} {str(self.ws):>14}]"
+
 RETZ = 0x01
 RET  = 0x02
 XL   = 0x84,
@@ -351,7 +431,17 @@ def sysEvent(env, z):
     return ErrEvent.from_(z, env)
   if sysTy == LOG_FILE:
     return FileEvent.from_(z)
-  raise ValueError(f"Unknown sysTy: {nice(z[0])}")
+  if sysTy == LOG_JMP:
+    return JmpEvent.from_(z, env)
+  if sysTy == LOG_OP:
+    return print("??? op", z)
+  if sysTy == LOG_LIT:
+    return print("??? lit", z)
+  if sysTy == LOG_RET_SUCCESS:
+    return RetSuccessEvent.from_(z, env)
+  if sysTy == LOG_MEM:
+    return print("??? mem", z)
+  raise ValueError(f"Unknown sysTy: {nice(sysTy)}")
 
 def inputs_stream(env, io):
   while True:
@@ -452,6 +542,9 @@ def handleDictEvent(env, ev):
       env.currentFn.localOffsets[ev.localOffset()] = ev
     elif ev.isFn(): env.currentFn = ev
 
+  if ev.isFn() and not ev.isLocal():
+    env.fnLookup[ev.ref()] = nice(ev.key)
+
 def handleErrEvent(env, ev):
   file = wantStr(env.file)
 
@@ -506,6 +599,9 @@ def _harness(env, io):
       continue
     if isinstance(ev, FileEvent):
       env.file = ev.file
+      continue
+    if isinstance(ev, ExecutionEvent):
+      print(ev)
       continue
     if isinstance(ev, BasicEvent) and ev.lvl == Lvl.USER:
       assert len(ev.payload) == 1 and isinstance(ev.payload[0], bytes), "invalid LOG_USER"
@@ -567,24 +663,38 @@ def main():
   glbls = findGlobals()
   env = FngiEnv(
     dicts = collections.defaultdict(dict),
+    fnLookup = {},
     glbls = glbls,
-    codes = findErrorCodes(glbls))
+    codes = findErrorCodes(glbls),
+    instrLookup = {
+      value: key.split()[0] for key, value in glbls.items()
+      if key.split()[0] in {
+          'JMPL', 'JMPW', 'JZL', 'JTBL', 'XL', 'XW', 'XSL', 'XSW',
+          'RET', 'RETZ'}
+    },
+  )
 
   usrLogLvl = '00'
   if args.log != 'LOG_SILENT':
     usrLogLvl = env.glbls[args.log]
     assert usrLogLvl <= 0xFF
     usrLogLvl = '{:02X}'.format(usrLogLvl)
+  sysLogLvl = '00'
+  if args.syslog != 'LOG_SILENT':
+    sysLogLvl = env.glbls[args.syslog]
+    assert sysLogLvl <= 0xFF
+    sysLogLvl = '{:02X}'.format(sysLogLvl)
 
   cargs = [
     "./spor",
     "1" if args.test else "0",
-    "01",   # sysLogLvl
+    sysLogLvl,
     usrLogLvl,
   ]
 
   if args.valgrind: cargs.insert(0, 'valgrind')
 
+  print("Running args:", cargs)
   p = subprocess.Popen(
       args=cargs,
       stdin=subprocess.PIPE,
