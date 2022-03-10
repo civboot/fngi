@@ -150,8 +150,8 @@ typedef enum { SzI1 = 0x00, SzI2 = 0x10, SzI4 = 0x20, } SzI;
 
 typedef enum {
   D_read    = 0x00, D_scan    = 0x01, D_dict    = 0x02, D_rdict   = 0x03,
-  D_sz      = 0x04, D_comp    = 0x05, D_assert  = 0x06, D_wslen   = 0x07,
-  D_cslen   = 0x08, D_xsCatch = 0x09, D_memMove = 0x0A, D_memCmp  = 0x0B,
+                    D_comp    = 0x05, D_assert  = 0x06, D_wslen   = 0x07,
+  D_cslen   = 0x08, D_xCatch  = 0x09, D_memMove = 0x0A, D_memCmp  = 0x0B,
   D_com     = 0x0C, D_zoa     = 0x0D, D_dictDump= 0x0E, D_comZoab = 0x0F,
   D_comDone = 0x10,
 } Device;
@@ -1278,10 +1278,6 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
     case D_scan: scan(); break;
     case D_dict: deviceOp_dict(isFetch); break;
     case D_rdict: deviceOpRDict(isFetch); break;
-    case D_sz:
-      if(isFetch) WS_PUSH(szIToSz(env.szI));
-      else env.szI = szToSzI(WS_POP());
-      break;
     case D_comp: deviceOpCompile(); break;
     case D_assert:
       tmp = WS_POP();
@@ -1291,7 +1287,7 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
       break;
     case D_wslen: WS_PUSH(WS_LEN); break;
     case D_cslen: WS_PUSH(Stk_len(env.cs)); break;
-    case D_xsCatch: deviceOpCatch(); break;
+    case D_xCatch : deviceOpCatch(); break;
     case D_memMove: deviceOpMemMove(); break;
     case D_memCmp: deviceOpMemCmp(); break;
     case D_com: deviceOpCom(isFetch); break;

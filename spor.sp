@@ -10,21 +10,31 @@
 // # Table of Contents
 // Search for these headings to find information
 //
-// 1. Instructions: contains definition of spore assembly instructions and
+// [1] Instructions: contains definition of spore assembly instructions and
 //    documentation.
-//    a. Operations: Special
-//    b. Operations: One Inp -> One Out
-//    c. Operations: Two Inp -> One Out
-//    d. Small Literal
-//    e. Sizes
-//    f. Jmp
-//    g. Mem
-// 2. Registers and Device Operations
-// 3. Memory Locations, Globals and Constants
-// 4. Errors
+//    [1.a] Operations: Special
+//    [1.b] Operations: One Inp -> One Out
+//    [1.c] Operations: Two Inp -> One Out
+//    [1.d] Small Literal [0x40 - 0x80)
+//    [1.e] Sizes: SZ1, SZ2, SZ4
+//    [1.f] Jmp: jumping, execution, tables
+//    [1.g] Mem: fetch, store, locals, globals
+// [2] Registers and Device Operations (RGFT, RGSR, DVFT, DVSR)
+// [3] Constants
+//    [3.a] Dict Ty Bits
+//    [3.b] Zoab
+//    [3.c] Log Levels
+//    [3.d] Errors
+// [4] Globals
+// [5] Core Utility Macros: built in pure-asm, these provide necessary
+//     functionality for the rest of the language.
+// [6] Jmp and Literal Macros: providing xsl, jmpl, L1, etc.
+// [6] Core functions and macros: bread and butter of spor assembly
+// [8] globals and locals
+// [9] Zoa strings and logging zoab
 
 // **********
-// * 1. Instructions
+// * [1] Instructions
 // Spor uses 8 bit instructions with the following bit layout:
 //
 // Note: (S=sz bit)
@@ -33,7 +43,7 @@
 // 10SS XXXX: jmp
 // 11SS _XXX: mem
 
-// # Operations: Special
+// # [1.a] Operations: Special
 #00 =NOP   // { -> }     no operation
 #01 =RETZ  // Return if zero
 #02 =RET   // Return
@@ -47,7 +57,7 @@
 #0A =RGFT  // Register Fetch
 #0B =RGSR  // Register Store
 
-// # Operations: One Inp -> One Out
+// # [1.b] Operations: One Inp -> One Out
 #10 =INC   // {l+1}  increment 1
 #11 =INC2  // {l+2}  increment 2
 #12 =INC4  // {l+4}  increment 4
@@ -63,7 +73,7 @@
 // (1) i -> f conversion
 // (1) f -> i conversion
 
-// # Operations: Two Inp -> One Out
+// # [1.c] Operations: Two Inp -> One Out
 #20 =ADD   // {l +  r } add
 #21 =SUB   // {l -  r } subtract
 #22 =MOD   // {l %  r } integer modulo (remainder)
@@ -87,16 +97,16 @@
 // Double-arg extension commands might be:
 // floating point: add,sub,mul,div,ge,lt
 
-// # Small Literal [0x40 - 0x80)
+// # [1.d] Small Literal [0x40 - 0x80)
 #40 =SLIT
 
-// # Sizes
+// # [1.e] Sizes
 #00 =SZ1
 #10 =SZ2
 #20 =SZ4
 #20 =SZA
 
-// # Jmp
+// # [1.f] Jmp
 //
 // Jumps can be to either a literal (L) or to an item on the working stack (W).
 // - X means "execute" and is a call.
@@ -120,28 +130,21 @@
 // For SZ=1 they jump to the 1 byte signed offset from the location
 // of the LITERAL (not the location of the operation).
 
-// # Mem      Store    Description
-#C0 =LIT   // {} -> {literal}     Literal (U1, U2 or U4)
-#C1 =FT    // {addr} -> {value}   FeTch value from addr
-#C2 =FTLL  // {} -> {local}       FeTch from LP + U2 literal offset
-#C3 =FTGL  // {} -> {global}      FeTch from GB + U2 literal offset
-#C4 =SR    // {addr value} -> {}  Store value at addr
-#C5 =SRLL  // {value} -> {}       StoRe value at LP + U2 literal offset
-#C6 =SRGL  // {value} -> {}       StoRe value at GB + U2 literal offset
+// # [1.g] Mem|Store              |Description
+#C0 =LIT    // {} -> {literal}    |Literal (U1, U2 or U4)
+#C1 =FT     // {addr} -> {value}  |FeTch value from addr
+#C2 =FTLL   // {} -> {local}      |FeTch from LP + U2 literal offset
+#C3 =FTGL   // {} -> {global}     |FeTch from GB + U2 literal offset
+#C4 =SR     // {addr value} -> {} |Store value at addr
+#C5 =SRLL   // {value} -> {}      |StoRe value at LP + U2 literal offset
+#C6 =SRGL   // {value} -> {}      |StoRe value at GB + U2 literal offset
 
 // Common instr+szs
-@SZ1 @LIT  ^BOR  =LIT1
-@SZ2 @LIT  ^BOR  =LIT2
-@SZ4 @LIT  ^BOR  =LIT4
-
-@SZ1 @JZL  ^BOR  =JZL1
-
 @SZ2 @XSL  ^BOR  =XSL2
-@SZ2 @XL   ^BOR  =XL2
 @SZ2 @JMPL ^BOR  =JMPL2
 
 // **********
-// * 2. Registers and Device Operations
+// * [2] Registers and Device Operations
 //
 // Registers and device operations can be accessed through RGXX and DVXX
 // operations. RG operations include a 1 byte literal. The 1 byte literal has
@@ -162,16 +165,15 @@
 #01 =D_scan   // scan next word into tokenBuf[0:tokenLen]
 #02 =D_dict   // [&buf &heap isLocal] FT=get SR=set dict key=tokenBuf
 #03 =D_rdict  // [&buf &heap] FT=get reference to val  SR=forget including key
-#04 =D_sz     // get/set current sz in bytes
 #05 =D_comp   // compile (assemble) the token in tokenBuf
 #06 =D_assert // error if != 0
 #07 =D_wslen  // get working stack length (in slots)
 #08 =D_cslen  // get call stack lengh (in slots)
-// {-> err} D_xsCatch executes small function from WS but catches a panic.
+// {-> err} D_xCatch executes large function from WS but catches a panic.
 // The errCode is returned (or 0 if no error).
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
-#09 =D_xsCatch
+#09 =D_xCatch
 #0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
 #0C =D_com     // {&msg len} -> {ioResult}: write to debug stream
@@ -181,16 +183,19 @@
 #10 =D_comDone // signifies end of one com. On linux this is a flush.
 
 // **********
-// * 3. Constants
+// * [3] Constants
 #0 =FALSE
 #1 =TRUE
 
+// * [3.a] Dict Ty Bits
 // Meta types
 #40 =KEY_HAS_TY // if 1, dict entry is a non-constant
 #E0 =META_TY_MASK // upper three bits determine type
 #20 =TY_FN    // function, can be called and has an fnMeta
 #40 =TY_LOCAL   // local variable, has varMeta. Accessed with FTLL/SRLL
 #60 =TY_GLOBAL  // global variable, has varMeta. Accessed with FTGL/SRGL
+#80 =TY_DICT    // a "dictionary" type. Points to a new dictionary which has
+                // it's own type.
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
@@ -211,15 +216,13 @@
 // Token group
 #4 =TOKEN_SYMBOL
 
-//*****
-//* Zoa
+// * [3.b] Zoab
 #C0 =ZOAB_TY   // bitmask: all types
 #80 =ZOAB_JOIN // bitmask: join type
 #40 =ZOAB_ARR  // bitmask: arr type
 #C0 =ZOAB_PTR  // equality: next 4 bytes are a pointer.
 
-//*****
-//* Log levels
+// * [3.c] Log Levels
 #00 =LOG_SILENT
 
 // Log Levels
@@ -237,54 +240,7 @@
 #03 =LOG_ASM
 #01 =LOG_COMPILER
 
-// **********
-// * 4. Globals
-#0000_0004 =heap
-#0000_0008 =topHeap
-#0000_000C =topMem
-#0000_0010 =err
-#0000_0014 =c_state
-#0000_0018 =testIdx
-#0000_001C =sysLogLvl
-#0000_001E =usrLogLvl
-
-// Dictionary Struct
-#0000_0020 =c_dictBuf   // U4
-#0000_0024 =c_dictHeap  // U2
-#0000_0026 =c_dictEnd   // U2
-#0000_0028 =c_dictLHeap // U2 + U2(align)
-
-// TokenBuf Struct
-#0000_002C =c_tokenBuf   // [APtr] TokenBuf struct
-#0000_0030 =c_tokenLen   // [U1] length of token
-#0000_0031 =c_tokenSize  // [U1] characters buffered
-#0000_0032 =c_tokenGroup // [U1] token group
-
-// Global Error Variables
-#0000_0034 =c_errValTy     // [U1]
-#0000_0038 =c_dataASz      // [U2]
-#0000_003A =c_dataBSz      // [U2]
-#0000_003C =c_errVal1      // [U4]
-#0000_0040 =c_errVal2      // [U4]
-#0000_0044 =c_msg          // [APtr]
-
-// Global Compiler Variables
-#0000_0048 =c_rKey         // [U4] rKey, ref to current dict key.
-#0000_004C =c_rLKey        // [U4] rLKey, ref to current L dict key.
-#0000_0050 =c_gheap        // [U4] global heap
-#0000_0054 =c_localOffset  // [U2] Local Offset (for local var setup)
-
-#00  =ERR_DATA_NONE
-#01  =ERR_DATA_INT1
-#02  =ERR_DATA_DATA1
-#03  =ERR_DATA_INT2
-#04  =ERR_DATA_DATA2
-
-@c_gheap #0000_0058 .4^SR  // initial value of global heap
-
-// **********
-// * 4. Errors
-//
+// * [3.d] Errors
 // [E000 - E100): built-in errors.
 //  E100: device-specific hardware errors
 // [E200-E800): reserved
@@ -336,7 +292,7 @@
 #E0E2  =E_cIsXS      // using an X for an XS
 #E0E3  =E_cJmpL1     // JMP1 over too much space
 #E0E4  =E_cNotFn
-#E0E5  =E_cNotFnLocals
+#E0E5  =E_cNotFnLarge
 #E0E6  =E_cMod       // different modules
 #E0E7  =E_cLSz       // literal sz
 #E0E9  =E_cNotType
@@ -351,28 +307,74 @@
 #E0F1  =E_cZoab       // Zoab invalid
 #E0F2  =E_cNeedToken  // token not present
 
+// **********
+// * [4] Globals
+#0000_0004 =heap
+#0000_0008 =topHeap
+#0000_000C =topMem
+#0000_0010 =err
+#0000_0014 =c_state
+#0000_0018 =testIdx
+#0000_001C =sysLogLvl
+#0000_001E =usrLogLvl
+
+// Dictionary Struct
+#0000_0020 =c_dictBuf   // U4
+#0000_0024 =c_dictHeap  // U2
+#0000_0026 =c_dictEnd   // U2
+#0000_0028 =c_dictLHeap // U2 + U2(align)
+
+// TokenBuf Struct
+#0000_002C =c_tokenBuf   // [APtr] TokenBuf struct
+#0000_0030 =c_tokenLen   // [U1] length of token
+#0000_0031 =c_tokenSize  // [U1] characters buffered
+#0000_0032 =c_tokenGroup // [U1] token group
+
+// Global Error Variables
+#0000_0034 =c_errValTy     // [U1]
+#0000_0038 =c_dataASz      // [U2]
+#0000_003A =c_dataBSz      // [U2]
+#0000_003C =c_errVal1      // [U4]
+#0000_0040 =c_errVal2      // [U4]
+#0000_0044 =c_msg          // [APtr]
+
+// Global Compiler Variables
+#0000_0048 =c_rKey         // [U4] rKey, ref to current dict key.
+#0000_004C =c_rLKey        // [U4] rLKey, ref to current L dict key.
+#0000_0050 =c_gheap        // [U4] global heap
+#0000_0054 =c_localOffset  // [U2] Local Offset (for local var setup)
+
+#00  =ERR_DATA_NONE
+#01  =ERR_DATA_INT1
+#02  =ERR_DATA_DATA1
+#03  =ERR_DATA_INT2
+#04  =ERR_DATA_DATA2
+
+@c_gheap #0000_0058 .4^SR  // initial value of global heap
 
 // **********
-// * Core Utility Macros
+// * [5] Core Utility Macros
 // These macros must be defined in pure ASM. They build on eachother
 // to make the syntax much more readable.
 //
-// h1 [U1] -> []                : push 1 byte to heap
-// h2 [U2] -> []                : push 2 byte to heap
-// h4 [U4] -> []                : push 4 byte to heap
-// L0 [U1] -> []                : compile a small literal [#0 - #3F]
-// $dictSet <key> [U4] -> []    : set a dictionary key to value
-// $dictGet <key> [] -> [U4]    : get dictionary key's value
-// $loc <token> [] -> []        : set current heap location to <token>
-// hpad [U4] -> []              : pad heap with NOPs
-// hal2 [] -> []                : align heap for 2 byte literal
-// hal4 [] -> []                : align heap for 4 byte literal
-// ha2 [] -> []                 : align heap to 2 bytes
-// ha4 [] -> []                 : align heap to 4 bytes
+//   h1 [U1] -> []                : push 1 byte to heap
+//   h2 [U2] -> []                : push 2 byte to heap
+//   h4 [U4] -> []                : push 4 byte to heap
+//   L0 [U1] -> []                : compile a small literal [#0 - #3F]
+//   $dictSet <key> [U4] -> []    : set a dictionary key to value
+//   $dictGet <key>  [] -> [U4]   : get dictionary key's value
+//   $dictGetR <key> [] -> [APtr] : get the key's &metaRef
+//   $loc <token> [] -> []        : set token to the current heap location
+//   hpad [U4] -> []              : pad heap with NOPs
+//   hal2 [] -> []                : align heap for 2 byte literal
+//   hal4 [] -> []                : align heap for 4 byte literal
+//   ha2 [] -> []                 : align heap to 2 bytes
+//   ha4 [] -> []                 : align heap to 4 bytes
 //
 // Assertions: these panic with the supplied errCode if cond is not met.
-// assert [cond errCode]
-// assertNot [cond errCode]
+//
+//   assert [cond errCode]
+//   assertNot [cond errCode]
 //
 // Test Assertions: these panic with E_test if the cond is not met.
 // tAssert, tAssertNot, tAssertEq
@@ -508,13 +510,56 @@ $ha2 $loc tAssertEq // {a b}
   .4%EQ  $hal2 .2%JMPL @tAssert,
 
 // **********
-// * Jmp and Literal Macros
-// These are used for compiling 2 byte jmps and 1-4 byte literals. As you can
-// imagine, these are essential operations!
+// * [6] Core functions and macros
+// These are the bread and butter of spor assembly needed to create the fngi compiler.
+// They define and call functions, check the type of dictionary entries,
+// provide local dictionary support, etc.
 //
-// $xsl <token>                 : compile a execute to small function
-// $jmpl <token>                : compile a jump to small function
-// L1 / L2 / L4  [U] -> []      : compile a 1 / 2 / 4 byte literal.
+//   $xsl  <token>                : compile execute small function
+//   $xl   <token>                : compile execute large function
+//   $jmpl <token>                : compile jump to small function
+//   L1 / L2 / L4  [U] -> []      : compile 1 / 2 / 4 byte literal.
+//   xCatch [... &fn]             : execute a large function and catch error.
+//   reteq [a b]                  : return immediately if a == b (%NEQ %RETZ)
+//
+//   FN <name>                    : declare a large function
+//   SFN <name>                   : declare a small function
+//   PRE                          : make function "pre" (run after next token)
+//   SMART                        : make function "smart" (always instant)
+//   INSTANT                      : require function to be instant
+//
+//   $c1 [instr]                  : INSTANT to compile instr when executed
+//   toRef [metaRef] -> [ref]     : strip meta byte from metaRef (top byte)
+//   $toMeta [metaRef] -> [meta]  : INSTANT to convert to a meta byte
+//   isTypes [&metaRef] -> [U]    : tells whether a &metaRef is not a constant.
+//   isTyFn [metaRef] -> [U1]     : metaRef is a fn
+//   isFnLarge [metaRef] -> [U1]  : metaRef is a large fn (has locals)
+//   isFnPre     ...
+//   isFnNormal  ...
+//   isFnInstant  ...
+//   isFnSmart  ...
+//   isFnSmartI  ...                : "smart instant", only at runtime
+//   isTyLocal [metaRef -> U1]      : is a local offset
+//   isTyLocalInput [metaRef -> U1] : is a local offset input
+//   isTyGlobal [metaRef -> U1]     : is a global variable
+//
+//   toMod [ref -> [mod]          : get the "module" (upper byte of U4)
+//   curMod [ -> mod]             : get the module of the last dict entry
+//   isCurMod [ref -> mod]        : get whether ref is curMod
+//
+//   panic [errCode]              : instantly panic with error
+//   unreach []                   : instantly panic with E_unreach
+//   assertWsEmpty []             : assert the working stack is empty (E_wsEmpty)
+//   assertNoInstant [asInstant]  : used by SMART to assert not called with $
+//   assertCurMod [ref]           : assert ref is cur mod
+//   assertNotNull [&r]           : E_null if r is NULL
+//   assertTyped [&metaRef]       :
+//   assertFnSmall [metaRef]      : assert fn is small (no locals)
+//   assertFnLarge [metaRef]      : assert fn is large (has locals)
+//
+//   getWsLen [ -> U4]            : get working stack length
+//   ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
+//   ldictSet / ldictGet / ldictGetR  : set/get/get-ref of local dict key
 
 $hal4 $loc toRef // {metaRef} -> {ref}
   .4%LIT @REF_MASK $h4 %BAND %RET
@@ -537,12 +582,14 @@ $hal2 $loc _jmpl // $_jmpl <token>: compile unchecked jmpl
 
 
 $hal2 $loc L1 // {U1} compile 1 byte literal
-  .1%LIT @LIT1 $h1 // push .1%LIT instr
+  .1%LIT  @SZ1 @LIT ^BOR  $h1 // push .1%LIT instr
   $_xsl h1 // compile it
   $_jmpl h1
 
-$hal2 $loc c1 // INSTANT PRE @INSTR $c1: compile "compile INSTR"
-  $_xsl L1             // compile the INSTR literal itself
+// INSTANT PRE $c1: {instr:U1}
+// Compiles code so that when executed the instr will be compiled.
+$hal2 $loc c1
+  $_xsl L1    // compile the instr literal itself
   // compile xsl to h1
   $hal2 .2%LIT @h1 $h2
   $hal2 .2%LIT @XSL2 $h2
@@ -550,12 +597,12 @@ $hal2 $loc c1 // INSTANT PRE @INSTR $c1: compile "compile INSTR"
 
 $hal2 $loc L2 // {U1} compile 2 byte literal
   $_xsl hal2 // enforce proper alignment
-  @LIT2 $c1  // compile .2%LIT instr
+  @SZ2 @LIT  ^BOR  $c1  // compile .2%LIT instr
   $_jmpl h2  // compile the 2 byte literal
 
 $hal2 $loc L4 // {U1} compile 4 byte literal
   $_xsl hal4 // enforce proper alignment
-  @LIT4 $c1  // compile .4%LIT
+  @SZ4 @LIT  ^BOR  $c1 // compile .4%LIT
   $_jmpl h4  // compile the 4 byte literal
 
 $loc toMeta // INSTANT {metaRef} -> {meta}
@@ -579,7 +626,7 @@ $loc assertFnSmall // [metaRef]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assertNot
 
-$loc assertFnLocals // [metaRef]
+$loc assertFnLarge // [metaRef]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
 
@@ -589,7 +636,6 @@ $loc isSameMod // {metaRef metaRef} -> {sameMod}
 
 $hal2 $loc curMod   .2%FTGL @c_rKey$h2 .4%FT  $_jmpl toMod // [] -> [mod]
 $hal2 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET        // [ref] -> [isCurMod]
-
 $hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
 $loc _jSetup // [&metaRef] -> [metaRef]: checked jmp setup
@@ -607,15 +653,13 @@ $loc xsl // $xsl <token> : compile .2%xsl
 
 $loc xl // $xl <token> : compile .2%xl
   $_xsl dictGet // {metaRef}
-  %DUP $_xsl assertFnLocals
+  %DUP $_xsl assertFnLarge
   %DUP $_xsl assertCurMod
-  @XL2$L1  $_jmpl _j2
-
+  @SZ2 @XL   ^BOR  $L1  $_jmpl _j2
 
 $loc jmpl  // $jmpl <token> : compile jmpl2
   $_xsl dictGetR $_xsl _jSetup // {metaRef}
   @JMPL2$L1  $_jmpl _j2
-
 
 $hal2 $loc c_updateRKey // [] -> [&metaRef] update and return current key
         .4%FTGL @c_dictBuf $h2  // dict.buf
@@ -733,7 +777,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn tAssertEq
 @TY_FN_PRE            $c_makeFn assertFn
 @TY_FN_PRE            $c_makeFn assertFnSmall
-@TY_FN_PRE            $c_makeFn assertFnLocals
+@TY_FN_PRE            $c_makeFn assertFnLarge
 @TY_FN_PRE            $c_makeFn assertCurMod
 @TY_FN_PRE            $c_makeFn assertTyped
 #0                    $c_makeFn assertNoInstant
@@ -750,11 +794,9 @@ $SFN isTyGlobal  $PRE $toMeta  @META_TY_MASK$L1 %BAND  @TY_GLOBAL$L1  %EQ %RET
 $SFN assertTyLocal $PRE $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
 $SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 
-$SFN getSz           @D_sz$L0          %DVFT %RET
-$SFN setSz     $PRE  @D_sz$L0          %DVSR %RET
 $SFN getWsLen        @D_wslen$L0       %DVFT %RET
-$SFN c_xsCatch $PRE  @D_xsCatch$L0     %DVFT %RET
-$SFN c_scan          @D_scan$L0        %DVFT %RET
+$SFN xsCatch $PRE  @D_xCatch$L0     %DVFT %RET
+$SFN c_scan        @D_scan$L0        %DVFT %RET
 $SFN panic   $PRE #0$L0 %SWP  $jmpl assert // {errCode}: panic with errCode
 $SFN unreach @E_unreach$L2 $jmpl panic // {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
@@ -784,15 +826,15 @@ $SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ $c1 @RETZ $c1 %RET
 
 
 // **********
-// * ASM Flow Control
+// * [7] ASM Flow Control
 // - `$IF ... $END` for if blocks
-// - `$LOOP ... $BREAK0 ... $AGAIN $END` for infiinte loops with breaks.
+// - `$LOOP ... $BREAK0 ... $AGAIN $BREAK_END` for infiinte loops with breaks.
 //
 // All flow control pushes the current heap on the WS, then END/AGAIN correctly
 // stores/jmps the heap where they are called from.
 
 $SFN IF  $PRE $SMART $xsl assertNoInstant // {} -> {&jmpTo} : start an if block
-  @JZL1 $c1 // compile .1%JZL instr
+  @SZ1 @JZL  ^BOR  $c1 // compile .1%JZL instr
   $xsl getHeap // {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 // compile 0 (jump pad)
   %RET
@@ -836,7 +878,32 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant // {...(N &jmpTo) numJmpTo}
     %DEC // dec numJmpTo
   $AGAIN l0
 
-// * Some utilities for globals + locals
+// **********
+// * [8] globals and locals
+// We need a way to define global and local variables, as well as GET, SET and
+// obtain a REF to them.
+//
+//   GET <token>            SMART : compile a FT of token (local or global)
+//   _SET <token>           SMART : compile a SR of token (local or global)
+//   REF <token>            SMART : compile a "get ref" of token
+//   GLOBAL <token> [SzI]   SMART : define a global variable of szI
+//   LOCAL <token> [SzI]    SMART : define a local variable of szI
+//   INPUT <token> [SzI]    SMART : define a local input variable of szI
+//   END_LOCALS             SMART : end locals
+// 
+//   align [aptr sz -> aptr]      : align aptr with sz bytes
+//   align4 [aptr -> aptr]        : align aptr with 4 bytes
+//   alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
+//   haN [szI]                    : align the heap to szI
+//   halN [szI]                   : align the heap for a literal to szI
+//   hN [U4 szI]                  : write a value of szI to heap (no align)
+//   szToSzI [U4 -> SzI]          : convert integer to SzI bits
+//   szIToSz [SzI -> U1]          : get an integer sz from szI
+//   szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
+//   srN [addr value szI]         : store a value of szI at addr
+//   anyDictGetR [-> &metaRef isFromLocal] : any ref to current token.
+/ 
+//   assertSzI [szI]              : assert that szI is valid
 
 $SFN assertSzI $PRE // {szI}
   %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot // non-sz bits empty
@@ -979,7 +1046,7 @@ $FN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
 @SZ4 $c_makeGlobal c_gheap
 @SZ2 $c_makeGlobal c_localOffset
 
-$FN align $PRE // {aptr sz}: return the aptr aligned properly with sz
+$FN align $PRE // {aptr sz -> aptr}: align aptr with sz bytes
   #1 $h1 // locals [sz:U1]
   .1%SRLL#0$h1 // cache sz
   %DUP // {aptr aptr}
@@ -1025,7 +1092,7 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
 
   // assert current function is valid
   .4%FTGL @c_rKey$h2 %DUP $xsl assertTyped .4%FT // {szI meta fnMetaRef}
-    $xsl assertFnLocals // {szI meta}
+    $xsl assertFnLarge // {szI meta}
 
   .1%SRLL#1$h1 // 1=meta {szI}
   %DUP  $xsl assertSzI // {szI}
@@ -1073,7 +1140,16 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
   $xsl ldictBuf $xl _compileInputs %RET
 
 // **********
-// * Zoa strings and logging
+// * [9] Zoa strings and logging zoab
+
+//   $loc <name> |zoa string literal|    : define a zoa string
+//
+//   com [len &raw]               : communicate raw data with harness
+//   comDone []                   : trigger com done (flush)
+//   comzStart []                 : zoab start
+//   comzU4 [U4]                  : com zoab U4 (big endian)
+//   comzData [len &raw join]     : send zoab data with join bit
+//   TODO: not finished
 
 // |zoa string literal|
 // Creates a zoa string in the heap.
