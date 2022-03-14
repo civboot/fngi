@@ -1,5 +1,10 @@
 // Fngi bootstrap script: this script bootstraps the fngi language.
 // Requires: spore.sp
+//
+// Note: at this stage the language is severely restricted and several
+// pieces of the language are incomplete. Any CAPITAL items like FN, IF, LOOP
+// etc do not behave in the way their lower-case counterparts will behave.
+// Refer to spor.sp for all documentation.
 
 $c_fngi
 
@@ -90,7 +95,6 @@ FN SET  SMART // SET <name> = <value>
   c_scan; assertToken(TOKEN_EQ) // =
   xw(GET c_compFn) // <value>
   ret _setImpl(GET rMetaRef, GET isFromLocal)
-
 
 
 $c_dictDump

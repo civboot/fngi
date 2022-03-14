@@ -1,7 +1,10 @@
 # Fngi: the language that grows on the silicone
 
-> **NOTICE:** in development. Spor is somewhat usable (albeit without even file
-> handling support), with a line-of-sight for boostrapping into fngi.
+> **UPDATE:** I am now building software in fngi. So far this has been only a
+> few tests and some core syntax, but I'm currently paving the way for a 4k
+> block allocator with an arena-buddy-allocator. After that, creating better
+> syntax (fn, if, while) shouldn't be far behind. See the `Goals` section
+> for a complete list of items remaining.
 
 If we want to build an entirely understandable tech stack (as part of
 civboot.org or bootstrappable.org) we need a language which can be
@@ -42,23 +45,28 @@ along the way, some of them complete.
 
 - [X] create an assembly. Done, see [spor.c](./spor.c)
 - [X] bootstrap the assembly into fngi. Mostly done, see [spor.sp](./spor.sp)
-- [ ] boostrap fngi into a _more_ full-featured language. This will be in
+- [x] Write zoab in fngi (see [zoa][zoa] project).
+- [X] boostrap fngi into a _more_ full-featured language. This will be in
   [fngi.fn](./fngi.fn). This is mostly adding core operators (`+`, `-`, `*`,
   etc), along with several other expected pieces.
-- [ ] Write initial way to define namespaces, structs and enums.
-- [ ] Write block and arena-buddy allocators, as well as standardized ways to
-    use them (i.e. an arena stack).
-- [ ] Write way to keep track of types on a "type stack", which the vairious
+- [ ] Create a 4k block allocator and arena-buddy-allocator.
+- [ ] Write initial way to define namespaces, structs and enums. (`STRUCT`,
+      ENUM`, etc)
+- [ ] Write an initial "untyped" version of `fn`, `if`, etc. This might be
+      something like `noty.fn` or something else.
+- [ ] Implement core OS functions to move and modify files and implement a
+      standardized way to communicate user-input and display info with the
+      harness.
+- [ ] Create an ultra-basic text-editor.
+- [ ] Create an ultra-basic CLI built on the text-editor.
+- [ ] Write way to keep track of types on a "type stack", which the various
       sub-compilers will use (i.e. `fn`, `if`, etc).
-- [ ] Write `fn`, `if`, `while`, etc to replace the asembly defined versions
-  and aquire type safety.
-- [ ] Write zoab in fngi (see [zoa][zoa] project).
+- [ ] Write `fn`, `if`, `while`, etc to and aquire type safety.
 - [ ] Write zoat in fngi (see [zoa][zoa] project).
 - [ ] Write `struct`, allowing for zoa serializable types from the beginning.
 - [ ] Implement zoac (see [zoa][zoa] project).
-- [ ] Implement core OS functions to move and modify files.
 - [ ] Implement zosh (see [zoa][zoa] project).
-- [ ] write a text editor
+- [ ] Write a text editor
 
 
 [zoa]: http://github.com/vitiral/zoa
