@@ -77,7 +77,7 @@ The command to compile and run fngi and all tests is below. This will continue
 to be evolved.
 
 ```
-./fngi --compile --test --log=LOG_INFO
+./fngi --compile --test --syslog=LOG_COMPILER --log=LOG_INFO
 ```
 
 ## Contributing

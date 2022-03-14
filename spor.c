@@ -141,10 +141,9 @@ typedef enum {
   SR   = 0xC4, SRLL = 0xC5, SRGL = 0xC6,
 } Instr;
 
-typedef enum {
-  R_MP = 0x0, R_EP = 0x1, R_LP = 0x2, R_CP = 0x3,
-  R_GB = 0x4,
-} Reg;
+#define R_LP 0x80  // lower 7 bits are offset
+#define R_EP 0x00
+#define R_GB 0x01
 
 typedef enum { SzI1 = 0x00, SzI2 = 0x10, SzI4 = 0x20, } SzI;
 
@@ -189,7 +188,6 @@ typedef struct {
 // Environment
 typedef struct {
   APtr ep;  // execution pointer
-  APtr mp;  // Module Pointer
   APtr gb;  // Global Base
   APtr* heap;
   APtr* topHeap;
@@ -210,7 +208,7 @@ typedef struct {
 
 #define LS_SP           (env.ls.mem - mem + env.ls.sp)
 #define CS_SP           (env.cs.mem - mem + env.cs.sp)
-#define ENV_MOD_HIGH()  (env.ep & MOD_HIGH_MASK)
+#define ENV_MOD_HIGH()  (MOD_HIGH_MASK & env.ep)
 
 typedef struct {
   APtr buf;  // buffer of dicts
@@ -565,13 +563,11 @@ void xImpl(APtr aptr) { // impl for "execute"
   Stk_grow(&env.ls, growLs << APO2);
   // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
   Stk_push(&env.cs, (growLs << 24) + env.ep);
-  env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr + 1;
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
   Stk_push(&env.cs, env.ep);
-  env.mp = MOD_HIGH_MASK & aptr;
   env.ep = aptr;
 }
 
@@ -613,7 +609,6 @@ inline static void executeInstr(Instr instr) {
     case RET:
       U4 callMeta = Stk_pop(&env.cs);
       Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
-      env.mp = MOD_HIGH_MASK & callMeta;
       env.ep = REF_MASK & callMeta;
       return;
     case SWP:
@@ -630,22 +625,26 @@ inline static void executeInstr(Instr instr) {
     case DVSR: deviceOp(FALSE, SzI4, 4); return;
     case RGFT:
       r = popLit(SzI1);
-      switch (r) {
-        case R_MP: WS_PUSH(env.mp); return;
-        case R_EP: WS_PUSH(env.ep); return;
-        case R_LP: WS_PUSH(LS_SP); return;
-        case R_CP: WS_PUSH(CS_SP); return;
-        case R_GB: WS_PUSH(env.gb); return;
-        default: SET_ERR(E_cReg);
+      if (R_LP & r) {
+        return WS_PUSH(LS_SP + (0x7F & r)); // local stack pointer + offset
+      } else {
+        switch (r) {
+          case R_EP: WS_PUSH(env.ep); return;
+          case R_GB: WS_PUSH(env.gb); return;
+          default: SET_ERR(E_cReg);
+        }
       }
     case RGSR:
-      switch (r) {
-        case R_MP: env.mp = WS_POP(); return;
-        case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
-        case R_LP: env.ls.sp = WS_POP() - (env.ls.mem - mem); return;
-        case R_CP: env.cs.sp = WS_POP() - (env.cs.mem - mem); return;
-        case R_GB: env.gb = WS_POP(); return;
-        default: SET_ERR(E_cReg);
+      r = popLit(SzI1);
+      if (R_LP & r) {
+        env.ls.sp = WS_POP() + (0x7F & r) - (env.ls.mem - mem);
+        return;
+      } else {
+        switch (0xC0 & r) {
+          case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
+          case R_GB: env.gb = WS_POP(); return;
+          default: SET_ERR(E_cReg);
+        }
       }
     case INC : WS_PUSH(WS_POP() + 1); return;
     case INC2: WS_PUSH(WS_POP() + 2); return;
@@ -1341,7 +1340,6 @@ U1 readSrcAtLeast(U1 num) {
   mem = localMem;                         \
   env = (Env) {                           \
     .ep = 1,                              \
-    .mp = 0,                              \
     .gb = 0,                              \
     .heap =    (APtr*) (mem + 0x4),       \
     .topHeap = (APtr*) (mem + 0x8),       \

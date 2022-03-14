@@ -150,16 +150,15 @@
 // Registers and device operations can be accessed through RGXX and DVXX
 // operations. RG operations include a 1 byte literal. The 1 byte literal has
 // the following byte format:
-// RROO OOOO: R=register O=offset
+// 1OOO OOOO: (R_LP) local stack pointer with 7bit offset (O)
+// 0XXX XXXR: register. X is currently undefined.
 //
 // FT will return the register value + offset
 // SR will store the value + offset in the register
 
-#00 =R_MP // global base pointer
-#01 =R_EP // execution pointer, SR will panic
-#02 =R_LP // local stack pointer
-#03 =R_CP // call stack pointer
-#04 =R_GB // global base pointer
+#80 =R_LP // local stack pointer
+#00 =R_EP // execution pointer, SR will panic
+#01 =R_GB // global base pointer
 
 // Device operations with DVFT and DVSR
 #00 =D_read   // read from src, filling up tokenBuf
@@ -1009,9 +1008,9 @@ $SFN _setImpl $PRE // {&metaRef isFromLocal}
 $SFN _refImpl // {}
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _lSetup // {metaOffset}
-    $xsl toRef $xsl L0 // compile offset as literal
-    @RGFT$c1 @R_LP$c1 @ADD$c1  // compile: %RGFT @R_LP$h1 %ADD
-    %RET
+    $xsl toRef %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert // {offset}
+    @R_LP$L1 %BOR // {LpOffset}: offset is lower 7 bits
+    @RGFT$c1 $jmpl h1  // compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
   $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     $xsl _gSetup  $xsl toRef $jmpl L4 // write literal directly TODO: use c_lit
