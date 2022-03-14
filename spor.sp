@@ -32,6 +32,7 @@
 // [6] Core functions and macros: bread and butter of spor assembly
 // [8] globals and locals
 // [9] Zoa strings and logging zoab
+// [10] Fngi compile loop
 
 // **********
 // * [1] Instructions
@@ -357,19 +358,19 @@
 // These macros must be defined in pure ASM. They build on eachother
 // to make the syntax much more readable.
 //
-//   h1 [U1] -> []                : push 1 byte to heap
-//   h2 [U2] -> []                : push 2 byte to heap
-//   h4 [U4] -> []                : push 4 byte to heap
-//   L0 [U1] -> []                : compile a small literal [#0 - #3F]
-//   $dictSet <key> [U4] -> []    : set a dictionary key to value
-//   $dictGet <key>  [] -> [U4]   : get dictionary key's value
-//   $dictGetR <key> [] -> [APtr] : get the key's &metaRef
-//   $loc <token> [] -> []        : set token to the current heap location
-//   hpad [U4] -> []              : pad heap with NOPs
-//   hal2 [] -> []                : align heap for 2 byte literal
-//   hal4 [] -> []                : align heap for 4 byte literal
-//   ha2 [] -> []                 : align heap to 2 bytes
-//   ha4 [] -> []                 : align heap to 4 bytes
+// fn h1 [U1] -> []                : push 1 byte to heap
+// fn h2 [U2] -> []                : push 2 byte to heap
+// fn h4 [U4] -> []                : push 4 byte to heap
+// fn L0 [U1] -> []                : compile a small literal [#0 - #3F]
+// fn $dictSet <key> [U4] -> []    : set a dictionary key to value
+// fn $dictGet <key>  [] -> [U4]   : get dictionary key's value
+// fn $dictGetR <key> [] -> [APtr] : get the key's &metaRef
+// fn $loc <token> [] -> []        : set token to the current heap location
+// fn hpad [U4] -> []              : pad heap with NOPs
+// fn hal2 [] -> []                : align heap for 2 byte literal
+// fn hal4 [] -> []                : align heap for 4 byte literal
+// fn ha2 [] -> []                 : align heap to 2 bytes
+// fn ha4 [] -> []                 : align heap to 4 bytes
 //
 // Assertions: these panic with the supplied errCode if cond is not met.
 //
@@ -515,51 +516,51 @@ $ha2 $loc tAssertEq // {a b}
 // They define and call functions, check the type of dictionary entries,
 // provide local dictionary support, etc.
 //
-//   $xsl  <token>                : compile execute small function
-//   $xl   <token>                : compile execute large function
-//   $jmpl <token>                : compile jump to small function
-//   L1 / L2 / L4  [U] -> []      : compile 1 / 2 / 4 byte literal.
-//   xCatch [... &fn]             : execute a large function and catch error.
-//   reteq [a b]                  : return immediately if a == b (%NEQ %RETZ)
+// fn $xsl  <token>                : compile execute small function
+// fn $xl   <token>                : compile execute large function
+// fn $jmpl <token>                : compile jump to small function
+// fn L1 / L2 / L4  [U] -> []      : compile 1 / 2 / 4 byte literal.
+// fn xCatch [... &fn]             : execute a large function and catch error.
+// fn reteq [a b]                  : return immediately if a == b (%NEQ %RETZ)
 //
-//   FN <name>                    : declare a large function
-//   SFN <name>                   : declare a small function
-//   PRE                          : make function "pre" (run after next token)
-//   SMART                        : make function "smart" (always instant)
-//   INSTANT                      : require function to be instant
+// fn FN <name>                    : declare a large function
+// fn SFN <name>                   : declare a small function
+// fn PRE                          : make function "pre" (run after next token)
+// fn SMART                        : make function "smart" (always instant)
+// fn INSTANT                      : require function to be instant
 //
-//   $c1 [instr]                  : INSTANT to compile instr when executed
-//   toRef [metaRef] -> [ref]     : strip meta byte from metaRef (top byte)
-//   $toMeta [metaRef] -> [meta]  : INSTANT to convert to a meta byte
-//   isTypes [&metaRef] -> [U]    : tells whether a &metaRef is not a constant.
-//   isTyFn [metaRef] -> [U1]     : metaRef is a fn
-//   isFnLarge [metaRef] -> [U1]  : metaRef is a large fn (has locals)
-//   isFnPre     ...
-//   isFnNormal  ...
-//   isFnInstant  ...
-//   isFnSmart  ...
-//   isFnSmartI  ...                : "smart instant", only at runtime
-//   isTyLocal [metaRef -> U1]      : is a local offset
-//   isTyLocalInput [metaRef -> U1] : is a local offset input
-//   isTyGlobal [metaRef -> U1]     : is a global variable
+// fn $c1 [instr]                  : INSTANT to compile instr when executed
+// fn toRef [metaRef] -> [ref]     : strip meta byte from metaRef (top byte)
+// fn $toMeta [metaRef] -> [meta]  : INSTANT to convert to a meta byte
+// fn isTypes [&metaRef] -> [U]    : tells whether a &metaRef is not a constant.
+// fn isTyFn [metaRef] -> [U1]     : metaRef is a fn
+// fn isFnLarge [metaRef] -> [U1]  : metaRef is a large fn (has locals)
+// fn isFnPre     ...
+// fn isFnNormal  ...
+// fn isFnInstant  ...
+// fn isFnSmart  ...
+// fn isFnSmartI  ...                : "smart instant", only at runtime
+// fn isTyLocal [metaRef -> U1]      : is a local offset
+// fn isTyLocalInput [metaRef -> U1] : is a local offset input
+// fn isTyGlobal [metaRef -> U1]     : is a global variable
 //
-//   toMod [ref -> [mod]          : get the "module" (upper byte of U4)
-//   curMod [ -> mod]             : get the module of the last dict entry
-//   isCurMod [ref -> mod]        : get whether ref is curMod
+// fn toMod [ref -> [mod]          : get the "module" (upper byte of U4)
+// fn curMod [ -> mod]             : get the module of the last dict entry
+// fn isCurMod [ref -> mod]        : get whether ref is curMod
 //
-//   panic [errCode]              : instantly panic with error
-//   unreach []                   : instantly panic with E_unreach
-//   assertWsEmpty []             : assert the working stack is empty (E_wsEmpty)
-//   assertNoInstant [asInstant]  : used by SMART to assert not called with $
-//   assertCurMod [ref]           : assert ref is cur mod
-//   assertNotNull [&r]           : E_null if r is NULL
-//   assertTyped [&metaRef]       :
-//   assertFnSmall [metaRef]      : assert fn is small (no locals)
-//   assertFnLarge [metaRef]      : assert fn is large (has locals)
+// fn panic [errCode]              : instantly panic with error
+// fn unreach []                   : instantly panic with E_unreach
+// fn assertWsEmpty []             : assert the working stack is empty (E_wsEmpty)
+// fn assertNoInstant [asInstant]  : used by SMART to assert not called with $
+// fn assertCurMod [ref]           : assert ref is cur mod
+// fn assertNotNull [&r]           : E_null if r is NULL
+// fn assertTyped [&metaRef]       :
+// fn assertFnSmall [metaRef]      : assert fn is small (no locals)
+// fn assertFnLarge [metaRef]      : assert fn is large (has locals)
 //
-//   getWsLen [ -> U4]            : get working stack length
-//   ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
-//   ldictSet / ldictGet / ldictGetR  : set/get/get-ref of local dict key
+// fn getWsLen [ -> U4]            : get working stack length
+// fn ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
+// fn ldictSet / ldictGet / ldictGetR  : set/get/get-ref of local dict key
 
 $hal4 $loc toRef // {metaRef} -> {ref}
   .4%LIT @REF_MASK $h4 %BAND %RET
@@ -883,27 +884,27 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant // {...(N &jmpTo) numJmpTo}
 // We need a way to define global and local variables, as well as GET, SET and
 // obtain a REF to them.
 //
-//   GET <token>            SMART : compile a FT of token (local or global)
-//   _SET <token>           SMART : compile a SR of token (local or global)
-//   REF <token>            SMART : compile a "get ref" of token
-//   GLOBAL <token> [SzI]   SMART : define a global variable of szI
-//   LOCAL <token> [SzI]    SMART : define a local variable of szI
-//   INPUT <token> [SzI]    SMART : define a local input variable of szI
-//   END_LOCALS             SMART : end locals
-// 
-//   align [aptr sz -> aptr]      : align aptr with sz bytes
-//   align4 [aptr -> aptr]        : align aptr with 4 bytes
-//   alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
-//   haN [szI]                    : align the heap to szI
-//   halN [szI]                   : align the heap for a literal to szI
-//   hN [U4 szI]                  : write a value of szI to heap (no align)
-//   szToSzI [U4 -> SzI]          : convert integer to SzI bits
-//   szIToSz [SzI -> U1]          : get an integer sz from szI
-//   szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
-//   srN [addr value szI]         : store a value of szI at addr
-//   anyDictGetR [-> &metaRef isFromLocal] : any ref to current token.
-/ 
-//   assertSzI [szI]              : assert that szI is valid
+// fn GET <token>            SMART : compile a FT of token (local or global)
+// fn _SET <token>           SMART : compile a SR of token (local or global)
+// fn REF <token>            SMART : compile a "get ref" of token
+// fn GLOBAL <token> [SzI]   SMART : define a global variable of szI
+// fn LOCAL <token> [SzI]    SMART : define a local variable of szI
+// fn INPUT <token> [SzI]    SMART : define a local input variable of szI
+// fn END_LOCALS             SMART : end locals
+//
+// fn align [aptr sz -> aptr]      : align aptr with sz bytes
+// fn align4 [aptr -> aptr]        : align aptr with 4 bytes
+// fn alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
+// fn haN [szI]                    : align the heap to szI
+// fn halN [szI]                   : align the heap for a literal to szI
+// fn hN [U4 szI]                  : write a value of szI to heap (no align)
+// fn szToSzI [U4 -> SzI]          : convert integer to SzI bits
+// fn szIToSz [SzI -> U1]          : get an integer sz from szI
+// fn szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
+// fn srN [addr value szI]         : store a value of szI at addr
+// fn anyDictGetR [-> &metaRef isFromLocal] : any ref to current token.
+//
+// fn assertSzI [szI]              : assert that szI is valid
 
 $SFN assertSzI $PRE // {szI}
   %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot // non-sz bits empty
@@ -1141,15 +1142,20 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
 
 // **********
 // * [9] Zoa strings and logging zoab
-
-//   $loc <name> |zoa string literal|    : define a zoa string
+// See ./harness.md for design reasoning.
 //
-//   com [len &raw]               : communicate raw data with harness
-//   comDone []                   : trigger com done (flush)
-//   comzStart []                 : zoab start
-//   comzU4 [U4]                  : com zoab U4 (big endian)
-//   comzData [len &raw join]     : send zoab data with join bit
-//   TODO: not finished
+// fn $loc <name> |zoa string literal|    : define a zoa string
+//
+// fn com [len &raw]               : communicate raw data with harness
+// fn comDone []                   : trigger com done (flush)
+// fn comzStart []                 : zoab start
+// fn comzU4 [U4]                  : com zoab U4 (big endian)
+// fn comzData [len &raw join]     : send zoab data with join bit
+// fn comzArr [len join]           : start an array of len and join
+// fn comzLogStart [lvl extraLen]  : start a log arr of data len exraLen
+// fn print [len &raw]             : print raw data to the user (LOG_USER)
+// fn _printz [&z]                 : print zoab bytes (<=63) to the user
+// fn TODO: not finished
 
 // |zoa string literal|
 // Creates a zoa string in the heap.
@@ -1218,7 +1224,45 @@ $SFN _printz  $PRE // {&z}: print zoab bytes to user. (single segment)
 $assertWsEmpty
 
 // **********
-// * Fngi Compile Loop
+// * [10] Fngi Compile Loop
+// The fngi compile loop is implemented in spore. In addition to the compile loop itself,
+// this section implements several essential parsing functions that can be used
+// in other areas of fngi.
+//
+// Globals:
+//   global c_compFn: a function reference used to compile individual tokens.
+//
+// fn spor <token>                 : compile token as spor.
+// fn ( <...> )                    : ( compiles tokens until )
+// fn $ <token>                    : execute token asInstant
+// fn ret [U4]                     : compile %RET
+// fn _   fn ,   fn ;              : syntax helpers that do nothing.
+//
+// fn between [value a b -> bool]  : return whether value between [a,b]
+// fn charToInt [c -> U8]          : convert ascii -> hex
+// fn null2 [ -> NULL NULL]        : return two null values
+//
+// c_fngi                          : fngi compile loop.
+// fn fngiSingle [ -> ...]         : starting (base) c_compFn
+// fn c_single [ -> ...]           : compile/execute a single token (c_compFn).
+// fn c_fn [metaRef]               : compile a function (small or large)
+// fn execute [metaRef]            : execute a function (small or large)
+// fn parseNumber [ -> value isNum]: parse token as number
+// fn lit [U4]                     : compile literal
+// fn xSzI [metaRef -> szI]        : return szI of the fn
+//
+// fn c_read [ -> numRead]         : attempt to read bytes from src.
+// fn c_readNew [ -> numRead]      : clear token buf and read bytes.
+// fn c_charNext [ -> c]           : read next character (WARN: AFTER tokenLen)
+// fn c_charNextEsc [ -> c unkEsc] : read an escapeable character (string).
+// fn c_scanNoEof []               : scan and assert not EOF.
+// fn c_peekChr [ -> c]            : peek at the next character.
+// fn c_updateCompFn [newComp -> prevComp] : update c_compFn + ret old
+// fn c_number <number> -> [value isNum]   : parse next token (parseNumber).
+//
+// fn c_isEof [ -> bool]           : return whether there was a token scanned
+// fn c_assertToken []             : assert there is a token
+// fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
 $FN between $PRE // {value a b} -> a <= value <= b
   @SZ4 $INPUT b   $END_LOCALS // {value a}
@@ -1326,7 +1370,7 @@ $FN c_parseNumber // {} -> {value isNumber}
 
 $assertWsEmpty
 
-$SFN lit  $PRE
+$SFN lit  $PRE // {U4} compile literal
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
@@ -1386,15 +1430,9 @@ $SFN _compFnAsInstant $PRE
   $END // {asInstant metaRefFn}
   %SWP %DRP %RET // not normal = leave alone
 
-// $SFN _fnEncodeAsInstant $PRE
-//   @TY_FN_TY_MASK$L1 #18$L0 %SHL %INV %BAND // clear FN_TY from meta
-//   %SWP %NOT %NOT // make asInstant boolean {metaRefFn asInstant}
-//   #20$L0 %SHL  %BOR // {metaRefFn | asInstant<<0x20} set asInstant in meta.
-//   %RET
+#0 @SZ4 $GLOBAL c_compFn // must be a large fn.
 
-#0 @SZ4 $GLOBAL c_compFn // must be a small fn.
-
-$SFN _updateCompFn $PRE // {newCompFnMetaRef} -> {prevCompFnRef}
+$SFN c_updateCompFn $PRE // {newCompFnMetaRef} -> {prevCompFnRef}
   $xsl toRef
   $GET c_compFn %SWP $_SET c_compFn %RET
 
@@ -1439,12 +1477,12 @@ $FN c_single $PRE
     $jmpl execute // regular instant. Just call immediately.
   $END $jmpl c_fn // otherwise compile the function.
 
-$FN fngiSingle
+$FN fngiSingle // base c_compFn for fngi tokens.
   $END_LOCALS // not really any locals (but this is used as a pointer)
   $xsl c_scan $GET c_tokenLen %RETZ
   @FALSE$L0 $xl c_single %RET
 
-@fngiSingle $_updateCompFn ^DRP
+@fngiSingle $c_updateCompFn ^DRP
 
 $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number.
 
@@ -1459,7 +1497,7 @@ $SFN (  $SMART%DRP  // parens ()
 
 $FN _spor
   @SZA $LOCAL compFn $END_LOCALS
-  @_spor$L2  $xsl _updateCompFn $_SET compFn // update c_compFn and cache
+  @_spor$L2  $xsl c_updateCompFn $_SET compFn // update c_compFn and cache
   $xsl c_scanNoEof
   @D_comp$L0  %DVFT // compile next token as spor asm
   $GET compFn $_SET c_compFn %RET
@@ -1468,7 +1506,7 @@ $SFN spor $SMART $xsl assertNoInstant $xl _spor %RET // compile as assembly
 
 $FN _instant // used in $ to make next call instant.
   @SZA $LOCAL compFn $END_LOCALS
-  @_instant $L2  $xsl _updateCompFn $_SET compFn // update c_compFn and cache
+  @_instant $L2  $xsl c_updateCompFn $_SET compFn // update c_compFn and cache
   $xsl c_scanNoEof
   @TRUE$L0 $xl c_single  // compile next token as INSTANT
   $GET compFn $_SET c_compFn %RET
@@ -1493,7 +1531,7 @@ $SFN _ $SMART%DRP %RET
 $SFN , $SMART%DRP %RET
 $SFN ; $SMART%DRP %RET
 
-$SFN c_fngi
+$SFN c_fngi // fngi compile loop
   $LOOP l0
     $GET c_tokenSize %RETZ // exit on EOF
     $GET c_compFn .4%XW
