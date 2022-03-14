@@ -246,52 +246,6 @@ def errData(z):
   if ty == ERR_DATA_INT2: return (integerBE(z[1]), integerBE(z[2]))
   return z[1:]
 
-
-@dataclass
-class ErrEvent(Event):
-  errCode: int
-  errName: str
-  isCaught: bool
-  ep: int
-  lineNo: int
-  data: list
-  callStkLen: int
-  callStk: bytes
-  localsStk: bytes
-
-  def __repr__(self):
-    return f"ErrEvent(code={nice(self.errCode)} name={self.errName.split()[0]})"
-
-  @classmethod
-  def from_(cls, z, env):
-    code = integerBE(z[1])
-    isCaught = bool(integerBE(z[2]))
-    callStk, localsStk = None, None
-    if isCaught: callStkLen = integerBE(z[6])
-    else:
-      callStk, localsStk = z[6]
-      callStkLen = len(callStk) // 4
-    return cls(
-      errCode=code,
-      errName=env.codes.get(code, "Unknown Err"),
-      isCaught=isCaught,
-      ep=integerBE(z[3]),
-      lineNo=integerBE(z[4]),
-      data=errData(z[5]),
-      callStkLen=callStkLen,
-      callStk=callStk,
-      localsStk=localsStk,
-    )
-
-@dataclass
-class FileEvent(Event):
-  file: str
-
-  @classmethod
-  def from_(cls, z):
-    return cls(file=z[1])
-
-
 @dataclass
 class WorkingStk:
   totalLen: int
@@ -313,6 +267,53 @@ class WorkingStk:
 
     data = ' '.join(f'#{v:<8X}' for v in self.data)
     return f"{{{andMore}{data}}}"
+
+@dataclass
+class ErrEvent(Event):
+  errCode: int
+  errName: str
+  isCaught: bool
+  ep: int
+  ws: WorkingStk
+  lineNo: int
+  data: list
+  callStkLen: int
+  callStk: bytes
+  localsStk: bytes
+
+  def __repr__(self):
+    return f"ErrEvent(code={nice(self.errCode)} name={self.errName.split()[0]})"
+
+  @classmethod
+  def from_(cls, z, env):
+    code = integerBE(z[1])
+    isCaught = bool(integerBE(z[2]))
+    callStk, localsStk = None, None
+    if isCaught: callStkLen = integerBE(z[7])
+    else:
+      callStk, localsStk = z[7]
+      callStkLen = len(callStk) // 4
+    return cls(
+      errCode=code,
+      errName=env.codes.get(code, "Unknown Err"),
+      isCaught=isCaught,
+      ep=integerBE(z[3]),
+      ws=WorkingStk.from_(z[4]),
+      lineNo=integerBE(z[5]),
+      data=errData(z[6]),
+      callStkLen=callStkLen,
+      callStk=callStk,
+      localsStk=localsStk,
+    )
+
+@dataclass
+class FileEvent(Event):
+  file: str
+
+  @classmethod
+  def from_(cls, z):
+    return cls(file=z[1])
+
 
 class ExecutionEvent(Event):
   pass
@@ -565,6 +566,7 @@ def handleErrEvent(env, ev):
     print("    A:", nice(ev.data[0]))
     print("    B:", nice(ev.data[1]))
 
+  print("Working Stk:", ev.ws)
   if   not ev.callStkLen: pass
   else:
     print(f"  Call Stack (depth={ev.callStkLen})")
@@ -576,6 +578,7 @@ def handleErrEvent(env, ev):
     lastCs = CallStkItem(ep=ev.ep, fn=fn, fnNext=fnNext, localData=b'')
     callStk.insert(0, lastCs)
     printCallStack(callStk)
+
 
 def harness(env, io):
   try:

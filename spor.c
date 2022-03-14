@@ -526,11 +526,12 @@ void zoab_ls() {
 }
 
 void zoab_err(U4 err, U1 isCaught) {
-  zoab_start(); zoab_arr(7, FALSE);
+  zoab_start(); zoab_arr(8, FALSE);
   zoab_data(2, LOG_ERR_PTR, FALSE);
   zoab_int(err);
   zoab_int(isCaught);
   zoab_int(env.ep);
+  zoab_ws(WS_LEN);
   zoab_int(line);
 
   switch (env.errData->valTy) {
@@ -743,7 +744,7 @@ FTGL: case SzI2 + FTGL:
       return WS_PUSH(fetch(mem, env.gb + popLit(SzI2), szI));
     GOTO_SZ(FTGL, SzI1)
     GOTO_SZ(FTGL, SzI4)
-SR: case SzI2 + SR:
+SR: case SzI2 + SR: // {addr, value}
       r = WS_POP(); return store(mem, WS_POP(), r, szI);
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)

@@ -33,3 +33,6 @@ FN testSET PRE
   SET a = inc(GET a)
   ret(GET a)
 $tAssertEq(testSET, 5)
+
+// Test Block Allocator
+$tAssertEq(0xFF, BA_null)

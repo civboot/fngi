@@ -306,6 +306,7 @@
 #E0F0  =E_cUnknownEsc // unknown character escape
 #E0F1  =E_cZoab       // Zoab invalid
 #E0F2  =E_cNeedToken  // token not present
+#E0F2  =E_cNeedNumber // number not present
 
 // **********
 // * [4] Globals
@@ -339,8 +340,8 @@
 #0000_0044 =c_msg          // [APtr]
 
 // Global Compiler Variables
-#0000_0048 =c_rKey         // [U4] rKey, ref to current dict key.
-#0000_004C =c_rLKey        // [U4] rLKey, ref to current L dict key.
+#0000_0048 =c_rKey         // [U4] &metaRef of current dict key
+#0000_004C =c_rLKey        // [U4] &metaRef of current ldict key.
 #0000_0050 =c_gheap        // [U4] global heap
 #0000_0054 =c_localOffset  // [U2] Local Offset (for local var setup)
 
@@ -558,8 +559,12 @@ $ha2 $loc tAssertEq // {a b}
 // fn assertFnLarge [metaRef]      : assert fn is large (has locals)
 //
 // fn getWsLen [ -> U4]            : get working stack length
+// fn c_updateRKey [ -> &metaRef]  : update rKey=dictHeap and return it
 // fn ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
 // fn ldictSet / ldictGet / ldictGetR  : set/get/get-ref of local dict key
+// fn c_keySetTyped [&metaRef]         : make a key non-global
+// fn c_makeTy <token> [<dictArgs> meta] : make token be typed meta
+// fn c_dictSetMeta [<dictArgs> meta:U1 &metaRef] : update dict key meta
 
 $hal4 $loc toRef // {metaRef} -> {ref}
   .4%LIT @REF_MASK $h4 %BAND %RET
@@ -579,7 +584,6 @@ $hal2 $loc _jmpl // $_jmpl <token>: compile unchecked jmpl
   $_xsl dictGet             // {metaRef}
   .1%LIT @JMPL2 $h1 // push .2%JMPL instr
   $hal2 .2%JMPL @_j2 $h2
-
 
 $hal2 $loc L1 // {U1} compile 1 byte literal
   .1%LIT  @SZ1 @LIT ^BOR  $h1 // push .1%LIT instr
@@ -662,10 +666,10 @@ $loc jmpl  // $jmpl <token> : compile jmpl2
   @JMPL2$L1  $_jmpl _j2
 
 $hal2 $loc c_updateRKey // [] -> [&metaRef] update and return current key
-        .4%FTGL @c_dictBuf $h2  // dict.buf
-  $hal2 .2%FTGL @c_dictHeap $h2 // dict.heap
+        .4%FTGL @c_dictBuf$h2  // dict.buf
+  $hal2 .2%FTGL @c_dictHeap$h2 // dict.heap
   .4%ADD // {&newKey}
-  %DUP $hal2 .4%SRGL @c_rKey $h2 // rKey=newKey
+  %DUP $hal2 .4%SRGL @c_rKey$h2 // rKey=newKey
   %RET // return &metaRef (newKey)
 
 $loc metaSet // {metaRef meta:U1} -> U4 : apply meta to metaRef
@@ -684,7 +688,7 @@ $loc c_keySetTyped // {&metaRef} -> []
   .1%FT @KEY_HAS_TY$L1 %BOR // {&len tyKeyLen}
   .1%SR %RET            // update tyKeyLen
 
-$loc c_keySetTy // {<dictArgs> meta:U1 &metaRef} -> {} meta current key's meta to be a Ty
+$loc c_dictSetMeta // {<dictArgs> meta:U1 &metaRef -> } update dict key's meta.
   %SWP %OVR // {<dictArgs> &metaRef meta &metRef}
   %DUP $_xsl c_keySetTyped // make key "typed" {<dictArgs> &metaRef meta &metaRef}
   %SWP $_xsl rMetaSet // {<dictArgs> &metaRef}
@@ -694,7 +698,7 @@ $hal2 $loc _declFn // [<dictArgs> meta]
   @TY_FN$L1 %BOR // {<dictArgs> meta}
   $_xsl c_updateRKey // {<dictArgs> meta &metaRef}
   $_xsl loc
-  $_jmpl c_keySetTy
+  $_jmpl c_dictSetMeta
 
 $hal2 $loc SFN  // SMART $SFN <token>: define location of small function
   $_xsl assertNoInstant $_xsl dictArgs #0$L0         $_jmpl _declFn
@@ -713,8 +717,7 @@ $loc INSTANT // {} modify current function to be smart
 // Backfill the fn meta
 $loc c_makeTy // {<dictArgs> meta} make an existing symbol a type.
   $_xsl dictGetR   // {meta &metaRef}
-  $_xsl c_keySetTy
-  %RET
+  $_jmpl c_dictSetMeta
 
 #0 // manually insert asInstant=False (since compiler doesn't know it's smart yet)
 $FN c_makeFn // {meta} <token>: set meta for token to be a small function.
@@ -766,7 +769,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 #0                    $c_makeFn c_updateRKey
 @TY_FN_PRE            $c_makeFn c_dictDumpEntry
 @TY_FN_PRE            $c_makeFn c_keySetTyped
-@TY_FN_PRE            $c_makeFn c_keySetTy
+@TY_FN_PRE            $c_makeFn c_dictSetMeta
 #0                    $c_makeFn c_makeTy
 
 @TY_FN_PRE            $c_makeFn assert
@@ -1072,7 +1075,7 @@ $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
   // make stack to be: {value <dictArgs> meta &metaRef}
   .1%SRLL#1$h1 .4%SRLL#4$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 
-  $xsl c_keySetTy // update key ty {value}
+  $xsl c_dictSetMeta // update key ty {value}
   $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srN // store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap // gheap += sz
   %RET
@@ -1106,7 +1109,7 @@ $ha2 $FN _localImpl $PRE // {szI:U1 meta:U1}
   $xsl c_updateRLKey // {meta loff &metaRef}
   %SWP $xsl ldictSet  // set to localOffset {meta &metaRef}
   .4%SRLL#4$h1 .1%SRLL#1$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1
-  $xsl c_keySetTy %RET
+  $jmpl c_dictSetMeta
 
 // #<szI> $LOCAL myLocal: declare a local variable of sz
 // This stores the offset and sz for lRef, lGet and lSet to use.
@@ -1217,8 +1220,7 @@ $SFN print  $PRE // {len &raw}: print data to user
 $SFN _printz  $PRE // {&z}: print zoab bytes to user. (single segment)
   %DUP .1%FT %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert // {len}
   %SWP %INC  $xsl print 
-  $xsl comDone
-  %RET
+  $jmpl comDone
 
 $assertWsEmpty
 
@@ -1487,11 +1489,11 @@ $SFN c_number $xsl c_scan $xl c_parseNumber %RET // compile next token as number
 
 $SFN (  $SMART%DRP  // parens ()
   $xsl c_assertToken
-  $xsl c_peekChr #29$L0 %EQ $IF  $xsl c_scan %RET  $END // return if we hit ")"
+  $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END // return if we hit ")"
   $LOOP l0
     $GET c_compFn .4%XW
     $xsl c_assertToken
-    $xsl c_peekChr #29$L0 %EQ $IF  $xsl c_scan %RET  $END // return if we hit ")"
+    $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END // return if we hit ")"
   $AGAIN l0
 
 $FN _spor
