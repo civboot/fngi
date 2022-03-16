@@ -174,7 +174,7 @@
 // Note: caches and restores ep, call stack and local stack state and clears
 // working stack (besides the returned err).
 #09 =D_xCatch
-#0A =D_memMove // {dst src len} "dst = src [len]" move bytes safely.
+#0A =D_memSet  // {dst v len} "dst = v [len]". FT: memset, SR: memmove
 #0B =D_memCmp  // {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
 #0C =D_com     // {&msg len} -> {ioResult}: write to debug stream
 #0D =D_zoa     // {} -> {} parse zoa to heap
@@ -308,6 +308,8 @@
 #E0F2  =E_cNeedToken  // token not present
 #E0F2  =E_cNeedNumber // number not present
 
+#E0B0  =E_iBlock      // invalid block index
+
 // **********
 // * [4] Globals
 #0000_0004 =heap
@@ -351,7 +353,7 @@
 #03  =ERR_DATA_INT2
 #04  =ERR_DATA_DATA2
 
-@c_gheap #0000_0058 .4^SR  // initial value of global heap
+@c_gheap #58 #A ^ADD .4^SR  // initial value of global heap
 
 // **********
 // * [5] Core Utility Macros
@@ -825,7 +827,8 @@ $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
 $SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
-$SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ $c1 @RETZ $c1 %RET
+$SFN retz $PRE $SMART $xsl assertNoInstant @RETZ$c1 %RET
+$SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ$c1 @RETZ$c1 %RET
 
 
 // **********
@@ -1074,7 +1077,7 @@ $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
 
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
   // make stack to be: {value <dictArgs> meta &metaRef}
-  .1%SRLL#1$h1 .4%SRLL#4$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 
+  .1%SRLL#1$h1 .4%SRLL#4$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1
   $xsl c_dictSetMeta // update key ty {value}
   $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srN // store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap // gheap += sz
@@ -1239,7 +1242,7 @@ $assertWsEmpty
 // fn ret [U4]                     : compile %RET
 // fn _   fn ,   fn ;              : syntax helpers that do nothing.
 //
-// fn between [value a b -> bool]  : return whether value between [a,b]
+// fn betweenIncl [value a b -> bool]  : return whether value between [a,b]
 // fn charToInt [c -> U8]          : convert ascii -> hex
 // fn null2 [ -> NULL NULL]        : return two null values
 //
@@ -1265,7 +1268,7 @@ $assertWsEmpty
 // fn c_assertToken []             : assert there is a token
 // fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
-$FN between $PRE // {value a b} -> a <= value <= b
+$FN betweenIncl $PRE // {value a b} -> a <= value <= b
   @SZ4 $INPUT b   $END_LOCALS // {value a}
   %OVR %SWP // {value value a}
   // if (value<a) return FALSE;
@@ -1275,11 +1278,11 @@ $FN between $PRE // {value a b} -> a <= value <= b
 
 $SFN charToInt $PRE // {c} -> {U8}
   // '0' - '9'
-  %DUP #30$L0 #39$L0 $xl between $IF #30$L0 %SUB %RET $END
+  %DUP #30$L0 #39$L0 $xl betweenIncl $IF #30$L0 %SUB %RET $END
   // 'A' - 'Z'
-  %DUP #41$L1 #5A$L1 $xl between $IF #41$L1 %SUB #A$L0 %ADD %RET $END
+  %DUP #41$L1 #5A$L1 $xl betweenIncl $IF #41$L1 %SUB #A$L0 %ADD %RET $END
   // 'a' - 'z'
-  %DUP #61$L1 #7A$L1 $xl between $IF #61$L1 %SUB #A$L0 %ADD %RET $END
+  %DUP #61$L1 #7A$L1 $xl betweenIncl $IF #61$L1 %SUB #A$L0 %ADD %RET $END
   %DRP #FF$L1 %RET
 
 $SFN null2 #0$L0 %DUP %RET

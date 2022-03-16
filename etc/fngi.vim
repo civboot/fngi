@@ -28,7 +28,7 @@ syn match elHex       '0x_0-9a-fA-F' nextgroup=elBin
 syn match elBin       '0b01' nextgroup=elInstant
 syn match elInstant   '$[_0-9a-zA-Z]\+' nextgroup=elInstrDot
 syn match elCommentLn '//.*$' nextgroup=elCommentBlock
-syn match elCommentBlk '/\*.*\*/' nextgroup=elStrRaw
+syn match elCommentBlk '/\*.\{-}\*/' nextgroup=elStrRaw
 syn match elStrRaw     '".*"' nextGroup=elStrEsc
 syn match elStrEsc     '\\".*\\"'
 

@@ -62,8 +62,9 @@ SFN = SMART drp panic(E_cToken) // prevent hanging =
 SFN ) SMART drp panic(E_cUnclosed) // prevent unclosed parens
 SFN setSysLogLvl PRE _SET sysLogLvl ret; // {logLvl}
 SFN setUsrLogLvl PRE _SET usrLogLvl ret; // {logLvl}
-SFN memcmp PRE  ret dvft(D_memCmp) // {&a &b len -> cmp}
-SFN memMove PRE  ret dvft(D_memMove) // {dst src len} "dst = src"
+SFN memCmp  PRE  ret dvft(D_memCmp) // {&a &b len -> cmp}
+SFN memSet  PRE  ret dvft(D_memSet) // {dst v len}   "dst = v"
+SFN memMove PRE  ret dvsr(D_memSet) // {dst src len} "dst = src"
 
 SFN c_shiftBuf // shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
@@ -81,7 +82,7 @@ FN strEq PRE // {aLen &a bLen &b}
   $SZ2 INPUT bLen  $SZ4 INPUT b END_LOCALS
   swp // {&a aLen}
   IF(_ != GET bLen)  drp; ret FALSE;  END // {&a}
-  ret(memcmp(_, GET b, GET bLen) == 0)
+  ret(memCmp(_, GET b, GET bLen) == 0)
 
 SFN assertToken PRE // {zStr}
   ft1(dup) swp; inc(_) // {expectLen &expect}
@@ -103,32 +104,132 @@ FN SET  SMART // SET <name> = <value>
   xw(GET c_compFn) // <value>
   ret _setImpl(GET rMetaRef, GET isFromLocal)
 
+FN gheapReserve PRE  $SZ2 INPUT len END_LOCALS
+  memSet(GET c_gheap, 0, GET len) // clear bytes
+  SET c_gheap = (GET c_gheap + GET len);
+  ret;
+
+FN /*  // block-comment */
+  $SZ1 LOCAL lastTy // 0=*, 1=/  2=other
+  $SZ1 LOCAL c
+  END_LOCALS SMART drp; // ignore asInstant
+  SET lastTy = 2; // other
+  LOOP l0
+    IF(GET c_tokenLen >= GET c_tokenSize)  c_assertNoEof(c_readNew)  END
+    GET c_tokenLen; // {c_tokenLen}
+    SET c = ft1(dup + GET c_tokenBuf); // {c_tokenLen}
+    SET c_tokenLen = inc(_); // increment c_tokenLen
+
+    IF(0c/ == GET c)
+      retz(GET lastTy) // Found: */ (done)
+      SET lastTy = 1; // lastTy=/
+    ELSE IF(0c* == GET c)
+      IF(1 == GET lastTy) // Found: /*
+        FALSE spor$xl /* // recursively call block-comment. */
+      ELSE  SET lastTy = 0;  END
+    ELSE  SET lastTy = 2;    END END
+  AGAIN l0
+
+FN between // {value a b -> bool} value is between [a b)
+  $SZ4 INPUT b   END_LOCALS // {value a}
+  ovr; swp; // {value value a}
+  IF(_ < _)  drp; ret FALSE;  END // {value}
+  GET b; swp; ret(_ < _);
+
 // **********
 // * Block Allocator (BA)
-// The Block Allocator (BA) is built on the Byte Singly Linked List (BSLL).
+// The Block Allocator (BA) is used to allocate and free 4KiB blocks. It can
+// store up to 255 of them (almost a full MiB).
 //
-// The structure of a BSLL is an array of bytes, up to length 255. Each byte
-// can contain either 0xFF ("null") or the index of the next node. The root
-// node is then stored by either the root "free allocator", who's nodes are
-// blocks available to be used; or an "owned allocator" containing allocated
-// blocks.
+// It's implementation architecture is built on the Byte Singly Linked List
+// (BSLL). The structure of a BSLL is an array of bytes, up to length 255.
+// Each byte can contain either 0xFF (BA_iNull) or the index of the next node.
+// At initialization, the root points to the first index and each index
+// points to the next index. Allocation is then simply popping indexes
+// from the SLL.
 //
-// STRUCT BSLL [
+// STRUCT BA [ // size=10
 //   indexes: &U1;   // 0: pointer to indexes (up to 255 bytes)
 //   blocks: APtr;   // 4: pointer to data blocks, each of 4KiB
 //   len: U1;        // 5: number of indexes and blocks
-//   root: U1;       // 6: root free block, may be 0xFF if empty.
+//   root: U1;       // 6: root free block, may be 0xFF if empty
 // ]
 
-CONST BA_null = 0xFF;
+CONST NULL = 0;
+CONST BA_iNull = 0xFF;
+CONST BA_blockPo2 = 12;  // 4KiB == 2^12
 
-SFN BA_allocI // { &ba -> blockIndex}
+// STRUCT BA
+//    BA_indexesOfs = 0;  // indexes: APtr
+CONST BA_blocksOfs  = 4;  // blocks: APtr
+CONST BA_lenOfs     = 9;  // len: U1
+CONST BA_rootOfs    = 10; // root: U1
 
-SFN BA_alloc // { &ba -> &block}
+// Reserve space for the kernel's block allocator
+$(0 SZ4) GLOBAL BA_kernel  $gheapReserve(10 - 4)
 
+SFN BA_iToPtr PRE // {bi &ba -> &block}
+  ft4(_ + BA_blocksOfs); swp;            // {&firstBlock bi}
+  IF(dup == BA_iNull) drp; ret NULL; END // {&firstBlock bi}
+  ret(_ + (_ << BA_blockPo2))
 
-// **********
-// * Block Allocator
+FN BA_ptrToI PRE // {&block &ba -> bi}
+  $SZ4 INPUT block  $SZ4 INPUT ba  END_LOCALS
+  IF(GET block == NULL)  ret BA_iNull;  END
+  assert(
+    between( // block between [&firstBlock, &lastBlockEnd)
+      GET block,
+      ft4(_ + BA_blocksOfs), // {&firstBlock}
+      dup + (inc(ft1(GET ba + BA_lenOfs)) << BA_blockPo2),
+    ), E_iBlock)
 
+  swp; IF(dup == NULL) drp; ret BA_iNull; END swp; // {&block &ba}
+  ovr; ovr;
+  // TODO: check that it is between block possibilities.
+  ft4(_ + BA_blocksOfs); spor%SUB // { &block-&firstBlock }
+  ret (_ >> BA_blockPo2)
+
+SFN BA_iGet  PRE ret ft1(/*bi*/ + ft4(_)) // {bi &ba -> bi}
+SFN BA_iSet  PRE  // {value bi &ba}  set ba@bi = value
+  _ + ft4(_) // {value &index}
+  swp; ret sr1(_, _)
+
+FN BA_init PRE // {&ba}
+  $SZ4 INPUT ba  $SZ1 LOCAL iLast  END_LOCALS
+  SET iLast = dec(ft1(GET ba + BA_lenOfs));
+  sr1(GET ba + BA_rootOfs, 0); // initialze root as index=0
+  0 LOOP l0 // {bi}
+    IF (dup == GET iLast)
+      BA_iNull; swp; // {BA_iNull bi}
+      ret BA_iSet(_, _, GET ba)
+    END // {bi}
+    inc(dup); swp; // {bi bi+1 bi}
+    BA_iSet(_, _, GET ba)
+    inc(_) // {bi+1}
+  AGAIN l0
+
+// { &ba -> bi} alocate a block index
+// (returning a) root->a->b ===> root->b
+FN BA_iAlloc PRE
+  $SZ4 INPUT ba  $SZ1 LOCAL out  END_LOCALS
+  ft1(GET ba + BA_rootOfs) // {biRoot}
+  reteq(dup, BA_iNull) // return BA_iNull if biRoot=BA_iNull
+  SET out = _; // out=biRoot
+  sr1(GET ba + BA_rootOfs, BA_iGet(GET out)); // root=next node
+  ret GET out;
+
+// {bi &ba} free a block index
+// (freeing bi=a) root->b  ===>  root->a->b
+FN BA_iFree PRE
+  $SZ1 INPUT bi  $SZ1 LOCAL biRoot  $SZ4 INPUT ba  END_LOCALS
+  assert(dup != BA_iNull, E_iBlock)
+  SET biRoot = ft1(GET ba + BA_rootOfs)
+  BA_iSet(GET biRoot, GET bi, GET ba)  // a -> b  (note: may be BA_iNull)
+  ret sr1(GET ba + BA_rootOfs, GET bi) // root -> a
+
+SFN BA_alloc PRE ret BA_iToPtr(BA_iAlloc(_)); // {&ba -> &blockNullable}
+SFN BA_free  PRE // {&block &ba}
+  swp; BA_ptrToI(_); swp; // {bi &ba}
+  ret BA_iFree(_, _);
 
 $c_dictDump

@@ -215,9 +215,9 @@ $FN withLocals
 
 @withLocals $toRef .1^FT  #2 $tAssertEq
 
-#1 #0 #3 $between $tAssert
-#0 #0 #3 $between $tAssert
-#3 #0 #3 $between $tAssert
+#1 #0 #3 $betweenIncl $tAssert
+#0 #0 #3 $betweenIncl $tAssert
+#3 #0 #3 $betweenIncl $tAssert
 
 $() // does nothing
 $( SFN hi 32 one spor%RET )

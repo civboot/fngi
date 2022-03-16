@@ -35,4 +35,4 @@ FN testSET PRE
 $tAssertEq(testSET, 5)
 
 // Test Block Allocator
-$tAssertEq(0xFF, BA_null)
+$tAssertEq(0xFF, BA_iNull)

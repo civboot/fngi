@@ -150,7 +150,7 @@ typedef enum { SzI1 = 0x00, SzI2 = 0x10, SzI4 = 0x20, } SzI;
 typedef enum {
   D_read    = 0x00, D_scan    = 0x01, D_dict    = 0x02, D_rdict   = 0x03,
                     D_comp    = 0x05, D_assert  = 0x06, D_wslen   = 0x07,
-  D_cslen   = 0x08, D_xCatch  = 0x09, D_memMove = 0x0A, D_memCmp  = 0x0B,
+  D_cslen   = 0x08, D_xCatch  = 0x09, D_memSet  = 0x0A, D_memCmp  = 0x0B,
   D_com     = 0x0C, D_zoa     = 0x0D, D_dictDump= 0x0E, D_comZoab = 0x0F,
   D_comDone = 0x10,
 } Device;
@@ -1095,11 +1095,14 @@ void deviceOpCompile() {
   ASM_ASSERT(!compile(), E_cRet);
 }
 
-void deviceOpMemMove() { // {dst src len} -> {}
+// SR: {dst src len}: dst = src (of len)
+// FT: {dst value:U1 len}: dst = value (fill len)
+void deviceOpMemMove(U1 isFetch) {
   U2 len = WS_POP();
-  APtr src = WS_POP();
+  APtr v = WS_POP();
   APtr dst = WS_POP();
-  memmove(mem + dst, mem + src, len);
+  if(isFetch) memset(mem + dst, v, len);
+  else memmove(mem + dst, mem + v, len);
 }
 
 void deviceOpMemCmp() { // {a b len} -> {cmp}
@@ -1288,7 +1291,7 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
     case D_wslen: WS_PUSH(WS_LEN); break;
     case D_cslen: WS_PUSH(Stk_len(env.cs)); break;
     case D_xCatch : deviceOpCatch(); break;
-    case D_memMove: deviceOpMemMove(); break;
+    case D_memSet : deviceOpMemMove(isFetch); break;
     case D_memCmp: deviceOpMemCmp(); break;
     case D_com: deviceOpCom(isFetch); break;
     case D_zoa: deviceOpZoa(); break;
