@@ -91,6 +91,12 @@ $ha2 #1 $h1 // misalign heap
 @SZ4 $halN #1 $h1 #12345 $h4 // use them.
 
 // Testing Gloabls
+@SZ1 $assertSzI
+@SZ2 $assertSzI
+@SZ4 $assertSzI
+// #30  $assertSzI // expect failure.
+// #01  $assertSzI // expect failure.
+
 #12345 @SZ4 $GLOBAL myG1   $assertWsEmpty
 @myG1 #FF_FFFF ^BAND .4^FT  #12345 $tAssertEq
 
@@ -122,14 +128,15 @@ $FN fooLocals
 
 // test R_LP
 $SFN getLp %RGFT @R_LP$h1  %RET
-$getLp ^DUP #8000 $tAssertEq  =lsTop
+$getLp ^DUP #FFF0 $tAssertEq  =lsTop
 
 $FN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET // uses locals
 $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 
 // test local variables
 $FN useLocal
-  @SZ2 $LOCAL a   $END_LOCALS
+  @SZ2 $LOCAL a $END_LOCALS
+
   #12345$L4 $_SET a
   $GET a
   %RET

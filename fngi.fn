@@ -165,9 +165,6 @@ CONST BA_blocksOfs  = 4;  // blocks: APtr
 CONST BA_lenOfs     = 9;  // len: U1
 CONST BA_rootOfs    = 10; // root: U1
 
-// Reserve space for the kernel's block allocator
-$(0 SZ4) GLOBAL BA_kernel  $gheapReserve(10 - 4)
-
 SFN BA_iToPtr PRE // {bi &ba -> &block}
   ft4(_ + BA_blocksOfs); swp;            // {&firstBlock bi}
   IF(dup == BA_iNull) drp; ret NULL; END // {&firstBlock bi}
@@ -207,6 +204,8 @@ FN BA_init PRE // {&ba}
     BA_iSet(_, _, GET ba)
     inc(_) // {bi+1}
   AGAIN l0
+
+// $BA_init(REF BA_kernel)
 
 // { &ba -> bi} alocate a block index
 // (returning a) root->a->b ===> root->b

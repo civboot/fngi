@@ -36,3 +36,7 @@ $tAssertEq(testSET, 5)
 
 // Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
+
+// $setSysLogLvl(LOG_EXECUTE)
+$(42 SZ1) GLOBAL glblAnswer
+$tAssertEq(42, GET glblAnswer)

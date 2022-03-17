@@ -341,11 +341,14 @@
 #0000_0040 =c_errVal2      // [U4]
 #0000_0044 =c_msg          // [APtr]
 
+// Block allocator (12 bytes, see fngi.fn)
+#0000_0048 =BA_kernel
+
 // Global Compiler Variables
-#0000_0048 =c_rKey         // [U4] &metaRef of current dict key
-#0000_004C =c_rLKey        // [U4] &metaRef of current ldict key.
-#0000_0050 =c_gheap        // [U4] global heap
-#0000_0054 =c_localOffset  // [U2] Local Offset (for local var setup)
+#0000_0054 =c_rKey         // [U4] &metaRef of current dict key
+#0000_0058 =c_rLKey        // [U4] &metaRef of current ldict key.
+#0000_005C =c_gheap        // [U4] global heap
+#0000_0060 =c_localOffset  // [U2] Local Offset (for local var setup)
 
 #00  =ERR_DATA_NONE
 #01  =ERR_DATA_INT1
@@ -353,7 +356,7 @@
 #03  =ERR_DATA_INT2
 #04  =ERR_DATA_DATA2
 
-@c_gheap #58 #A ^ADD .4^SR  // initial value of global heap
+@c_gheap #62 .4^SR  // initial value of global heap
 
 // **********
 // * [5] Core Utility Macros
@@ -469,7 +472,7 @@ $loc hpad // {pad} write pad bytes to heap.
 
 $loc _hal // {align} heap align (for) literal
   .4%DUP        .2%XSL @getHeap $h2 // {align align heap}
-  .4%SWP        .4%MOD // {align heap%align}
+  .4%SWP          %MOD // {align heap%align}
   // pad = (align-1) - heap%align
   .4%SWP          %DEC // {heap%align align-1}
   .4%SWP          %SUB
@@ -481,7 +484,7 @@ $loc hal4   #4$L0          .2%JMPL @_hal $h2 // (aligned)
 
 $hal2 $loc _ha // {align} heap align (with NOPs)
                 .2%XSL @getHeap $h2 // {align heap}
-  .4%SWP        .4%MOD // {heap%align}
+  .4%SWP          %MOD // {heap%align}
   $hal2 .2%JMPL @hpad $h2
 
 // haN: {align} heap align N byte.
@@ -906,14 +909,13 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant // {...(N &jmpTo) numJmpTo}
 // fn szToSzI [U4 -> SzI]          : convert integer to SzI bits
 // fn szIToSz [SzI -> U1]          : get an integer sz from szI
 // fn szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
-// fn srN [addr value szI]         : store a value of szI at addr
 // fn anyDictGetR [-> &metaRef isFromLocal] : any ref to current token.
 //
 // fn assertSzI [szI]              : assert that szI is valid
 
 $SFN assertSzI $PRE // {szI}
   %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot // non-sz bits empty
-  #6$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert // sz bits < 3
+  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert // sz bits < 3
 
 $SFN szToSzI $PRE // [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
@@ -943,12 +945,6 @@ $SFN hN $PRE // {value szI} write a value of szI to heap
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
   @E_cSz$L2 $xsl panic
 
-$SFN srN $PRE // {addr value szI}
-  %DUP @SZ1$L1 %EQ $IF  %DRP .1%SR %RET  $END
-  %DUP @SZ2$L1 %EQ $IF  %DRP .2%SR %RET  $END
-       @SZ4$L1 %EQ $IF       .4%SR %RET  $END
-  @E_cSz$L2 $xsl panic
-
 $SFN joinSzTyMeta $PRE #4$L0 %SHR %BOR %RET // {tyMask szI} -> {tyMask}
 
 $SFN _lSetup $PRE // {&metaO} -> {metaO} : checked local setup
@@ -956,8 +952,8 @@ $SFN _lSetup $PRE // {&metaO} -> {metaO} : checked local setup
   .4%FT %DUP $_jmpl assertTyLocal // returns metaOffset
 
 $SFN _gSetup $PRE // {&metaRef} -> {metaRef} : checked global setup
-  %DUP $_xsl assertTyped
-  .4%FT %DUP $_jmpl assertTyGlobal
+  %DUP $xsl assertTyped
+  .4%FT %DUP $jmpl assertTyGlobal
 
 // {metaRO szInstr szLit instr} compile a literal memory instr.
 //   szLit the size of the literal to compile for the instr.
@@ -1022,8 +1018,24 @@ $SFN _refImpl // {}
     $xsl _gSetup  $xsl toRef $jmpl L4 // write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
+$SFN ftSzI // {&addr szI}
+  %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
+  %DUP @SZ2$L1 %EQ $IF %DRP .2%FT %RET $END
+       @SZ4$L1 %EQ $IF      .4%FT %RET $END
+  @E_cSz$L2 $jmpl panic
+
+$SFN srSzI // {&addr value szI}
+  %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
+  %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
+       @SZ4$L1 %EQ $IF      .4%SR %RET $END
+  @E_cSz$L2 $jmpl panic
+
 $SFN REF  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _refImpl
-$SFN GET  $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _getImpl
+$SFN GET  $SMART
+  $IF  $xsl dictGetR $xsl _gSetup %DUP $xsl _metaRefSzI // {metaRef szInstr}
+       %SWP $xsl toRef %SWP $jmpl ftSzI   $END
+  $xsl c_scan $xsl anyDictGetR $jmpl _getImpl
+
 $SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _setImpl
 
 $FN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
@@ -1071,15 +1083,16 @@ $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
   %DUP $xsl assertSzI // {value szI}
   .1%SRLL#0$h1 // set szI {value}
   $xsl c_updateRKey // {value &metaRef}
-  $GET c_gheap .1%FTLL#0$h1  $xl align // {value &metaRef alignedGHeap}
+  $xsl loc // initialize dictionary entry // {value &metaRef}
+  $GET c_gheap .1%FTLL#0$h1  $xsl alignSzI // {value &metaRef alignedGHeap}
   %DUP $_SET c_gheap // update gheap to aligned value {value &metaRef alignedGHeap}
-  $xsl dictSet      // create dictionary entry at alignedGHeap {value &metaRef}
+  %OVR %SWP .4%SR    // set dictionary value to alignedGHeap {value &metaRef}
 
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
-  // make stack to be: {value <dictArgs> meta &metaRef}
-  .1%SRLL#1$h1 .4%SRLL#4$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1
+  .1%SRLL#1$h1 .4%SRLL#4$h1 // {value}
+  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 // {value <dictArgs> meta &metaRef}
   $xsl c_dictSetMeta // update key ty {value}
-  $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srN // store global value
+  $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srSzI // store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap // gheap += sz
   %RET
 

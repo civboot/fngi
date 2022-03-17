@@ -69,6 +69,7 @@ typedef CSz CPtr;
 #define FALSE 0
 #endif
 
+#define BLOCK_PO2 12   // 4KiB block
 #define ZOAB_JOIN 0x80
 #define ZOAB_ARR  0x40
 
@@ -118,6 +119,7 @@ typedef enum {
 } InstrClass;
 
 typedef enum {
+  // Op
   NOP  = 0x00, RETZ = 0x01, RET  = 0x02, SWP  = 0x03,
   DRP  = 0x04, OVR  = 0x05, DUP  = 0x06, DUPN = 0x07,
   DVFT = 0x08, DVSR = 0x09, RGFT = 0x0A, RGSR = 0x0B,
@@ -133,10 +135,11 @@ typedef enum {
 
   MUL  = 0x30, DIV_U= 0x31, DIV_S= 0x32,
 
-  // Jmps
+  // Jmp
   JMPL = 0x80, JMPW = 0x81, JZL  = 0x82, JTBL = 0x83,
   XL   = 0x84, XW   = 0x85, XSL  = 0x86, XSW  = 0x87,
 
+  // Mem
   LIT  = 0xC0, FT   = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
   SR   = 0xC4, SRLL = 0xC5, SRGL = 0xC6,
 } Instr;
@@ -185,6 +188,13 @@ typedef struct {
   APtr msg;
 } ErrData;
 
+typedef struct {
+  APtr indexes;
+  APtr blocks;
+  U1 len;
+  U1 root;
+} BlockAllocator;
+
 // Environment
 typedef struct {
   APtr ep;  // execution pointer
@@ -198,6 +208,7 @@ typedef struct {
   U2* sysLogLvl;
   U2* usrLogLvl;
   ErrData* errData;
+  BlockAllocator* ba;
   U1 szI; // global instr sz
   Stk ls;
 
@@ -406,7 +417,7 @@ SzI szToSzI(U1 sz) {
   }
 }
 
-/*fn*/ APtr alignAPtr(APtr aPtr, U1 sz) {
+/*fn*/ APtr alignAPtr(APtr aPtr, U4 sz) {
   U1 mod = aPtr % sz;
   if(mod == 0) return aPtr;
   return aPtr + (sz - mod);
@@ -1332,16 +1343,26 @@ U1 readSrcAtLeast(U1 num) {
   // eprint("\n");
   return out;
 }
+#define ENV_CLEANUP() \
+    free(mem); \
+    free(env.ws.mem); free(env.cs.mem);
 
-#define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS)  \
+#define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS)  \
+  assert(MS == alignAPtr(MS, 1 << BLOCK_PO2));      \
+  assert(BLKS == alignAPtr(BLKS, 4));               \
+  assert(                   \
+    MS > (                  \
+      (BLKS << BLOCK_PO2)   \
+      + 0x400               \
+      + LS + DS + GS        \
+    ));                     \
+  U1* wsMem = malloc(WS);      assert(wsMem);       \
+  U1* callStkMem = malloc(RS); assert(callStkMem);  \
+  mem = malloc(MS);            assert(mem);         \
   dbgCount = 0;                           \
-  U1 localMem[MS] = {0};                  \
-  U1 wsMem[WS];                           \
-  U1 callStkMem[RS];                      \
-  memset(&localMem, 0, MS);               \
-  memset(&wsMem, 0, MS);               \
-  memset(&callStkMem, 0, MS);               \
-  mem = localMem;                         \
+  memset(mem, 0, MS);                     \
+  memset(wsMem, 0, WS);                   \
+  memset(callStkMem, 0, RS);              \
   env = (Env) {                           \
     .ep = 1,                              \
     .gb = 0,                              \
@@ -1378,9 +1399,19 @@ U1 readSrcAtLeast(U1 num) {
   memset(env.errData, 0, sizeof(ErrData));\
   glbls += sizeof(ErrData);               \
   assert(0x48 == glbls);                  \
-  /* Configure topHeap */                 \
-  *env.topHeap = MS;                      \
+  /* Configure topHeap w/ blocks */       \
   *env.topMem = MS;                       \
+  *env.topHeap =            \
+    MS                      \
+    - (BLKS << BLOCK_PO2)   \
+    - BLKS;                 \
+  /* Block Allocator (see fngi.fn) */     \
+  env.ba = (BlockAllocator*) (mem + glbls); \
+  env.ba->indexes = *env.topHeap;         \
+  env.ba->blocks = *env.topHeap + BLKS;   \
+  env.ba->len = BLKS;                     \
+  glbls += sizeof(BlockAllocator);        \
+  assert(0x54 == glbls);                  \
   /* Reserve space for local stack*/      \
   *env.topHeap -= LS;                     \
   env.ls.mem = mem + *env.topHeap;        \
@@ -1392,9 +1423,8 @@ U1 readSrcAtLeast(U1 num) {
   tokenState->buf = *env.topHeap;
 
 #define SMALL_ENV_BARE \
-  /*           MS       WS     RS     LS     DICT    GS*/    \
-  NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x2000, 0x100)
-
+  /*           MS       WS     RS     LS     DICT    GS    BLKS */    \
+  NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x2000, 0x100, 0x4)
 
 void setCompileFile(char* s) {
   zoab_file(strlen(s), s);
@@ -1409,14 +1439,14 @@ void compileFile(char* s) {
   compileLoop(); ASSERT_NO_ERR();
 }
 
-#define NEW_ENV(MS, WS, RS, LS, DS, GS) \
-  NEW_ENV_BARE(MS, WS, RS, LS, DS, GS); \
+#define NEW_ENV(MS, WS, RS, LS, DS, GS, BLKS) \
+  NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS); \
   WS_PUSH(*env.heap); \
   compileFile("spor.sp");
 
 #define SMALL_ENV \
-  /*      MS      WS     RS     LS     DICT    GS*/    \
-  NEW_ENV(0x8000, 0x40, 0x100, 0x200, 0x2000, 0x1000)
+  /*      MS      WS     RS     LS     DICT    GS     BLKS*/    \
+  NEW_ENV(0x20000, 0x40, 0x100, 0x200, 0x2000, 0x1000, 0x10)
 
 // ********************************************
 // ** Main
@@ -1607,6 +1637,7 @@ void compileStr(char* s) {
   compileStr(".2 #1002_3004");
   result = WS_POP();
   assert(0x10023004 == result);
+  ENV_CLEANUP();
 }
 
 /*test*/ void testDictDeps() {
@@ -1632,6 +1663,7 @@ void compileStr(char* s) {
   // assert(12 == Dict_set(d, 5, "bazaa", 0xBA2AA));
   // result = Dict_get(d, 5, "bazaa");
   // assert(result == 0xBA2AA);
+  ENV_CLEANUP();
 }
 
 /*test*/ void testDict() {
@@ -1643,6 +1675,7 @@ void compileStr(char* s) {
   assert(0xF00 == WS_POP());   // 2foo
   assert(0xF00 == WS_POP());   // 4foo
   assert(0xBA2AA == WS_POP()); // 4bazaa
+  ENV_CLEANUP();
 }
 
 /*test*/ void testWriteHeap() { // test , and ;
@@ -1711,6 +1744,7 @@ void assertNoWs() {
 
   compileFile("tests/testSpore.sp");
   compileLoop(); ASSERT_NO_ERR();
+  ENV_CLEANUP();
 }
 
 /*test*/ void testFngi() {
@@ -1726,6 +1760,7 @@ void assertNoWs() {
   fclose(srcFile);
 
   assertNoWs();
+  ENV_CLEANUP();
 }
 
 /*test*/ void tests() {
