@@ -130,11 +130,11 @@ FN /*  // block-comment */
     ELSE  SET lastTy = 2;    END END
   AGAIN l0
 
-FN between // {value a b -> bool} value is between [a b)
+FN between PRE // {value a b -> bool} value is between [a b)
   $SZ4 INPUT b   END_LOCALS // {value a}
   ovr; swp; // {value value a}
-  IF(_ < _)  drp; ret FALSE;  END // {value}
-  GET b; swp; ret(_ < _);
+  IF(_ < _)  drp; ret FALSE;  END // {value}: if(value<a) do ret FALSE
+  GET b; ret(_ < _); // ret(value < b)
 
 // **********
 // * Block Allocator (BA)
@@ -172,21 +172,16 @@ SFN BA_iToPtr PRE // {bi &ba -> &block}
 
 FN BA_ptrToI PRE // {&block &ba -> bi}
   $SZ4 INPUT block  $SZ4 INPUT ba  END_LOCALS
-  IF(GET block == NULL)  ret BA_iNull;  END
+  IF(not GET block)  ret BA_iNull;  END
   assert(
     between( // block between [&firstBlock, &lastBlockEnd)
       GET block,
-      ft4(_ + BA_blocksOfs), // {&firstBlock}
+      ft4(GET ba + BA_blocksOfs), // {&firstBlock}
       dup + (inc(ft1(GET ba + BA_lenOfs)) << BA_blockPo2),
     ), E_iBlock)
+  ret(GET block - ft4(GET ba + BA_blocksOfs));
 
-  swp; IF(dup == NULL) drp; ret BA_iNull; END swp; // {&block &ba}
-  ovr; ovr;
-  // TODO: check that it is between block possibilities.
-  ft4(_ + BA_blocksOfs); spor%SUB // { &block-&firstBlock }
-  ret (_ >> BA_blockPo2)
-
-SFN BA_iGet  PRE ret ft1(/*bi*/ + ft4(_)) // {bi &ba -> bi}
+SFN BA_iGet  PRE ret ft1(_ + ft4(_)) // {bi &ba -> bi}
 SFN BA_iSet  PRE  // {value bi &ba}  set ba@bi = value
   _ + ft4(_) // {value &index}
   swp; ret sr1(_, _)
@@ -200,12 +195,13 @@ FN BA_init PRE // {&ba}
       BA_iNull; swp; // {BA_iNull bi}
       ret BA_iSet(_, _, GET ba)
     END // {bi}
-    inc(dup); swp; // {bi bi+1 bi}
+    dup; dup; inc(_); swp; // {bi bi+1 bi}
     BA_iSet(_, _, GET ba)
     inc(_) // {bi+1}
   AGAIN l0
 
-// $BA_init(REF BA_kernel)
+// $setSysLogLvl(LOG_EXECUTE)
+$BA_init(REF BA_kernel)
 
 // { &ba -> bi} alocate a block index
 // (returning a) root->a->b ===> root->b
@@ -214,21 +210,22 @@ FN BA_iAlloc PRE
   ft1(GET ba + BA_rootOfs) // {biRoot}
   reteq(dup, BA_iNull) // return BA_iNull if biRoot=BA_iNull
   SET out = _; // out=biRoot
-  sr1(GET ba + BA_rootOfs, BA_iGet(GET out)); // root=next node
+  sr1(GET ba + BA_rootOfs, BA_iGet(GET out, GET ba)); // root=next node
   ret GET out;
 
 // {bi &ba} free a block index
 // (freeing bi=a) root->b  ===>  root->a->b
 FN BA_iFree PRE
   $SZ1 INPUT bi  $SZ1 LOCAL biRoot  $SZ4 INPUT ba  END_LOCALS
-  assert(dup != BA_iNull, E_iBlock)
+  assert(BA_iNull != GET bi, E_iBlock)
   SET biRoot = ft1(GET ba + BA_rootOfs)
   BA_iSet(GET biRoot, GET bi, GET ba)  // a -> b  (note: may be BA_iNull)
   ret sr1(GET ba + BA_rootOfs, GET bi) // root -> a
 
 SFN BA_alloc PRE ret BA_iToPtr(BA_iAlloc(_)); // {&ba -> &blockNullable}
 SFN BA_free  PRE // {&block &ba}
-  swp; BA_ptrToI(_); swp; // {bi &ba}
+  swp; ovr; // {&ba &block &ba}
+  BA_ptrToI(_); swp; // {bi &ba}
   ret BA_iFree(_, _);
 
 $c_dictDump

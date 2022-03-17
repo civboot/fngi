@@ -1659,10 +1659,6 @@ void compileStr(char* s) {
   // get
   U4 result = Dict_get(d, 3, "foo");
   assert(result == 0xF00);
-
-  // assert(12 == Dict_set(d, 5, "bazaa", 0xBA2AA));
-  // result = Dict_get(d, 5, "bazaa");
-  // assert(result == 0xBA2AA);
   ENV_CLEANUP();
 }
 

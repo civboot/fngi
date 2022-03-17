@@ -1030,7 +1030,10 @@ $SFN srSzI // {&addr value szI}
        @SZ4$L1 %EQ $IF      .4%SR %RET $END
   @E_cSz$L2 $jmpl panic
 
-$SFN REF  $SMART $xsl assertNoInstant $xsl c_scan $jmpl _refImpl
+$SFN REF  $SMART
+  $IF  $xsl dictGetR $xsl _gSetup $jmpl toRef  $END
+  $xsl c_scan $jmpl _refImpl
+
 $SFN GET  $SMART
   $IF  $xsl dictGetR $xsl _gSetup %DUP $xsl _metaRefSzI // {metaRef szInstr}
        %SWP $xsl toRef %SWP $jmpl ftSzI   $END
@@ -1059,6 +1062,14 @@ $FN c_makeGlobal $PRE // {szI} <token>: set meta for token to be a global.
 @SZ1 $c_makeGlobal c_tokenLen
 @SZ1 $c_makeGlobal c_tokenSize
 @SZ1 $c_makeGlobal c_tokenGroup
+@SZ1 $c_makeGlobal c_errValTy     // [U1]
+@SZ2 $c_makeGlobal c_dataASz      // [U2]
+@SZ2 $c_makeGlobal c_dataBSz      // [U2]
+@SZ4 $c_makeGlobal c_errVal1      // [U4]
+@SZ4 $c_makeGlobal c_errVal2      // [U4]
+@SZ4 $c_makeGlobal c_msg          // [APtr]
+@SZ4 $c_makeGlobal BA_kernel      // [BlockAllocator]
+
 @SZ4 $c_makeGlobal c_rKey
 @SZ4 $c_makeGlobal c_rLKey
 @SZ4 $c_makeGlobal c_gheap
