@@ -62,9 +62,10 @@ SFN = SMART drp panic(E_cToken) // prevent hanging =
 SFN ) SMART drp panic(E_cUnclosed) // prevent unclosed parens
 SFN setSysLogLvl PRE _SET sysLogLvl ret; // {logLvl}
 SFN setUsrLogLvl PRE _SET usrLogLvl ret; // {logLvl}
-SFN memCmp  PRE  ret dvft(D_memCmp) // {&a &b len -> cmp}
-SFN memSet  PRE  ret dvft(D_memSet) // {dst v len}   "dst = v"
-SFN memMove PRE  ret dvsr(D_memSet) // {dst src len} "dst = src"
+SFN memCmp   PRE  ret dvft(D_memCmp) // {&a &b len -> cmp}
+SFN memSet   PRE  ret dvft(D_memSet) // {dst v len}   "dst = v"
+SFN memMove  PRE  ret dvsr(D_memSet) // {dst src len} "dst = src"
+SFN memClear PRE  0 swp; $jmpl memSet; // {dst len}
 
 SFN c_shiftBuf // shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
@@ -227,5 +228,59 @@ SFN BA_free  PRE // {&block &ba}
   swp; ovr; // {&ba &block &ba}
   BA_ptrToI(_); swp; // {bi &ba}
   ret BA_iFree(_, _);
+
+// **********
+// * Arena Allocator (AA)
+// The arena budy allocator is built on top of the BA. It allows allocations of
+// power of 2 blocks of sizes 2^2 (4 bytes) to 2^12 (4KiB).
+//
+// The AA keeps track of blocks it owns by using the BA's indexes (the same way
+// the BA keeps track of free blocks). When the arena is dropped, all (4KiB)
+// blocks are returned to the BA.
+//
+// The AA does a best-effort job of trying to join freed blocks to prevent
+// fragmentation. However, it prioritizes known speed over reduction of
+// fragmentation. It's performance requires a maximum of 12 loops for any
+// request, except for freeing blocks which can require a BA index scan (rare).
+//
+// If further fragmenetation reduction is required, a library can implement methods
+// to sort the freed areas and join conjoining ones. However the proper method to
+// eliminate fragmentation is to move any still-needed data to a new arena and
+// drop the fragmented one (obviously requiring careful programming).
+//
+// ## Design:
+// The allocator has an array of pointers, each pointing to a larger po2.
+// Multiple free blocks in a single power of 2 are stored by creating a
+// singly-linked-list in the first 4 bytes of the free memory. Any freed (4KiB)
+// blocks are returned to the BA.
+//
+// STRUCT AA [
+//   bi: U1;  // block index for allocated block.
+//   _reserved1: U1;
+//   _reserved2: U2;
+//   ba: &BA;
+//   // Po2 2 - 11 Clever: &aa@2 is the 0th index (2nd power), &aa@11 is 11th
+//   roots: arr[10; APtr];
+// ]
+
+CONST AA_size     = 48;
+CONST AA_baOfs    = 4;
+CONST AA_rootsOfs = 8;
+
+SFN AA__assertPo2 PRE betweenIncl(_, 2, 11);  E_aaPo2; $jmpl assert // {po2}
+
+FN AA_init // {&ba &aa}
+  $SZ4 INPUT aa  END_LOCALS
+  GET aa + AA_baOfs; swp; sr4(_, _); // set ba
+  (GET aa + AA_rootsOfs, 10 << 2) $jmpl memClear // all roots=NULL
+
+SFN AA_rootGet PRE // {po2 &aa -> value}
+  swp; AA__assertPo2(dup); // {&aa po2}
+  ret ft4(_ + (_ << 2)) // {&aa+po2*4}
+
+SFN AA_rootSet PRE // {value po2 &aa}
+  swp; AA__assertPo2(dup); // {value &aa po2}
+  (_ + (_ << 2)) // {value, &aa+po2*4}
+  swp; ret sr4 _;
 
 $c_dictDump

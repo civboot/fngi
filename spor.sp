@@ -309,6 +309,7 @@
 #E0F2  =E_cNeedNumber // number not present
 
 #E0B0  =E_iBlock      // invalid block index
+#E0B0  =E_aaPo2       // invalid po2
 
 // **********
 // * [4] Globals
