@@ -53,7 +53,7 @@ SFN ft1    PRE SMART IF() spor$(.1%FT) ELSE $c1(SZ1+FT) END ret;
 SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2+FT) END ret;
 SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4+FT) END ret;
 
-// srN(addr, value): store a value of sz N to address.
+// srN(value, addr): store a value of sz N to address.
 SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
 SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
 SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
@@ -95,7 +95,8 @@ $loc TOKEN_EQ | =|
 SFN CONST  SMART assertNoInstant // CONST <name> = <value>
   c_updateRKey; loc; // {&key}: update c_rKey and initialize dict@name
   c_scan; assertToken(TOKEN_EQ) // {&key}: expect "="
-  ret sr4(_, assert(c_number, E_cNeedNumber)) // store number at &key
+  assert(c_number, E_cNeedNumber); // {&key num}
+  swp; ret sr4(_, _);
 
 FN SET  SMART // SET <name> = <value>
   $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
@@ -185,18 +186,18 @@ FN BA_ptrToI PRE // {&block &ba -> bi}
 SFN BA_iGet  PRE ret ft1(_ + ft4(_)) // {bi &ba -> bi}
 SFN BA_iSet  PRE  // {value bi &ba}  set ba@bi = value
   _ + ft4(_) // {value &index}
-  swp; ret sr1(_, _)
+  ret sr1(_, _)
 
 FN BA_init PRE // {&ba}
   $SZ4 INPUT ba  $SZ1 LOCAL iLast  END_LOCALS
   SET iLast = dec(ft1(GET ba + BA_lenOfs));
-  sr1(GET ba + BA_rootOfs, 0); // initialze root as index=0
+  sr1(0, GET ba + BA_rootOfs); // initialze root as index=0
   0 LOOP l0 // {bi}
-    IF (dup == GET iLast)
+    IF(dup == GET iLast)
       BA_iNull; swp; // {BA_iNull bi}
       ret BA_iSet(_, _, GET ba)
     END // {bi}
-    dup; dup; inc(_); swp; // {bi bi+1 bi}
+    dup; inc(_); ovr; // {bi bi+1 bi}
     BA_iSet(_, _, GET ba)
     inc(_) // {bi+1}
   AGAIN l0
@@ -207,12 +208,11 @@ $BA_init(REF BA_kernel)
 // { &ba -> bi} alocate a block index
 // (returning a) root->a->b ===> root->b
 FN BA_iAlloc PRE
-  $SZ4 INPUT ba  $SZ1 LOCAL out  END_LOCALS
+  $SZ4 INPUT ba  END_LOCALS
   ft1(GET ba + BA_rootOfs) // {biRoot}
-  reteq(dup, BA_iNull) // return BA_iNull if biRoot=BA_iNull
-  SET out = _; // out=biRoot
-  sr1(GET ba + BA_rootOfs, BA_iGet(GET out, GET ba)); // root=next node
-  ret GET out;
+  reteq(dup, BA_iNull) // {biRoot} return BA_iNull if biRoot=BA_iNull
+  sr1(BA_iGet(dup, GET ba), GET ba + BA_rootOfs); // {biRoot} root=next node
+  ret _;
 
 // {bi &ba} free a block index
 // (freeing bi=a) root->b  ===>  root->a->b
@@ -221,13 +221,40 @@ FN BA_iFree PRE
   assert(BA_iNull != GET bi, E_iBlock)
   SET biRoot = ft1(GET ba + BA_rootOfs)
   BA_iSet(GET biRoot, GET bi, GET ba)  // a -> b  (note: may be BA_iNull)
-  ret sr1(GET ba + BA_rootOfs, GET bi) // root -> a
+  ret sr1(GET bi, GET ba + BA_rootOfs) // root -> a
 
 SFN BA_alloc PRE ret BA_iToPtr(BA_iAlloc(_)); // {&ba -> &blockNullable}
 SFN BA_free  PRE // {&block &ba}
   swp; ovr; // {&ba &block &ba}
   BA_ptrToI(_); swp; // {bi &ba}
   ret BA_iFree(_, _);
+
+// **********
+// * Singly Linked List (SLL)
+// Singly linked lists are used throughout fngi because of their simplicity
+// and extensibility.
+//
+// STRUCT SLL [ next: &SLL ]
+// Note: root is just a pointer to a SLL with no data (&SLL)
+
+// {&root}: Pop a node from the SLL
+// FN SLL_pop  PRE // root->a->b ===> root->b (ret a)
+//   $SZ4 INPUT root  END_LOCALS
+//   ft4(GET root); // {&a}
+//   retz(dup); // {&a}
+//   ft4(dup); // {&a &b}
+
+
+// {&a &root}: Push a node onto the SLL
+FN SLL_push PRE // root->b ===> root->a->b
+  $SZ4 INPUT a  $SZ4 INPUT root  END_LOCALS
+  IF(not ft4(GET root))  sr4(NULL, GET a); // a->NULL
+  ELSE  sr4(GET root, GET a);  END // a->b
+  ret sr4(GET a, GET root); // root->a
+
+
+
+
 
 // **********
 // * Arena Allocator (AA)
@@ -267,20 +294,33 @@ CONST AA_size     = 48;
 CONST AA_baOfs    = 4;
 CONST AA_rootsOfs = 8;
 
-SFN AA__assertPo2 PRE betweenIncl(_, 2, 11);  E_aaPo2; $jmpl assert // {po2}
+SFN AA_assertPo2 PRE betweenIncl(_, 2, 12);  E_aaPo2; $jmpl assert // {po2 [2,11]
 
 FN AA_init // {&ba &aa}
   $SZ4 INPUT aa  END_LOCALS
-  GET aa + AA_baOfs; swp; sr4(_, _); // set ba
+  GET aa + AA_baOfs;  sr4(_, _); // set ba
   (GET aa + AA_rootsOfs, 10 << 2) $jmpl memClear // all roots=NULL
 
-SFN AA_rootGet PRE // {po2 &aa -> value}
-  swp; AA__assertPo2(dup); // {&aa po2}
-  ret ft4(_ + (_ << 2)) // {&aa+po2*4}
+SFN AA__rootGet PRE swp; ret ft4(_ + (_ << 2)) // {po2 &aa -> value}
+SFN AA__rootSet PRE // {value po2 &aa}
+  swp; (_ + (_ << 2)) // {value, &aa+po2*4}
+  ret sr4 _;
 
-SFN AA_rootSet PRE // {value po2 &aa}
-  swp; AA__assertPo2(dup); // {value &aa po2}
-  (_ + (_ << 2)) // {value, &aa+po2*4}
-  swp; ret sr4 _;
+// FN AA_allocPo2 PRE // {po2 &aa}
+//   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS // {po2}
+//   AA_assertPo2(GET po2);
+//   SET gotPo2 = GET po2;
+//   LOOP l0  // Find a free block of the appropriate size
+//     BREAK_EQ b0 (12, GET gotPo2);
+//     BREAK_IF b1 (ft4(GET aa + (GET gotPo2 << 2)));
+//     SET gotPo2 = inc(GET gotPo2);
+//   AGAIN l0
+//   LOOP l1 // Break the block until it is the right size.
+//     IF(GET gotPo2 == 12)  BA_alloc(GET aa + AA_baOfs); // {&block}
+//     ELSE
+//       
+//     END
+//   AGAIN l1  BREAK_END b0  BREAK_END b1
+
 
 $c_dictDump

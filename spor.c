@@ -755,8 +755,8 @@ FTGL: case SzI2 + FTGL:
       return WS_PUSH(fetch(mem, env.gb + popLit(SzI2), szI));
     GOTO_SZ(FTGL, SzI1)
     GOTO_SZ(FTGL, SzI4)
-SR: case SzI2 + SR: // {addr, value}
-      r = WS_POP(); return store(mem, WS_POP(), r, szI);
+SR: case SzI2 + SR: // {value, addr}
+      r = WS_POP(); return store(mem, r, WS_POP(), szI);
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
 SRLL: case SzI2 + SRLL:

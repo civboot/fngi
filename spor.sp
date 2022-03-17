@@ -55,8 +55,8 @@
 #07 =DUPN  // {l -> l l==0} DUP then NOT
 #08 =DVFT  // Device Operation Fetch
 #09 =DVSR  // Device Operation Store
-#0A =RGFT  // Register Fetch
-#0B =RGSR  // Register Store
+#0A =RGFT  // {-> v}  Register Fetch
+#0B =RGSR  // {v}     Register Store
 
 // # [1.b] Operations: One Inp -> One Out
 #10 =INC   // {l+1}  increment 1
@@ -136,7 +136,7 @@
 #C1 =FT     // {addr} -> {value}  |FeTch value from addr
 #C2 =FTLL   // {} -> {local}      |FeTch from LP + U2 literal offset
 #C3 =FTGL   // {} -> {global}     |FeTch from GB + U2 literal offset
-#C4 =SR     // {addr value} -> {} |Store value at addr
+#C4 =SR     // {value addr} -> {} |Store value at addr
 #C5 =SRLL   // {value} -> {}      |StoRe value at LP + U2 literal offset
 #C6 =SRGL   // {value} -> {}      |StoRe value at GB + U2 literal offset
 
@@ -357,7 +357,7 @@
 #03  =ERR_DATA_INT2
 #04  =ERR_DATA_DATA2
 
-@c_gheap #62 .4^SR  // initial value of global heap
+#62 @c_gheap .4^SR  // initial value of global heap
 
 // **********
 // * [5] Core Utility Macros
@@ -394,7 +394,7 @@
 
 $getHeap =h1  // h1: {val:1} push 1bytes from stack to heap
                       .4%FTGL @heap.2, // fetch heap {val, heap}
-  %SWP                .1%SR            // store 1 byte value at heap
+  %NOP                .1%SR            // store 1 byte value at heap
   %NOP                .4%FTGL @heap.2, // fetch heap {val, heap}
   %INC                .4%SRGL @heap.2, // heap=heap+1
   %RET // (unaligned)
@@ -408,14 +408,14 @@ $getHeap =L0   // L0: compile a small literal (unchecked)
 %NOP // (unaligned)
 $getHeap =h2  // h2: {val:2} push 2bytes from stack to heap
               .4%FTGL @heap.2, // fetch heap {val, heap}
-  %SWP        .2%SR            // store 2 byte value at heap
+  %NOP        .2%SR            // store 2 byte value at heap
   %NOP        .4%FTGL @heap.2, // {heap}
   .4%INC2     %SRGL   @heap.2,   // heap=heap+2
   %RET // (unaligned)
 
 $getHeap =h4  // h4: {val:4} push 4bytes from stack to heap
             .4%FTGL @heap.2, // fetch heap {val, heap}
-  %SWP      .4%SR           // store 4 byte value at heap
+  %NOP      .4%SR           // store 4 byte value at heap
   %NOP      .4%FTGL @heap.2, // {heap}
   %INC4     .4%SRGL @heap.2, // heap=heap+4
   %RET // (unaligned)
@@ -468,7 +468,7 @@ $loc hpad // {pad} write pad bytes to heap.
       .4@heap ^FT ^SWP #0 $h2 // c-stk{breakTo loopStart}
     @NOP$L0       .2%XSL @h1 $h2 // write a noop
     .4%DEC        .2%JMPL    $h2 // DEC and jmp to loopStart
-  .4@heap ^FT .2^SR // update breakTo spot
+  @heap .4^FT ^SWP .2^SR // update breakTo spot
   %DRP           %RET // (aligned)
 
 $loc _hal // {align} heap align (for) literal
@@ -685,14 +685,14 @@ $loc metaSet // {metaRef meta:U1} -> U4 : apply meta to metaRef
 $loc rMetaSet // {&metaRef meta:U1} -> U4 : apply meta to &metaRef
   %OVR .4%FT %SWP // {&metaRef metaRef meta}
   $_xsl metaSet   // {&metaRef newMetaRef}
-  .4%SR %RET
+  %SWP .4%SR %RET
 
 $loc c_dictDumpEntry  @D_dictDump$L0 %DVFT %RET // {<dictArgs> &metaRef}
 
 $loc c_keySetTyped // {&metaRef} -> []
   %INC4 %DUP // {&len &len}
   .1%FT @KEY_HAS_TY$L1 %BOR // {&len tyKeyLen}
-  .1%SR %RET            // update tyKeyLen
+  %SWP .1%SR %RET            // update tyKeyLen
 
 $loc c_dictSetMeta // {<dictArgs> meta:U1 &metaRef -> } update dict key's meta.
   %SWP %OVR // {<dictArgs> &metaRef meta &metRef}
@@ -856,7 +856,7 @@ $SFN _END
   $xsl getHeap  // {&jmpTo &jmpTo heap}
   %SWP %SUB     // {&jmpTo (heap-&jmpTo)}
   %DUP $xsl assertLt128
-  .1%SR %RET // store at location after start (1 byte literal)
+  %SWP .1%SR %RET // store at location after start (1 byte literal)
 $SFN END $SMART $xsl assertNoInstant $jmpl _END  // {&jmpTo} -> {} : end of IF or BREAK0
 
 $SFN ELSE $SMART $xsl assertNoInstant // {&ifNotJmpTo} -> {&elseBlockJmpTo}
@@ -865,7 +865,7 @@ $SFN ELSE $SMART $xsl assertNoInstant // {&ifNotJmpTo} -> {&elseBlockJmpTo}
   #0$L0 $xsl h1     // compile jmp lit for &elseBlockJmpTo
   $jmpl _END        // end of IF block (beginning of ELSE)
 
-// $LOOP ... $BREAK0 ... $AGAIN $END
+// $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
 $SFN LOOP   $SMART $xsl assertNoInstant $xsl getHeap  $jmpl ldictSet
 $SFN BREAK0 $PRE $SMART   $xsl IF $jmpl ldictSet
 $SFN BREAK_IF  $PRE $SMART @NOT$c1  $jmpl BREAK0 // break if true
@@ -1025,7 +1025,7 @@ $SFN ftSzI // {&addr szI}
        @SZ4$L1 %EQ $IF      .4%FT %RET $END
   @E_cSz$L2 $jmpl panic
 
-$SFN srSzI // {&addr value szI}
+$SFN srSzI // {value &addr szI}
   %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
   %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
        @SZ4$L1 %EQ $IF      .4%SR %RET $END
@@ -1098,13 +1098,13 @@ $FN GLOBAL // <value> <szI> $GLOBAL <token>: define a global variable of sz
   $xsl loc // initialize dictionary entry // {value &metaRef}
   $GET c_gheap .1%FTLL#0$h1  $xsl alignSzI // {value &metaRef alignedGHeap}
   %DUP $_SET c_gheap // update gheap to aligned value {value &metaRef alignedGHeap}
-  %OVR %SWP .4%SR    // set dictionary value to alignedGHeap {value &metaRef}
+  %OVR .4%SR         // set dictionary value to alignedGHeap {value &metaRef}
 
   @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta // {value &metaRef meta}
   .1%SRLL#1$h1 .4%SRLL#4$h1 // {value}
   $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 // {value <dictArgs> meta &metaRef}
   $xsl c_dictSetMeta // update key ty {value}
-  $GET c_gheap %SWP .1%FTLL#0$h1  $xsl srSzI // store global value
+  $GET c_gheap .1%FTLL#0$h1  $xsl srSzI // store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap // gheap += sz
   %RET
 
@@ -1233,7 +1233,7 @@ $FN comzArr  $PRE // {len join}
 
   %DRP // ignore join TODO
   @ZOAB_ARR$L1 %BOR // len->arrLen
-  @TODO$L2 %SWP .1%SR // store len @TODO
+  @TODO$L2 .1%SR // store len @TODO
   #1$L0 @TODO$L2 $jmpl com // send via com
 
 $SFN comzLogStart  $PRE // {lvl extraLen}  extraLen is in addition to sending the lvl
