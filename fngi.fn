@@ -160,6 +160,7 @@ FN between PRE // {value a b -> bool} value is between [a b)
 CONST NULL = 0;
 CONST BA_iNull = 0xFF;
 CONST BA_blockPo2 = 12;  // 4KiB == 2^12
+CONST BA_halfBlock = 2048;
 
 // STRUCT BA
 //    BA_indexesOfs = 0;  // indexes: APtr
@@ -232,29 +233,27 @@ SFN BA_free  PRE // {&block &ba}
 // **********
 // * Singly Linked List (SLL)
 // Singly linked lists are used throughout fngi because of their simplicity
-// and extensibility.
+// and extensibility. A singly linked list is a data structure that looks like
+// below, with how the operations affect it as well.
+//
+// start    : root -> b -> NULL
+// push a   : root -> a -> b -> NULL
+// now pop a: root -> b -> NULL (return a)
 //
 // STRUCT SLL [ next: &SLL ]
 // Note: root is just a pointer to a SLL with no data (&SLL)
 
-// {&root}: Pop a node from the SLL
-// FN SLL_pop  PRE // root->a->b ===> root->b (ret a)
-//   $SZ4 INPUT root  END_LOCALS
-//   ft4(GET root); // {&a}
-//   retz(dup); // {&a}
-//   ft4(dup); // {&a &b}
+FN SLL_pop  PRE // {&root -> &a}: Pop a node from the SLL
+  $SZ4 INPUT root  END_LOCALS
+  ft4(GET root); // {&a}
+  retz(dup); // {&a}
+  ret sr4(ft4(dup), GET root); // {&a} root->b
 
-
-// {&a &root}: Push a node onto the SLL
-FN SLL_push PRE // root->b ===> root->a->b
+FN SLL_push PRE // {&a &root}: Push a node onto the SLL
   $SZ4 INPUT a  $SZ4 INPUT root  END_LOCALS
   IF(not ft4(GET root))  sr4(NULL, GET a); // a->NULL
-  ELSE  sr4(GET root, GET a);  END // a->b
+  ELSE                   sr4(GET root, GET a);  END // a->b
   ret sr4(GET a, GET root); // root->a
-
-
-
-
 
 // **********
 // * Arena Allocator (AA)
@@ -294,33 +293,36 @@ CONST AA_size     = 48;
 CONST AA_baOfs    = 4;
 CONST AA_rootsOfs = 8;
 
-SFN AA_assertPo2 PRE betweenIncl(_, 2, 12);  E_aaPo2; $jmpl assert // {po2 [2,11]
+SFN AA_validPo2 PRE ret between(_, 2, 12); // {po2 -> bool}
+SFN AA_assertPo2 PRE (AA_validPo2(_), E_aaPo2)$jmpl assert // {po2 [2,11]
 
 FN AA_init // {&ba &aa}
   $SZ4 INPUT aa  END_LOCALS
   GET aa + AA_baOfs;  sr4(_, _); // set ba
   (GET aa + AA_rootsOfs, 10 << 2) $jmpl memClear // all roots=NULL
 
-SFN AA__rootGet PRE swp; ret ft4(_ + (_ << 2)) // {po2 &aa -> value}
-SFN AA__rootSet PRE // {value po2 &aa}
-  swp; (_ + (_ << 2)) // {value, &aa+po2*4}
-  ret sr4 _;
+FN AA_allocPo2 PRE // {po2 &aa -> &free}
+  $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS
+  AA_assertPo2(GET po2);
+  SET gotPo2 = GET po2;
+  LOOP l0  // Find a free block of the appropriate size
+    BREAK_EQ (12, GET gotPo2)                   b0
+    BREAK_IF (ft4(GET aa + (GET gotPo2 << 2)))  b1
+    SET gotPo2 = inc(GET gotPo2);
+  AGAIN l0  END_BREAK b0  END_BREAK b1
+  LOOP l1 // Break the block until it is the right size.
+    // Get pointer to the free memory.
+    IF(GET gotPo2 == 12)  BA_alloc(GET aa + AA_baOfs); // {&free}
+    ELSE SLL_pop(GET aa + (GET gotPo2 << 2))  END      // {&free}
+    reteq(GET po2, GET gotPo2) // {&free}: return if correct po2
+    SET gotPo2 = dec GET gotPo2; // {&free}: reduce gotPo2 since we're spliting in half
+    // The next cycle will return or divide one of the free blocks.
+    SLL_push(dup,                   GET aa + (GET gotPo2 << 2))
+    SLL_push(_ + (1 << GET gotPo2), GET aa + (GET gotPo2 << 2))
+  AGAIN l1
 
-// FN AA_allocPo2 PRE // {po2 &aa}
-//   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS // {po2}
-//   AA_assertPo2(GET po2);
-//   SET gotPo2 = GET po2;
-//   LOOP l0  // Find a free block of the appropriate size
-//     BREAK_EQ b0 (12, GET gotPo2);
-//     BREAK_IF b1 (ft4(GET aa + (GET gotPo2 << 2)));
-//     SET gotPo2 = inc(GET gotPo2);
-//   AGAIN l0
-//   LOOP l1 // Break the block until it is the right size.
-//     IF(GET gotPo2 == 12)  BA_alloc(GET aa + AA_baOfs); // {&block}
-//     ELSE
-//       
-//     END
-//   AGAIN l1  BREAK_END b0  BREAK_END b1
-
+FN AA_freePo2 PRE // {&free po2 &aa}
+  $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS // {&free}
+  AA_assertPo2(GET po2);
 
 $c_dictDump
