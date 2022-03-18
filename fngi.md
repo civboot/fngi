@@ -35,8 +35,8 @@ Fngi has a few tokens defined for documentation/syntactic surgar:
   and document values from the stack, i.e. `add(\a, 2)` or `\a + \b`
 
 Unlike C (or most languages) that have an abstract syntax tree, fngi goes about
-parsing in a radically simpler. PRE functions work by compiling only the next
-token, and then compling themselves. This means that fngi's compiler has no
+parsing in a radically simpler manner. PRE functions work by compiling only the
+next token, and then compling themselves. This means that fngi's compiler has no
 abstract syntax tree and compiles tokens "instantly" as they appear in the
 stream. This is critical for fngi to be able to self-bootstrap on very minimal
 targets like microcontrollers, but it also makes reasoning about fngi syntax
@@ -44,16 +44,26 @@ very easy.
 
 For example: `myFn 1`
 
-Gets compiled as: `#1$L0 $xsl myFn`
+Gets compiled as (spor assembly, see spor.md):
 
-> Note: this is spor assembly. #1 is hex 0x1, `$L0` compiles it as a "0 byte"
-> literal (fits in the instr) and  xsl means "execute small". See
-> [spor.md](./spor.md) for more details.
+```
+#1$L0     \ compile literal 0x1
+$xsl myFn \ compile a call to myFn
+```
 
 So how do we pass more than one argument? It's easy, we use parenthesis!
 `(` will continue to compile tokens until it hits `)`
 
 So we can do: `myFn2(1, 2 + 3)`
+
+Which is compiled as
+```
+#1$L0      \ literal 0x1
+#2$L0      \ literal 0x2
+#3$L0      \ literal 0x3. Note + was PRE so this is before %ADD
+%ADD       \ addition {2 3 -> 5}
+$xsl myFn2 \ call to myFn2, which will have a stack of {1 5}
+```
 
 ### Comments
 The ultimate "do nothing" token is the swiss-army knife comment: `\`
@@ -70,8 +80,7 @@ So you might write one of the below:
 
 ## Example
 
-Below is an example fngi function to calculate fibronacci recursively. Also
-included is the equivalent C code.
+Below is an example fngi function to calculate fibronacci recursively.
 
 ```
 fn fib [n:U4] -> U4 do (
@@ -170,20 +179,43 @@ Spore diverges from FORTH in the following ways:
 - Has less dependence on the working stack (data stack in FORTH).
 
 ```
-\ Fngi Syntax
-fn fib [n:U4] -> U4 do (
-  if(.n <= 1) do ret 0;
-  ret fib(.n - 1) + fib(.n - 1);
-)
-
 // C Syntax
-#include <stdint.h>
 uint32_t fib(uint32_t n) {
-    if (n <= 1) return n;
+    if (n <= 1) return 1;
     return fib(n-1) + fib(n-2);
 }
+
+( FORTH Syntax)
+:FIB ( n -> fibN)
+  DUP 1 <= IF DROP 1 EXIT THEN
+  DUP -1 FIB        ( n fib(n-1) }
+  SWP 2 - FIB + ;
+
+\ Fngi Syntax
+fn fib [n:U4] -> U4 do (
+  if(.n <= 1) do ret 1;
+  ret fib(dec .n) + fib(.n-2);
+)
 ```
 
 For those familiar with FORTH the above will seem like syntax that _must_
 require a far-too complicated parser. The truth is the opposite: the parser for
 the above is basically no more complicated than FORTH's.
+
+There are definitely a few areas of complexity in fngi that are not in forth
+though:
+
+* The virtual machine model definitely adds a bit of complexity, and the range
+  of operations supported by the virtual machine (locals, global offset,
+  security, etc) adds some complexity. However, it (in theory) reduces the
+  binary size and allows easier portability. Really one just needs to port spor
+  and fngi comes along for the ride!
+* Support of the locals stack requres an extra stack, but also reduces the
+  needed size of the working (data) stack.
+* Support of a range of dictionary types, like constant, smart, pre, etc has a
+  little more complexity. However, FORTH already had to handle instant
+  (IMMEDIATE) functions, so the complexity is largely in the forth compiler too.
+  Add to this that fngi provides basic type checking from the beginning (you
+  can't execute a constant for instance) makes things well worth it.
+
+
