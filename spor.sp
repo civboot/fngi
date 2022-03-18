@@ -1276,7 +1276,7 @@ $assertWsEmpty
 \
 \ c_fngi                          : fngi compile loop.
 \ fn fngiSingle [ -> ...]         : starting (base) c_compFn
-\ fn c_single [ -> ...]           : compile/execute a single token (c_compFn).
+\ fn c_single [asInstant -> ...]  : compile/execute a single token (c_compFn).
 \ fn c_fn [metaRef]               : compile a function (small or large)
 \ fn execute [metaRef]            : execute a function (small or large)
 \ fn parseNumber [ -> value isNum]: parse token as number

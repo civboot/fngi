@@ -98,6 +98,7 @@ $loc TOKEN_EQ | =|
 SFN CONST  SMART assertNoInstant \ CONST <name> = <value>
   c_updateRKey; loc; \ {&key}: update c_rKey and initialize dict@name
   c_scan; assertToken(TOKEN_EQ) \ {&key}: expect "="
+  \ c_single(TRUE) \ TODO: this should work... but isn't
   assert(c_number, E_cNeedNumber); \ {&key num}
   swp; ret sr4(\num, \(&key));
 
@@ -170,12 +171,6 @@ FN BA_ptrToI PRE \ {&blk &ba -> bi}
   IF(not GET blk)  ret BA_iNull;  END
   assert(BA_isPtrValid(GET blk, GET ba), E_ptrBlk)
   ret((GET blk - ft4(GET ba + BA_blocksOfs)) >> BA_blockPo2);
-
-\ FN BA_ptrToI PRE \ {&blk &ba -> bi}
-\   swp; \ {ba blk}
-\   IF(not dup\blk)  drp\blk; drp\ba; ret BA_iNull;  END
-\   swp; ovr; ovr; assert(BA_isPtrValid(\blk, \ba), E_iBlock)
-\   ret((\blk - ft4(\ba + BA_blocksOfs)) >> BA_blockPo2);
 
 SFN BA_iGet  PRE ret ft1(_ + ft4(_)) \ {bi &ba -> bi}
 SFN BA_iSet  PRE  \ {value bi &ba}  set ba@bi = value
@@ -322,22 +317,21 @@ SFN AA_allocExactPo2 PRE \ {po2 &aa -> &free}: get an exact po2
   IF(dup\po2 == 12) drp\po2; BA_alloc(\aa + AA_baOfs);
   ELSE SLL_pop(\aa + (\po2 << 2))  END ret;
 
-\ \ Allocate po2.
-\ \ Note: this function is broken up for testing purposes.
-\ FN AA_allocPo2 PRE \ {po2 &aa -> &free}
-\   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS
-\   SET gotPo2 = AA_findPo2(GET po2, GET aa);
-\ 
-\   LOOP l1 \ Break the block until it is the right size.
-\     AA_allocExactPo2(GET gotPo2, GET aa); \ {&free}
-\     reteq(GET po2, GET gotPo2) \ {&free}: return if correct po2
-\ 
-\     SET gotPo2 = dec(GET gotPo2); \ {&free}: reduce gotPo2 since we're spliting in half
-\     \ The next cycle will return or divide one of the free blocks.
-\     SLL_push(dup \(&free),                 GET aa + (GET gotPo2 << 2))
-\     SLL_push(\(&free) + (1 << GET gotPo2), GET aa + (GET gotPo2 << 2))
-\   AGAIN l1
-\ 
+FN AA_allocPo2 PRE \ {po2 &aa -> &free} allocate memory of size po2
+  $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS
+  SET gotPo2 = AA_findPo2(GET po2, GET aa);
+
+  LOOP l1 \ Break the block until it is the right size.
+    AA_allocExactPo2(GET gotPo2, GET aa); \ {&free}
+    retz(dup) \ return if NULL
+    reteq(GET po2, GET gotPo2) \ {&free}: return if correct po2
+
+    SET gotPo2 = dec(GET gotPo2); \ {&free}: reduce gotPo2 since we're spliting in half
+    \ The next cycle will return or divide the lowest free block
+    SLL_push(dup\free + (1 << GET gotPo2), GET aa + (GET gotPo2 << 2))
+    SLL_push(\free                       , GET aa + (GET gotPo2 << 2))
+  AGAIN l1
+
 \ FN AA_freePo2 PRE \ {&free po2 &aa}
 \   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS \ {&free}
 \   AA_assertPo2(GET po2); \ {&free}

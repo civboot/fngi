@@ -44,12 +44,13 @@ $tAssertEq(0xFF, BA_iNull)
 $(0 SZ4) GLOBAL BA_fake;  $globalReserve(12 - 4)
 $(0 SZ4) GLOBAL BA_fakeIndexes;
 
-\ Initialize some fake data
-$sr4(REF BA_fakeIndexes, REF BA_fake)
-$sr4(0x1000            , REF BA_fake + BA_blocksOfs)
-$sr1(4                 , REF BA_fake + BA_lenOfs)
-$sr1(0                 , REF BA_fake + BA_rootOfs)
+SFN BA_fakeInitForTest PRE \ {&indexes, &blocks, len) Initialize some fake data
+  sr1(\len    , REF BA_fake + BA_lenOfs)
+  sr4(\blocks , REF BA_fake + BA_blocksOfs)
+  sr4(\indexes, REF BA_fake)
+  ret sr1(0, REF BA_fake + BA_rootOfs)
 
+$BA_fakeInitForTest(REF BA_fakeIndexes, 0x1000, 4)
 $tAssertNot(BA_isPtrValid(0, REF BA_fake))      \ null block
 $tAssertNot(BA_isPtrValid(0x500, REF BA_fake))
 $tAssert   (BA_isPtrValid(0x1000, REF BA_fake)) \ 1st block
@@ -117,15 +118,14 @@ $tAssertEq(NULL     , SLL_pop(REF sll_root))
 $sort2(5 10) $tAssertEq(_, 10) $tAssertEq(_, 5)
 $sort2(10 5) $tAssertEq(_, 10) $tAssertEq(_, 5)
 
-$tAssert   (canBlocksMerge(16 24 3))
-$tAssert   (canBlocksMerge(64 96 5))
-
-$tAssertNot(canBlocksMerge(8 16 3))
-$tAssertNot(canBlocksMerge(8 24 3))
-$tAssertNot(canBlocksMerge(4 12 3))
-$tAssertNot(canBlocksMerge(12 20 3))
-$tAssertNot(canBlocksMerge(32 64 4))
-$tAssertNot(canBlocksMerge(64 96 4))
+$tAssert   (canBlocksMerge(16, 24, 3))
+$tAssertNot(canBlocksMerge( 8, 16, 3))
+$tAssertNot(canBlocksMerge( 8, 24, 3))
+$tAssertNot(canBlocksMerge( 4, 12, 3))
+$tAssertNot(canBlocksMerge(12, 20, 3))
+$tAssertNot(canBlocksMerge(32, 64, 4))
+$tAssert   (canBlocksMerge(64, 96, 5))
+$tAssertNot(canBlocksMerge(64, 96, 4))
 
 $tAssert(AA_isValidPo2(2))
 $tAssert(AA_isValidPo2(3))
@@ -153,34 +153,68 @@ $tAssertEq(10, AA_findPo2(10, REF AA_fake))
 $tAssertEq(12, AA_findPo2(11, REF AA_fake))
 $tAssertEq(12, AA_findPo2(12, REF AA_fake))
 
-\ \ test AA_allocExactPo2 (except for po2=12)
-\ $(BA_alloc(REF BA_kernel), SZA) GLOBAL AA_blk0;
-\ 
-\ \ Populate some "real fake" data.
-\ $AA_init(REF BA_kernel, REF AA_fake)
-\ $(
-\   GET AA_blk0 + 1<<2; \ po2=2
-\   tAssertEq(GET topMem)
-\   sr4(NULL, ovr)  sr4(_, REF AA_fake +  (2<<2))
-\ 
-\   GET AA_blk0 + 1<<5; \ po2=5
-\   sr4(NULL, ovr)  sr4(_, REF AA_fake +  (2<<2))
-\ 
-\   GET AA_blk0 + 1<<10; \ po2=10
-\   sr4(NULL, ovr)  sr4(_, REF AA_fake +  (2<<2))
-\ )
-\ 
-\ $sr4(,     REF AA_fake +  (2<<2))
-\ $sr4(GET AA_blk0 + 1<<5,  REF AA_fake +  (5<<2))
-\ $sr4(GET AA_blk0 + 1<<10, REF AA_fake + (10<<2))
+\ test AA_allocExactPo2 (except for po2=12)
+$(BA_alloc(REF BA_kernel)
+  SZA) GLOBAL AA_blk0;
 
 
-\ $tAssertEq( 2, AA_allocExactPo2(2, REF AA_fake))
-\ $tAssertEq( 0, AA_allocExactPo2(3, REF AA_fake))
-\ $tAssertEq( 5, AA_allocExactPo2(5, REF AA_fake))
-\ $tAssertEq( 0, AA_allocExactPo2(6, REF AA_fake))
-\ $tAssertEq( 0, AA_allocExactPo2(9, REF AA_fake))
-\ $tAssertEq(10, AA_allocExactPo2(10, REF AA_fake))
-\ $tAssertEq( 0, AA_allocExactPo2(11, REF AA_fake))
+\ Populate some "real fake" data.
+SFN AA_initForTest PRE \ {&ba}
+  AA_init(_, REF AA_fake)
 
-\ $BA_free(GET AA_blk0, REF BA_kernel)
+  GET AA_blk0 + (1<<2); \ po2=2
+  sr4(NULL, ovr)  sr4(_, REF AA_fake + (2<<2))
+
+  GET AA_blk0 + (1<<5); \ po2=5
+  sr4(NULL, ovr)  sr4(_, REF AA_fake + (5<<2))
+
+  GET AA_blk0 + (1<<10); \ po2=10
+  sr4(NULL, ovr)  sr4(_, REF AA_fake + (10<<2))
+  ret;
+
+$AA_initForTest(NULL);
+$tAssertEq(GET AA_blk0 + (1<<2) , AA_allocExactPo2(2, REF AA_fake))
+$tAssertEq(NULL                 , AA_allocExactPo2(3, REF AA_fake))
+$tAssertEq(NULL                 , AA_allocExactPo2(4, REF AA_fake))
+$tAssertEq(GET AA_blk0 + (1<<5) , AA_allocExactPo2(5, REF AA_fake))
+$tAssertEq(NULL                 , AA_allocExactPo2(6, REF AA_fake))
+$tAssertEq(GET AA_blk0 + (1<<10), AA_allocExactPo2(10, REF AA_fake))
+$tAssertEq(NULL                 , AA_allocExactPo2(11, REF AA_fake))
+
+\ All roots are now null
+$tAssertEq(NULL, ft4(REF AA_fake + (2<<2)))
+$tAssertEq(NULL, ft4(REF AA_fake + (3<<2)))
+$tAssertEq(NULL, ft4(REF AA_fake + (5<<2)))
+$tAssertEq(NULL, ft4(REF AA_fake + (10<<2)))
+
+$AA_initForTest(NULL);
+\ First let's do a freebie
+$tAssertEq(GET AA_blk0 + (1<<2) ,          AA_allocPo2(2, REF AA_fake))
+
+\ Now, we want to allocate 2^9, but that will require spliting 2^10
+$tAssertEq(GET AA_blk0 + (1<<10),          AA_allocPo2(9, REF AA_fake))
+$tAssertEq(GET AA_blk0 + (1<<10) + (1<<9), AA_allocPo2(9, REF AA_fake))
+\ They should now both be exhausted
+$tAssertEq(NULL, ft4(REF AA_fake + ( 9<<2)))
+$tAssertEq(NULL, ft4(REF AA_fake + (10<<2)))
+
+\ Let's do that again, but this time for 2^8
+$AA_initForTest(NULL);
+$tAssertEq(GET AA_blk0 + (1<<10),          AA_allocPo2(8, REF AA_fake))
+$tAssertEq(GET AA_blk0 + (1<<10) + (1<<8), AA_allocPo2(8, REF AA_fake))
+$tAssertEq(GET AA_blk0 + (1<<10) + (2<<8), AA_allocPo2(8, REF AA_fake))
+$tAssertEq(GET AA_blk0 + (1<<10) + (3<<8), AA_allocPo2(8, REF AA_fake))
+\ They are now all exhausted
+$tAssertEq(NULL, ft4(REF AA_fake + ( 8<<2)))
+$tAssertEq(NULL, ft4(REF AA_fake + ( 9<<2)))
+$tAssertEq(NULL, ft4(REF AA_fake + (10<<2)))
+
+\ Now we need to test that we can reserve an actual block
+$BA_fakeInitForTest(REF BA_fakeIndexes, \blocks GET AA_blk0, 1)
+$AA_initForTest(REF BA_fake)
+
+\ TODO: write a test which reserves a ba block... it should just work :D
+
+\ TODO: write and test FREEDOM
+
+$BA_free(GET AA_blk0, REF BA_kernel)
