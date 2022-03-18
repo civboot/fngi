@@ -8,10 +8,6 @@
 
 $c_fngi
 
-\ this is a line comment
-\inlineComment
-\( block comment )
-
 \ Stack operators. These are /not/ PRE since they directly modify the stack.
 SFN swp      SMART IF() spor%SWP    ELSE $c1(SWP )   END ret;
 SFN drp      SMART IF() spor%DRP    ELSE $c1(DRP )   END ret;
@@ -149,7 +145,7 @@ CONST BA_blockPo2 = 12;  \ 4KiB == 2^12
 CONST BA_halfBlock = 2048;
 
 \ STRUCT BA
-\    BA_indexesOfs = 0;  \ indexes: APtr
+\     BA_indexesOfs = 0;  \ indexes: APtr
 CONST BA_blocksOfs  = 4;  \ blocks: APtr
 CONST BA_lenOfs     = 9;  \ len: U1
 CONST BA_rootOfs    = 10; \ root: U1

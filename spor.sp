@@ -1570,17 +1570,6 @@ $SFN \ $SMART %DRP
 
 $SFN ret $PRE $SMART $xsl assertNoInstant @RET $c1 %RET \ ret 4, or just ret;
 
-$SFN // \ Define a line comment for fngi
-  $SMART%DRP
-  $LOOP l
-    $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
-      $xsl c_readNew %RETZ \ return on EOF
-    $END
-    \ if(tokenBuf[tokenLen] == '\n') return
-    $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT #A$L0 $reteq
-    $GET c_tokenLen %INC $_SET c_tokenLen
-  $AGAIN l
-
 \ These do nothing and are used for more readable code.
 $SFN _ $SMART%DRP %RET
 $SFN , $SMART%DRP %RET

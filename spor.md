@@ -26,21 +26,21 @@ values and a register to store the current instr "sz bits" of `SZ1`, `SZ2` or
 The syntax looks like
 
 ```
-// (sfn means "small function" aka no locals)
-$SFN add1   // [U4] -> [U4]: add one
-  #1$L0       // compile literal of 0x1
-  %ADD %RET   // add and return
+\ (sfn means "small function" aka no locals)
+$SFN add1   \ [U4] -> [U4]: add one
+  #1$L0       \ compile literal of 0x1
+  %ADD %RET   \ add and return
 
-$SFN add2 // [U4] -> [U4]: add two
-  $xsl  add1 // xsl means "execute small"
-  $jmpl add1 // jmpl does a jump, add1 does the return
+$SFN add2 \ [U4] -> [U4]: add two
+  $xsl  add1 \ xsl means "execute small"
+  $jmpl add1 \ jmpl does a jump, add1 does the return
 ```
 
 The assembler syntax is obsenely simple and fngi builds on top of it. It
 supports the following tokens.
 
 Pushing and setting stack values:
-- `/` starts a line comment which ends at the newline.
+- `\` starts a line comment which ends at the newline.
 - `.N` sets the sz bits (size) to N bytes, i.e. `.4` set's the global
   instruction size to 4 bytes (`SZ4`).
 - `#NNNN_NNNN` pushes an (up to) 4 byte unsigned hex number to the stack. Ex:
