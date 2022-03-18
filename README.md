@@ -1,4 +1,4 @@
-# Fngi: the language that grows on the silicone
+# Fngi: a readable language that grows from the silicone
 
 > **UPDATE:** I am now building software in fngi. So far this has been only a
 > few tests and some core syntax, but I'm currently paving the way for a 4k
