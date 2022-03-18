@@ -1353,6 +1353,7 @@ U1 readSrcAtLeast(U1 num) {
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS)  \
   assert(MS == alignAPtr(MS, 1 << BLOCK_PO2));      \
   assert(BLKS == alignAPtr(BLKS, 4));               \
+  assert(BLKS > 0);                                 \
   assert(                   \
     MS > (                  \
       (BLKS << BLOCK_PO2)   \

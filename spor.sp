@@ -309,7 +309,8 @@
 #E0F2  =E_cNeedNumber \ number not present
 
 #E0B0  =E_iBlock      \ invalid block index
-#E0B0  =E_aaPo2       \ invalid po2
+#E0B1  =E_ptrBlk      \ invalid block ptr
+#E0B2  =E_aaPo2       \ invalid po2
 
 \ **********
 \ * [4] Globals
@@ -834,6 +835,7 @@ $SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
 $SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
 $SFN retz  $PRE $SMART $xsl assertNoInstant @RETZ$c1 %RET
 $SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ$c1 @RETZ$c1 %RET
+$SFN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
 
 
 \ **********

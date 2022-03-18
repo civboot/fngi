@@ -34,21 +34,48 @@ FN testSET PRE
   ret(GET a)
 $tAssertEq(testSET, 5)
 
+$(42 SZ1) GLOBAL glblAnswer
+$tAssertEq(42, GET glblAnswer)
 
 \ **********
 \ ** Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
 
-\ $setSysLogLvl(LOG_EXECUTE)
-$(42 SZ1) GLOBAL glblAnswer
-$tAssertEq(42, GET glblAnswer)
+$(0 SZ4) GLOBAL BA_fake;  $globalReserve(12 - 4)
+$(0 SZ4) GLOBAL BA_fakeIndexes;
 
-$BA_init(REF BA_kernel)
+\ Initialize some fake data
+$sr4(REF BA_fakeIndexes, REF BA_fake)
+$sr4(0x1000            , REF BA_fake + BA_blocksOfs)
+$sr1(4                 , REF BA_fake + BA_lenOfs)
+$sr1(0                 , REF BA_fake + BA_rootOfs)
 
+$tAssertNot(BA_isPtrValid(0, REF BA_fake))      \ null block
+$tAssertNot(BA_isPtrValid(0x500, REF BA_fake))
+$tAssert   (BA_isPtrValid(0x1000, REF BA_fake)) \ 1st block
+$tAssert   (BA_isPtrValid(0x2000, REF BA_fake)) \ 2nd block
+$tAssert   (BA_isPtrValid(0x3000, REF BA_fake)) \ 3rd block
+$tAssert   (BA_isPtrValid(0x4000, REF BA_fake)) \ 4th block
+$tAssertNot(BA_isPtrValid(0x5000, REF BA_fake)) \ 5th block
+
+$tAssertEq(BA_iNull, BA_ptrToI(0, REF BA_fake)) \ hard-coded
+$tAssertEq(0,        BA_ptrToI(0x1000, REF BA_fake))
+$tAssertEq(1,        BA_ptrToI(0x2000, REF BA_fake))
+$tAssertEq(2,        BA_ptrToI(0x3000, REF BA_fake))
+
+$tAssertEq(0,        BA_iToPtr(BA_iNull, REF BA_fake)) \ hard-coded
+$tAssertEq(0x1000,   BA_iToPtr(0, REF BA_fake))
+$tAssertEq(0x2000,   BA_iToPtr(1, REF BA_fake))
+$tAssertEq(0x3000,   BA_iToPtr(2, REF BA_fake))
+$tAssertEq(0x4000,   BA_iToPtr(3, REF BA_fake))
+\ $tAssertEq(0x5000,   BA_iToPtr(4, REF BA_fake)) \ panics
+
+$BA_init(REF BA_kernel) \ TODO: make this the fake block
 FN testBASimple
   $SZ4 LOCAL blk
   $SZ1 LOCAL iBlk
   END_LOCALS
+  tAssert(ft1(REF BA_kernel + BA_lenOfs))
   tAssertEq(0, ft1(REF BA_kernel + BA_rootOfs));
   tAssertEq(1, BA_iGet(0, REF BA_kernel));
   tAssertEq(2, BA_iGet(1, REF BA_kernel));
@@ -59,8 +86,8 @@ FN testBASimple
   SET blk = BA_iToPtr(GET iBlk, REF BA_kernel);
   tAssertEq(ft4(REF BA_kernel + BA_blocksOfs), GET blk)
   tAssertEq(GET blk,  BA_iToPtr(GET iBlk, REF BA_kernel));
+  tAssertEq(ft4(REF BA_kernel + BA_blocksOfs), GET blk);
   tAssertEq(GET iBlk, BA_ptrToI(GET blk,  REF BA_kernel));
-
   BA_free(GET blk, REF BA_kernel)
   tAssertEq(0, ft1(REF BA_kernel + BA_rootOfs)); \ root changed
   tAssertEq(1, BA_iGet(0, REF BA_kernel));
@@ -108,4 +135,52 @@ $tAssertNot(AA_isValidPo2(0))
 $tAssertNot(AA_isValidPo2(1))
 $tAssertNot(AA_isValidPo2(13))
 
+$(0 SZ4) GLOBAL AA_fake;  $globalReserve(AA_size - 4)
+$AA_init(REF BA_kernel, REF AA_fake)
 
+\ Populate some fake data in freePo2 array
+$sr4(2, REF AA_fake +  (2<<2))
+$sr4(5, REF AA_fake +  (5<<2))
+$sr4(10, REF AA_fake + (10<<2))
+
+\ test AA_findPo2
+$tAssertEq( 2, AA_findPo2(2, REF AA_fake))
+$tAssertEq( 5, AA_findPo2(3, REF AA_fake))
+$tAssertEq( 5, AA_findPo2(5, REF AA_fake))
+$tAssertEq(10, AA_findPo2(6, REF AA_fake))
+$tAssertEq(10, AA_findPo2(9, REF AA_fake))
+$tAssertEq(10, AA_findPo2(10, REF AA_fake))
+$tAssertEq(12, AA_findPo2(11, REF AA_fake))
+$tAssertEq(12, AA_findPo2(12, REF AA_fake))
+
+\ \ test AA_allocExactPo2 (except for po2=12)
+\ $(BA_alloc(REF BA_kernel), SZA) GLOBAL AA_blk0;
+\ 
+\ \ Populate some "real fake" data.
+\ $AA_init(REF BA_kernel, REF AA_fake)
+\ $(
+\   GET AA_blk0 + 1<<2; \ po2=2
+\   tAssertEq(GET topMem)
+\   sr4(NULL, ovr)  sr4(_, REF AA_fake +  (2<<2))
+\ 
+\   GET AA_blk0 + 1<<5; \ po2=5
+\   sr4(NULL, ovr)  sr4(_, REF AA_fake +  (2<<2))
+\ 
+\   GET AA_blk0 + 1<<10; \ po2=10
+\   sr4(NULL, ovr)  sr4(_, REF AA_fake +  (2<<2))
+\ )
+\ 
+\ $sr4(,     REF AA_fake +  (2<<2))
+\ $sr4(GET AA_blk0 + 1<<5,  REF AA_fake +  (5<<2))
+\ $sr4(GET AA_blk0 + 1<<10, REF AA_fake + (10<<2))
+
+
+\ $tAssertEq( 2, AA_allocExactPo2(2, REF AA_fake))
+\ $tAssertEq( 0, AA_allocExactPo2(3, REF AA_fake))
+\ $tAssertEq( 5, AA_allocExactPo2(5, REF AA_fake))
+\ $tAssertEq( 0, AA_allocExactPo2(6, REF AA_fake))
+\ $tAssertEq( 0, AA_allocExactPo2(9, REF AA_fake))
+\ $tAssertEq(10, AA_allocExactPo2(10, REF AA_fake))
+\ $tAssertEq( 0, AA_allocExactPo2(11, REF AA_fake))
+
+\ $BA_free(GET AA_blk0, REF BA_kernel)
