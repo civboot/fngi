@@ -84,8 +84,8 @@ Below is an example fngi function to calculate fibronacci recursively.
 
 ```
 fn fib [n:U4] -> U4 do (
-  if(.n <= 1) do ret 0;
-  ret(fib(.n - 1) + fib(.n - 1));
+  if(.n <= 1) do ret 1;
+  ret(fib(dec .n) + fib(.n - 2));
 )
 ```
 
@@ -194,7 +194,7 @@ uint32_t fib(uint32_t n) {
 \ Fngi Syntax
 fn fib [n:U4] -> U4 do (
   if(.n <= 1) do ret 1;
-  ret fib(dec .n) + fib(.n-2);
+  ret(fib(dec .n) + fib(.n - 2));
 )
 ```
 
