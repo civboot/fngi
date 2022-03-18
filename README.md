@@ -1,24 +1,22 @@
-# Fngi: a readable language that grows from the silicone
+# fngi: a readable language that grows from the silicone
 
-> **UPDATE:** I am now building software in fngi. So far this has been only a
-> few tests and some core syntax, but I'm currently paving the way for a 4k
-> block allocator with an arena-buddy-allocator. After that, creating better
-> syntax (fn, if, while) shouldn't be far behind. See the `Goals` section
-> for a complete list of items remaining.
+> **UPDATE:** initial fngi syntax is working well enough for me to start
+> writing a 4KiB block and arena-buddy-allocator. After that, bootstrapping
+> better syntax (`STRUCT`, `fn`, `if`, `while`) shouldn't be far behind. See the
+> `Goals` section for a complete list of items remaining.
 
 If we want to build an entirely understandable tech stack (as part of
-civboot.org or bootstrappable.org) we need a language which can be
-implemented easily, has excellent expressiveness and readability, can
-modify itself, and has a simple but effective security model built in. The
-language has to be able to unroll from simple beginnings (implemented in a hex
-editor or similar) to a full-featured language that we can use to build a
-Civboot -- and have fun in the process!
+[civboot.org](http://civboot.org) or [bootstrappable.org](bootstrappable.org))
+we need a language which can be implemented easily, has excellent expressiveness
+and readability, can modify itself, and has a simple but effective security
+model built in. The language has to be able to unroll from simple beginnings
+(implemented in a hex editor or similar) to a full-featured language that we can
+use to build a Civboot -- and have fun in the process!
 
-That language is Fngi, a language inspired primarily by FORTH and C. It is
-self-bootstrapped at runtime from Spor: an assembly bytecode, interpreter and
+That language is fngi, a language inspired primarily by FORTH and C. It is
+self-bootstrapped at runtime from spor: an assembly bytecode, interpreter and
 syntax. Spor itself is self-bootstrapped from an extremely lean native
-implementation, which is currently ~1-2 thousand lines of C but is intended to
-be writeable in a hex editor (when targeting a simple processor).
+implementation, which is ~1-2 thousand lines of C.
 
 Fngi itself has the following space targets:
 - >=32KiB microcontroller/processor: can bootstrap a text-based OS providing
@@ -35,8 +33,8 @@ Read more:
 * [harness and zoab](./harness.md)
 * [Unstructured Notes](./notes/)
 
-> Fngi and civboot should be considred an [Obsolete
-> Technology](http://xkcd.com/1891)
+> Fngi and civboot should be considred an
+> [Obsolete Technology](http://xkcd.com/1891)
 
 # Goals
 fngi's goal is to evolve into nothing less than the primary programming language
@@ -53,21 +51,20 @@ along the way, some of them complete.
 - [ ] Write initial way to define namespaces, structs and enums. (`STRUCT`,
       ENUM`, etc)
 - [ ] Write an initial "untyped" version of `fn`, `if`, etc. This might be
-      something like `noty.fn` or something else.
+      something like `uty.fn`, `uty.if` or something else.
 - [ ] Implement core OS functions to move and modify files and implement a
       standardized way to communicate user-input and display info with the
       harness.
 - [ ] Create an ultra-basic text-editor.
 - [ ] Create an ultra-basic CLI built on the text-editor.
-- [ ] Write way to keep track of types on a "type stack", which the various
-      sub-compilers will use (i.e. `fn`, `if`, etc).
-- [ ] Write `fn`, `if`, `while`, etc to and aquire type safety.
+- [ ] Create a tyStk (type stack) and hijack compiler to emit/consume types
+      while compiling tokens.
+- [ ] Write `fn`, `if`, `while` using tyStk to and aquire type safety.
 - [ ] Write zoat in fngi (see [zoa][zoa] project).
 - [ ] Write `struct`, allowing for zoa serializable types from the beginning.
 - [ ] Implement zoac (see [zoa][zoa] project).
 - [ ] Implement zosh (see [zoa][zoa] project).
-- [ ] Write a text editor
-
+- [ ] Write a glorious text editor, zat
 
 [zoa]: http://github.com/vitiral/zoa
 
@@ -79,6 +76,8 @@ to be evolved.
 ```
 ./fngi --compile --test --syslog=LOG_COMPILER --log=LOG_INFO
 ```
+
+You can also add `--valgrind` for detecting memory and other issues.
 
 ## Contributing
 
