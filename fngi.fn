@@ -1,4 +1,4 @@
-\ Fngi bootstrap script: this script bootstraps the fngi language.
+\ Fngi: bootstraps the fngi language.
 \ Requires: spore.sp
 \
 \ Note: at this stage the language is severely restricted and several
@@ -61,14 +61,14 @@ SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
 SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
 SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 
-SFN = SMART drp panic(E_cToken) \ prevent hanging =
-SFN ) SMART drp panic(E_cUnclosed) \ prevent unclosed parens
+SFN = SMART drp panic(E_cToken)    \ prevent hanging =
+SFN ) SMART drp panic(E_cUnclosed) \ prevent hanging )
 SFN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
 SFN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
-SFN memCmp   PRE  ret dvft(D_memCmp) \ {&a &b len -> cmp}
-SFN memClear PRE  0 swp; \ !fallthrough! {dst len}   "dst = 0"
-SFN memSet   PRE  ret dvft(D_memSet) \ {dst v len}   "dst = v"
-SFN memMove  PRE  ret dvsr(D_memSet) \ {dst src len} "dst = src"
+SFN memCmp   PRE  ret dvft(D_memCmp)   \ {&a &b len -> cmp}
+SFN memClear PRE  0 swp; \ !fallthrough! {dst len}     "dst = 0"
+SFN memSet   PRE  ret dvft(D_memSet)   \ {dst v len}   "dst = v"
+SFN memMove  PRE  ret dvsr(D_memSet)   \ {dst src len} "dst = src"
 
 SFN c_shiftBuf \ shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
@@ -229,11 +229,11 @@ FN SLL_pop  PRE \ {&root -> &a}: Pop a node from the SLL
   retz(dup); \ {&a}
   ret sr4(ft4(dup), GET root); \ {&a} root->b
 
-FN SLL_push PRE \ {&a &root}: Push a node onto the SLL
-  $SZ4 INPUT a  $SZ4 INPUT root  END_LOCALS
-  IF(not ft4(GET root))  sr4(NULL, GET a); \ a->NULL
-  ELSE                   sr4(GET root, GET a);  END \ a->b
-  ret sr4(GET a, GET root); \ root->a
+SFN SLL_push PRE \ {&a &root}: Push a node onto the SLL
+  ovr; ovr;           \ {&a &root &a &root}
+  ft4(\root); swp;    \ {&a &root &b &a}
+  sr4(\b, \a);        \ a->b
+  ret sr4(\a, \root); \ root->a
 
 \ **********
 \ * Arena Allocator (AA)
@@ -269,16 +269,26 @@ FN SLL_push PRE \ {&a &root}: Push a node onto the SLL
 \   roots: arr[10; APtr];
 \ ]
 
+SFN sort2 PRE \ { a b -> _ _ } sort two values on the stack
+  ovr; ovr; retlt(_, _) swp; ret;
+
+\ {&a &b po2 -> bool} return whether blocks can be joined.
+FN canBlocksMerge PRE
+  $SZ1 INPUT po2  END_LOCALS
+  ovr\a != align(dup\a, 1 << inc(GET po2)) \ {&a, &b, &a is on po2 boundary}
+  IF(_) drp\b; drp\a; ret FALSE;  END
+  ret(\a == (\b - (1 << GET po2))) \ return whether a is next to b
+
 CONST AA_size     = 48;
 CONST AA_baOfs    = 4;
 CONST AA_rootsOfs = 8;
 
-SFN AA_validPo2  PRE ret between(_, 2, 12); \ {po2 -> bool}
-SFN AA_assertPo2 PRE (AA_validPo2(_), E_aaPo2)$jmpl assert \ {po2 [2,11]
+SFN AA_isValidPo2  PRE ret betweenIncl(_, 2, 12); \ {po2 -> bool}
+SFN AA_assertPo2   PRE (AA_isValidPo2(_), E_aaPo2)$jmpl assert
 
 FN AA_init PRE \ {&ba &aa}
-  $SZ4 INPUT aa  END_LOCALS
-  sr4(_, GET aa + AA_baOfs); \ set ba
+  $SZ4 INPUT aa  END_LOCALS \ {&ba}
+  sr4(\ba, GET aa + AA_baOfs); \ init ba
   (GET aa + AA_rootsOfs, 10 << 2)$jmpl memClear \ all roots=NULL
 
 $(0 SZ4) GLOBAL AA_kernel;
@@ -297,13 +307,10 @@ FN AA_allocClosestPo2 PRE
   AGAIN l0  END_BREAK b0  END_BREAK b1
   ret(\free, GET gotPo2)
 
-SFN AA_allocExactPo2 PRE \ {po2 &aa}: get an exact po2
+SFN AA_allocExactPo2 PRE \ {po2 &aa -> &free}: get an exact po2
   swp; \ {&aa po2}
-  IF(dup == 12) drp; BA_alloc(_ + AA_baOfs); \ {&free} 4KiB block
-  ELSE SLL_pop(_ + (_ << 2))  END            \ {&free} po2 memory
-
-FN AA_breakBlock PRE \ {&free po2 gotPo2 &aa -> &free po2 gotPo2}
-  $SZ1 INPUT po2  $SZ1 INPUT gotPo2  $SZ4 INPUT aa  END_LOCALS
+  IF(dup\po2 == 12) drp\po2; BA_alloc(\aa + AA_baOfs);
+  ELSE SLL_pop(\aa + (\po2 << 2))  END ret;
 
 \ Allocate po2.
 \ Note: this function is broken up for testing purposes.
@@ -321,13 +328,6 @@ FN AA_allocPo2 PRE \ {po2 &aa -> &free}
     SLL_push(\(&free) + (1 << GET gotPo2), GET aa + (GET gotPo2 << 2))
   AGAIN l1
 
-SFN sort2 PRE \ { a b -> _ _ } sort two values on the stack
-  ovr; ovr; retlt(_, _) swp; ret;
-
-FN isConsecutive PRE \ {&a &b po2} return whether a+2^po2 == b
-  $SZ1 INPUT po2  END_LOCALS
-  ret( \a == (\b - (1 << GET po2)))
-
 FN AA_freePo2 PRE \ {&free po2 &aa}
   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS \ {&free}
   AA_assertPo2(GET po2); \ {&free}
@@ -337,10 +337,8 @@ FN AA_freePo2 PRE \ {&free po2 &aa}
     IF(not dup) \ check null case of existing free
       drp\fp; ret SLL_push(\f, GET aa + (GET po2 << 2));
     END sort2(_, _); \ {&a &b} sort them for next checks.
-    IF(not align(ovr\a, 1 << inc(GET po2)))     \ IF(&a is on next po2 boundary)
-      IF(isConsecutive(ovr\a, ovr\b))           \ and highest is next to first
-        drp\b; SET po2 = inc(GET po2); AGAIN l0 \ drop &b and treat as one
-      END
+    IF(canBlocksMerge(ovr\a, ovr\b, GET po2))
+      drp\b; SET po2 = inc(GET po2); AGAIN l0 \ drop &b and treat as one
     END \ cannot merge, just push both back and return.
     SLL_push(\b, GET aa + (GET po2 << 2));
     ret SLL_push(\a, GET aa + (GET po2 << 2));

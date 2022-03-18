@@ -92,9 +92,8 @@ fn fib [n:U4] -> U4 do (
 Let's explain a few details on how the parser/compiler stays extremely minimal:
 
 - `fn` is an SMART function, meaning the compiler executes it instead of
-  compiling it to the heap. The it is a "syntax function" that expects the
-  syntax to be structured as follows: `fn [fn-name] [inputs] -> [outputs] do
-  [code]`
+  compiling it to the heap. It is a "syntax function" that expects the syntax to
+  be structured as follows: `fn [fn-name] [inputs] -> [outputs] do [code]`
 - `(..)` is NOT an expression. `(` is simply an instant function that compiles
   until it encounters the token `)`. In this case, what is between them is the
   function body.

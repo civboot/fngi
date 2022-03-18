@@ -34,14 +34,16 @@ FN testSET PRE
   ret(GET a)
 $tAssertEq(testSET, 5)
 
-\ Test Block Allocator
+
+\ **********
+\ ** Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
 
 \ $setSysLogLvl(LOG_EXECUTE)
 $(42 SZ1) GLOBAL glblAnswer
 $tAssertEq(42, GET glblAnswer)
 
-
+$BA_init(REF BA_kernel)
 
 FN testBASimple
   $SZ4 LOCAL blk
@@ -66,4 +68,44 @@ FN testBASimple
   ret;
 
 $testBASimple
+
+\ **********
+\ ** Test SLL
+
+$(NULL      SZ4) GLOBAL sll_c
+$(REF sll_c SZ4) GLOBAL sll_b
+$(REF sll_b SZ4) GLOBAL sll_a
+$(REF sll_a SZ4) GLOBAL sll_root \ root->a->b->c
+
+$tAssertEq(REF sll_a, SLL_pop(REF sll_root)) \ root->b->c
+$tAssertEq(REF sll_b, SLL_pop(REF sll_root)) \ root->c
+ $SLL_push(REF sll_a, REF sll_root)          \ root->a->c
+$tAssertEq(REF sll_a, SLL_pop(REF sll_root)) \ root->c
+$tAssertEq(REF sll_c, SLL_pop(REF sll_root)) \ root->NULL
+$tAssertEq(NULL     , SLL_pop(REF sll_root))
+$tAssertEq(NULL     , SLL_pop(REF sll_root))
+
+\ **********
+\ ** Test AA
+$sort2(5 10) $tAssertEq(_, 10) $tAssertEq(_, 5)
+$sort2(10 5) $tAssertEq(_, 10) $tAssertEq(_, 5)
+
+$tAssert   (canBlocksMerge(16 24 3))
+$tAssert   (canBlocksMerge(64 96 5))
+
+$tAssertNot(canBlocksMerge(8 16 3))
+$tAssertNot(canBlocksMerge(8 24 3))
+$tAssertNot(canBlocksMerge(4 12 3))
+$tAssertNot(canBlocksMerge(12 20 3))
+$tAssertNot(canBlocksMerge(32 64 4))
+$tAssertNot(canBlocksMerge(64 96 4))
+
+$tAssert(AA_isValidPo2(2))
+$tAssert(AA_isValidPo2(3))
+$tAssert(AA_isValidPo2(11))
+$tAssert(AA_isValidPo2(12))
+$tAssertNot(AA_isValidPo2(0))
+$tAssertNot(AA_isValidPo2(1))
+$tAssertNot(AA_isValidPo2(13))
+
 
