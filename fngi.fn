@@ -63,9 +63,9 @@ SFN ) SMART drp panic(E_cUnclosed) // prevent unclosed parens
 SFN setSysLogLvl PRE _SET sysLogLvl ret; // {logLvl}
 SFN setUsrLogLvl PRE _SET usrLogLvl ret; // {logLvl}
 SFN memCmp   PRE  ret dvft(D_memCmp) // {&a &b len -> cmp}
+SFN memClear PRE  0 swp; // !fallthrough! {dst len}   "dst = 0"
 SFN memSet   PRE  ret dvft(D_memSet) // {dst v len}   "dst = v"
 SFN memMove  PRE  ret dvsr(D_memSet) // {dst src len} "dst = src"
-SFN memClear PRE  0 swp; $jmpl memSet; // {dst len}
 
 SFN c_shiftBuf // shift buffer to clear current token
   (GET c_tokenBuf, dup + GET c_tokenLen, GET c_tokenLen)
@@ -106,31 +106,31 @@ FN SET  SMART // SET <name> = <value>
   xw(GET c_compFn) // <value>
   ret _setImpl(GET rMetaRef, GET isFromLocal)
 
-FN gheapReserve PRE  $SZ2 INPUT len END_LOCALS
+FN globalReserve PRE  $SZ2 INPUT len END_LOCALS // {len}
   memSet(GET c_gheap, 0, GET len) // clear bytes
   SET c_gheap = (GET c_gheap + GET len);
   ret;
 
-FN /*  // block-comment */
-  $SZ1 LOCAL lastTy // 0=*, 1=/  2=other
-  $SZ1 LOCAL c
-  END_LOCALS SMART drp; // ignore asInstant
-  SET lastTy = 2; // other
-  LOOP l0
-    IF(GET c_tokenLen >= GET c_tokenSize)  c_assertNoEof(c_readNew)  END
-    GET c_tokenLen; // {c_tokenLen}
-    SET c = ft1(dup + GET c_tokenBuf); // {c_tokenLen}
-    SET c_tokenLen = inc(_); // increment c_tokenLen
-
-    IF(0c/ == GET c)
-      retz(GET lastTy) // Found: */ (done)
-      SET lastTy = 1; // lastTy=/
-    ELSE IF(0c* == GET c)
-      IF(1 == GET lastTy) // Found: /*
-        FALSE spor$xl /* // recursively call block-comment. */
-      ELSE  SET lastTy = 0;  END
-    ELSE  SET lastTy = 2;    END END
-  AGAIN l0
+// FN /*  // block-comment */
+//   $SZ1 LOCAL lastTy // 0=*, 1=/  2=other
+//   $SZ1 LOCAL c
+//   END_LOCALS SMART drp; // ignore asInstant
+//   SET lastTy = 2; // other
+//   LOOP l0
+//     IF(GET c_tokenLen >= GET c_tokenSize)  c_assertNoEof(c_readNew)  END
+//     GET c_tokenLen; // {c_tokenLen}
+//     SET c = ft1(dup + GET c_tokenBuf); // {c_tokenLen}
+//     SET c_tokenLen = inc(_); // increment c_tokenLen
+// 
+//     IF(0c/ == GET c)
+//       retz(GET lastTy) // Found: */ (done)
+//       SET lastTy = 1; // lastTy=/
+//     ELSE IF(0c* == GET c)
+//       IF(1 == GET lastTy) // Found: /*
+//         FALSE spor$xl /* // recursively call block-comment. */
+//       ELSE  SET lastTy = 0;  END
+//     ELSE  SET lastTy = 2;    END END
+//   AGAIN l0
 
 FN between PRE // {value a b -> bool} value is between [a b)
   $SZ4 INPUT b   END_LOCALS // {value a}
@@ -293,15 +293,19 @@ CONST AA_size     = 48;
 CONST AA_baOfs    = 4;
 CONST AA_rootsOfs = 8;
 
-SFN AA_validPo2 PRE ret between(_, 2, 12); // {po2 -> bool}
+SFN AA_validPo2  PRE ret between(_, 2, 12); // {po2 -> bool}
 SFN AA_assertPo2 PRE (AA_validPo2(_), E_aaPo2)$jmpl assert // {po2 [2,11]
 
-FN AA_init // {&ba &aa}
+FN AA_init PRE // {&ba &aa}
   $SZ4 INPUT aa  END_LOCALS
-  GET aa + AA_baOfs;  sr4(_, _); // set ba
-  (GET aa + AA_rootsOfs, 10 << 2) $jmpl memClear // all roots=NULL
+  sr4(_, GET aa + AA_baOfs); // set ba
+  (GET aa + AA_rootsOfs, 10 << 2)$jmpl memClear // all roots=NULL
 
-FN AA_allocPo2 PRE // {po2 &aa -> &free}
+$(0 SZ4) GLOBAL AA_kernel;
+$globalReserve(AA_size - 4)
+$AA_init(REF BA_kernel, REF AA_kernel)
+
+FN AA_allocClosestPo2 PRE // {po2 &aa -> &free gotPo2}: see AA_allocPo2
   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS
   AA_assertPo2(GET po2);
   SET gotPo2 = GET po2;
@@ -310,19 +314,55 @@ FN AA_allocPo2 PRE // {po2 &aa -> &free}
     BREAK_IF (ft4(GET aa + (GET gotPo2 << 2)))  b1
     SET gotPo2 = inc(GET gotPo2);
   AGAIN l0  END_BREAK b0  END_BREAK b1
+  ret(_, GET gotPo2)
+
+SFN AA_allocExactPo2 PRE // {po2 &aa}: get an exact po2 (or null)
+  swp; // {&aa po2}
+  IF(dup == 12) drp; BA_alloc(_ + AA_baOfs); // {&free} 4KiB block
+  ELSE SLL_pop(_ + (_ << 2))  END            // {&free} po2 memory
+
+FN AA_breakBlock PRE // {&free po2 gotPo2 &aa -> &free po2 gotPo2}
+  $SZ1 INPUT po2  $SZ1 INPUT gotPo2  $SZ4 INPUT aa  END_LOCALS
+
+// Allocate po2.
+// Note: this function is broken up for testing purposes.
+FN AA_allocPo2 PRE // {po2 &aa -> &free}
+  $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS
+  SET gotPo2 = AA_allocClosestPo2(GET po2, GET aa); // {&free}
+
   LOOP l1 // Break the block until it is the right size.
-    // Get pointer to the free memory.
-    IF(GET gotPo2 == 12)  BA_alloc(GET aa + AA_baOfs); // {&free}
-    ELSE SLL_pop(GET aa + (GET gotPo2 << 2))  END      // {&free}
+    AA_allocExactPo2(GET gotPo2, GET aa); // {&free}
     reteq(GET po2, GET gotPo2) // {&free}: return if correct po2
+
     SET gotPo2 = dec GET gotPo2; // {&free}: reduce gotPo2 since we're spliting in half
     // The next cycle will return or divide one of the free blocks.
     SLL_push(dup,                   GET aa + (GET gotPo2 << 2))
     SLL_push(_ + (1 << GET gotPo2), GET aa + (GET gotPo2 << 2))
   AGAIN l1
 
+SFN sort2 PRE // { a b -> _ _ } sort two values on the stack
+  ovr; ovr;  IF(_ < _)  ret;  END  swp; ret;
+
+FN isConsecutive PRE // {&a &b po2} return whether a+2^po2 == b
+  $SZ1 INPUT po2  END_LOCALS
+  ret( _ == (_ - (1 << GET po2)))
+
 FN AA_freePo2 PRE // {&free po2 &aa}
   $SZ1 INPUT po2  $SZ1 LOCAL gotPo2  $SZ4 INPUT aa  END_LOCALS // {&free}
-  AA_assertPo2(GET po2);
+  AA_assertPo2(GET po2); // {&free}
+  LOOP l0 // {&free} Merge free blocks while they are consecutive
+    IF(GET po2 == 12)  ret BA_free(GET aa + AA_baOfs);  END // if block, just free that.
+    SLL_pop(dup, GET aa + (GET po2 << 2)) // {&free, &prevFree} // get po2 free block
+    IF(not dup) // check null case of existing free
+      drp; ret SLL_push(_, GET aa + (GET po2 << 2));
+    END sort2(_, _); // sort them for next checks.
+    IF(not align(ovr, 1 << inc(GET po2))) // IF(lowest on next po2 boundary)
+      IF(isConsecutive(ovr, ovr))         // and highest is next to first
+        drp; SET po2 = inc(GET po2); AGAIN l0 // drop the second and treat as one
+      END
+    END // cannot merge, just push both back and return.
+    SLL_push(_, GET aa + (GET po2 << 2));
+    ret SLL_push(_, GET aa + (GET po2 << 2));
+  // END LOOP l0
 
 $c_dictDump
