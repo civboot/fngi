@@ -1003,7 +1003,7 @@ U1 scanInstr() {
   tokenLen = 1; // allows for multi symbols where valid, i.e. =$, $$
   switch (tokenBuf[0]) {
     case '.': cSz(); break;
-    case '/': cComment(); break;
+    case '\\': cComment(); break;
     case '#': cHex(); break;
     case '=': cDictSet(); break;
     case '@': cDictGet(); break;
@@ -1289,7 +1289,10 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
   U4 tmp;
   switch(op) {
     case D_read: WS_PUSH(readAtLeast(WS_POP())); break;
-    case D_scan: scan(); break;
+    case D_scan:
+      if(isFetch) scan();
+      else        cComment();
+      break;
     case D_dict: deviceOp_dict(isFetch); break;
     case D_rdict: deviceOpRDict(isFetch); break;
     case D_comp: deviceOpCompile(); break;
@@ -1625,7 +1628,7 @@ void compileStr(char* s) {
   compileStr(".1 #10");
   assert(WS_POP() == 0x10);
 
-  compileStr("/comment\n.2 #10AF");
+  compileStr("\\comment\n.2 #10AF");
   U4 result = WS_POP();
   assert(result == 0x10AF);
 

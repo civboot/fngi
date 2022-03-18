@@ -1,24 +1,24 @@
-// Test assert
+\ Test assert
 #0              $tAssertNot
 #1              $tAssert
 
-// Test operations
+\ Test operations
 #400 #1 ^ADD    #401 $tAssertEq
 #400 #1 ^SUB    #3FF $tAssertEq
 #400 #1 ^SHR    #200 $tAssertEq
 #400 #1 ^SHL    #800 $tAssertEq
 
-// Test dictionary
+\ Test dictionary
 #444 $dictSet foo
 $dictGet foo   #444 $tAssertEq
 #123455 $dictSet foo2
 $dictGet foo2 #123455 $tAssertEq
 
-// Test loc
+\ Test loc
 $loc twelve #12 $L0 %RET
 $twelve #12 $tAssertEq
 
-// Test L0-4
+\ Test L0-4
 $loc lits #5 $L0  #12345 $L1  #12345 $L2   #12345 $L4 %RET
 $lits
 #12345  $tAssertEq
@@ -26,7 +26,7 @@ $lits
 #45     $tAssertEq
 #5     $tAssertEq
 
-// Test xsl
+\ Test xsl
 
 $SFN myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
@@ -34,21 +34,21 @@ $myXs #22 $tAssertEq
 $SFN callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
-// Test rKeyMeta
+\ Test rKeyMeta
 #12 #1 $metaSet  #100_0012 $tAssertEq
 
 $c_updateRKey ^DRP
 
-// assert @rKey == @(&dict.buf + &dict.heap)
+\ assert @rKey == @(&dict.buf + &dict.heap)
   @c_rKey @REF_MASK ^BAND .4^FT
   @c_dictBuf @REF_MASK ^BAND .4^FT   @c_dictHeap @REF_MASK ^BAND .2^FT   .4^ADD
   $tAssertEq
 
 
-// Test functions
+\ Test functions
 $assertWsEmpty
 
-// Test core macros
+\ Test core macros
 
 $SFN one   #1 $L0 %RET
 $SFN add   %ADD %RET
@@ -62,8 +62,8 @@ $dictGet IF      $isTyFn      $tAssert
 $dictGet IF      $isFnSmart $tAssert
 $dictGet assert  $isFnInstant $tAssertNot
 
-// Test control flow
-$SFN testIf // converts 1->10 else: 42
+\ Test control flow
+$SFN testIf \ converts 1->10 else: 42
   #1 $L0 %EQ  $IF   #4 $L0 %RET
               $END  #13 $L0 %RET
 #1 $testIf      #4 $tAssertEq
@@ -76,26 +76,26 @@ $SFN testIfElse
 #2 $testIfElse  #15 $tAssertEq
 
 
-$FN min // [a b] -> [min]
-  #1 $h1 // one local, b
+$FN min \ [a b] -> [min]
+  #1 $h1 \ one local, b
   .4%SRLL #0 $h1
-  %DUP // {a a}
-  .4%FTLL #0 $h1 // {a a b}
-  %GE_U %RETZ               // if(!(a >= b)) ret a
-  %DRP .4%FTLL #0 $h1 %RET  // ret b
+  %DUP \ {a a}
+  .4%FTLL #0 $h1 \ {a a b}
+  %GE_U %RETZ               \ if(!(a >= b)) ret a
+  %DRP .4%FTLL #0 $h1 %RET  \ ret b
 
 #1 #2    $min   #1 $tAssertEq
 #42 #333 $min   #42 $tAssertEq
 
-$ha2 #1 $h1 // misalign heap
-@SZ4 $halN #1 $h1 #12345 $h4 // use them.
+$ha2 #1 $h1 \ misalign heap
+@SZ4 $halN #1 $h1 #12345 $h4 \ use them.
 
-// Testing Gloabls
+\ Testing Gloabls
 @SZ1 $assertSzI
 @SZ2 $assertSzI
 @SZ4 $assertSzI
-// #30  $assertSzI // expect failure.
-// #01  $assertSzI // expect failure.
+\ #30  $assertSzI \ expect failure.
+\ #01  $assertSzI \ expect failure.
 
 #12345 @SZ4 $GLOBAL myG1   $assertWsEmpty
 @myG1 #FF_FFFF ^BAND .4^FT  #12345 $tAssertEq
@@ -109,11 +109,11 @@ $myG1Get  #12345 $tAssertEq
 $SFN myG1Set  $_SET myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
-// *****
-// * Testing Locals
-// test ldict
+\ *****
+\ * Testing Locals
+\ test ldict
 #12 =shadowed
-$SFN notARealFn %RET // updates ldict
+$SFN notARealFn %RET \ updates ldict
 @shadowed #12 $tAssertEq
 
 #45 $ldictSet shadowed
@@ -126,14 +126,14 @@ $FN fooLocals
   @TY_LOCAL  @SZ2 #4 ^SHR  ^BOR  #18 ^SHL
   $tAssertEq
 
-// test R_LP
+\ test R_LP
 $SFN getLp %RGFT @R_LP$h1  %RET
 $getLp ^DUP #FFF0 $tAssertEq  =lsTop
 
-$FN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET // uses locals
+$FN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET \ uses locals
 $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 
-// test local variables
+\ test local variables
 $FN useLocal
   @SZ2 $LOCAL a $END_LOCALS
 
@@ -143,18 +143,18 @@ $FN useLocal
 
 $useLocal #2345 $tAssertEq
 
-$FN badMultiply // {a b -- a*b} uses loop to implement multiply
+$FN badMultiply \ {a b -- a*b} uses loop to implement multiply
   @SZ2 $INPUT a
   @SZ2 $INPUT b
   $END_LOCALS
 
-  #0$L0 // out = 0
+  #0$L0 \ out = 0
   $LOOP l0
-    // if(!b) break
+    \ if(!b) break
     $GET b $BREAK0 b0
-    // out = out + a
+    \ out = out + a
     $GET a  %ADD
-    // b = b - 1
+    \ b = b - 1
     $GET b  %DEC  $_SET b
   $AGAIN l0  $END_BREAK b0
   %RET
@@ -170,10 +170,10 @@ $c_number 1234     $tAssert   #4D2   $tAssertEq
 $c_number 0x1234   $tAssert   #1234  $tAssertEq
 $c_number 0xF00FA  $tAssert   #F00FA $tAssertEq
 $c_number 0b11100  $tAssert   #1C    $tAssertEq
-$c_number 0b11102  $tAssertNot      ^DRP // not valid binary
-$c_number notNum   $tAssertNot      ^DRP // not a number
+$c_number 0b11102  $tAssertNot      ^DRP \ not valid binary
+$c_number notNum   $tAssertNot      ^DRP \ not a number
 
-// characters
+\ characters
 $c_number 0cA   $tAssert   #41 $tAssertEq
 $c_number 0ca   $tAssert   #61 $tAssertEq
 $c_number 0cb   $tAssert   #62 $tAssertEq
@@ -184,11 +184,11 @@ $c_number 0c    $tAssert   #20 $tAssertEq
 $c_number 0c\   $tAssert   #20 $tAssertEq
 $c_number 0c\s  $tAssert   #20 $tAssertEq
 
-// Test compiler internals
+\ Test compiler internals
 
 @TRUE #123 $c_lit #123 $tAssertEq  $assertWsEmpty
 
-$FN two $END_LOCALS #2$L0 %RET // {} -> 1
+$FN two $END_LOCALS #2$L0 %RET \ {} -> 1
 
 $SFN test_c_fn   @one $c_fn %RET
 $test_c_fn #1 $tAssertEq
@@ -204,9 +204,9 @@ $test_c_fnTwo #2 $tAssertEq
 $SFN test_c_compFnExists $GET c_compFn %RET
 $test_c_compFnExists  @fngiSingle $toRef $tAssertEq
 
-// Test essential functions
+\ Test essential functions
 
-$c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq // 0x24 = '$'
+$c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq \ 0x24 = '$'
 
 $SFN comp1 $xsl toRef .4%XW %RET
 
@@ -226,13 +226,20 @@ $FN withLocals
 #0 #0 #3 $betweenIncl $tAssert
 #3 #0 #3 $betweenIncl $tAssert
 
-$() // does nothing
+\ A bit of fngi syntax
+$() \ does nothing
+$(
+  \inlineComment
+  \ line comment
+  \( block comment )
+)
+
 $( SFN hi 32 one spor%RET )
 $hi
   #1 $tAssertEq
   #20 $tAssertEq
 
-$SFN add1 $PRE %INC %RET // {a} -> {a+1}
+$SFN add1 $PRE %INC %RET \ {a} -> {a+1}
 $( SFN three ret(add1(2)) )
 $three  #3 $tAssertEq
 
@@ -242,7 +249,7 @@ $assertWsEmpty
 @sporMsg $_printz
 $assertWsEmpty
 
-$SFN failRecursively2 // {n} -> {n-1}
+$SFN failRecursively2 \ {n} -> {n-1}
   %DUP %NOT $IF
     %DRP
     #1$L0 #7$L0  $xsl tAssertEq
@@ -250,7 +257,7 @@ $SFN failRecursively2 // {n} -> {n-1}
   $END
   %DEC $xsl failRecursively2
 
-$FN failRecursively // {n} -> {n-1}
+$FN failRecursively \ {n} -> {n-1}
   @SZ4 $INPUT n $END_LOCALS
   $GET n %NOT $IF
     #5$L0 $xsl failRecursively2
@@ -261,4 +268,4 @@ $FN failRecursively // {n} -> {n-1}
 $assertWsEmpty
 $c_dictDump
 
-// #5 $failRecursively
+\ #5 $failRecursively

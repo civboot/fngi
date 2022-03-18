@@ -34,10 +34,10 @@ FN testSET PRE
   ret(GET a)
 $tAssertEq(testSET, 5)
 
-// Test Block Allocator
+\ Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
 
-// $setSysLogLvl(LOG_EXECUTE)
+\ $setSysLogLvl(LOG_EXECUTE)
 $(42 SZ1) GLOBAL glblAnswer
 $tAssertEq(42, GET glblAnswer)
 
@@ -53,14 +53,14 @@ FN testBASimple
 
   SET iBlk = BA_iAlloc(REF BA_kernel);
   tAssertEq(0, GET iBlk)
-  tAssertEq(1, ft1(REF BA_kernel + BA_rootOfs)); // root changed
+  tAssertEq(1, ft1(REF BA_kernel + BA_rootOfs)); \ root changed
   SET blk = BA_iToPtr(GET iBlk, REF BA_kernel);
   tAssertEq(ft4(REF BA_kernel + BA_blocksOfs), GET blk)
   tAssertEq(GET blk,  BA_iToPtr(GET iBlk, REF BA_kernel));
   tAssertEq(GET iBlk, BA_ptrToI(GET blk,  REF BA_kernel));
 
   BA_free(GET blk, REF BA_kernel)
-  tAssertEq(0, ft1(REF BA_kernel + BA_rootOfs)); // root changed
+  tAssertEq(0, ft1(REF BA_kernel + BA_rootOfs)); \ root changed
   tAssertEq(1, BA_iGet(0, REF BA_kernel));
   tAssertEq(2, BA_iGet(1, REF BA_kernel));
   ret;

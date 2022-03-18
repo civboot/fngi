@@ -26,22 +26,22 @@ syn match elSpecial   '[()%$'.]' nextgroup=elDecimal
 syn match elDecimal    '_0-9' nextgroup=elHex
 syn match elHex       '0x_0-9a-fA-F' nextgroup=elBin
 syn match elBin       '0b01' nextgroup=elInstant
-syn match elInstant   '$[_0-9a-zA-Z]\+' nextgroup=elInstrDot
-syn match elCommentLn '//.*$' nextgroup=elCommentBlock
-syn match elCommentBlk '/\*.\{-}\*/' nextgroup=elStrRaw
-syn match elStrRaw     '".*"' nextGroup=elStrEsc
-syn match elStrEsc     '\\".*\\"'
+syn match elInstant   '$[_0-9a-zA-Z]\+' nextgroup=elCommentLn
+syn match elCommentToken '\\\w\+' nextgroup=elCommentLine
+syn match elCommentLn '\\\(\ .*\)\?$' nextgroup=elCommentBlk
+syn match elCommentBlk '\\[(].\{-}[)]' nextgroup=elStrRaw
+syn match elStrRaw     '|.*|'
 
 let b:current_syntax = "sporeASM"
 
-hi def link elInstr       PreProc
-hi def link elSymbol      Type
-hi def link elSpecial     Keyword
-hi def link elDecimal     Constant
-hi def link elHex         Constant
-hi def link elBin         Constant
-hi def link elInstant     Macro
-hi def link elCommentLn   Comment
-hi def link elCommentBlk  Comment
-hi def link elStrEsc      String
-hi def link elStrRaw      String
+hi def link elInstr         PreProc
+hi def link elSymbol        Type
+hi def link elSpecial       Keyword
+hi def link elDecimal       Constant
+hi def link elHex           Constant
+hi def link elBin           Constant
+hi def link elInstant       Macro
+hi def link elCommentLn     Comment
+hi def link elCommentToken  Comment
+hi def link elCommentBlk    Comment
+hi def link elStrRaw        String
