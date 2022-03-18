@@ -13,9 +13,7 @@ and never creates an abstract syntax tree of any kind.
 "Single tokens": these tokens are never grouped together
 
 * `( ... )`: groups an execution.
-* `   %   `: compile next token/s using spore asm. Can be `%( ... )`
-* `   $   `: run next token/s instantly.           Can be `$( ... )`
-* `  'c'  `: push literal character value on stack
+* `   $   `: run next token/s instantly. Can be `$( ... )`
 * `   .   `: enter name compiler (.foo = myFn(3))
 
 Otherwise a token is a group of:
@@ -23,7 +21,8 @@ Otherwise a token is a group of:
 * symbol characters not in the above "single" tokens, i.e. `+-*&`
 
 Functions can be defined for any token that is not purely numeric
-* Numerics: `0x123 (hex)  12345 (decimal)  0b110101 (binary)`
+* Numerics: `0x123 (hex)  12345 (decimal)  0b110101 (binary)` `0cA  0c\n
+  (ascii character)`
 * Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
 
 Fngi is a stack based language. Most stack based languages (i.e. FORTH) use
@@ -46,16 +45,19 @@ Fngi has a few tokens defined for documentation/syntactic surgar:
   separate arguments in functions.
 * `;` does nothing and is intended to be consumed when no arguments are being
   passed to a PRE function, i.e. `ret;`
-* `_` does nothing and is used to be consumed (and document) when a value is
+* `_` does nothing and is intended to be consumed (and document) when a value is
   from the stack, i.e. `add(_, 2)`
 * `\` is a swiss-army knife comment, described below. It can also be consumed
   and document values from the stack, i.e. `add(\a, 2)` or `\a + \b`
 
-Unlike C or most languages that have an abstract syntax tree, fngi goes about
-parsing in a different way. PRE functions work by compiling only the next token,
-and then compling themselves.
+Unlike C (or most languages) that have an abstract syntax tree, fngi goes about
+parsing in a radically simpler. PRE functions work by compiling only the next
+token, and then compling themselves. This means that fngi's compiler has no
+abstract syntax tree and compiles tokens "instantly" as they appear in the
+stream. This is critical for fngi to be able to self-bootstrap on very minimal
+targets like microcontrollers.
 
-This means: `myFn 1`
+For example: `myFn 1`
 
 Gets compiled as: `#1$L0 $xsl myFn`
 
@@ -66,7 +68,7 @@ Gets compiled as: `#1$L0 $xsl myFn`
 So how do we pass more than one argument? It's easy, we use parenthesis!
 `(` will continue to compile tokens until it hits `)`
 
-So we can do: `myFn2(1, 2 + 3)  // in C: myFn(1, 2 + 3)`
+So we can do: `myFn2(1, 2 + 3)`
 
 ### Comments
 The ultimate "do nothing" token is the swiss-army knife comment: `\`
@@ -96,36 +98,37 @@ fn fib [n:U4] -> U4 do (
 Let's explain a few details on how the parser/compiler stays extremely minimal:
 
 - `fn` is an SMART function, meaning the compiler executes it instead of
-  compiling it to the heap.  The `fn` "syntax-fn" expects the syntax to be
-  structured as follows: `fn [fn-name] [inputs] -> [outputs] do [code]`
+  compiling it to the heap. The it is a "syntax function" that expects the
+  syntax to be structured as follows: `fn [fn-name] [inputs] -> [outputs] do
+  [code]`
 - `(..)` is NOT an expression. `(` is simply an instant function that compiles
   until it encounters the token `)`. In this case, what is between them is the
   function body.
-- `if` is another smart "syntax-fn" which expects syntax of the form
+- `if` is another smart "syntax function" which expects syntax of the form
   `if [check] do [code]`. It can also peek at whether the next token is `elif`
-  or `eldo` then it can look like: `if [check] do [code] elif [check] do [code]
-  ... eldo [code]`
-- `.` is another syntax-fn that does "variable" compilation. It is used for
-  fetching and storing variables of all types (globals, inputs or locals),
+  or `else` then it can look like: `if [check] do [code] elif [check] do [code]
+  ... else [code]`
+- `.` is another "syntax function" that does "variable" compilation. It is used
+  for fetching and storing variables of all types (globals, inputs or locals),
   as well as references, module lookups, etc.
 - If a token can be interpreted as a number, then it is a number. Otherwise it's
   treated as a constant or function (which might be SMART/INSTANT).
 
 ## Fngi "macros": SMART and INSTANT
 Fngi allows any function to be run "instantly" at compile time. In spor this is
-done using `$token` and it is the same in fngi.
+done using `$token` and it is very similar in fngi.
 
 In fngi, `$token(1, 2)` will run not only `token` instantly, but also it's args
-(assuming `token` is PRE). 
+(assuming `token` is PRE).
 
-> The mechanism by which this accomplished involves very little code and is a
+> The mechanism by which this is accomplished involves very little code and is a
 > bit clever, see the definitions in `./spor.sp` if you are curious.
 
 Some functions are defined as INSTANT, which means they will panic if executed
 without `$` (or in a `$(...)` block).
 
 Other functions are defined as SMART, and these are the true workhorses of fngi.
-A SMART function is (1) always run instantly (2) it is passed a boolean
+A SMART function is (1) always run instantly and (2) it is passed a boolean
 (`asInstant`) which indicates whether the user wanted it to be run instantly
 (i.e. whether the user used `$`).
 
@@ -135,7 +138,8 @@ want to be called with `$`. These typically implement some syntax such as `fn`,
 
 Other smart functions have different behavior whether called instantly or not.
 For example `$(1 + 3)` will put `4` on the stack at compile time. However,
-`1 + 3` will compile the literals and `%ADD` instruction into the function.
+`1 + 3` will compile both the literals and the `%ADD` instruction into the
+function.
 
 # Similarities to FORTH
 Like FORTH, fngi allows you to define functions that are either compiled or
