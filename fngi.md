@@ -8,23 +8,7 @@ It targets a bare-bones virtual machine called [spor](./spor.md).
 syntax". It is defined as a syntax where the compiler only reads a token stream
 and never creates an abstract syntax tree of any kind.
 
-## Fngi basics:
-
-"Single tokens": these tokens are never grouped together
-
-* `( ... )`: groups an execution.
-* `   $   `: run next token/s instantly. Can be `$( ... )`
-* `   .   `: enter name compiler (.foo = myFn(3))
-
-Otherwise a token is a group of:
-* alphanumeric characters (including `_`), i.e. `foo_bar123`
-* symbol characters not in the above "single" tokens, i.e. `+-*&`
-
-Functions can be defined for any token that is not purely numeric
-* Numerics: `0x123 (hex)  12345 (decimal)  0b110101 (binary)` `0cA  0c\n
-  (ascii character)`
-* Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
-
+## Fngi basics
 Fngi is a stack based language. Most stack based languages (i.e. FORTH) use
 postfix notation, also called reverse polish notation. However, most "modern"
 (and more readable) languages use prefix notation, also called standard polish
@@ -55,7 +39,8 @@ parsing in a radically simpler. PRE functions work by compiling only the next
 token, and then compling themselves. This means that fngi's compiler has no
 abstract syntax tree and compiles tokens "instantly" as they appear in the
 stream. This is critical for fngi to be able to self-bootstrap on very minimal
-targets like microcontrollers.
+targets like microcontrollers, but it also makes reasoning about fngi syntax
+very easy.
 
 For example: `myFn 1`
 
@@ -113,6 +98,25 @@ Let's explain a few details on how the parser/compiler stays extremely minimal:
   as well as references, module lookups, etc.
 - If a token can be interpreted as a number, then it is a number. Otherwise it's
   treated as a constant or function (which might be SMART/INSTANT).
+
+## Fngi syntax
+Fngi has the following rules for token groups.
+
+"Single tokens": these tokens are never grouped together
+
+* `( ... )`: groups an execution.
+* `   $   `: run next token/s instantly. Can be `$( ... )`
+* `   .   `: enter name compiler `.foo = myFn(3)`
+
+Otherwise a token is a group of:
+* alphanumeric characters (including `_`), i.e. `foo_bar123`
+* symbol characters not in the above "single" tokens, i.e. `+-*&` is a single
+  token
+
+Functions can be defined for any token that is not purely numeric
+* Numerics: `0x123 (hex)  12345 (decimal)  0b110101 (binary)  0cA 0c\n
+  (ascii character)`
+* Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
 
 ## Fngi "macros": SMART and INSTANT
 Fngi allows any function to be run "instantly" at compile time. In spor this is
