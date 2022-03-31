@@ -53,8 +53,8 @@ char* goatTalk(Goat* goat) {
 // ... etc for goatMove
 
 Animal goatMethods = (Animal) {
-  .talk = goatTalk,
-  .move = goatMove,
+  .talk = goatTalk;
+  .move = goatMove;
 };
 
 void talkAndMove(Animal* m, void* animal, int16_t x, int16_t y) {
@@ -77,7 +77,7 @@ However, there are several real disadvantages over rust/C++ virtual traits:
 * There is no type unification. For instance you can't specify both the Animal
   and Equal interface simultaniously.
   * Instead, you would have to pass in two pointers.
-  * Or you have to have a AnimalEqualMethods struct and pass that in instead.
+  * Or you have to have a AnimalEqual struct and pass that in instead.
 * This doesn't implicitly support code generation: the compiler has no way to
   know that these functions are implemented for these types, and therefore can't
   generate code which uses this knowledge. All that is supported is minimalistic
@@ -94,7 +94,8 @@ On the code generation front, fngi supports insanely powerful macros instead. If
 you want to generate a function for multiple types then it should be possible to
 create a set of INSTANT functions (macros) to help you with that; but as a
 library, not as part of the core language. IMO creating bloat with something
-like code generation should cost at least a single line of source code.
+like code generation should be explicit, not implicit in using a new concrete
+type with a function.
 
 ## How it would look in fngi
 
@@ -108,8 +109,8 @@ For interfaces, you can simply do:
 ```
 \ Define animal interface
 interface Animal [
-  fn talk [Animal];
-  fn move [x:U2, y:U2, Animal];
+  fn talk [#Animal];
+  fn move [x:U2, y:U2, #Animal];
 ]
 
 \ Stores an Animal implementation in Goat
