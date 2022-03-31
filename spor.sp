@@ -26,13 +26,13 @@
 \    [3.c] Log Levels
 \    [3.d] Errors
 \ [4] Globals
-\ [5] Core Utility Macros: built in pure-asm, these provide necessary
-\     functionality for the rest of the language.
-\ [6] Jmp and Literal Macros: providing xsl, jmpl, L1, etc.
+\ [5] Bootstrap Macros: necessary functionality for the rest of the language.
 \ [6] Core functions and macros: bread and butter of spor assembly
-\ [8] globals and locals
-\ [9] Zoa strings and logging zoab
-\ [10] Fngi compile loop
+\ [7] ASM Flow Control (IF, LOOP, etc)
+\ [8] Scanning and Alignment Utilities: reading, peeking and szI alignment
+\ [9] globals and locals
+\ [10] Zoa strings and logging zoab
+\ [11] Fngi compile loop
 
 \ **********
 \ * [1] Instructions
@@ -134,11 +134,15 @@
 \ # [1.g] Mem|Store              |Description
 #C0 =LIT    \ {} -> {literal}    |Literal (U1, U2 or U4)
 #C1 =FT     \ {addr} -> {value}  |FeTch value from addr
-#C2 =FTLL   \ {} -> {local}      |FeTch from LP + U2 literal offset
+#C2 =FTLL   \ {} -> {local}      |FeTch from LP + U1 literal offset
 #C3 =FTGL   \ {} -> {global}     |FeTch from GB + U2 literal offset
 #C4 =SR     \ {value addr} -> {} |Store value at addr
-#C5 =SRLL   \ {value} -> {}      |StoRe value at LP + U2 literal offset
+#C5 =SRLL   \ {value} -> {}      |StoRe value at LP + U1 literal offset
 #C6 =SRGL   \ {value} -> {}      |StoRe value at GB + U2 literal offset
+#C7 =FTLO   \ {} -> {@local}     |fetch offset local (deref'd)
+#C8 =FTGO   \ {} -> {@global}    |fetch offset global (deref'd)
+#C9 =SRLO   \ {value} -> {}      |store offset local (deref'd)
+#CA =SRGO   \ {value} -> {}      |store offset global (deref'd)
 
 \ Common instr+szs
 @SZ2 @XSL  ^BOR  =XSL2
@@ -209,12 +213,11 @@
 
 #10 =TY_FN_LARGE  \ has locals (called with XL or XW)
 
-\ Local meta bits [TTTI --SS] I=input S=szI
-\ Full 4 byte (hex): { MM -- -- OO} M=meta O=offset
+\ Local meta bits  [TTTI RRSS] I=input R=ref S=szI
+\ Global meta bits [TTT- RRSS]         R=ref S=szI
 #10 =TY_LOCAL_INPUT
-
-\ Token group
-#4 =TOKEN_SYMBOL
+#0C =TY_VAR_REF
+#03 =TY_VAR_SZ
 
 \ * [3.b] Zoab
 #C0 =ZOAB_TY   \ bitmask: all types
@@ -259,6 +262,7 @@
 #E003  =E_unreach \ unreachable code
 #E004  =E_todo    \ executed incomplete (to do) code
 #E005  =E_wsEmpty \ the WS was expected empty
+#E006  =E_unimpl  \ unimplemented error
 
 #E0A1  =E_null    \ null access
 #E0A2  =E_oob     \ out of bounds access
@@ -307,6 +311,8 @@
 #E0F1  =E_cZoab       \ Zoab invalid
 #E0F2  =E_cNeedToken  \ token not present
 #E0F2  =E_cNeedNumber \ number not present
+#E0F3  =E_cBadRefs    \ too many de/refs
+#E0F3  =E_cRefEq      \ .&var = not allowed.
 
 #E0B0  =E_iBlock      \ invalid block index
 #E0B1  =E_ptrBlk      \ invalid block ptr
@@ -347,8 +353,8 @@
 #0000_0048 =BA_kernel
 
 \ Global Compiler Variables
-#0000_0054 =c_rKey         \ [U4] &metaRef of current dict key
-#0000_0058 =c_rLKey        \ [U4] &metaRef of current ldict key.
+#0000_0054 =c_rKey         \ [U4] &key of current dict key
+#0000_0058 =c_rLKey        \ [U4] &key of current ldict key.
 #0000_005C =c_gheap        \ [U4] global heap
 #0000_0060 =c_localOffset  \ [U2] Local Offset (for local var setup)
 
@@ -361,7 +367,7 @@
 #62 @c_gheap .4^SR  \ initial value of global heap
 
 \ **********
-\ * [5] Core Utility Macros
+\ * [5] Bootstrap Macros
 \ These macros must be defined in pure ASM. They build on eachother
 \ to make the syntax much more readable.
 \
@@ -371,7 +377,7 @@
 \ fn L0 [U1] -> []                : compile a small literal [#0 - #3F]
 \ fn $dictSet <key> [U4] -> []    : set a dictionary key to value
 \ fn $dictGet <key>  [] -> [U4]   : get dictionary key's value
-\ fn $dictGetR <key> [] -> [APtr] : get the key's &metaRef
+\ fn $dictGetK <key> [] -> [APtr] : get the key's &key
 \ fn $loc <token> [] -> []        : set token to the current heap location
 \ fn hpad [U4] -> []              : pad heap with NOPs
 \ fn hal2 [] -> []                : align heap for 2 byte literal
@@ -444,7 +450,7 @@ $getHeap =dictGet \ dictGet: Get the value of the next token.
   @D_dict$L0   %DVFT
   %RET \ (unaligned)
 
-$getHeap =dictGetR \ dictGetR: Get the &metaRef of the next token.
+$getHeap =dictGetK \ dictGetK: Get the &key of the next token.
             .2%XSL @_dict $h2
   @D_rdict$L0   %DVFT
   %RET \ (unaligned)
@@ -568,7 +574,7 @@ $ha2 $loc tAssertEq \ {a b}
 \ fn getWsLen [ -> U4]            : get working stack length
 \ fn c_updateRKey [ -> &metaRef]  : update rKey=dictHeap and return it
 \ fn ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
-\ fn ldictSet / ldictGet / ldictGetR  : set/get/get-ref of local dict key
+\ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
 \ fn c_keySetTyped [&metaRef]         : make a key non-global
 \ fn c_makeTy <token> [<dictArgs> meta] : make token be typed meta
 \ fn c_dictSetMeta [<dictArgs> meta:U1 &metaRef] : update dict key meta
@@ -576,19 +582,19 @@ $ha2 $loc tAssertEq \ {a b}
 $hal4 $loc toRef \ {metaRef} -> {ref}
   .4%LIT @REF_MASK $h4 %BAND %RET
 
-$hal2 $loc _j2 \ {metaRef instr} compile jmpInstr to 2 byte metaRef
+$hal2 $loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
   $hal2 .2%XSL @hal2 $h2    \ enforce proper alignment
   $hal2 .2%XSL @h1 $h2      \ compile instr {metaRef}
   $hal2 .2%XSL @toRef $h2   \ {ref}
   $hal2 .2%JMPL @h2 $h2     \ compile addr
 
 $hal2 $loc _xsl \ $_xsl <token> : compile unchecked xsl
-  $hal2 .2%XSL @dictGet $h2 \ {metaRef}
+  $hal2 .2%XSL @dictGet $h2 \ {key}
   .1%LIT @XSL2 $h1  \ push .2%XSL instr
   $hal2 .2%JMPL @_j2 $h2
 
 $hal2 $loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
-  $_xsl dictGet             \ {metaRef}
+  $_xsl dictGet             \ {key}
   .1%LIT @JMPL2 $h1 \ push .2%JMPL instr
   $hal2 .2%JMPL @_j2 $h2
 
@@ -618,24 +624,32 @@ $hal2 $loc L4 \ {U1} compile 4 byte literal
 
 $loc toMeta \ INSTANT {metaRef} -> {meta}
   @SLIT #18 ^BOR $c1  @SHR $c1  %RET
+$loc keyMeta \ INSTANT {&key -> meta}
+  @INC4 $c1   @SZ1 @FT ^BOR $c1 %RET
 
-$loc isTyped  \ {&metaRef} dict value is a constant
-  %DUP @E_cNoKey$L2 $_xsl assert \ no key if metaRef=NULL
+$loc isTyped  \ {&key} dict value is a constant
+  %DUP @E_cNoKey$L2 $_xsl assert \ no key if &key=NULL
   %INC4 .1%FT @KEY_HAS_TY$L1 %BAND %RET
 
-\ These take {metaRef} and tell information about it
+\ These take {&key} and tell information about it
 $loc isTyFn      $toMeta  @META_TY_MASK$L1 %BAND  @TY_FN$L1  %EQ %RET
+$loc KEYisTyFn      $keyMeta  @META_TY_MASK$L1 %BAND  @TY_FN$L1  %EQ %RET
 $loc isFnLarge   $toMeta  @TY_FN_LARGE$L1 %BAND %RET
+$loc KEYisFnLarge   $keyMeta  @TY_FN_LARGE$L1 %BAND %RET
 $loc assertNotNull @E_null$L2 $_jmpl assert
 
 $loc assertTyped \ [&metaRef]
   %DUP @E_cKey$L2 $_xsl assert \ assert key was found
   $_xsl isTyped @E_cNotType $L2 $_jmpl assert
 $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [metaRef] -> []
+$loc KEYassertFn   $_xsl KEYisTyFn  @E_cNotFn $L2  $_jmpl assert \ [&key] -> []
 
 $loc assertFnSmall \ [metaRef]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assertNot
+$loc KEYassertFnSmall \ [metaRef]
+  %DUP $_xsl KEYassertFn
+  $_xsl KEYisFnLarge  @E_cIsX $L2  $_jmpl assertNot
 
 $loc assertFnLarge \ [metaRef]
   %DUP $_xsl assertFn
@@ -658,7 +672,7 @@ $loc _jSetup \ [&metaRef] -> [metaRef]: checked jmp setup
 $hal2 $loc  assertNoInstant @E_cCompOnly$L2 $_jmpl assertNot   \ {asInstant} -> {}
 
 $loc xsl \ $xsl <token> : compile .2%xsl
-  $_xsl dictGetR $_xsl _jSetup \ {metaRef}
+  $_xsl dictGetK $_xsl _jSetup \ {metaRef}
   .1%LIT @XSL2 $h1  \ get .2%XSL instr
   $_jmpl _j2
 
@@ -669,7 +683,7 @@ $loc xl \ $xl <token> : compile .2%xl
   @SZ2 @XL   ^BOR  $L1  $_jmpl _j2
 
 $loc jmpl  \ $jmpl <token> : compile jmpl2
-  $_xsl dictGetR $_xsl _jSetup \ {metaRef}
+  $_xsl dictGetK $_xsl _jSetup \ {metaRef}
   @JMPL2$L1  $_jmpl _j2
 
 $hal2 $loc c_updateRKey \ [] -> [&metaRef] update and return current key
@@ -723,7 +737,7 @@ $loc INSTANT \ {} modify current function to be smart
 
 \ Backfill the fn meta
 $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
-  $_xsl dictGetR   \ {meta &metaRef}
+  $_xsl dictGetK   \ {meta &metaRef}
   $_jmpl c_dictSetMeta
 
 #0 \ manually insert asInstant=False (since compiler doesn't know it's smart yet)
@@ -753,7 +767,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE @TY_FN_INSTANT ^BOR $c_makeFn c1
 @TY_FN_PRE            $c_makeFn dictSet
 #0                    $c_makeFn dictGet
-#0                    $c_makeFn dictGetR
+#0                    $c_makeFn dictGetK
 #0                    $c_makeFn dictArgs
 #0                    $c_makeFn getHeap
 #0                    $c_makeFn getTopHeap
@@ -807,7 +821,6 @@ $SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 $SFN getWsLen      @D_wslen$L0  %DVFT %RET
 $SFN xsCatch $PRE  @D_xCatch$L0 %DVFT %RET
 $SFN c_scan        @D_scan$L0   %DVFT %RET
-$SFN c_scanEol     @D_scan$L0   %DVSR %RET
 $SFN panic   $PRE #0$L0 %SWP  $jmpl assert \ {errCode}: panic with errCode
 $SFN unreach @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
 $SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
@@ -832,7 +845,7 @@ $SFN ldictHeap $xsl ldictArgs %DRP .2%FT %ADD %RET \ {} -> ldictHeap
 $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
-$SFN ldictGetR  $xsl _ldict @D_rdict$L0 %DVFT %RET
+$SFN ldictGetK  $xsl _ldict @D_rdict$L0 %DVFT %RET
 $SFN retz  $PRE $SMART $xsl assertNoInstant @RETZ$c1 %RET
 $SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ$c1 @RETZ$c1 %RET
 $SFN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
@@ -892,17 +905,8 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
   $AGAIN l0
 
 \ **********
-\ * [8] globals and locals
-\ We need a way to define global and local variables, as well as GET, SET and
-\ obtain a REF to them.
-\
-\ fn GET <token>            SMART : compile a FT of token (local or global)
-\ fn _SET <token>           SMART : compile a SR of token (local or global)
-\ fn REF <token>            SMART : compile a "get ref" of token
-\ fn GLOBAL <token> [SzI]   SMART : define a global variable of szI
-\ fn LOCAL <token> [SzI]    SMART : define a local variable of szI
-\ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
-\ fn END_LOCALS             SMART : end locals
+\ * [8] Scanning and Alignment Utilities
+\ Reading, peeking and szI alignment
 \
 \ fn align [aptr sz -> aptr]      : align aptr with sz bytes
 \ fn align4 [aptr -> aptr]        : align aptr with 4 bytes
@@ -910,22 +914,22 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn haN [szI]                    : align the heap to szI
 \ fn halN [szI]                   : align the heap for a literal to szI
 \ fn hN [U4 szI]                  : write a value of szI to heap (no align)
-\ fn szToSzI [U4 -> SzI]          : convert integer to SzI bits
-\ fn szIToSz [SzI -> U1]          : get an integer sz from szI
+\ fn szToSzI [U4 -> SzI]          : convert number of bytes to SzI
+\ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
 \ fn szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
+\
 \ fn anyDictGetR [-> &metaRef isFromLocal] : any ref to current token.
+\ fn c_read [ -> numRead]         : attempt to read bytes from src.
+\ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
+\ fn c_scanNoEof []               : scan and assert not EOF.
+\ fn c_peekChr [ -> c]            : peek at the next character.
+\ fn c_countChr [c -> count]      : count and consume matching characters
+\ fn c_clearToken []              : shift buffer to clear current token
 \
 \ fn assertSzI [szI]              : assert that szI is valid
-
-$SFN assertSzI $PRE \ {szI}
-  %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot \ non-sz bits empty
-  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
-
-$SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
-  %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
-  %DUP #2$L0 %EQ $IF  %DRP @SZ2 $L1 %RET  $END
-       #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
-  @E_cSz$L2 $xsl panic
+\ fn c_isEof [ -> bool]           : return whether there was a token scanned
+\ fn c_assertToken []             : assert there is a token
+\ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
 $SFN szILowerToSzI $PRE \ convert a szI in lower bits to a proper szI
   #3$L0 %BAND #4$L0 %SHL %RET
@@ -951,6 +955,117 @@ $SFN hN $PRE \ {value szI} write a value of szI to heap
 
 $SFN joinSzTyMeta $PRE #4$L0 %SHR %BOR %RET \ {tyMask szI} -> {tyMask}
 
+$SFN assertSzI $PRE \ {szI}
+  %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot \ non-sz bits empty
+  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
+
+$SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
+  %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
+  %DUP #2$L0 %EQ $IF  %DRP @SZ2 $L1 %RET  $END
+       #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
+  @E_cSz$L2 $xsl panic
+
+$FN align $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
+  #1 $h1 \ locals [sz:U1]
+  .1%SRLL#0$h1 \ cache sz
+  %DUP \ {aptr aptr}
+  .1%FTLL#0$h1 %MOD \ {aptr aptr%sz}
+  %DUP $IF
+    .1%FTLL#0$h1 %SWP %SUB \ {aptr (sz - aptr%sz)}
+    %ADD %RET \ aptr + (sz - aptr%sz)
+  $END
+  %DRP %RET
+
+$SFN align4 $PRE #4$L0 $xl align %RET \ {addr -> aligned4Addr}
+$SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET \ {addr szI -> addrAlignedSzI}
+
+$SFN null2 #0$L0 %DUP %RET
+
+$SFN ftSzI \ {&addr szI}
+  %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
+  %DUP @SZ2$L1 %EQ $IF %DRP .2%FT %RET $END
+       @SZ4$L1 %EQ $IF      .4%FT %RET $END
+  @E_cSz$L2 $jmpl panic
+
+$SFN srSzI \ {value &addr szI}
+  %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
+  %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
+       @SZ4$L1 %EQ $IF      .4%SR %RET $END
+  @E_cSz$L2 $jmpl panic
+
+$SFN memCmp   $PRE  @D_memCmp$L0 %DVFT %RET  \ {&a &b len -> cmp}
+$SFN memClear $PRE  #0$L0 %SWP \ !fallthrough! {dst len}     "dst = 0"
+$SFN memSet   $PRE  @D_memSet$L0 %DVFT %RET  \ {dst v len}   "dst = v"
+$SFN memMove  $PRE  @D_memSet$L0 %DVSR %RET  \ {dst src len} "dst = src"
+$SFN c_scanEol     @D_scan$L0   %DVSR %RET      $hal2
+$SFN c_isEof .1%FTGL@c_tokenLen$h2 %NOT %RET    $hal2
+$SFN c_assertToken .1%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
+$SFN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot \ {numRead}
+
+$SFN c_scanNoEof
+  $xsl c_scan
+  $xsl c_isEof
+  @E_eof$L2 $jmpl assertNot
+
+$SFN c_peekChr \ {} -> {c} peek at a character
+  $xsl c_scan
+  $xsl c_isEof $IF  #0$L0 %RET  $END
+  $hal2 .4%FTGL@c_tokenBuf$h2 .1%FT \ {c}
+  #0$L0 $hal2 .1%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
+
+$SFN c_countChr $PRE \ { chr -> count } count and consume matching chrs
+  #0$L0 $LOOP l0 \ {chr count}
+    %OVR $xsl c_peekChr %NEQ $IF %SWP %DRP %RET $END
+    %INC \ inc count, then inc tokenLen
+    $hal2 .1%FT@c_tokenLen$h2 %INC  $hal2 .1%SR@c_tokenLen$h2
+  $AGAIN l0
+
+
+$SFN c_read \ { -> numRead} attempt to read bytes
+  #1$L0 @D_read$L0 %DVFT %RET
+
+$SFN c_readNew \ { -> numRead} clear token buf and read bytes
+  #0$L0 $hal2 .1%SRGL@c_tokenLen$h2
+  #0$L0 $hal2 .1%SRGL@c_tokenSize$h2
+  #1$L0 @D_read$L0 %DVFT %RET
+
+$hal2
+$SFN c_clearToken \ shift buffer to clear current token
+  .4%FTGL@c_tokenBuf$h2                 \ {&tokenBuf}
+  %DUP $hal2 .1%FTGL@c_tokenLen$h2 %ADD \ {&tokenBuf &tokenEnd}
+  $hal2 .1%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
+  $jmpl memMove
+
+\ dotMeta bitmask: OOOO OOOO | DL&@ SXRR
+\ where O=offset byte, D=done, L=local, &=ref, @=deref S=store
+\ R=number of ref/derefs
+#80 =DOT_DONE   \ if 1 then all compilation is already done.
+#40 =DOT_LOCAL \ 0 = global
+#20 =DOT_REF
+#10 =DOT_DEREF
+#08 =DOT_STORE \ 0 = fetch
+
+$SFN anyDictGetR \ {} -> {&metaRef isFromLocal}
+  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    @DOT_LOCAL$L1 %RET
+  $END %DRP
+  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+    @FALSE$L0 %RET
+  $END @E_cNotType$L2 $xsl panic
+
+\ **********
+\ * [9] globals and locals
+\ We need a way to define global and local variables, as well as GET, SET and
+\ obtain a REF to them.
+\
+\ fn GET <token>            SMART : compile a FT of token (local or global)
+\ fn _SET <token>           SMART : compile a SR of token (local or global)
+\ fn REF <token>            SMART : compile a "get ref" of token
+\ fn GLOBAL <token> [SzI]   SMART : define a global variable of szI
+\ fn LOCAL <token> [SzI]    SMART : define a local variable of szI
+\ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
+\ fn END_LOCALS             SMART : end locals
+
 $SFN _lSetup $PRE \ {&metaO} -> {metaO} : checked local setup
   %DUP $_xsl assertTyped
   .4%FT %DUP $_jmpl assertTyLocal \ returns metaOffset
@@ -963,7 +1078,7 @@ $SFN _gSetup $PRE \ {&metaRef} -> {metaRef} : checked global setup
 \   szLit the size of the literal to compile for the instr.
 \   metaRO: either a reference or an offset with a conforming meta attached to
 \     it (meta at upper byte, szI in lowest 2 bits).
-$FN _instrLitImpl $PRE
+$FN c_instrLitImpl $PRE
   #1 $h1 \ 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 \ store instr          {metaR0 szInstr szLit}
   %DUP $xsl halN \ align for literal   {metaR0 szInstr szLit}
@@ -971,42 +1086,34 @@ $FN _instrLitImpl $PRE
   .1%FTLL #1$h1 %BOR $xsl h1 \ compile (szInstr | instr) {metaRO}
   .1%FTLL #0$h1  $jmpl hN \ compile literal of proper instrSz
 
-$SFN anyDictGetR \ {} -> {&metaRef isFromLocal}
-  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
-    @TRUE$L0 %RET
-  $END %DRP
-  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
-    @FALSE$L0 %RET
-  $END @E_cNotType$L2 $xsl panic
-
 \ Compile a get or set instruction.
 \ Args:
 \   &metaRef: contains the reference (global/local offset) and metadata needed to
 \             compile correctly.
-\   isFromLocal: whether the value to compile is a local or global.
+\   dotMeta: whether the value to compile is a local or global.
 \   localInstrSz localInstr: if isFromLocal: use these as the literal sz and instr.
 \   globalInstrSz globalInstr: if NOT isFromLocal: use these as the literal sz and instr.
 $FN _getSetImpl $PRE
   #1 $h1 \ locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
-  \ {&metaRef isFromLocal}
-  $IF
+  \ {&metaRef dotMeta}
+  @DOT_LOCAL$L1 %BAND $IF
     $xsl _lSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1
   $ELSE
     $xsl _gSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
     .1%FTLL#2$h1 .1%FTLL#3$h1
   $END
-  $xl _instrLitImpl %RET
+  $xl c_instrLitImpl %RET
 
 \ (create _xxxImpl for fngi to use)
-$SFN _getImpl $PRE \ {&metaRef isFromLocal}
+$SFN _getImpl $PRE \ {&metaRef dotMeta}
   @SZ1$L1  @FTLL$L1  \ local sz + instr
   @SZ2$L1  @FTGL$L1  \ global sz + instr
   $xl _getSetImpl %RET
 
-$SFN _setImpl $PRE \ {&metaRef isFromLocal}
+$SFN _setImpl $PRE \ {&metaRef dotMeta}
   @SZ1$L1  @SRLL$L1  \ local sz + instr
   @SZ2$L1  @SRGL$L1  \ global sz + instr
   $xl _getSetImpl %RET
@@ -1022,24 +1129,85 @@ $SFN _refImpl \ {}
     $xsl _gSetup  $xsl toRef $jmpl L4 \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
-$SFN ftSzI \ {&addr szI}
-  %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
-  %DUP @SZ2$L1 %EQ $IF %DRP .2%FT %RET $END
-       @SZ4$L1 %EQ $IF      .4%FT %RET $END
-  @E_cSz$L2 $jmpl panic
+\ # DOT (.) Compiler
+\ The below is the  initial compiler for below cases:
+\   .var            \ variable fetch
+\   .var = <token>  \ variable store
+\   .&var           \ variable reference (also function)
+\   .@var           \ variable dereference
+\   .@var = <token> \ variable dereference store
+\
+\ These are built to be extended by future dot compiler implementations for
+\ (i.e.) structs, modules, roles, etc.
 
-$SFN srSzI \ {value &addr szI}
-  %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
-  %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
-       @SZ4$L1 %EQ $IF      .4%SR %RET $END
-  @E_cSz$L2 $jmpl panic
+$SFN c_dotRefs \ { -> dotMeta } get dot meta for de/refs.
+  \ Get the dotMeta for preceeding & or @
+  $xsl c_peekChr %DUP #26$L0 %EQ $IF \ Reference (&) case
+    $xsl c_countChr %DUP #4$L0 %LT_U @E_cBadRefs$L2 $xsl tAssert
+    @DOT_REF$L0 %ADD
+  $ELSE
+    %DUP #40$L1 %EQ $IF \ Dereference (@) case
+      $xsl c_countChr #4$L0 %LT_U @E_cBadRefs$L2 $xsl tAssert
+      @DOT_DEREF$L0 %ADD
+    $ELSE %DRP #0$L0 \ no meta
+    $END
+  $END %RET \ {dotMeta}
+
+$SFN c_dotEq \ {&metaRef dotMeta} ".var =" case
+  %DUP @DOT_REF$L0 %BAND  @E_cRefEq$L2 $xsl tAssertNot \ "&var =" is invalid
+  %DUP @DOT_DEREF$L0 %BAND  $IF \ Deref assignment ".@var ="
+    %DUP #3$L0 %BAND \ {&metaRef dotMeta refCount}
+    %DUP #2$L0 %GE_U $IF \ if refCount >= 2 we do multple fetches then sr.
+      @E_unimpl$L2 $jmpl panic
+    $ELSE \ TODO: switch to _setImpl once it can do SROL.
+      %DRP $xsl _getImpl @SR$c1 \ a FT_L followed by a SR
+    $END
+  $ELSE $jmpl _setImpl
+  $END
+
+$SFN c_dotDeref \ {&metaRef dotMeta}
+  %OVR %SWP $xsl _getImpl \ compile a ft (local or global) {dotMeta}
+  #3$L0 %BAND %DEC $LOOP l0 \ {remainingDerefs}
+    %DUPN $IF %DRP %RET $END \ return when remaining==0
+    @FT $c1 %DEC
+  $AGAIN l0
+
+
+
+\ {&metaRef dotMeta} implementation of "standard" dot cases including
+\ fetch/store of ref or deref
+\ $SFN c_dotStd
+\   %DUP @DOT_STORE$L1 %BAND $IF \ Handle ".var =" case
+\     $jmpl c_dotEq
+\   $END
+\   %DUP @DOT_REF$L0 %BAND $IF \ case &var
+\     \ assert refCount == 1. This is all that will ever be allowed.
+\     %DUP #3$L0 %BAND  #1$L0 %EQ  @E_cBadRefs$L2 $xsl tAssert \ {&metaRef dotMeta}
+\     @DOT_LOCAL$L1 %BAND $IF \ {&metaRef}
+\       $xsl _lSetup \ {metaOffset}
+\       $xsl toRef %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
+\       @R_LP$L1 %BOR \ {LpOffset}: offset is lower 7 bits
+\       @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
+\     $END
+\     $xsl _gSetup  $xsl toRef $jmpl L4 \ write literal directly TODO: use c_lit
+\   $END
+\   %DUP @DOT_DEREF$L0 %BAND $IF $jmpl c_dotDeref \ case @@@var $END
+\   %DRP $jmpl _getImpl \ standard get
+
+
+
+\ $SFN c_dot
+\   $xsl anyDictGetR %SWP .4%SRLL #0$h1 \ {dotMeta isFromLocal} cache &metaRef
+\   %ADD %RET
+\ $xsl c_peekChr #3D$L0 %EQ $IF  \ '='
+
 
 $SFN REF  $SMART
-  $IF  $xsl dictGetR $xsl _gSetup $jmpl toRef  $END
+  $IF  $xsl dictGetK $xsl _gSetup $jmpl toRef  $END
   $xsl c_scan $jmpl _refImpl
 
 $SFN GET  $SMART
-  $IF  $xsl dictGetR $xsl _gSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
+  $IF  $xsl dictGetK $xsl _gSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
        %SWP $xsl toRef %SWP $jmpl ftSzI   $END
   $xsl c_scan $xsl anyDictGetR $jmpl _getImpl
 
@@ -1079,20 +1247,6 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 @SZ4 $c_makeGlobal c_gheap
 @SZ2 $c_makeGlobal c_localOffset
 
-$FN align $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
-  #1 $h1 \ locals [sz:U1]
-  .1%SRLL#0$h1 \ cache sz
-  %DUP \ {aptr aptr}
-  .1%FTLL#0$h1 %MOD \ {aptr aptr%sz}
-  %DUP $IF
-    .1%FTLL#0$h1 %SWP %SUB \ {aptr (sz - aptr%sz)}
-    %ADD %RET \ aptr + (sz - aptr%sz)
-  $END
-  %DRP %RET
-
-$SFN align4 $PRE #4$L0 $xl align %RET \ {addr -> aligned4Addr}
-$SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET \ {addr szI -> addrAlignedSzI}
-
 $FN GLOBAL \ <value> <szI> $GLOBAL <token>: define a global variable of sz
   #2$h1  $SMART $xsl assertNoInstant  \ locals 0=szI 1=meta 4=&metaRef
   %DUP $xsl assertSzI \ {value szI}
@@ -1110,7 +1264,6 @@ $FN GLOBAL \ <value> <szI> $GLOBAL <token>: define a global variable of sz
   $GET c_gheap .1%FTLL#0$h1  $xsl srSzI \ store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap \ gheap += sz
   %RET
-
 
 \ **********
 \ * Local Variables
@@ -1163,7 +1316,7 @@ $FN _compileInputs $PRE
   %DUP $xsl isLocalInput %SWP \ {hasTy isLocal metaRef}
   $xsl isLocalInput %LAND %LAND %RETZ \ {} check (hasTy and isLocal and isLocalInput)
   .4%FTLL#0$h1  .4%FT  %DUP $xsl _metaRefSzI \ {metaRef szInstr}
-  @SZ1$L1 @SRLL$L1 $xl _instrLitImpl
+  @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl
   %RET
 
 \ - Updates the number of slots for the FN
@@ -1174,7 +1327,7 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
   $xsl ldictBuf $xl _compileInputs %RET
 
 \ **********
-\ * [9] Zoa strings and logging zoab
+\ * [10] Zoa strings and logging zoab
 \ See ./harness.md for design reasoning.
 \
 \ fn $loc <name> |zoa string literal|    : define a zoa string
@@ -1224,7 +1377,6 @@ $SFN comzStart  #2$L0 @LOG_ZOAB_START$L4  @D_com$L0 %DVSR %RET
 $SFN comzU4     $PRE @D_comZoab$L0 %DVFT %RET \ {U4}
 $SFN comzData   $PRE @D_comZoab$L0 %DVSR %RET \ {len &raw join}
 
-
 $loc TODO #0$h1
 $FN comzArr  $PRE \ {len join}
   @SZ1 $LOCAL b0 $END_LOCALS \ b0 is used as an array for com
@@ -1256,7 +1408,7 @@ $SFN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
 $assertWsEmpty
 
 \ **********
-\ * [10] Fngi Compile Loop
+\ * [11] Fngi compile loop
 \ The fngi compile loop is implemented in spore. In addition to the compile loop itself,
 \ this section implements several essential parsing functions that can be used
 \ in other areas of fngi.
@@ -1283,18 +1435,10 @@ $assertWsEmpty
 \ fn lit [U4]                     : compile literal
 \ fn xSzI [metaRef -> szI]        : return szI of the fn
 \
-\ fn c_read [ -> numRead]         : attempt to read bytes from src.
-\ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
 \ fn c_charNext [ -> c]           : read next character (WARN: AFTER tokenLen)
 \ fn c_charNextEsc [ -> c unkEsc] : read an escapeable character (string).
-\ fn c_scanNoEof []               : scan and assert not EOF.
-\ fn c_peekChr [ -> c]            : peek at the next character.
 \ fn c_updateCompFn [newComp -> prevComp] : update c_compFn + ret old
 \ fn c_number <number> -> [value isNum]   : parse next token (parseNumber).
-\
-\ fn c_isEof [ -> bool]           : return whether there was a token scanned
-\ fn c_assertToken []             : assert there is a token
-\ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
 $FN betweenIncl $PRE \ {value a b} -> a <= value <= b
   @SZ4 $INPUT b   $END_LOCALS \ {value a}
@@ -1312,18 +1456,6 @@ $SFN charToInt $PRE \ {c} -> {U8}
   \ 'a' - 'z'
   %DUP #61$L1 #7A$L1 $xl betweenIncl $IF #61$L1 %SUB #A$L0 %ADD %RET $END
   %DRP #FF$L1 %RET
-
-$SFN null2 #0$L0 %DUP %RET
-$SFN c_isEof $GET c_tokenLen %NOT %RET
-$SFN c_assertToken $GET c_tokenLen @E_cNeedToken$L2 $jmpl assert \ {} Assert there is a token
-
-$SFN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot \ {numRead}
-$SFN c_read \ { -> numRead} attempt to read bytes
-  #1$L0 @D_read$L0 %DVFT %RET
-$SFN c_readNew \ { -> numRead} clear token buf and read bytes
-  #0$L0 $_SET c_tokenLen
-  #0$L0 $_SET c_tokenSize
-  #1$L0 @D_read$L0 %DVFT %RET
 
 \ {} -> {c}: read next character from AFTER tokenLen.
 \ Increments tokenLen. This is destructive to token, use with care.
@@ -1422,7 +1554,7 @@ $SFN c_fn $PRE \ {metaRef}: compile a function
   %DUP $xsl xSzI     \ {metaRef szLit}
   %OVR $xsl isFnLarge  $IF @XL$L1 $ELSE @XSL$L1 $END \ {metaRef instrSzI instr}
   %OVR %SWP \ {metaRef instrSzI litSzI instr} instr & lit are same sz
-  $xl _instrLitImpl %RET
+  $xl c_instrLitImpl %RET
 
 $SFN execute \ {metaRef} -> {...}: execute a function
   %DUP $xsl toRef %SWP \ {ref metaRef}
@@ -1468,13 +1600,6 @@ $SFN c_updateCompFn $PRE \ {newCompFnMetaRef} -> {prevCompFnRef}
   $xsl toRef
   $GET c_compFn %SWP $_SET c_compFn %RET
 
-$SFN c_scanNoEof $xsl c_scan  $xsl c_isEof @E_eof$L2 $jmpl assertNot
-
-$SFN c_peekChr \ {} -> {c} peek at a character
-  $xsl c_scan
-  $xsl c_isEof $IF  #0$L0 %RET  $END
-  $GET c_tokenBuf .1%FT \ {c}
-  #0$L0 $_SET c_tokenLen %RET \ reset scanner for next scan
 
 \ {asInstant} -> {}: compile a single token.
 \ This is the primary function that all compilation steps (besides spor

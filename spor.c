@@ -141,7 +141,8 @@ typedef enum {
 
   // Mem
   LIT  = 0xC0, FT   = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
-  SR   = 0xC4, SRLL = 0xC5, SRGL = 0xC6,
+  SR   = 0xC4, SRLL = 0xC5, SRGL = 0xC6, FTLO = 0xC7,
+  FTGO = 0xC8,
 } Instr;
 
 #define R_LP 0x80  // lower 7 bits are offset
@@ -241,9 +242,11 @@ typedef struct {
 
 typedef struct {
   U4 value;
+  // U1 meta;
   U1 len;
   U1 s[];
 } Key;
+
 #define keySizeWLen(LEN)  (4 + 1 + (LEN))
 #define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
 #define KEY_HAS_TY 0x40   // if 1, dict entry is a non-constant
@@ -769,6 +772,16 @@ SRGL: case SzI2 + SRGL:
       return store(mem, r, l, szI);
     GOTO_SZ(SRGL, SzI1)
     GOTO_SZ(SRGL, SzI4)
+FTLO: case SzI2 + FTLO:
+    l = fetch(mem, LS_SP + popLit(SzI1), SzI4); // &local
+    return WS_PUSH(fetch(mem, l + popLit(SzI1), szI)); // fetch offset
+    GOTO_SZ(FTLO, SzI1)
+    GOTO_SZ(FTLO, SzI4)
+FTGO: case SzI2 + FTGO:
+    l = fetch(mem, env.gb + popLit(SzI2), SzI4); // &global
+    return WS_PUSH(fetch(mem, l + popLit(SzI1), szI)); // fetch offset
+    GOTO_SZ(FTGO, SzI1)
+    GOTO_SZ(FTGO, SzI4)
 
     default: SET_ERR(E_cInstr);
   }
