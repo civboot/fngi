@@ -129,7 +129,7 @@
 
 \ JZL and JMPL for SZ=1
 \ For SZ=1 they jump to the 1 byte signed offset from the location
-\ of the LITERAL (not the location of the operation).
+\ of the operation (NOT the location of the literal).
 
 \ # [1.g] Mem|Store              |Description
 #C0 =LIT    \ {} -> {literal}    |Literal (U1, U2 or U4)
@@ -190,6 +190,8 @@
 \ * [3] Constants
 #0 =FALSE
 #1 =TRUE
+#4 =ASIZE \ size of an absolute pointer
+@ASIZE ^INC =DICT_OLEN \ dict name len offset
 
 \ * [3.a] Dict Ty Bits
 \ Meta types
@@ -535,6 +537,7 @@ $ha2 $loc tAssertEq \ {a b}
 \ fn L1 / L2 / L4  [U] -> []      : compile 1 / 2 / 4 byte literal.
 \ fn xCatch [... &fn]             : execute a large function and catch error.
 \ fn reteq [a b]                  : return immediately if a == b (%NEQ %RETZ)
+\ fn select [a b s]               : a if s else b, for instant if/else
 \
 \ fn FN <name>                    : declare a large function
 \ fn SFN <name>                   : declare a small function
@@ -578,6 +581,9 @@ $ha2 $loc tAssertEq \ {a b}
 \ fn c_keySetTyped [&metaRef]         : make a key non-global
 \ fn c_makeTy <token> [<dictArgs> meta] : make token be typed meta
 \ fn c_dictSetMeta [<dictArgs> meta:U1 &metaRef] : update dict key meta
+\
+\ Note: any SMART function must be prefixed with asInstant (typically #0)
+\ since it will not be tagged as SMART until c_makeFn.
 
 $hal4 $loc toRef \ {metaRef} -> {ref}
   .4%LIT @REF_MASK $h4 %BAND %RET
@@ -612,6 +618,15 @@ $hal2 $loc c1
   $hal2 .2%LIT @XSL2 $h2
   $_jmpl _j2
 
+$loc select \ {a b s -> a or b} if(s) do a else b
+  .1%JZL #3$h1 %DRP %RET \ if(s) ret a
+  %SWP %DRP %RET \ ret b
+
+$hal2 $loc incA \ SMART {ref -> ref} inc by aptr size
+  @INC2 @INC4  @ASIZE #2 ^EQ  $select ^DUP \ selet inc2 or 4
+  .1%JZL #3$h1 $h1 %RET \ if(asInstant) execute inc2 or 4
+  $c1 %RET \ compile inc2 or 4
+
 $hal2 $loc L2 \ {U1} compile 2 byte literal
   $_xsl hal2 \ enforce proper alignment
   @SZ2 @LIT  ^BOR  $c1  \ compile .2%LIT instr
@@ -625,11 +640,12 @@ $hal2 $loc L4 \ {U1} compile 4 byte literal
 $loc toMeta \ INSTANT {metaRef} -> {meta}
   @SLIT #18 ^BOR $c1  @SHR $c1  %RET
 $loc keyMeta \ INSTANT {&key -> meta}
-  @INC4 $c1   @SZ1 @FT ^BOR $c1 %RET
+  @INC2 @INC4  @ASIZE #2 ^EQ $select $c1
+  @SZ1 @FT ^BOR $c1 %RET
 
 $loc isTyped  \ {&key} dict value is a constant
   %DUP @E_cNoKey$L2 $_xsl assert \ no key if &key=NULL
-  %INC4 .1%FT @KEY_HAS_TY$L1 %BAND %RET
+  @DICT_OLEN$L0 %ADD .1%FT @KEY_HAS_TY$L1 %BAND %RET
 
 \ These take {&key} and tell information about it
 $loc isTyFn      $toMeta  @META_TY_MASK$L1 %BAND  @TY_FN$L1  %EQ %RET
@@ -638,7 +654,7 @@ $loc isFnLarge   $toMeta  @TY_FN_LARGE$L1 %BAND %RET
 $loc KEYisFnLarge   $keyMeta  @TY_FN_LARGE$L1 %BAND %RET
 $loc assertNotNull @E_null$L2 $_jmpl assert
 
-$loc assertTyped \ [&metaRef]
+$loc assertTyped \ [&key]
   %DUP @E_cKey$L2 $_xsl assert \ assert key was found
   $_xsl isTyped @E_cNotType $L2 $_jmpl assert
 $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [metaRef] -> []
@@ -654,70 +670,76 @@ $loc KEYassertFnSmall \ [metaRef]
 $loc assertFnLarge \ [metaRef]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
+$loc KEYassertFnLarge \ [&key]
+  %DUP $_xsl KEYassertFn
+  $_xsl KEYisFnLarge  @E_cIsX $L2  $_jmpl assert
 
 $hal4 $loc toMod @MOD_MASK $L4 %BAND %RET \ {ref} -> {mod}
-$loc isSameMod \ {metaRef metaRef} -> {sameMod}
+$loc isSameMod \ {ref ref} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
 $hal2 $loc curMod   .2%FTGL @c_rKey$h2 .4%FT  $_jmpl toMod \ [] -> [mod]
 $hal2 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET        \ [ref] -> [isCurMod]
 $hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
-$loc _jSetup \ [&metaRef] -> [metaRef]: checked jmp setup
+$loc KEY_jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertTyped
-  .4%FT \ {metaRef}
-  %DUP $_xsl assertFnSmall
-  %DUP $_jmpl assertCurMod
+  %DUP $_xsl KEYassertFnSmall
+  .A%FT %DUP $_jmpl assertCurMod \ {ref}
 
 $hal2 $loc  assertNoInstant @E_cCompOnly$L2 $_jmpl assertNot   \ {asInstant} -> {}
 
 $loc xsl \ $xsl <token> : compile .2%xsl
-  $_xsl dictGetK $_xsl _jSetup \ {metaRef}
-  .1%LIT @XSL2 $h1  \ get .2%XSL instr
-  $_jmpl _j2
+  $_xsl dictGetK $_xsl KEY_jSetup \ {ref}
+  @XSL2 $L1 $_jmpl _j2
 
 $loc xl \ $xl <token> : compile .2%xl
-  $_xsl dictGet \ {metaRef}
-  %DUP $_xsl assertFnLarge
-  %DUP $_xsl assertCurMod
-  @SZ2 @XL   ^BOR  $L1  $_jmpl _j2
+  $_xsl dictGetK \ {&key}
+  %DUP $_xsl KEYassertFnLarge
+  .A%FT %DUP $_xsl assertCurMod
+  @SZ2 @XL ^BOR  $L1  $_jmpl _j2
 
 $loc jmpl  \ $jmpl <token> : compile jmpl2
-  $_xsl dictGetK $_xsl _jSetup \ {metaRef}
+  $_xsl dictGetK $_xsl KEY_jSetup \ {ref}
   @JMPL2$L1  $_jmpl _j2
 
-$hal2 $loc c_updateRKey \ [] -> [&metaRef] update and return current key
+$hal2 $loc c_updateRKey \ [] -> [&key] update and return current key
         .4%FTGL @c_dictBuf$h2  \ dict.buf
   $hal2 .2%FTGL @c_dictHeap$h2 \ dict.heap
   .4%ADD \ {&newKey}
   %DUP $hal2 .4%SRGL @c_rKey$h2 \ rKey=newKey
-  %RET \ return &metaRef (newKey)
+  %RET \ return &key
 
 $loc metaSet \ {metaRef meta:U1} -> U4 : apply meta to metaRef
   #18 $L0  %SHL  \ make meta be upper byte
   %BOR %RET
 
-$loc rMetaSet \ {&metaRef meta:U1} -> U4 : apply meta to &metaRef
-  %OVR .4%FT %SWP \ {&metaRef metaRef meta}
-  $_xsl metaSet   \ {&metaRef newMetaRef}
+$loc rKeySet \ {&key meta:U1} -> U4 : apply meta to &key
+  %OVR %OVR    \ {... &key newmeta}
+  %OVR #0$incA \ {... &key newmeta &meta} note: #0 for unregistered SMART
+  .1%FT %BOR   \ {&key newMeta}
+  %SWP #0$incA .1%SR \ update meta
+  \ TODO remove:
+  %OVR .4%FT %SWP \ {&key metaRef meta}
+  $_xsl metaSet   \ {&key newMetaRef}
   %SWP .4%SR %RET
 
-$loc c_dictDumpEntry  @D_dictDump$L0 %DVFT %RET \ {<dictArgs> &metaRef}
+$loc c_dictDumpEntry  @D_dictDump$L0 %DVFT %RET \ {<dictArgs> &key}
 
-$loc c_keySetTyped \ {&metaRef} -> []
-  %INC4 %DUP \ {&len &len}
+$loc c_keySetTyped \ {&key} -> []
+  @DICT_OLEN$L0 %ADD %DUP \ {&len &len}
   .1%FT @KEY_HAS_TY$L1 %BOR \ {&len tyKeyLen}
-  %SWP .1%SR %RET            \ update tyKeyLen
+  %SWP .1%SR %RET           \ update tyKeyLen
 
-$loc c_dictSetMeta \ {<dictArgs> meta:U1 &metaRef -> } update dict key's meta.
-  %SWP %OVR \ {<dictArgs> &metaRef meta &metRef}
-  %DUP $_xsl c_keySetTyped \ make key "typed" {<dictArgs> &metaRef meta &metaRef}
-  %SWP $_xsl rMetaSet \ {<dictArgs> &metaRef}
+$loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
+  %SWP %OVR \ {<dictArgs> &key meta &key}
+  %DUP $_xsl c_keySetTyped \ make key "typed" {<dictArgs> &key meta &key}
+  %SWP $_xsl rKeySet \ {<dictArgs> &key}
   $_jmpl c_dictDumpEntry
 
 $hal2 $loc _declFn \ [<dictArgs> meta]
   @TY_FN$L1 %BOR \ {<dictArgs> meta}
-  $_xsl c_updateRKey \ {<dictArgs> meta &metaRef}
+  $_xsl c_updateRKey \ {<dictArgs> meta &key}
   $_xsl loc
   $_jmpl c_dictSetMeta
 
@@ -729,24 +751,24 @@ $ha2 $loc FN  \ SMART $FN <token>: define location of function with locals
 
 $ha2
 $loc SMART \ {} modify current function to be smart
-  %DRP .4%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl rMetaSet
+  %DRP .4%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl rKeySet
 
 $ha2
 $loc INSTANT \ {} modify current function to be smart
-  %DRP .4%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl rMetaSet
+  %DRP .4%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl rKeySet
 
 \ Backfill the fn meta
 $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
-  $_xsl dictGetK   \ {meta &metaRef}
+  $_xsl dictGetK   \ {meta &key}
   $_jmpl c_dictSetMeta
 
-#0 \ manually insert asInstant=False (since compiler doesn't know it's smart yet)
-$FN c_makeFn \ {meta} <token>: set meta for token to be a small function.
+\ {meta} <token>: set meta for token to be a small function.
+#0$FN c_makeFn \ note: asInstant=#0 for SMART
   #1$h1  \ locals: 0=meta:U1
   .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %BOR  $_jmpl c_makeTy
 
-$ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
+$ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 
 @TY_FN_SMART        $c_makeFn SFN
 @TY_FN_SMART        $c_makeFn FN
@@ -765,6 +787,8 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn h2
 @TY_FN_PRE            $c_makeFn h4
 @TY_FN_PRE @TY_FN_INSTANT ^BOR $c_makeFn c1
+#0                    $c_makeFn select
+@TY_FN_PRE @TY_FN_SMART ^BOR $c_makeFn incA
 @TY_FN_PRE            $c_makeFn dictSet
 #0                    $c_makeFn dictGet
 #0                    $c_makeFn dictGetK
@@ -784,6 +808,7 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 #0                    $c_makeFn curMod
 @TY_FN_PRE            $c_makeFn isTyped
 @TY_FN_PRE            $c_makeFn isTyFn
+@TY_FN_PRE            $c_makeFn KEYisTyFn
 @TY_FN_PRE            $c_makeFn isSameMod
 @TY_FN_PRE            $c_makeFn isCurMod
 @TY_FN_PRE            $c_makeFn isFnLarge
@@ -800,8 +825,11 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rMetaSet
 @TY_FN_PRE            $c_makeFn tAssertNot
 @TY_FN_PRE            $c_makeFn tAssertEq
 @TY_FN_PRE            $c_makeFn assertFn
+@TY_FN_PRE            $c_makeFn KEYassertFn
 @TY_FN_PRE            $c_makeFn assertFnSmall
+@TY_FN_PRE            $c_makeFn KEYassertFnSmall
 @TY_FN_PRE            $c_makeFn assertFnLarge
+@TY_FN_PRE            $c_makeFn KEYassertFnLarge
 @TY_FN_PRE            $c_makeFn assertCurMod
 @TY_FN_PRE            $c_makeFn assertTyped
 #0                    $c_makeFn assertNoInstant
@@ -817,6 +845,18 @@ $SFN isLocalInput $PRE $toMeta  @TY_LOCAL_INPUT$L1 %BAND %RET
 $SFN isTyGlobal  $PRE $toMeta  @META_TY_MASK$L1 %BAND  @TY_GLOBAL$L1  %EQ %RET
 $SFN assertTyLocal $PRE $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
 $SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
+
+$SFN KEYisFnPre     $PRE $keyMeta  @TY_FN_PRE$L1 %BAND %RET
+$SFN KEYisFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_NORMAL$L1  %EQ %RET
+$SFN KEYisFnInstant $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_INSTANT$L1  %EQ %RET
+$SFN KEYisFnSmart   $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_SMART$L1  %EQ %RET
+$SFN KEYisFnSmartI  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_SMART_I$L1  %EQ %RET
+$SFN KEYisTyLocal   $PRE $keyMeta  @META_TY_MASK$L1 %BAND  @TY_LOCAL$L1  %EQ %RET
+$SFN KEYisLocalInput $PRE $keyMeta  @TY_LOCAL_INPUT$L1 %BAND %RET
+$SFN KEYisTyGlobal  $PRE $keyMeta  @META_TY_MASK$L1 %BAND  @TY_GLOBAL$L1  %EQ %RET
+$SFN KEYassertTyLocal $PRE $xsl KEYisTyLocal  @E_cNotLocal$L2 $jmpl assert
+$SFN KEYassertTyGlobal $PRE $xsl KEYisTyGlobal  @E_cNotGlobal$L2 $jmpl assert
+$SFN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq
 
 $SFN getWsLen      @D_wslen$L0  %DVFT %RET
 $SFN xsCatch $PRE  @D_xCatch$L0 %DVFT %RET
@@ -918,7 +958,7 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
 \ fn szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
 \
-\ fn anyDictGetR [-> &metaRef isFromLocal] : any ref to current token.
+\ fn anyDictGetK [-> &key isFromLocal] : any ref to current token.
 \ fn c_read [ -> numRead]         : attempt to read bytes from src.
 \ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
 \ fn c_scanNoEof []               : scan and assert not EOF.
@@ -935,6 +975,7 @@ $SFN szILowerToSzI $PRE \ convert a szI in lower bits to a proper szI
   #3$L0 %BAND #4$L0 %SHL %RET
 
 $SFN _metaRefSzI $PRE $toMeta $jmpl szILowerToSzI \ {metaRef} -> {szI}
+$SFN _keySzI $PRE $keyMeta $jmpl szILowerToSzI \ {&key -> szI}
 
 $SFN szIToSz $PRE \ {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -1045,7 +1086,7 @@ $SFN c_clearToken \ shift buffer to clear current token
 #10 =DOT_DEREF
 #08 =DOT_STORE \ 0 = fetch
 
-$SFN anyDictGetR \ {} -> {&metaRef isFromLocal}
+$SFN anyDictGetK \ {} -> {&key isFromLocal}
   $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
     @DOT_LOCAL$L1 %RET
   $END %DRP
@@ -1069,27 +1110,44 @@ $SFN anyDictGetR \ {} -> {&metaRef isFromLocal}
 $SFN _lSetup $PRE \ {&metaO} -> {metaO} : checked local setup
   %DUP $_xsl assertTyped
   .4%FT %DUP $_jmpl assertTyLocal \ returns metaOffset
+$SFN KEY_lSetup $PRE \ {&key} -> {&key} : checked local setup
+  %DUP $_xsl assertTyped
+  %DUP $_jmpl KEYassertTyLocal
 
-$SFN _gSetup $PRE \ {&metaRef} -> {metaRef} : checked global setup
+$SFN _gSetup $PRE \ {&key} -> {ref} : checked global setup
   %DUP $xsl assertTyped
-  .4%FT %DUP $jmpl assertTyGlobal
+  %DUP $xsl KEYassertTyGlobal
+  .A%FT %RET
+$SFN KEY_gSetup $PRE \ {&key} -> {&key} : checked global setup
+  %DUP $xsl assertTyped
+  %DUP $jmpl KEYassertTyGlobal
 
-\ {metaRO szInstr szLit instr} compile a literal memory instr.
+\ {metaRefO szInstr szLit instr} compile a literal memory instr.
 \   szLit the size of the literal to compile for the instr.
-\   metaRO: either a reference or an offset with a conforming meta attached to
-\     it (meta at upper byte, szI in lowest 2 bits).
+\   oRef: either a reference or an offset
 $FN c_instrLitImpl $PRE
   #1 $h1 \ 1 slot [szLit:U1 instr:U1]
-  .1%SRLL #1$h1 \ store instr          {metaR0 szInstr szLit}
-  %DUP $xsl halN \ align for literal   {metaR0 szInstr szLit}
-  .1%SRLL #0$h1 \ store szLit          {metaR0 szInstr}
-  .1%FTLL #1$h1 %BOR $xsl h1 \ compile (szInstr | instr) {metaRO}
+  .1%SRLL #1$h1 \ store instr          {oRef szInstr szLit}
+  %DUP $xsl halN \ align for literal   {oRef szInstr szLit}
+  .1%SRLL #0$h1 \ store szLit          {oRef szInstr}
+  .1%FTLL #1$h1 %BOR $xsl h1 \ compile (szInstr | instr) {oRef}
+  .1%FTLL #0$h1  $jmpl hN \ compile literal of proper instrSz
+
+\ {&key szInstr szLit instr} compile a literal memory instr.
+\   szLit the size of the literal to compile for the instr.
+\   oRef: either a reference or an offset
+$FN KEYc_instrLitImpl $PRE
+  #1 $h1 \ 1 slot [szLit:U1 instr:U1]
+  .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
+  %DUP $xsl halN \ align for literal {&key szInstr szLit}
+  .1%SRLL #0$h1 \ var szLit          {&key szInstr}
+  .1%FTLL #1$h1 %BOR $xsl h1 \ compile (szInstr | instr) {&key}
+  .A%FT \ {oRef} offset or reference
   .1%FTLL #0$h1  $jmpl hN \ compile literal of proper instrSz
 
 \ Compile a get or set instruction.
 \ Args:
-\   &metaRef: contains the reference (global/local offset) and metadata needed to
-\             compile correctly.
+\   &key: key to compile.
 \   dotMeta: whether the value to compile is a local or global.
 \   localInstrSz localInstr: if isFromLocal: use these as the literal sz and instr.
 \   globalInstrSz globalInstr: if NOT isFromLocal: use these as the literal sz and instr.
@@ -1097,36 +1155,36 @@ $FN _getSetImpl $PRE
   #1 $h1 \ locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
-  \ {&metaRef dotMeta}
+  \ {&key dotMeta}
   @DOT_LOCAL$L1 %BAND $IF
-    $xsl _lSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
+    $xsl KEY_lSetup %DUP $xsl _keySzI \ {&key szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1
   $ELSE
-    $xsl _gSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
+    $xsl KEY_gSetup %DUP $xsl _keySzI \ {&key szInstr}
     .1%FTLL#2$h1 .1%FTLL#3$h1
   $END
-  $xl c_instrLitImpl %RET
+  $xl KEYc_instrLitImpl %RET
 
 \ (create _xxxImpl for fngi to use)
-$SFN _getImpl $PRE \ {&metaRef dotMeta}
+$SFN _getImpl $PRE \ {&key dotMeta}
   @SZ1$L1  @FTLL$L1  \ local sz + instr
   @SZ2$L1  @FTGL$L1  \ global sz + instr
   $xl _getSetImpl %RET
 
-$SFN _setImpl $PRE \ {&metaRef dotMeta}
+$SFN _setImpl $PRE \ {&key dotMeta}
   @SZ1$L1  @SRLL$L1  \ local sz + instr
   @SZ2$L1  @SRGL$L1  \ global sz + instr
   $xl _getSetImpl %RET
 
 $SFN _refImpl \ {}
-  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
-    $xsl _lSetup \ {metaOffset}
-    $xsl toRef %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
+  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF \ {&key}
+    $xsl KEY_lSetup \ {&key}
+    .4%FT $xsl toRef %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
     @R_LP$L1 %BOR \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
-  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
-    $xsl _gSetup  $xsl toRef $jmpl L4 \ write literal directly TODO: use c_lit
+  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF \ {&key}
+    $xsl KEY_gSetup  .4%FT $xsl toRef $jmpl L4 \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
 \ # DOT (.) Compiler
@@ -1153,10 +1211,10 @@ $SFN c_dotRefs \ { -> dotMeta } get dot meta for de/refs.
     $END
   $END %RET \ {dotMeta}
 
-$SFN c_dotEq \ {&metaRef dotMeta} ".var =" case
+$SFN c_dotEq \ {&key dotMeta} ".var =" case
   %DUP @DOT_REF$L0 %BAND  @E_cRefEq$L2 $xsl tAssertNot \ "&var =" is invalid
   %DUP @DOT_DEREF$L0 %BAND  $IF \ Deref assignment ".@var ="
-    %DUP #3$L0 %BAND \ {&metaRef dotMeta refCount}
+    %DUP #3$L0 %BAND \ {&key dotMeta refCount}
     %DUP #2$L0 %GE_U $IF \ if refCount >= 2 we do multple fetches then sr.
       @E_unimpl$L2 $jmpl panic
     $ELSE \ TODO: switch to _setImpl once it can do SROL.
@@ -1165,16 +1223,14 @@ $SFN c_dotEq \ {&metaRef dotMeta} ".var =" case
   $ELSE $jmpl _setImpl
   $END
 
-$SFN c_dotDeref \ {&metaRef dotMeta}
+$SFN c_dotDeref \ {&key dotMeta}
   %OVR %SWP $xsl _getImpl \ compile a ft (local or global) {dotMeta}
   #3$L0 %BAND %DEC $LOOP l0 \ {remainingDerefs}
     %DUPN $IF %DRP %RET $END \ return when remaining==0
     @FT $c1 %DEC
   $AGAIN l0
 
-
-
-\ {&metaRef dotMeta} implementation of "standard" dot cases including
+\ {&key dotMeta} implementation of "standard" dot cases including
 \ fetch/store of ref or deref
 \ $SFN c_dotStd
 \   %DUP @DOT_STORE$L1 %BAND $IF \ Handle ".var =" case
@@ -1182,8 +1238,8 @@ $SFN c_dotDeref \ {&metaRef dotMeta}
 \   $END
 \   %DUP @DOT_REF$L0 %BAND $IF \ case &var
 \     \ assert refCount == 1. This is all that will ever be allowed.
-\     %DUP #3$L0 %BAND  #1$L0 %EQ  @E_cBadRefs$L2 $xsl tAssert \ {&metaRef dotMeta}
-\     @DOT_LOCAL$L1 %BAND $IF \ {&metaRef}
+\     %DUP #3$L0 %BAND  #1$L0 %EQ  @E_cBadRefs$L2 $xsl tAssert \ {&key dotMeta}
+\     @DOT_LOCAL$L1 %BAND $IF \ {&key}
 \       $xsl _lSetup \ {metaOffset}
 \       $xsl toRef %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
 \       @R_LP$L1 %BOR \ {LpOffset}: offset is lower 7 bits
@@ -1197,21 +1253,21 @@ $SFN c_dotDeref \ {&metaRef dotMeta}
 
 
 \ $SFN c_dot
-\   $xsl anyDictGetR %SWP .4%SRLL #0$h1 \ {dotMeta isFromLocal} cache &metaRef
+\   $xsl anyDictGetK %SWP .4%SRLL #0$h1 \ {dotMeta isFromLocal} cache &key
 \   %ADD %RET
 \ $xsl c_peekChr #3D$L0 %EQ $IF  \ '='
 
 
 $SFN REF  $SMART
-  $IF  $xsl dictGetK $xsl _gSetup $jmpl toRef  $END
+  $IF  $xsl dictGetK $xsl KEY_gSetup .A%FT $jmpl toRef  $END
   $xsl c_scan $jmpl _refImpl
 
 $SFN GET  $SMART
-  $IF  $xsl dictGetK $xsl _gSetup %DUP $xsl _metaRefSzI \ {metaRef szInstr}
-       %SWP $xsl toRef %SWP $jmpl ftSzI   $END
-  $xsl c_scan $xsl anyDictGetR $jmpl _getImpl
+  $IF  $xsl dictGetK $xsl KEY_gSetup %DUP $xsl _keySzI \ {&key szInstr}
+       %SWP .4%FT $xsl toRef %SWP $jmpl ftSzI   $END
+  $xsl c_scan $xsl anyDictGetK $jmpl _getImpl
 
-$SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetR $jmpl _setImpl
+$SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImpl
 
 $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   #1$h1 \ locals 0=szI:u1
@@ -1248,18 +1304,18 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 @SZ2 $c_makeGlobal c_localOffset
 
 $FN GLOBAL \ <value> <szI> $GLOBAL <token>: define a global variable of sz
-  #2$h1  $SMART $xsl assertNoInstant  \ locals 0=szI 1=meta 4=&metaRef
+  #2$h1  $SMART $xsl assertNoInstant  \ locals 0=szI 1=meta 4=&key
   %DUP $xsl assertSzI \ {value szI}
   .1%SRLL#0$h1 \ set szI {value}
-  $xsl c_updateRKey \ {value &metaRef}
-  $xsl loc \ initialize dictionary entry \ {value &metaRef}
-  $GET c_gheap .1%FTLL#0$h1  $xsl alignSzI \ {value &metaRef alignedGHeap}
-  %DUP $_SET c_gheap \ update gheap to aligned value {value &metaRef alignedGHeap}
-  %OVR .4%SR         \ set dictionary value to alignedGHeap {value &metaRef}
+  $xsl c_updateRKey \ {value &key}
+  $xsl loc \ initialize dictionary entry \ {value &key}
+  $GET c_gheap .1%FTLL#0$h1  $xsl alignSzI \ {value &key alignedGHeap}
+  %DUP $_SET c_gheap \ update gheap to aligned value {value &key alignedGHeap}
+  %OVR .4%SR         \ set dictionary value to alignedGHeap {value &key}
 
-  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta \ {value &metaRef meta}
+  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta \ {value &key meta}
   .1%SRLL#1$h1 .4%SRLL#4$h1 \ {value}
-  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 \ {value <dictArgs> meta &metaRef}
+  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1 \ {value <dictArgs> meta &key}
   $xsl c_dictSetMeta \ update key ty {value}
   $GET c_gheap .1%FTLL#0$h1  $xsl srSzI \ store global value
   $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap \ gheap += sz
@@ -1267,15 +1323,15 @@ $FN GLOBAL \ <value> <szI> $GLOBAL <token>: define a global variable of sz
 
 \ **********
 \ * Local Variables
-$SFN c_updateRLKey \ [] -> [&metaRef] update and return current local key
+$SFN c_updateRLKey \ [] -> [&key] update and return current local key
   $GET c_dictBuf   $GET c_dictHeap  %ADD \ ldict.buf
-  $GET c_dictLHeap                        \ ldict.heap
+  $GET c_dictLHeap                       \ ldict.heap
   %ADD \ {&newLkey}
   %DUP $_SET c_rLKey  %RET
 
 \ implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 $ha2 $FN _localImpl $PRE \ {szI:U1 meta:U1}
-  #2$h1 \ locals: 0=szI  1=meta  4=&metaRef
+  #2$h1 \ locals: 0=szI  1=meta  4=&key
 
   \ assert current function is valid
   .4%FTGL @c_rKey$h2 %DUP $xsl assertTyped .4%FT \ {szI meta fnMetaRef}
@@ -1290,8 +1346,8 @@ $ha2 $FN _localImpl $PRE \ {szI:U1 meta:U1}
   .1%FTLL#0$h1  $xsl alignSzI \ align local offset {meta loff}
   \ c_localOffset = offset + sz
   %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $_SET c_localOffset \ {meta loff}
-  $xsl c_updateRLKey \ {meta loff &metaRef}
-  %SWP $xsl ldictSet  \ set to localOffset {meta &metaRef}
+  $xsl c_updateRLKey \ {meta loff &key}
+  %SWP $xsl ldictSet  \ set to localOffset {meta &key}
   .4%SRLL#4$h1 .1%SRLL#1$h1  $xsl dictArgs  .1%FTLL#1$h1 .4%FTLL#4$h1
   $jmpl c_dictSetMeta
 
@@ -1300,23 +1356,24 @@ $ha2 $FN _localImpl $PRE \ {szI:U1 meta:U1}
 $SFN LOCAL $SMART $xsl assertNoInstant  #0             $L0 $xl _localImpl %RET
 $SFN INPUT $SMART $xsl assertNoInstant  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
 
-$SFN Dict_keyLen   $PRE %INC4 .1%FT  #3F$L1 %BAND %RET            \ {&key} -> {len:U1}
-$SFN Dict_keySz    $PRE $xsl Dict_keyLen #5$L0 %ADD $jmpl align4  \ {&key} -> {sz:U1}
-$SFN Dict_nextKey  $PRE %DUP $xsl Dict_keySz %ADD %RET            \ {&key} -> {&key}
+ \ All of these take &key and output len (U1 len), sz (total key size), nextKey (&key)
+$SFN Dict_keyLen  $PRE @DICT_OLEN$L0 %ADD .1%FT #3F$L1 %BAND %RET
+$SFN Dict_keySz   $PRE $xsl Dict_keyLen @DICT_OLEN^INC$L0 %ADD $jmpl align4
+$SFN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
 
 \ {&key} -> {} recursive function to compile INPUTs
 \ Inputs are "compiled" (i.e. a SRLL is compiled) in reverse order.
 \ This maps them well to the conventional stack nomenclature.
 $FN _compileInputs $PRE
   #1$h1 \ locals 0=&key:APtr
-  %DUP  .4%SRLL#0$h1 \ {&key}
+  %DUP  .4%SRLL#0$h1 \ {&key} var key
   $xsl ldictHeap $reteq \ return if key=ldictHeap
   .4%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
-  .4%FTLL#0$h1  %DUP $xsl isTyped %SWP .4%FT \ {hasTy metaRef}
-  %DUP $xsl isLocalInput %SWP \ {hasTy isLocal metaRef}
-  $xsl isLocalInput %LAND %LAND %RETZ \ {} check (hasTy and isLocal and isLocalInput)
-  .4%FTLL#0$h1  .4%FT  %DUP $xsl _metaRefSzI \ {metaRef szInstr}
-  @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl
+  .4%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
+  %DUP $xsl KEYisTyLocal %SWP \ {hasTy isTyLocal &key}
+  $xsl KEYisLocalInput %LAND %LAND %RETZ \ {} all of (hasTy isTyLocal isLocalInput)
+  .4%FTLL#0$h1  %DUP $xsl _keySzI \ {&key szInstr}
+  @SZ1$L1 @SRLL$L1 $xl KEYc_instrLitImpl
   %RET
 
 \ - Updates the number of slots for the FN

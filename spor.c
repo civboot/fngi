@@ -111,8 +111,10 @@ typedef CSz CPtr;
 #define E_cZoab     0xE0F1 // Zoab invalid
 
 #define REF_MASK    0xFFFFFF
-#define TY_FN_LARGE  (0x10 << 0x18)
-#define TY_FN_SMART  (0x08 << 0x18)
+#define TY_FN_LARGE  0x10
+#define TY_FN_SMART  0x08
+#define TY_FN_LARGE_MREF  (TY_FN_LARGE << 0x18)
+#define TY_FN_SMART_MREF  (TY_FN_SMART << 0x18)
 
 typedef enum {
   C_OP   = 0x00, C_SLIT = 0x40, C_JMP =  0x80, C_MEM =  0xC0,
@@ -242,12 +244,12 @@ typedef struct {
 
 typedef struct {
   U4 value;
-  // U1 meta;
+  U1 meta;
   U1 len;
   U1 s[];
 } Key;
 
-#define keySizeWLen(LEN)  (4 + 1 + (LEN))
+#define keySizeWLen(LEN)  (4 + 1 + 1 + (LEN))
 #define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
 #define KEY_HAS_TY 0x40   // if 1, dict entry is a non-constant
 
@@ -832,6 +834,7 @@ FTGO: case SzI2 + FTGO:
 
   ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
   key->value = value;
+  key->meta = 0;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
   if((LOG_COMPILER & *env.sysLogLvl)) zoab_dict(d, offset);
@@ -1002,13 +1005,20 @@ U1 scanInstr() {
 /*fn*/ void cExecute() { // $
   scan();
   DictRef d = DEFAULT_DICT;
-  U4 metaRef = Dict_get(d, tokenLen, tokenBuf);
-  if(TY_FN_SMART & metaRef) {
+  U2 offset = Dict_find(d, tokenLen, tokenBuf);
+  ASM_ASSERT(offset != *d.heap, E_cKey);
+  Key* key = Dict_key(d, offset);
+  if((TY_FN_SMART_MREF & key->value)
+     // || (TY_FN_SMART & key->meta)
+     ) {
     WS_PUSH(FALSE); // pass asInstant=FALSE
   }
-  WS_PUSH(REF_MASK & metaRef);
-  if(TY_FN_LARGE & metaRef) execute(SzI4 + XW);
-  else                       execute(SzI4 + XSW);
+  WS_PUSH(REF_MASK & key->value);
+  if(TY_FN_LARGE_MREF & key->value) {
+    execute(SzI4 + XW);
+  }
+  // else if(TY_FN_LARGE & key->meta)  execute(SzI4 + XW);
+  else                              execute(SzI4 + XSW);
 }
 
 /*fn*/ Bool compile() {

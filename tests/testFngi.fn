@@ -15,6 +15,7 @@ $tAssertEq(bAnd(0xFF, 0xC), 0xC)
 $tAssertEq(lOr(0x0, 0x8), TRUE)
 $tAssertEq(bOr(0x0, 0x8), 0x8)
 $tAssertEq(0c\t, 0x09)
+$tAssertEq(incA(0), ASIZE)
 
 $tAssertEq(FN_REF useEq, toRef(dictGet useEq))
 

@@ -97,7 +97,7 @@ SFN CONST  SMART assertNoInstant \ CONST <name> = <value>
 FN SET  SMART \ SET <name> = <value>
   $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
   assertNoInstant;
-  c_scan; anyDictGetR;  _SET isFromLocal  _SET rMetaRef \ cache <name>
+  c_scan; anyDictGetK;  _SET isFromLocal  _SET rMetaRef \ cache <name>
   c_scan; assertToken(TOKEN_EQ) \ "SET name ="
   xw(GET c_compFn) \ <value>
   ret _setImpl(GET rMetaRef, GET isFromLocal)

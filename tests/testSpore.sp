@@ -2,6 +2,11 @@
 #0              $tAssertNot
 #1              $tAssert
 
+\ Test Select
+#3 #42 #1 $select  #3  $tAssertEq
+#3 #42 #0 $select  #42 $tAssertEq
+$assertWsEmpty
+
 \ Test operations
 #400 #1 ^ADD    #401 $tAssertEq
 #400 #1 ^SUB    #3FF $tAssertEq
@@ -13,6 +18,7 @@
 $dictGet foo   #444 $tAssertEq
 #123455 $dictSet foo2
 $dictGet foo2 #123455 $tAssertEq
+
 
 \ Test loc
 $loc twelve #12 $L0 %RET
@@ -26,8 +32,15 @@ $lits
 #45     $tAssertEq
 #5     $tAssertEq
 
-\ Test xsl
+\ Test incA
+$SFN myIncA $incA %RET
+#0 $myIncA @ASIZE $tAssertEq
 
+\ Test meta
+$dictGetK FN  @TY_FN @TY_FN_SMART ^BOR $tAssertKeyMeta
+$dictGetK incA @TY_FN @TY_FN_PRE @TY_FN_SMART ^BOR^BOR $tAssertKeyMeta
+
+\ Test xsl
 $SFN myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
 

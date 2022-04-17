@@ -24,7 +24,7 @@ syn match elSymbol    '[^!'()_a-zA-Z0-9.]' nextgroup=elSpecial
 syn match elSpecial   '[!'()]' nextgroup=elNum
 syn match elNum       '#[_0-9a-fA-F]\+' nextgroup=elInstant
 syn match elInstant       '$[_0-9a-zA-Z]\+' nextgroup=elInstrDot
-syn match elInstrDot  '[.]\d\+'         nextgroup=elComment
+syn match elInstrDot  '[.][0-4A]\+'         nextgroup=elComment
 syn match elComment   '\\.*$'
 
 let b:current_syntax = "sporeASM"
