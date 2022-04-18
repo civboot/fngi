@@ -1009,15 +1009,12 @@ U1 scanInstr() {
   ASM_ASSERT(offset != *d.heap, E_cKey);
   Key* key = Dict_key(d, offset);
   if((TY_FN_SMART_MREF & key->value)
-     // || (TY_FN_SMART & key->meta)
-     ) {
+     || (TY_FN_SMART & key->meta)) {
     WS_PUSH(FALSE); // pass asInstant=FALSE
   }
   WS_PUSH(REF_MASK & key->value);
-  if(TY_FN_LARGE_MREF & key->value) {
-    execute(SzI4 + XW);
-  }
-  // else if(TY_FN_LARGE & key->meta)  execute(SzI4 + XW);
+  if((TY_FN_LARGE_MREF & key->value)
+     || (TY_FN_LARGE & key->meta))  execute(SzI4 + XW);
   else                              execute(SzI4 + XSW);
 }
 
@@ -1451,7 +1448,7 @@ U1 readSrcAtLeast(U1 num) {
 
 #define SMALL_ENV_BARE \
   /*           MS       WS     RS     LS     DICT    GS    BLKS */    \
-  NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x2000, 0x100, 0x4)
+  NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x3000, 0x100, 0x4)
 
 void setCompileFile(char* s) {
   zoab_file(strlen(s), s);
@@ -1473,7 +1470,7 @@ void compileFile(char* s) {
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT    GS     BLKS*/    \
-  NEW_ENV(0x20000, 0x40, 0x100, 0x200, 0x2000, 0x1000, 0x10)
+  NEW_ENV(0x20000, 0x40, 0x100, 0x200, 0x3000, 0x1000, 0x10)
 
 // ********************************************
 // ** Main

@@ -69,8 +69,8 @@ SFN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
 \ FN_REF <function>: &fn (as literal or instant)
 SFN FN_REF   SMART
   dictGetK; assertTyped(dup) \ {asInst &metaRef}
-  ft4(_)    assertFn(dup)    \ {asInst metaRef}
-  toRef(_)  swp              \ {&fn asInst}
+  assertFn(dup)              \ {asInst &key}
+  toRef(ft4(_))  swp;        \ {&fn asInst}
   ret(IF(\asInst) \(&fn) ELSE lit(\(&fn)) END)
 
 FN strEq PRE \ {aLen &a bLen &b}
