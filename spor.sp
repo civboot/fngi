@@ -397,7 +397,8 @@
 \ tAssert, tAssertNot, tAssertEq
 \ Spore assembly constants.
 
-%NOP \ (unaligned) Note: below is using value pushed by compiler.
+\ TODO: switch to big-endian for comma,h2,h4
+%NOP \ TODO: remove NOP AND INC
 ^INC =getHeap
                 .4%FTGL @heap.2,
     %RET \ (unaligned)

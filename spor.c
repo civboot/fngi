@@ -471,6 +471,42 @@ SzI szToSzI(U1 sz) {
   }
 }
 
+/*fn*/ U4 fetchUnaligned(U1* mem, APtr aptr, SzI szI) {
+  ASM_ASSERT(aptr, E_null);
+  ASM_ASSERT(aptr < *env.topMem, E_oob);
+  switch (szI) {
+    case SzI1: return *(mem + aptr);
+    case SzI2: return *(mem + aptr)
+        + (*(mem+aptr + 1) << 8);
+    case SzI4: return *(mem + aptr)
+        + (*(mem+aptr + 1) << 8)
+        + (*(mem+aptr + 2) << 16)
+        + (*(mem+aptr + 3) << 24);
+    default: SET_ERR(E_cSz);
+  }
+}
+
+void storeUnaligned(U1* mem, APtr aptr, U4 value, SzI szI) {
+  ASM_ASSERT(aptr, E_null);
+  ASM_ASSERT(aptr < *env.topMem, E_oob);
+  switch (szI) {
+    case SzI1:
+      *(mem+aptr) = (U1)value;
+      return;
+    case SzI2:
+      *(mem+aptr) = (U1)value;
+      *(mem+aptr+1) = (U1)(value >> 8);
+      return;
+    case SzI4:
+      *(mem+aptr) = (U1)value;
+      *(mem+aptr+1) = (U1)(value >> 8);
+      *(mem+aptr+2) = (U1)(value >> 16);
+      *(mem+aptr+3) = (U1)(value >> 24);
+      return;
+    default: SET_ERR(E_cSz);
+  }
+}
+
 #define Stk_len(STK)  ((STK.size - STK.sp) >> APO2)
 #define WS_LEN        Stk_len(env.ws)
 #define X_DEPTH       Stk_len(env.cs)
@@ -589,7 +625,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 }
 
 U4 popLit(SzI szI) {
-  U4 out = fetch(mem, env.ep, szI);
+  U4 out = fetchUnaligned(mem, env.ep, szI);
   env.ep += szIToSz(szI);
   return out;
 }
@@ -615,7 +651,6 @@ U4 popLit(SzI szI) {
 inline static void executeInstr(Instr instr) {
   U4 l, r;
   logInstr(instr);
-
   SzI szI = SzI2;
   switch ((U1)instr) {
     // Operation Cases
@@ -986,7 +1021,7 @@ U1 scanInstr() {
 
 /*fn*/ void cWriteHeap() { // `,`
   U4 value = WS_POP();
-  store(mem, *env.heap, value, env.szI);
+  storeUnaligned(mem, *env.heap, value, env.szI);
   *env.heap += szIToSz(env.szI);
 }
 
@@ -1518,7 +1553,7 @@ void dbgJmp(Instr instr) {
     case XL:
     case XSL:
       if(_dbgMemInvalid(szI, env.ep)) break;
-      jloc = toAptr(fetch(mem, env.ep, szI), SzI2);
+      jloc = toAptr(fetchUnaligned(mem, env.ep, szI), SzI2);
       break;
     case JMPW:
     case XW:
@@ -1545,7 +1580,7 @@ void dbgMem(Instr instr) {
   if(_dbgMemInvalid(szI, env.ep)) return;
   zoab_arr(3, FALSE);
   zoab_int(LOG_SYS | LOG_MEM);  zoab_int(instr);
-  zoab_int(fetch(mem, env.ep, szI));
+  zoab_int(fetchUnaligned(mem, env.ep, szI));
   return;
 }
 
@@ -1791,6 +1826,7 @@ void assertNoWs() {
   testDictDeps();
   testDict();
   testWriteHeap();
+  eprint("??? Test Spore\n");
   testSpore();
   testFngi();
 
