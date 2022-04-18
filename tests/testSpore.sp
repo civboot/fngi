@@ -1,3 +1,5 @@
+$assertWsEmpty
+
 \ Test assert
 #0              $tAssertNot
 #1              $tAssert
@@ -92,9 +94,6 @@ $FN min \ [a b] -> [min]
 
 #1 #2    $min   #1 $tAssertEq
 #42 #333 $min   #42 $tAssertEq
-
-$ha2 #1 $h1 \ misalign heap
-@SZ4 $halN #1 $h1 #12345 $h4 \ use them.
 
 \ Testing Gloabls
 @SZ1 $assertSzI

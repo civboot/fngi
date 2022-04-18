@@ -471,22 +471,24 @@ SzI szToSzI(U1 sz) {
   }
 }
 
-/*fn*/ U4 fetchUnaligned(U1* mem, APtr aptr, SzI szI) {
+/*fn*/ U4 fetchBE(U1* mem, APtr aptr, SzI szI) {
   ASM_ASSERT(aptr, E_null);
   ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (szI) {
     case SzI1: return *(mem + aptr);
-    case SzI2: return *(mem + aptr)
-        + (*(mem+aptr + 1) << 8);
-    case SzI4: return *(mem + aptr)
-        + (*(mem+aptr + 1) << 8)
-        + (*(mem+aptr + 2) << 16)
-        + (*(mem+aptr + 3) << 24);
+    case SzI2: return
+        (*(mem + aptr) << 8)
+        + *(mem+aptr + 1);
+    case SzI4: return
+          (*(mem + aptr) << 24)
+        + (*(mem+aptr + 1) << 16)
+        + (*(mem+aptr + 2) << 8)
+        + (*(mem+aptr + 3) << 0);
     default: SET_ERR(E_cSz);
   }
 }
 
-void storeUnaligned(U1* mem, APtr aptr, U4 value, SzI szI) {
+void storeBE(U1* mem, APtr aptr, U4 value, SzI szI) {
   ASM_ASSERT(aptr, E_null);
   ASM_ASSERT(aptr < *env.topMem, E_oob);
   switch (szI) {
@@ -494,14 +496,14 @@ void storeUnaligned(U1* mem, APtr aptr, U4 value, SzI szI) {
       *(mem+aptr) = (U1)value;
       return;
     case SzI2:
-      *(mem+aptr) = (U1)value;
-      *(mem+aptr+1) = (U1)(value >> 8);
+      *(mem+aptr) = (U1)(value >> 8);
+      *(mem+aptr+1) = (U1)(value);
       return;
     case SzI4:
-      *(mem+aptr) = (U1)value;
-      *(mem+aptr+1) = (U1)(value >> 8);
-      *(mem+aptr+2) = (U1)(value >> 16);
-      *(mem+aptr+3) = (U1)(value >> 24);
+      *(mem+aptr) = (U1)(value >> 24);
+      *(mem+aptr+1) = (U1)(value >> 16);
+      *(mem+aptr+2) = (U1)(value >> 8);
+      *(mem+aptr+3) = (U1)(value);
       return;
     default: SET_ERR(E_cSz);
   }
@@ -625,7 +627,7 @@ void xsImpl(APtr aptr) { // impl for "execute small"
 }
 
 U4 popLit(SzI szI) {
-  U4 out = fetchUnaligned(mem, env.ep, szI);
+  U4 out = fetchBE(mem, env.ep, szI);
   env.ep += szIToSz(szI);
   return out;
 }
@@ -1021,7 +1023,7 @@ U1 scanInstr() {
 
 /*fn*/ void cWriteHeap() { // `,`
   U4 value = WS_POP();
-  storeUnaligned(mem, *env.heap, value, env.szI);
+  storeBE(mem, *env.heap, value, env.szI);
   *env.heap += szIToSz(env.szI);
 }
 
@@ -1553,7 +1555,7 @@ void dbgJmp(Instr instr) {
     case XL:
     case XSL:
       if(_dbgMemInvalid(szI, env.ep)) break;
-      jloc = toAptr(fetchUnaligned(mem, env.ep, szI), SzI2);
+      jloc = toAptr(fetchBE(mem, env.ep, szI), SzI2);
       break;
     case JMPW:
     case XW:
@@ -1580,7 +1582,7 @@ void dbgMem(Instr instr) {
   if(_dbgMemInvalid(szI, env.ep)) return;
   zoab_arr(3, FALSE);
   zoab_int(LOG_SYS | LOG_MEM);  zoab_int(instr);
-  zoab_int(fetchUnaligned(mem, env.ep, szI));
+  zoab_int(fetchBE(mem, env.ep, szI));
   return;
 }
 
@@ -1736,9 +1738,10 @@ void compileStr(char* s) {
 /*test*/ void testWriteHeap() { // test , and ;
   TEST_ENV_BARE;
   zoab_info("## testWriteHeap");
+  // Note: comma stores as big-endian
   compileStr(".4 #77770101, .2 #0F00, .1 #0,");
-  assert(0x77770101 == fetch(mem, heapStart, SzI4));
-  assert(0x0F00 == fetch(mem, heapStart+4, SzI2));
+  assert(0x01017777 == fetch(mem, heapStart, SzI4));
+  assert(0x000F == fetch(mem, heapStart+4, SzI2));
   assert(0 == fetch(mem, heapStart+6, SzI1));
 }
 
@@ -1783,14 +1786,14 @@ void assertNoWs() {
   heapStart = *env.heap;
   compileStr("#1234 $h2");
   assert(heapStart+2 == *env.heap);
-  assert(0x1234 == fetch(mem, heapStart, SzI2));
+  assert(0x3412 == fetch(mem, heapStart, SzI2));
 
   // Test h4
   *env.heap = alignAPtr(*env.heap, 4);
   heapStart = *env.heap;
   compileStr("#987654 $h4");
   assert(heapStart+4 == *env.heap);
-  assert(0x987654 == fetch(mem, heapStart, SzI4));
+  assert(0x54769800 == fetch(mem, heapStart, SzI4));
 
   // Test various
   compileStr("$getHeap $getTopHeap");
@@ -1826,7 +1829,6 @@ void assertNoWs() {
   testDictDeps();
   testDict();
   testWriteHeap();
-  eprint("??? Test Spore\n");
   testSpore();
   testFngi();
 

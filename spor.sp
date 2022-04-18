@@ -422,19 +422,26 @@ $getHeap =L0   \ L0: compile a small literal (unchecked)
   .1%LIT    @SLIT,
   %BOR       .2%JMPL .2@h1, \ made into SLIT instr and stored. (aligned)
 
+$getHeap =srBE2 \ {val addr} store a value at addr encoded BE2 (big-endian 2)
+  %OVR #48.1, %SHR \ {val addr val>>8} note: #48 is SLIT(8)
+  %OVR .1%SR       \ store upper byte {val addr}
+  %INC .1%SR %RET  \ {} store lower byte
+
+$getHeap =srBE4 \ {val addr} store a value at addr encoded BE4 (big-endian 4)
+  %OVR #50.1, %SHR \ {val addr val>>16} note: #50 is SLIT(16)
+  %OVR .2%XSL @srBE2,   \ handle the large bytes (1 & 2)
+  %INC2 .2%JMPL @srBE2, \ small bytes            (3 & 4)
+
 %NOP \ (unaligned)
 $getHeap =h2  \ h2: {val:2} push 2bytes from stack to heap
-              .4%FTGL @heap.2, \ fetch heap {val, heap}
-  %NOP        .2%SR            \ store 2 byte value at heap
-  %NOP        .4%FTGL @heap.2, \ {heap}
-  .4%INC2     %SRGL   @heap.2,   \ heap=heap+2
+  .4%FTGL @heap.2, .2%XSL @srBE2.2, \ store value at heap
+  .4%FTGL @heap.2, \ {heap}
+  %INC2   .4%SRGL   @heap.2,   \ heap=heap+2
   %RET \ (unaligned)
 
 $getHeap =h4  \ h4: {val:4} push 4bytes from stack to heap
-            .4%FTGL @heap.2, \ fetch heap {val, heap}
-  %NOP      .4%SR           \ store 4 byte value at heap
-  %NOP      .4%FTGL @heap.2, \ {heap}
-  %INC4     .4%SRGL @heap.2, \ heap=heap+4
+  .4%FTGL @heap.2, .2%XSL @srBE4.2, \ store value at heap
+  .4%FTGL @heap.2,  %INC4     .4%SRGL @heap.2, \ heap=heap+4
   %RET \ (unaligned)
 
 $getHeap =dictArgs \ args for dict.
@@ -473,65 +480,31 @@ $getHeap =loc \ $loc <name>: define a location
   #0$L0        .4%SRGL @c_dictLHeap $h2    \ zero localDict.heap
   %RET \ (unaligned)
 
-$loc setHeap     %SRGL @heap $h2      %RET \ (unaligned)
-$loc getTopHeap  %FTGL @topHeap $h2   %RET \ (unaligned)
-$loc setTopHeap  %SRGL @topHeap $h2   %RET \ (unaligned)
-
-%NOP \ (aligned)
-$loc hpad \ {pad} write pad bytes to heap.
-  \ WHILE(pad) we write NOP to heap
-  @heap ^FT \ c-stk{loopStart}
-    .4%DUP        .2%JZL \ if(pad == 0) breakTo
-      .4@heap ^FT ^SWP #0 $h2 \ c-stk{breakTo loopStart}
-    @NOP$L0       .2%XSL @h1 $h2 \ write a noop
-    .4%DEC        .2%JMPL    $h2 \ DEC and jmp to loopStart
-  @heap .4^FT ^SWP .2^SR \ update breakTo spot
-  %DRP           %RET \ (aligned)
-
-$loc _hal \ {align} heap align (for) literal
-  .4%DUP        .2%XSL @getHeap $h2 \ {align align heap}
-  .4%SWP          %MOD \ {align heap%align}
-  \ pad = (align-1) - heap%align
-  .4%SWP          %DEC \ {heap%align align-1}
-  .4%SWP          %SUB
-  .4%NOP        .2%JMPL @hpad $h2
-
-\ halN: heap align (for) N-byte literal.
-$loc hal2   #2$L0          .2%JMPL @_hal $h2 \ (aligned)
-$loc hal4   #4$L0          .2%JMPL @_hal $h2 \ (aligned)
-
-$hal2 $loc _ha \ {align} heap align (with NOPs)
-                .2%XSL @getHeap $h2 \ {align heap}
-  .4%SWP          %MOD \ {heap%align}
-  $hal2 .2%JMPL @hpad $h2
-
-\ haN: {align} heap align N byte.
-#2 $_ha
-$loc ha2   #2$L0   .2%JMPL @_ha $h2
-$loc ha4   #4$L0   .2%JMPL @_ha $h2
-
+$loc setHeap     .4%SRGL @heap $h2      %RET \ (unaligned)
+$loc getTopHeap  .4%FTGL @topHeap $h2   %RET \ (unaligned)
+$loc setTopHeap  .4%SRGL @topHeap $h2   %RET \ (unaligned)
 
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
-$hal2 $loc assertNot \ {failIfTrue errCode}
+$loc assertNot \ {failIfTrue errCode}
                   %SWP
   %NOT            %SWP \ fallthrough (aligned)
 $loc assert    \ {failIfFalse errCode}
   @D_assert$L0     %DVFT
   %RET \ (unaligned)
 
-$hal2 $loc tAssert
+$loc tAssert
         .2%LIT @E_test $h2
-  $hal2 %JMPL @assert $h2
+  %JMPL @assert $h2
 
-$loc tAssertNot     .4%NOT $hal2 .2%JMPL @tAssert,
+$loc tAssertNot     .4%NOT .2%JMPL @tAssert,
 
-$ha2 $loc tAssertEq \ {a b}
+$loc tAssertEq \ {a b}
    @ERR_DATA_INT2$L0  .1%SRGL @c_errValTy$h2
    %NOP               .4%SRGL @c_errVal2$h2 \ b {a}
    %DUP               .4%SRGL @c_errVal1$h2 \ a {a}
    %NOP               .4%FTGL @c_errVal2$h2 \ {a b}
-  .4%EQ  $hal2 .2%JMPL @tAssert,
+  .4%EQ  .2%JMPL @tAssert,
 
 \ **********
 \ * [6] Core functions and macros
@@ -593,42 +566,39 @@ $ha2 $loc tAssertEq \ {a b}
 \ Note: any SMART function must be prefixed with asInstant (typically #0)
 \ since it will not be tagged as SMART until c_makeFn.
 
-$hal2 $loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
-  $hal2 .2%XSL @hal2 $h2    \ enforce proper alignment
-  $hal2 .2%XSL @h1 $h2      \ compile instr {ref}
-  $hal2 .2%JMPL @h2 $h2     \ compile addr
+$loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
+  .2%XSL @h1 $h2      \ compile instr {ref}
+  .2%JMPL @h2 $h2     \ compile addr
 
-$hal2 $loc _xsl \ $_xsl <token> : compile unchecked xsl
-  $hal2 .2%XSL @dictGet $h2 \ {key}
+$loc _xsl \ $_xsl <token> : compile unchecked xsl
+  .2%XSL @dictGet $h2 \ {key}
   .1%LIT @XSL2 $h1  \ push .2%XSL instr
-  $hal2 .2%JMPL @_j2 $h2
+  .2%JMPL @_j2 $h2
 
-$hal2 $loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
+$loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
   $_xsl dictGet             \ {key}
   .1%LIT @JMPL2 $h1 \ push .2%JMPL instr
-  $hal2 .2%JMPL @_j2 $h2
+  .2%JMPL @_j2 $h2
 
-$hal2 $loc L1 \ {U1} compile 1 byte literal
+$loc L1 \ {U1} compile 1 byte literal
   .1%LIT  @SZ1 @LIT ^BOR  $h1 \ push .1%LIT instr
   $_xsl h1 \ compile it
   $_jmpl h1
 
 \ INSTANT PRE $c1: {instr:U1}
 \ Compiles code so that when executed the instr will be compiled.
-$hal2 $loc c1
+$loc c1
   $_xsl L1    \ compile the instr literal itself
   \ compile xsl to h1
-  $hal2 .2%LIT @h1 $h2
-  $hal2 .2%LIT @XSL2 $h2
+  .2%LIT @h1 $h2
+  .2%LIT @XSL2 $h2
   $_jmpl _j2
 
-$hal2 $loc L2 \ {U1} compile 2 byte literal
-  $_xsl hal2 \ enforce proper alignment
+$loc L2 \ {U1} compile 2 byte literal
   @SZ2 @LIT  ^BOR  $c1  \ compile .2%LIT instr
   $_jmpl h2  \ compile the 2 byte literal
 
-$hal2 $loc L4 \ {U1} compile 4 byte literal
-  $_xsl hal4 \ enforce proper alignment
+$loc L4 \ {U1} compile 4 byte literal
   @SZ4 @LIT  ^BOR  $c1 \ compile .4%LIT
   $_jmpl h4  \ compile the 4 byte literal
 
@@ -659,20 +629,20 @@ $loc assertFnLarge \ [&key]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
 
-$hal4 $loc toMod @MOD_MASK $L4 %BAND %RET \ {ref} -> {mod}
+$loc toMod @MOD_MASK $L4 %BAND %RET \ {ref} -> {mod}
 $loc isSameMod \ {ref ref} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
-$hal2 $loc curMod   .2%FTGL @c_rKey$h2 .4%FT  $_jmpl toMod \ [] -> [mod]
-$hal2 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
-$hal2 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
+$loc curMod   .2%FTGL @c_rKey$h2 .4%FT  $_jmpl toMod \ [] -> [mod]
+$loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
+$loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
 $loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertTyped
   %DUP $_xsl assertFnSmall
   .A%FT %DUP $_jmpl assertCurMod \ {ref}
 
-$hal2 $loc  assertNoInstant @E_cCompOnly$L2 $_jmpl assertNot   \ {asInstant} -> {}
+$loc  assertNoInstant @E_cCompOnly$L2 $_jmpl assertNot   \ {asInstant} -> {}
 
 $loc xsl \ $xsl <token> : compile .2%xsl
   $_xsl dictGetK $_xsl _jSetup \ {ref}
@@ -688,11 +658,11 @@ $loc jmpl  \ $jmpl <token> : compile jmpl2
   $_xsl dictGetK $_xsl _jSetup \ {ref}
   @JMPL2$L1  $_jmpl _j2
 
-$hal2 $loc c_updateRKey \ [] -> [&key] update and return current key
+$loc c_updateRKey \ [] -> [&key] update and return current key
         .4%FTGL @c_dictBuf$h2  \ dict.buf
-  $hal2 .2%FTGL @c_dictHeap$h2 \ dict.heap
+  .2%FTGL @c_dictHeap$h2 \ dict.heap
   .4%ADD \ {&newKey}
-  %DUP $hal2 .4%SRGL @c_rKey$h2 \ rKey=newKey
+  %DUP .4%SRGL @c_rKey$h2 \ rKey=newKey
   %RET \ return &key
 
 $loc rKeySet \ {&key meta:U1} -> U4 : apply meta to &key
@@ -714,23 +684,21 @@ $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   %SWP $_xsl rKeySet \ {<dictArgs> &key}
   $_jmpl c_dictDumpEntry
 
-$hal2 $loc _declFn \ [<dictArgs> meta]
+$loc _declFn \ [<dictArgs> meta]
   @TY_FN$L1 %BOR \ {<dictArgs> meta}
   $_xsl c_updateRKey \ {<dictArgs> meta &key}
   $_xsl loc
   $_jmpl c_dictSetMeta
 
-$hal2 $loc SFN  \ SMART $SFN <token>: define location of small function
+$loc SFN  \ SMART $SFN <token>: define location of small function
   $_xsl assertNoInstant $_xsl dictArgs #0$L0         $_jmpl _declFn
 
-$ha2 $loc FN  \ SMART $FN <token>: define location of function with locals
+$loc FN  \ SMART $FN <token>: define location of function with locals
   $_xsl assertNoInstant $_xsl dictArgs @TY_FN_LARGE$L1 $_jmpl _declFn
 
-$ha2
 $loc SMART \ {} modify current function to be smart
   %DRP .4%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl rKeySet
 
-$ha2
 $loc INSTANT \ {} modify current function to be smart
   %DRP .4%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl rKeySet
 
@@ -745,7 +713,7 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
   .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %BOR  $_jmpl c_makeTy
 
-$ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
+$loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 
 @TY_FN_SMART        $c_makeFn SFN
 @TY_FN_SMART        $c_makeFn FN
@@ -772,11 +740,6 @@ $ha2 $loc PRE %DRP .4%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 #0                    $c_makeFn getHeap
 #0                    $c_makeFn getTopHeap
 @TY_FN_PRE            $c_makeFn setHeap
-@TY_FN_PRE            $c_makeFn hpad
-#0                    $c_makeFn hal2
-#0                    $c_makeFn hal4
-#0                    $c_makeFn ha2
-#0                    $c_makeFn ha4
 @TY_FN_PRE            $c_makeFn toMod
 @TY_FN_PRE @TY_FN_SMART ^ADD $c_makeFn keyMeta
 #0                    $c_makeFn curMod
@@ -833,8 +796,8 @@ $SFN c_dictDump       $xsl dictArgs @D_dictDump$L0 %DVSR %RET \ {}
 $c_dictDump
 
 $SFN ldictBuf \ {} -> {ldict.buf:APtr}
-  $hal2 .4%FTGL @c_dictBuf$h2
-  $hal2 .2%FTGL @c_dictHeap$h2
+  .4%FTGL @c_dictBuf$h2
+  .2%FTGL @c_dictHeap$h2
   %ADD %RET
 
 $SFN ldictArgs \ {} -> dictArgs
@@ -913,8 +876,6 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn align [aptr sz -> aptr]      : align aptr with sz bytes
 \ fn align4 [aptr -> aptr]        : align aptr with 4 bytes
 \ fn alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
-\ fn haN [szI]                    : align the heap to szI
-\ fn halN [szI]                   : align the heap for a literal to szI
 \ fn hN [U4 szI]                  : write a value of szI to heap (no align)
 \ fn szToSzI [U4 -> SzI]          : convert number of bytes to SzI
 \ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
@@ -943,11 +904,6 @@ $SFN szIToSz $PRE \ {szI} -> {sz}
   %DUP @SZ2$L1 %EQ $IF  %DRP #2$L0 %RET  $END
        @SZ4$L1 %EQ $IF       #4$L0 %RET  $END
   @E_cSz$L2 $xsl panic
-
-$SFN haN  $PRE \ {szI} align heap
-  $xsl szIToSz $_jmpl _ha
-$SFN halN $PRE \ {szI} align heap for literal to szI
-  $xsl szIToSz $_jmpl _hal
 
 $SFN hN $PRE \ {value szI} write a value of szI to heap
   %DUP @SZ1$L1 %EQ $IF  %DRP $jmpl h1  $END
@@ -999,8 +955,8 @@ $SFN memCmp   $PRE  @D_memCmp$L0 %DVFT %RET  \ {&a &b len -> cmp}
 $SFN memClear $PRE  #0$L0 %SWP \ !fallthrough! {dst len}     "dst = 0"
 $SFN memSet   $PRE  @D_memSet$L0 %DVFT %RET  \ {dst v len}   "dst = v"
 $SFN memMove  $PRE  @D_memSet$L0 %DVSR %RET  \ {dst src len} "dst = src"
-$SFN c_scanEol     @D_scan$L0   %DVSR %RET      $hal2
-$SFN c_isEof .1%FTGL@c_tokenLen$h2 %NOT %RET    $hal2
+$SFN c_scanEol     @D_scan$L0   %DVSR %RET
+$SFN c_isEof .1%FTGL@c_tokenLen$h2 %NOT %RET
 $SFN c_assertToken .1%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
 $SFN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot \ {numRead}
 
@@ -1012,14 +968,14 @@ $SFN c_scanNoEof
 $SFN c_peekChr \ {} -> {c} peek at a character
   $xsl c_scan
   $xsl c_isEof $IF  #0$L0 %RET  $END
-  $hal2 .4%FTGL@c_tokenBuf$h2 .1%FT \ {c}
-  #0$L0 $hal2 .1%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
+  .4%FTGL@c_tokenBuf$h2 .1%FT \ {c}
+  #0$L0 .1%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
 
 $SFN c_countChr $PRE \ { chr -> count } count and consume matching chrs
   #0$L0 $LOOP l0 \ {chr count}
     %OVR $xsl c_peekChr %NEQ $IF %SWP %DRP %RET $END
     %INC \ inc count, then inc tokenLen
-    $hal2 .1%FT@c_tokenLen$h2 %INC  $hal2 .1%SR@c_tokenLen$h2
+    .1%FT@c_tokenLen$h2 %INC  .1%SR@c_tokenLen$h2
   $AGAIN l0
 
 
@@ -1027,15 +983,14 @@ $SFN c_read \ { -> numRead} attempt to read bytes
   #1$L0 @D_read$L0 %DVFT %RET
 
 $SFN c_readNew \ { -> numRead} clear token buf and read bytes
-  #0$L0 $hal2 .1%SRGL@c_tokenLen$h2
-  #0$L0 $hal2 .1%SRGL@c_tokenSize$h2
+  #0$L0 .1%SRGL@c_tokenLen$h2
+  #0$L0 .1%SRGL@c_tokenSize$h2
   #1$L0 @D_read$L0 %DVFT %RET
 
-$hal2
 $SFN c_clearToken \ shift buffer to clear current token
   .4%FTGL@c_tokenBuf$h2                 \ {&tokenBuf}
-  %DUP $hal2 .1%FTGL@c_tokenLen$h2 %ADD \ {&tokenBuf &tokenEnd}
-  $hal2 .1%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
+  %DUP .1%FTGL@c_tokenLen$h2 %ADD \ {&tokenBuf &tokenEnd}
+  .1%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
   $jmpl memMove
 
 \ dotMeta bitmask: OOOO OOOO | DL&@ SXRR
@@ -1082,7 +1037,6 @@ $SFN _gSetup $PRE \ {&key} -> {&key} : checked global setup
 $FN c_instrLitImpl $PRE
   #1 $h1 \ 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
-  %DUP $xsl halN \ align for literal {&key szInstr szLit}
   .1%SRLL #0$h1 \ var szLit          {&key szInstr}
   .1%FTLL #1$h1 %BOR $xsl h1 \ compile (szInstr | instr) {&key}
   .A%FT \ {oRef} offset or reference
@@ -1273,7 +1227,7 @@ $SFN c_updateRLKey \ [] -> [&key] update and return current local key
   %DUP $_SET c_rLKey  %RET
 
 \ implement LOCAL or INPUT. Mostly just updating ldict key and globals.
-$ha2 $FN _localImpl $PRE \ {szI:U1 meta:U1}
+$FN _localImpl $PRE \ {szI:U1 meta:U1}
   #2$h1 \ locals: 0=szI  1=meta  4=&key
 
   \ assert current function is valid
