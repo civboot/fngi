@@ -68,9 +68,9 @@ SFN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
 
 \ FN_REF <function>: &fn (as literal or instant)
 SFN FN_REF   SMART
-  dictGetK; assertTyped(dup) \ {asInst &metaRef}
+  dictGetK; assertTyped(dup) \ {asInst &key}
   assertFn(dup)              \ {asInst &key}
-  toRef(ft4(_))  swp;        \ {&fn asInst}
+  ft4(_)  swp;        \ {&fn asInst}
   ret(IF(\asInst) \(&fn) ELSE lit(\(&fn)) END)
 
 FN strEq PRE \ {aLen &a bLen &b}
@@ -95,12 +95,12 @@ SFN CONST  SMART assertNoInstant \ CONST <name> = <value>
   swp; ret sr4(\num, \(&key));
 
 FN SET  SMART \ SET <name> = <value>
-  $SZ4 LOCAL rMetaRef  $SZ1 LOCAL isFromLocal END_LOCALS
+  $SZ4 LOCAL rKey  $SZ1 LOCAL isFromLocal END_LOCALS
   assertNoInstant;
-  c_scan; anyDictGetK;  _SET isFromLocal  _SET rMetaRef \ cache <name>
+  c_scan; anyDictGetK;  _SET isFromLocal  _SET rKey \ cache <name>
   c_scan; assertToken(TOKEN_EQ) \ "SET name ="
   xw(GET c_compFn) \ <value>
-  ret _setImpl(GET rMetaRef, GET isFromLocal)
+  ret _setImpl(GET rKey, GET isFromLocal)
 
 FN globalReserve PRE  $SZ2 INPUT len END_LOCALS \ {len}
   memSet(GET c_gheap, 0, GET len) \ clear bytes

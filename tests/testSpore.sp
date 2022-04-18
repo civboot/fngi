@@ -32,13 +32,9 @@ $lits
 #45     $tAssertEq
 #5     $tAssertEq
 
-\ Test incA
-$SFN myIncA $incA %RET
-#0 $myIncA @ASIZE $tAssertEq
-
 \ Test meta
 $dictGetK FN  @TY_FN @TY_FN_SMART ^BOR $tAssertKeyMeta
-$dictGetK incA @TY_FN @TY_FN_PRE @TY_FN_SMART ^BOR^BOR $tAssertKeyMeta
+$dictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^BOR^BOR $tAssertKeyMeta
 
 \ Test xsl
 $SFN myXs #22 $L0 %RET
@@ -46,9 +42,6 @@ $myXs #22 $tAssertEq
 
 $SFN callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
-
-\ Test rKeyMeta
-#12 #1 $metaSet  #100_0012 $tAssertEq
 
 $c_updateRKey ^DRP
 
@@ -140,6 +133,12 @@ $ldictGet shadowed #45 $tAssertEq
 \   @TY_LOCAL  @SZ2 #4 ^SHR  ^BOR  #18 ^SHL
 \   $tAssertEq
 
+$FN fooLocals
+  @SZ2 $LOCAL myLocal
+  $ldictGetK myLocal ^INCA .1^FT
+  @TY_LOCAL  @SZ2 #4 ^SHR  ^BOR
+  $tAssertEq
+
 \ test R_LP
 $SFN getLp %RGFT @R_LP$h1  %RET
 $getLp ^DUP #FFF0 $tAssertEq  =lsTop
@@ -216,15 +215,15 @@ $dictGetK test_c_fn    $execute
   ^ADD #3 $tAssertEq
 
 $SFN test_c_compFnExists $GET c_compFn %RET
-$test_c_compFnExists  @fngiSingle $toRef $tAssertEq
+$test_c_compFnExists  @fngiSingle $tAssertEq
 
 \ Test essential functions
 
 $c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq \ 0x24 = '$'
 
-$SFN comp1 $xsl toRef .4%XW %RET
+$SFN comp1 .4%XW %RET
 
-$SFN testFngiSingleNum @fngiSingle $toRef $comp1 12 %RET
+$SFN testFngiSingleNum @fngiSingle $comp1 12 %RET
 $testFngiSingleNum #C $tAssertEq
 
 $SFN testFngiSingleOne @fngiSingle $comp1 two %RET
@@ -234,7 +233,7 @@ $FN withLocals
   @SZ4 $LOCAL s4 @SZ1 $LOCAL s1 $END_LOCALS
   %RET
 
-@withLocals $toRef .1^FT  #2 $tAssertEq
+@withLocals .1^FT  #2 $tAssertEq
 
 #1 #0 #3 $betweenIncl $tAssert
 #0 #0 #3 $betweenIncl $tAssert
