@@ -17,17 +17,14 @@
 #define eprint(str)   fprintf (stderr, str)
 #define eprintf(format, args...)   fprintf (stderr, format, args)
 
-
 typedef enum {
   LOG_SILENT    = 0x00, LOG_SYS       = 0x40, LOG_USER      = 0x20,
-
   LOG_TRACE     = 0x1F, LOG_DEBUG     = 0x0F, LOG_INFO      = 0x07,
   LOG_WARN      = 0x03, LOG_CRIT      = 0x01,
 } UsrLogLvl;
 
 typedef enum {
   LOG_INSTANT   = 0x20,
-
   LOG_INSTR     = 0x1F, LOG_EXECUTE   = 0x07, LOG_ASM       = 0x03,
   LOG_COMPILER  = 0x01,
 } SysLogLvl;
