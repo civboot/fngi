@@ -37,6 +37,10 @@ empty byte. This:
 > However, we have a lot of room on the jmp command. I think it makes the most
 > sense to put it there, since defers will be very frequently used.
 
+When the function rets, it actually returns into the last encountered defer
+block. This will hard-jump to previous defer blocks until the first one, which
+will ret like a "normal" function.
+
 ## Use and Examples
 
 Conceptually, defer statements work by putting a defer block of code on a stack.
@@ -70,9 +74,9 @@ Defers are mostly used for:
 
 ## Type Stack
 Defers work with the type-stack system. The rules are:
-- Defer blocks are assumed to have nothing on the stack when they start and
-  should "ret" nothing.
-- Otherwise, rets are checked as they normally are.
+  - Defer blocks are assumed to have nothing on the stack when they start and
+    should "ret" nothing.
+  - Otherwise, rets are checked as they normally are.
 
 If all returns are rets the right types, and all defers are returning nothing,
 then the function will return the values it says it will.

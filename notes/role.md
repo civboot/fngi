@@ -1,4 +1,6 @@
-I love interfaces (java/js/golang/etc), also called traits in rust. I think they
+# Role: fngi's interface/trait/etc
+
+I love interfaces (java/js/golang/etc), similar to traits in rust. I think they
 are a fantastic way to specify a set of _actions_ that a particular piece of
 _data_ can perform.
 
@@ -6,12 +8,12 @@ In some previous versions of fngi I claimed to want to do "rust style traits",
 and I recently came across
 [this tweet](https://merveilles.town/@neauoire/107038809041856242) expressing
 concern on this. I wanted to get a few of my thoughts down on what a fngi
-interface would look like.
+interface (called a "role") would look like.
 
 ## C layout
 
 Before we talk about fngi, let's discuss C. Let's say you were designing a
-Farming game. The farming game has animals, each with a favorite food and
+farming game. The farming game has animals, each with a favorite food and
 a different way of handling movement.
 
 > Clearly this is all really ugly in C. Neither the C compiler, nor the language
@@ -104,11 +106,11 @@ can define methods for it and the dot compiler (name compiler) will know to
 check if the top stack item is the struct itself and pass in a reference if so.
 This allows you to do `.animal.walk(5, 6)`, etc.
 
-For interfaces, you can simply do:
+For roles, you can simply do:
 
 ```
-\ Define animal interface
-interface Animal [
+\ Define animal role
+role Animal [
   fn talk [#Animal];
   fn move [x:U2, y:U2, #Animal];
 ]
@@ -134,9 +136,9 @@ this syntax and hands off the `myGoat` struct pointer and the Animal token to
 the sub-compiler for `#`.  This isn't _quite_ as "clean" as rust -- but
 explicitness is a goal of fngi whenever possible.
 
-I could also imagine being able to create "interface bundles" (i.e. AnimalEqual)
-which are a struct of pointers to the interface implementations. As for passing
-two interface implementations for the same animal... that's probably not
+I could also imagine being able to create "role bundles" (i.e. AnimalEqual)
+which are a struct of pointers to the role implementations. As for passing
+two role implementations for the same animal... that's probably not
 supported by the syntax. That really should be rarely necessary, and you could
 (of course) pass the same data twice for the rare cases it is needed.
 
@@ -145,5 +147,5 @@ These have all been concrete types, aka non-generic. What about if you wanted to
 have a `fn feed [Food]` method, where `Food` is generic over `Grass` and `Meat`?
 
 Haha, gotcha! There is no way in Hel fngi will support generics.  However,
-`Food` could be an Enum... or even an interface type itself!
+`Food` could be an Enum... or even an role type itself!
 
