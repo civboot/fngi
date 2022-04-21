@@ -196,6 +196,7 @@ typedef struct {
 } BlockAllocator;
 
 // Environment
+// TODO: move globals into a separate struct instead of manually setting in ENV
 typedef struct {
   APtr ep;  // execution pointer
   APtr gb;  // Global Base
@@ -1793,7 +1794,7 @@ void assertNoWs() {
   assert(0x54769800 == fetch(mem, heapStart, SzI4));
 
   // Test various
-  compileStr("$getHeap");
+  compileStr("$_h");
   assert(*env.heap == WS_POP());
 
   compileFile("tests/testSpore.sp");

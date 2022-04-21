@@ -4,7 +4,7 @@
 \ a more full-featured language with helpful macros.
 \
 \ Note: this file requires the compiler to pass the current heap value on the
-\ stack so that it can define it's first function (getHeap), which it then
+\ stack so that it can define it's first function (_h), which it then
 \ uses to define the other functions.
 \
 \ # Table of Contents
@@ -35,14 +35,12 @@
 \ [11] Fngi compile loop
 
 \ **********
-\ * [1] Instructions
-\ Spor uses 8 bit instructions with the following bit layout:
-\
-\ Note: (S=sz bit)
-\ 00XX XXXX: operation
-\ 01XX XXXX: small literal
-\ 10SS XXXX: jmp
-\ 11SS _XXX: mem
+\ * [1] Instructions: these are constants that can be used directly by: % ^
+\ Spor uses 8 bit instructions with the following bit layout (S=size bit):
+\   00XX XXXX: operation
+\   01XX XXXX: small literal [0x00 - 0x3F]
+\   10SS XXXX: jmp
+\   11SS XXXX: mem
 
 \ # [1.a] Operations: Special
 #00 =NOP   \ { -> }     no operation
@@ -148,22 +146,17 @@
 @SZ2 @JMPL ^BOR  =JMPL2
 
 \ **********
-\ * [2] Registers and Device Operations
-\
-\ Registers and device operations can be accessed through RGXX and DVXX
-\ operations. RG operations include a 1 byte literal. The 1 byte literal has
-\ the following byte format:
-\ 1OOO OOOO: (R_LP) local stack pointer with 7bit offset (O)
-\ 0XXX XXXR: register. X is currently undefined.
-\
-\ FT will return the register value + offset
-\ SR will store the value + offset in the register
+\ * [2] Registers and Device Operations: RGXX|DVXX w/ 1 byte literal
 
+\ The RG 1 byte literal has the following byte format. Note: FT will return the
+\ register value + offset, SR will store the value + offset in the register.
+\   1OOO OOOO: (R_LP) local stack pointer with 7bit offset (O)
+\   0XXX XXXR: register. X is currently undefined.
 #80 =R_LP \ local stack pointer
 #00 =R_EP \ execution pointer, SR will panic
 #01 =R_GB \ global base pointer
 
-\ Device operations with DVFT and DVSR
+\ The DV 1 byte literal select the operation
 #00 =D_read   \ read from src, filling up tokenBuf
 #01 =D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
 #02 =D_dict   \ [&buf &heap isLocal] FT=get SR=set dict key=tokenBuf
@@ -174,8 +167,8 @@
 #08 =D_cslen  \ get call stack lengh (in slots)
 \ {-> err} D_xCatch executes large function from WS but catches a panic.
 \ The errCode is returned (or 0 if no error).
-\ Note: caches and restores ep, call stack and local stack state and clears
-\ working stack (besides the returned err).
+\ Note: caches and restores ep, call stack and local stack state. Working stack
+\ is cleared besides the returned err.
 #09 =D_xCatch
 #0A =D_memSet  \ {dst v len} "dst = v [len]". FT: memset, SR: memmove
 #0B =D_memCmp  \ {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
@@ -192,15 +185,13 @@
 #4 =ASIZE \ size of an absolute pointer
 @ASIZE ^INC =DICT_OLEN \ dict name len offset
 
-\ * [3.a] Dict Ty Bits
-\ Meta types
-#40 =KEY_HAS_TY \ if 1, dict entry is a non-constant
+\ * [3.a] Dict Ty Bits (meta byte):  TTTX XXXX T=TY_MASK
+#40 =KEY_HAS_TY \ in len byte, not meta. If 1, dict entry is a non-constant.
 #E0 =META_TY_MASK \ upper three bits determine type
-#20 =TY_FN    \ function, can be called and has an fnMeta
+#20 =TY_FN      \ function, can be called and has an fnMeta
 #40 =TY_LOCAL   \ local variable, has varMeta. Accessed with FTLL/SRLL
 #60 =TY_GLOBAL  \ global variable, has varMeta. Accessed with FTGL/SRGL
-#80 =TY_DICT    \ a "dictionary" type. Points to a new dictionary which has
-                \ it's own type.
+#80 =TY_DICT    \ a "dictionary" type which has dictMeta.
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
@@ -320,7 +311,7 @@
 #E0B2  =E_aaPo2       \ invalid po2
 
 \ **********
-\ * [4] Globals
+\ * [4] Globals: many of these must be the same as in spor.c
 #0000_0004 =heap
 #0000_0008 =topHeap
 #0000_000C =topMem
@@ -372,82 +363,81 @@
 \ These macros must be defined in pure ASM. They build on eachother
 \ to make the syntax much more readable.
 \
-\ fn select [a b s -> a|b]        : a if s else b
-\ fn h1 [U1] -> []                : push 1 byte to heap
-\ fn h2 [U2] -> []                : push 2 byte to heap
-\ fn h4 [U4] -> []                : push 4 byte to heap
-\ fn L0 [U1] -> []                : compile a small literal [#0 - #3F]
-\ fn $dictSet <key> [U4] -> []    : set a dictionary key to value
-\ fn $dictGet <key>  [] -> [U4]   : get dictionary key's value
-\ fn $dictGetK <key> [] -> [APtr] : get the key's &key
-\ fn $loc <token> [] -> []        : set token to the current heap location
+\   fn select [a b s -> a|b]        : a if s else b
+\   fn h1 [U1] -> []                : push 1 byte to heap
+\   fn h2 [U2] -> []                : push 2 byte to heap
+\   fn h4 [U4] -> []                : push 4 byte to heap
+\   fn L0 [U1] -> []                : compile a small literal [#0 - #3F]
+\   fn $dictSet <key> [U4] -> []    : set a dictionary key to value
+\   fn $dictGet <key>  [] -> [U4]   : get dictionary key's value
+\   fn $dictGetK <key> [] -> [APtr] : get the key's &key
+\   fn $loc <token> [] -> []        : set token to the current heap location
 \
 \ Assertions: these panic with the supplied errCode if cond is not met.
-\
 \   assert [cond errCode]
 \   assertNot [cond errCode]
 \
 \ Test Assertions: these panic with E_test if the cond is not met.
 \   tAssert, tAssertNot, tAssertEq
 
-=getHeap  .A%FTGL @heap.2,  %RET \ { -> heap} get the heap
+=_h  .A%FTGL @heap.2,  %RET \ { -> heap} get the heap
 
-$getHeap =select \ {a b s -> a|b} a if s else b
+$_h =select \ {a b s -> a|b} a if s else b
   .1%JZL #3.1, %DRP %RET \ if(s) ret a
   %SWP %DRP %RET         \ ret b
 @INC2 @INC4  @ASIZE #2 ^EQ  $select =INCA
 @SZ2 @SZ4    @ASIZE #2 ^EQ  $select =SZA
 
-$getHeap =h1  \ h1: {val:1} push 1bytes from stack to heap
+$_h =h1  \ h1: {val:1} push 1bytes from stack to heap
   .A%FTGL @heap.2, .1%SR    \ store 1 byte value at heap
   .A%FTGL @heap.2,  %INC  .A%SRGL @heap.2, \ heap=heap+1
   %RET
 
-$getHeap =L0   \ L0: compile a small literal (unchecked)
+$_h =L0   \ L0: compile a small literal (unchecked)
   .1%LIT  #3F, %BAND \ truncated to bottom 6 bits
   .1%LIT  @SLIT,
   %BOR    .2%JMPL @h1, \ made into SLIT instr and stored.
 
-$getHeap =srBE2 \ {val addr} store a value at addr encoded BE2 (big-endian 2)
+$_h =srBE2 \ {val addr} store a value at addr encoded BE2 (big-endian 2)
   %OVR #48.1, %SHR \ {val addr val>>8} note: #48 is SLIT(8)
   %OVR .1%SR       \ store upper byte {val addr}
   %INC .1%SR %RET  \ {} store lower byte
 
-$getHeap =srBE4 \ {val addr} store a value at addr encoded BE4 (big-endian 4)
+$_h =srBE4 \ {val addr} store a value at addr encoded BE4 (big-endian 4)
   %OVR #50.1, %SHR \ {val addr val>>16} note: #50 is SLIT(16)
   %OVR .2%XSL @srBE2,   \ handle the large bytes (1 & 2)
   %INC2 .2%JMPL @srBE2, \ small bytes            (3 & 4)
 
-$getHeap =h2  \ h2: {val:2} push 2bytes from stack to heap
+$_h =h2  \ h2: {val:2} push 2bytes from stack to heap
   .A%FTGL @heap.2, .2%XSL @srBE2.2, \ store value at heap
   .A%FTGL @heap.2, \ {heap}
   %INC2   .A%SRGL   @heap.2,   \ heap=heap+2
   %RET
 
-$getHeap =h4  \ h4: {val:4} push 4bytes from stack to heap
+$_h =h4  \ h4: {val:4} push 4bytes from stack to heap
   .A%FTGL @heap.2, .2%XSL @srBE4.2, \ store value at heap
   .A%FTGL @heap.2,  %INC4     .A%SRGL @heap.2, \ heap=heap+4
   %RET
 
-$getHeap =dictArgs \ args for dict.
+$_h =dictArgs \ args for dict.
   \ put {dict.buf &dict.heap isLocal=FALSE} on stack
   .A%FTGL @c_dictBuf $h2
   .2%LIT @c_dictHeap $h2
   #0$L0     %RET \ isLocal=FALSE
 
-$getHeap =_dict
+$_h =_dict
   @D_scan$L0  %DVFT .2%JMPL @dictArgs$h2
 
-$getHeap =dictSet \ dictSet: Set "standard" dictionary to next token.
+$_h =dictSet \ dictSet: Set "standard" dictionary to next token.
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  %RET
 
-$getHeap =dictGet \ dictGet: Get the value of the next token.
+$_h =dictGet \ dictGet: Get the value of the next token.
   .2%XSL @_dict $h2   @D_dict$L0   %DVFT  %RET
 
-$getHeap =dictGetK \ dictGetK: Get the &key of the next token.
+$_h =dictGetK \ dictGetK: Get the &key of the next token.
   .2%XSL @_dict $h2   @D_dictK$L0   %DVFT  %RET
 
-$getHeap =loc \ $loc <name>: define a location
+$_h =loc \ $loc <name>: define a location
   .A%FTGL @heap$h2  .2%XSL @dictSet$h2
   \ Clear ldict (locals dict)
   #0$L0        .2%SRGL @c_localOffset $h2  \ zero localDict.offset
@@ -694,7 +684,7 @@ $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 @TY_FN_PRE @TY_FN_INSTANT ^BOR $c_makeFn c1
 @TY_FN_PRE $c_makeFn dictSet
 #0 $c_makeFn dictGet        #0 $c_makeFn dictGetK
-#0 $c_makeFn dictArgs       #0 $c_makeFn getHeap
+#0 $c_makeFn dictArgs
 @TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod   @TY_FN_PRE
 @TY_FN_PRE @TY_FN_SMART ^ADD $c_makeFn keyMeta
 $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
@@ -766,13 +756,13 @@ $SFN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
 \   loop:    $LOOP <l0> ... $BREAK0 <b0> ... $AGAIN <l0> $BREAK_END <b0>
 $SFN IF  $PRE $SMART $xsl assertNoInstant \ {} -> {&jmpTo} : start an if block
   @SZ1 @JZL  ^BOR  $c1 \ compile .1%JZL instr
-  $xsl getHeap \ {&jmpTo} push &jmpTo location to stack
+  .A%FTGL @heap$h2 \ {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 \ compile 0 (jump pad)
   %RET
 
 $SFN _END
   %DUP          \ {&jmpTo &jmpTo}
-  $xsl getHeap  \ {&jmpTo &jmpTo heap}
+  .A%FTGL @heap$h2  \ {&jmpTo &jmpTo heap}
   %SWP %SUB     \ {&jmpTo (heap-&jmpTo)}
   %DUP $xsl assertLt128
   %SWP .1%SR %RET \ store at location after start (1 byte literal)
@@ -780,19 +770,19 @@ $SFN END $SMART $xsl assertNoInstant $jmpl _END  \ {&jmpTo} -> {} : end of IF or
 
 $SFN ELSE $SMART $xsl assertNoInstant \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1         \ (end IF) compile unconditional jmp to end of ELSE
-  $xsl getHeap %SWP \ {&elseBlockJmpTo &ifNotJmpTo}
+  .A%FTGL @heap$h2 %SWP \ {&elseBlockJmpTo &ifNotJmpTo}
   #0$L0 $xsl h1     \ compile jmp lit for &elseBlockJmpTo
   $jmpl _END        \ end of IF block (beginning of ELSE)
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
-$SFN LOOP   $SMART $xsl assertNoInstant $xsl getHeap  $jmpl ldictSet
+$SFN LOOP   $SMART $xsl assertNoInstant .A%FTGL @heap$h2  $jmpl ldictSet
 $SFN BREAK0 $PRE $SMART   $xsl IF $jmpl ldictSet
 $SFN BREAK_IF  $PRE $SMART @NOT$c1  $jmpl BREAK0 \ break if true
 $SFN BREAK_EQ  $PRE $SMART @NEQ$c1  $jmpl BREAK0 \ break if equal
 $SFN BREAK_NEQ $PRE $SMART @EQ$c1  $jmpl BREAK0 \ break if equal
 $SFN AGAIN $SMART $xsl assertNoInstant
   @JMPL $c1  \ compile jmp
-  $xsl getHeap  \ {heap}
+  .A%FTGL @heap$h2  \ {heap}
   $xsl ldictGet \ {heap &loopTo}
   %SUB     \ {heap-&loopTo}
   %DUP $xsl assertLt128
@@ -1215,7 +1205,7 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
 \ Creates a zoa string in the heap.
 $SFN |
   $SMART $xsl assertNoInstant
-  $xsl getHeap
+  $GET heap
   \ maxLen: (topHeap - heap)
   %DUP .A%FTGL@topHeap$h2 %SWP %SUB
   @D_zoa$L0 %DVFT .A%SRGL @heap $h2 %RET
@@ -1546,9 +1536,7 @@ $SFN \ $SMART %DRP
 $SFN ret $PRE $SMART $xsl assertNoInstant @RET $c1 %RET \ ret 4, or just ret;
 
 \ These do nothing and are used for more readable code.
-$SFN _ $SMART%DRP %RET
-$SFN , $SMART%DRP %RET
-$SFN ; $SMART%DRP %RET
+$SFN _ $SMART%DRP %RET  $SFN , $SMART%DRP %RET  $SFN ; $SMART%DRP %RET
 
 $SFN c_fngi \ fngi compile loop
   $LOOP l0
