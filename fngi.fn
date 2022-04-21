@@ -48,6 +48,15 @@ SFN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 SFN xsw  PRE SMART assertNoInstant $c1(SZA+XSW) ret;
 SFN xw   PRE SMART assertNoInstant $c1(SZA+XW)  ret;
 
+
+\ memSet: {dst v len}   "dst = v"
+\ memMove {dst src len} "dst = src"
+\ memCmp: {&a &b len -> cmp}
+SFN memSet  PRE SMART IF() dvft(D_memSet) ELSE lit(D_memSet) $c1(DVFT) END ret;
+SFN memMove PRE SMART IF() dvsr(D_memSet) ELSE lit(D_memSet) $c1(DVSR) END ret;
+SFN memCmp  PRE SMART IF() dvft(D_memCmp) ELSE lit(D_memCmp) $c1(DVFT) END ret;
+SFN memClear PRE  0 swp; ret memSet(_, _) \ {addr len} clear memory
+
 \ {a b} return if a < b
 SFN retlt PRE SMART assertNoInstant(_) $c1(GE_U) $c1(RETZ) ret;
 

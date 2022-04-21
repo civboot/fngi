@@ -167,7 +167,7 @@
 #00 =D_read   \ read from src, filling up tokenBuf
 #01 =D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
 #02 =D_dict   \ [&buf &heap isLocal] FT=get SR=set dict key=tokenBuf
-#03 =D_rdict  \ [&buf &heap] FT=get reference to val  SR=forget including key
+#03 =D_dictK  \ [&buf &heap] FT=get reference to val  SR=forget including key
 #05 =D_comp   \ compile (assemble) the token in tokenBuf
 #06 =D_assert \ error if != 0
 #07 =D_wslen  \ get working stack length (in slots)
@@ -307,7 +307,7 @@
 #E0ED  =E_eof
 #E0EE  =E_cUnclosed   \ unclosed paren/brace/etc
 #E0EF  =E_cReqInstant \ fn is INSTANT but no '$' used
-#E0EF  =E_cCompOnly   \ fn is SMART and requires no $ used.
+#E0EF  =E_cNoInstant   \ fn is SMART and requires no $ used.
 #E0F0  =E_cUnknownEsc \ unknown character escape
 #E0F1  =E_cZoab       \ Zoab invalid
 #E0F2  =E_cNeedToken  \ token not present
@@ -445,7 +445,7 @@ $getHeap =dictGet \ dictGet: Get the value of the next token.
   .2%XSL @_dict $h2   @D_dict$L0   %DVFT  %RET
 
 $getHeap =dictGetK \ dictGetK: Get the &key of the next token.
-  .2%XSL @_dict $h2   @D_rdict$L0   %DVFT  %RET
+  .2%XSL @_dict $h2   @D_dictK$L0   %DVFT  %RET
 
 $getHeap =loc \ $loc <name>: define a location
   .A%FTGL @heap$h2  .2%XSL @dictSet$h2
@@ -453,10 +453,6 @@ $getHeap =loc \ $loc <name>: define a location
   #0$L0        .2%SRGL @c_localOffset $h2  \ zero localDict.offset
   #0$L0        .A%SRGL @c_dictLHeap $h2    \ zero localDict.heap
   %RET
-
-$loc setHeap     .A%SRGL @heap $h2      %RET
-$loc getTopHeap  .A%FTGL @topHeap $h2   %RET
-$loc setTopHeap  .A%SRGL @topHeap $h2   %RET
 
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
@@ -526,7 +522,6 @@ $loc tAssertEq \ {a b}
 \ fn assertFnSmall [&key]         : assert fn is small (no locals)
 \ fn assertFnLarge [&key]         : assert fn is large (has locals)
 \
-\ fn getWsLen [ -> U4]            : get working stack length
 \ fn c_updateRKey [ -> &key]      : update rKey=dictHeap and return it
 \ fn ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
 \ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
@@ -615,7 +610,7 @@ $loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall
   .A%FT %DUP $_jmpl assertCurMod \ {ref}
 
-$loc  assertNoInstant @E_cCompOnly$L2 $_jmpl assertNot   \ {asInstant} -> {}
+$loc  assertNoInstant @E_cNoInstant$L2 $_jmpl assertNot   \ {asInstant} -> {}
 
 $loc xsl \ $xsl <token> : compile .2%xsl
   $_xsl dictGetK $_xsl _jSetup \ {ref}
@@ -644,8 +639,6 @@ $loc rKeySet \ {&key meta:U1} -> U4 : apply meta to &key
   %SWP %INCA .1%SR \ update meta
   %RET
 
-$loc c_dictDumpEntry  @D_dictDump$L0 %DVFT %RET \ {<dictArgs> &key}
-
 $loc c_keySetTyped \ {&key} -> []
   @DICT_OLEN$L0 %ADD %DUP   \ {&len &len}
   .1%FT @KEY_HAS_TY$L1 %BOR \ {&len tyKeyLen}
@@ -655,7 +648,7 @@ $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   %SWP %OVR \ {<dictArgs> &key meta &key}
   %DUP $_xsl c_keySetTyped \ make key "typed" {<dictArgs> &key meta &key}
   %SWP $_xsl rKeySet \ {<dictArgs> &key}
-  $_jmpl c_dictDumpEntry
+  @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
 $loc _declFn \ [<dictArgs> meta]
   @TY_FN$L1 %BOR \ {<dictArgs> meta}
@@ -702,13 +695,12 @@ $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 @TY_FN_PRE $c_makeFn dictSet
 #0 $c_makeFn dictGet        #0 $c_makeFn dictGetK
 #0 $c_makeFn dictArgs       #0 $c_makeFn getHeap
-#0 $c_makeFn getTopHeap     @TY_FN_PRE $c_makeFn setHeap
 @TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod   @TY_FN_PRE
 @TY_FN_PRE @TY_FN_SMART ^ADD $c_makeFn keyMeta
 $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
 @TY_FN_PRE $c_makeFn isFnLarge
-#0 $c_makeFn c_updateRKey           @TY_FN_PRE $c_makeFn c_dictDumpEntry
+#0 $c_makeFn c_updateRKey
 @TY_FN_PRE $c_makeFn c_keySetTyped  @TY_FN_PRE $c_makeFn c_dictSetMeta
 #0 $c_makeFn c_makeTy
 @TY_FN_PRE $c_makeFn assert         @TY_FN_PRE $c_makeFn assertNot
@@ -733,13 +725,11 @@ $SFN isTyGlobal  $PRE $keyMeta  @META_TY_MASK$L1 %BAND  @TY_GLOBAL$L1  %EQ %RET
 $SFN assertTyLocal $PRE $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
 $SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 
-$SFN getWsLen      @D_wslen$L0  %DVFT %RET
-$SFN xsCatch $PRE  @D_xCatch$L0 %DVFT %RET
 $SFN c_scan        @D_scan$L0   %DVFT %RET
 $SFN panic   $PRE #0$L0 %SWP  $jmpl assert \ {errCode}: panic with errCode
 $SFN unreach @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
-$SFN assertWsEmpty   $xsl getWsLen  @E_wsEmpty $L2  $jmpl assertNot
-$SFN assertLt128    $PRE #80 $L1 %LT_U   @E_cJmpL1 $L2   $jmpl assert
+$SFN assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $jmpl assertNot
+$SFN assertLt128    $PRE #80 $L1 %LT_U  @E_cJmpL1 $L2   $jmpl assert
 $SFN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
 $assertWsEmpty
 
@@ -762,7 +752,7 @@ $SFN ldictHeap $xsl ldictArgs %DRP .2%FT %ADD %RET \ {} -> ldictHeap
 $SFN _ldict $xsl c_scan $jmpl ldictArgs
 $SFN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $SFN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
-$SFN ldictGetK  $xsl _ldict @D_rdict$L0 %DVFT %RET
+$SFN ldictGetK  $xsl _ldict @D_dictK$L0 %DVFT %RET
 $SFN retz  $PRE $SMART $xsl assertNoInstant @RETZ$c1 %RET
 $SFN reteq $PRE $SMART $xsl assertNoInstant @NEQ$c1 @RETZ$c1 %RET
 $SFN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
@@ -898,11 +888,6 @@ $SFN srSzI \ {value &addr szI}
        @SZ4$L1 %EQ $IF      .4%SR %RET $END
   @E_cSz$L2 $jmpl panic
 
-$SFN memCmp   $PRE  @D_memCmp$L0 %DVFT %RET  \ {&a &b len -> cmp}
-$SFN memClear $PRE  #0$L0 %SWP \ !fallthrough! {dst len}     "dst = 0"
-$SFN memSet   $PRE  @D_memSet$L0 %DVFT %RET  \ {dst v len}   "dst = v"
-$SFN memMove  $PRE  @D_memSet$L0 %DVSR %RET  \ {dst src len} "dst = src"
-$SFN c_scanEol     @D_scan$L0   %DVSR %RET
 $SFN c_isEof .1%FTGL@c_tokenLen$h2 %NOT %RET
 $SFN c_assertToken .1%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
 $SFN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot \ {numRead}
@@ -938,7 +923,7 @@ $SFN c_clearToken \ shift buffer to clear current token
   .A%FTGL@c_tokenBuf$h2                 \ {&tokenBuf}
   %DUP .1%FTGL@c_tokenLen$h2 %ADD \ {&tokenBuf &tokenEnd}
   .1%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
-  $jmpl memMove
+  @D_memSet$L0 %DVSR %RET  \ memMove
 
 \ dotMeta bitmask: OOOO OOOO | DL&@ SXRR
 \ where O=offset byte, D=done, L=local, &=ref, @=deref S=store
@@ -950,10 +935,10 @@ $SFN c_clearToken \ shift buffer to clear current token
 #08 =DOT_STORE \ 0 = fetch
 
 $SFN anyDictGetK \ {} -> {&key isFromLocal}
-  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @DOT_LOCAL$L1 %RET
   $END %DRP
-  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF
+  $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
@@ -1021,13 +1006,13 @@ $SFN _setImpl $PRE \ {&key dotMeta}
   $xl _getSetImpl %RET
 
 $SFN _refImpl \ {}
-  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF \ {&key}
+  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _lSetup \ {&key}
     .A%FT %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
     @R_LP$L1 %BOR \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
-  $xsl dictArgs  @D_rdict$L0 %DVFT %DUP  $IF \ {&key}
+  $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _gSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
@@ -1219,11 +1204,7 @@ $SFN END_LOCALS  $SMART $xsl assertNoInstant
 \
 \ fn $loc <name> |zoa string literal|    : define a zoa string
 \
-\ fn com [len &raw]               : communicate raw data with harness
-\ fn comDone []                   : trigger com done (flush)
 \ fn comzStart []                 : zoab start
-\ fn comzU4 [U4]                  : com zoab U4 (big endian)
-\ fn comzData [len &raw join]     : send zoab data with join bit
 \ fn comzArr [len join]           : start an array of len and join
 \ fn comzLogStart [lvl extraLen]  : start a log arr of data len exraLen
 \ fn print [len &raw]             : print raw data to the user (LOG_USER)
@@ -1236,8 +1217,8 @@ $SFN |
   $SMART $xsl assertNoInstant
   $xsl getHeap
   \ maxLen: (topHeap - heap)
-  %DUP $xsl getTopHeap %SWP %SUB
-  @D_zoa$L0 %DVFT $jmpl setHeap
+  %DUP .A%FTGL@topHeap$h2 %SWP %SUB
+  @D_zoa$L0 %DVFT .A%SRGL @heap $h2 %RET
 
 $FN c_logAll $PRE \ {&writeStruct len &buf } Write raw data to log output
   $END_LOCALS \ no locals, but used in XW.
@@ -1255,14 +1236,8 @@ $SFN ft4BE $PRE \ {&a -> U4} fetch4 unaligned big-endian
   %SWP .1%FT #18$L0%SHL %ADD       \ {a@0<<24 + a@1<<16 + a@2<<8 + a@3 }
   %RET
 
-
-$SFN com $PRE @D_com$L0 %DVSR %RET \ {len &raw} communicate directly
-$SFN comDone  @D_comDone$L0 %DVFT %RET
-
 $loc LOG_ZOAB_START  #80$h1 #03$h1
 $SFN comzStart  #2$L0 @LOG_ZOAB_START$LA  @D_com$L0 %DVSR %RET
-$SFN comzU4     $PRE @D_comZoab$L0 %DVFT %RET \ {U4}
-$SFN comzData   $PRE @D_comZoab$L0 %DVSR %RET \ {len &raw join}
 
 $loc TODO #0$h1
 $FN comzArr  $PRE \ {len join}
@@ -1276,23 +1251,21 @@ $FN comzArr  $PRE \ {len join}
   %DRP \ ignore join TODO
   @ZOAB_ARR$L1 %BOR \ len->arrLen
   @TODO$L2 .1%SR \ store len @TODO
-  #1$L0 @TODO$L2 $jmpl com \ send via com
+  #1$L0 @TODO$L2 @D_com$L0 %DVSR %RET \ {len &raw} communicate directly
 
 $SFN comzLogStart  $PRE \ {lvl extraLen}  extraLen is in addition to sending the lvl
   $xsl comzStart \ TODO: check return code once it's added
   %INC @FALSE$L0 $xl comzArr
-  $jmpl comzU4 \ send lvl
+  @D_comZoab$L0 %DVFT %RET \ send lvl
 
 $SFN print  $PRE \ {len &raw}: print data to user
   @LOG_USER$L1 #1$L0 $xsl comzLogStart
-  @FALSE$L0 $jmpl comzData
+  @FALSE$L0 @D_comZoab$L0 %DVSR %RET
 
 $SFN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
   %DUP .1%FT %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert \ {len}
-  %SWP %INC  $xsl print 
-  $jmpl comDone
-
-$assertWsEmpty
+  %SWP %INC  $xsl print
+  @D_comDone$L0 %DVFT %RET
 
 \ **********
 \ * [11] Fngi compile loop
@@ -1419,13 +1392,11 @@ $FN c_parseNumber \ {} -> {value isNumber}
   $GET i %NOT $IF  #0$L0 @FALSE$L0 %RET  $END \ no token
   $GET value @TRUE$L0 %RET
 
-$assertWsEmpty
-
 $SFN lit  $PRE \ {U4} compile literal
   %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
-                                $jmpl L4
+  $jmpl L4
 
 \ {asInstant value:U4} -> {?instantVal}: compile proper sized literal
 \ if asInstant=true the value is left on the stack.
@@ -1455,12 +1426,12 @@ $SFN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
   $xsl c_isEof $IF  $jmpl null2  $END
 
   \ Handle local dictionary. Only constants allowed here.
-  $xsl ldictArgs  @D_rdict$L0 %DVFT %DUP  $IF \ {&key}
+  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
     .A%FT $xsl c_lit  $jmpl null2
   $END %DRP
 
-  $xsl dictArgs  @D_rdict$L0 %DVFT \ {asInstant &key}
+  $xsl dictArgs  @D_dictK$L0 %DVFT \ {asInstant &key}
 
   \ Constant
   %DUP  $xsl isTyped %NOT $IF
@@ -1569,7 +1540,8 @@ $SFN c_peekNoScan
 $SFN \ $SMART %DRP
   \ Line comment if '\' is followed by space or newline
   $xsl c_peekNoScan %DUP #20$L0 %EQ %SWP #A$L0 %EQ %LOR
-  $IF $jmpl c_scanEol $END   $xl _comment %RET \ else token comment
+  $IF @D_scan$L0 %DVSR %RET $END \ scanEol
+  $xl _comment %RET \ else token comment
 
 $SFN ret $PRE $SMART $xsl assertNoInstant @RET $c1 %RET \ ret 4, or just ret;
 
