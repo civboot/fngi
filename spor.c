@@ -139,9 +139,9 @@ typedef enum {
   XL   = 0x84, XW   = 0x85, XSL  = 0x86, XSW  = 0x87,
 
   // Mem
-  LIT  = 0xC0, FT   = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
-  SR   = 0xC4, SRLL = 0xC5, SRGL = 0xC6, FTLO = 0xC7,
-  FTGO = 0xC8,
+  FT   = 0xC0, FTO  = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
+  SR   = 0xC4, SRO  = 0xC5, SRLL = 0xC6, SRGL = 0xC7,
+  LIT  = 0xC8,
 } Instr;
 
 #define R_LP 0x80  // lower 7 bits are offset
@@ -779,14 +779,14 @@ XSW: case SzI2 + XSW:
     GOTO_SZ(XSW, SzI4)
 
     // Mem Cases
-LIT: case SzI2 + LIT:
-      return WS_PUSH(popLit(szI));
-    GOTO_SZ(LIT, SzI1)
-    GOTO_SZ(LIT, SzI4)
 FT: case SzI2 + FT:
       return WS_PUSH(fetch(mem, WS_POP(), szI));
     GOTO_SZ(FT, SzI1)
     GOTO_SZ(FT, SzI4)
+FTO: case SzI2 + FTO:
+      return WS_PUSH(fetch(mem, WS_POP() + popLit(SzI1), szI));
+    GOTO_SZ(FTO, SzI1)
+    GOTO_SZ(FTO, SzI4)
 FTLL: case SzI2 + FTLL:
       return WS_PUSH(fetch(mem, LS_SP + popLit(SzI1), szI));
     GOTO_SZ(FTLL, SzI1)
@@ -795,10 +795,14 @@ FTGL: case SzI2 + FTGL:
       return WS_PUSH(fetch(mem, env.gb + popLit(SzI2), szI));
     GOTO_SZ(FTGL, SzI1)
     GOTO_SZ(FTGL, SzI4)
-SR: case SzI2 + SR: // {value, addr}
+SR: case SzI2 + SR:
       r = WS_POP(); return store(mem, r, WS_POP(), szI);
     GOTO_SZ(SR, SzI1)
     GOTO_SZ(SR, SzI4)
+SRO: case SzI2 + SRO:
+      r = WS_POP(); return store(mem, r + popLit(SzI1), WS_POP(), szI);
+    GOTO_SZ(SRO, SzI1)
+    GOTO_SZ(SRO, SzI4)
 SRLL: case SzI2 + SRLL:
       return store(mem, LS_SP + popLit(SzI1), WS_POP(), szI);
     GOTO_SZ(SRLL, SzI1)
@@ -809,18 +813,11 @@ SRGL: case SzI2 + SRGL:
       return store(mem, r, l, szI);
     GOTO_SZ(SRGL, SzI1)
     GOTO_SZ(SRGL, SzI4)
-FTLO: case SzI2 + FTLO:
-    l = fetch(mem, LS_SP + popLit(SzI1), SzI4); // &local
-    return WS_PUSH(fetch(mem, l + popLit(SzI1), szI)); // fetch offset
-    GOTO_SZ(FTLO, SzI1)
-    GOTO_SZ(FTLO, SzI4)
-FTGO: case SzI2 + FTGO:
-    l = fetch(mem, env.gb + popLit(SzI2), SzI4); // &global
-    return WS_PUSH(fetch(mem, l + popLit(SzI1), szI)); // fetch offset
-    GOTO_SZ(FTGO, SzI1)
-    GOTO_SZ(FTGO, SzI4)
-
     default: SET_ERR(E_cInstr);
+LIT: case SzI2 + LIT:
+      return WS_PUSH(popLit(szI));
+    GOTO_SZ(LIT, SzI1)
+    GOTO_SZ(LIT, SzI4)
   }
 }
 

@@ -196,6 +196,19 @@ $c_number 0c    $tAssert   #20 $tAssertEq
 $c_number 0c\   $tAssert   #20 $tAssertEq
 $c_number 0c\s  $tAssert   #20 $tAssertEq
 
+\ Test FTO and SRO
+#1234  @SZ4 $GLOBAL gStruct
+#67    @SZ1 $GLOBAL gStruct1
+
+$FN testFTSROffset
+  @SZ4 $LOCAL r $END_LOCALS
+  $REF gStruct $_SET r
+  $GET r  .4%FTO #0$h1    #1234$L2 $xsl tAssertEq
+  $GET r  #0 @SZ4 $ftoN   #1234$L2 $xsl tAssertEq
+  $GET r  #4 @SZ1 $ftoN   #67$L2 $xsl tAssertEq
+  %RET
+$assertWsEmpty   $testFTSROffset
+
 \ Test compiler internals
 
 @TRUE #123 $c_lit #123 $tAssertEq  $assertWsEmpty
@@ -261,6 +274,7 @@ $assertWsEmpty
 @sporMsg $_printz
 $assertWsEmpty
 
+
 $SFN failRecursively2 \ {n} -> {n-1}
   %DUP %NOT $IF
     %DRP
@@ -281,3 +295,4 @@ $assertWsEmpty
 $c_dictDump
 
 \ #5 $failRecursively
+

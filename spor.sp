@@ -129,17 +129,15 @@
 \ of the operation (NOT the location of the literal).
 
 \ # [1.g] Mem|Store              |Description
-#C0 =LIT    \ {} -> {literal}    |Literal (U1, U2 or U4)
-#C1 =FT     \ {addr} -> {value}  |FeTch value from addr
-#C2 =FTLL   \ {} -> {local}      |FeTch from LP + U1 literal offset
-#C3 =FTGL   \ {} -> {global}     |FeTch from GB + U2 literal offset
-#C4 =SR     \ {value addr} -> {} |Store value at addr
-#C5 =SRLL   \ {value} -> {}      |StoRe value at LP + U1 literal offset
-#C6 =SRGL   \ {value} -> {}      |StoRe value at GB + U2 literal offset
-#C7 =FTLO   \ {} -> {@local}     |fetch offset local (deref'd)
-#C8 =FTGO   \ {} -> {@global}    |fetch offset global (deref'd)
-#C9 =SRLO   \ {value} -> {}      |store offset local (deref'd)
-#CA =SRGO   \ {value} -> {}      |store offset global (deref'd)
+#C0 =FT    \ {addr} -> {value}  |FeTch value from addr
+#C1 =FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
+#C2 =FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
+#C3 =FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
+#C4 =SR    \ {value addr} -> {} |Store value at addr
+#C5 =SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
+#C6 =SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
+#C7 =SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
+#C8 =LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ Common instr+szs
 @SZ2 @XSL  ^BOR  =XSL2
@@ -721,7 +719,13 @@ $SFN unreach @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
 $SFN assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $jmpl assertNot
 $SFN assertLt128    $PRE #80 $L1 %LT_U  @E_cJmpL1 $L2   $jmpl assert
 $SFN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
-$assertWsEmpty
+
+$SFN assertSzI $PRE \ {szI}
+  %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot \ non-sz bits empty
+  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
+
+$SFN ftoN $INSTANT  \ {offset szI} compile FTO szI w/offset
+  %DUP $xsl assertSzI  @FTO$L1 %ADD $xsl h1 $jmpl h1
 
 \ Update the harness with the new dictionary
 $SFN c_dictDump       $xsl dictArgs @D_dictDump$L0 %DVSR %RET \ {}
@@ -814,7 +818,6 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
 \ fn c_scanNoEof []               : scan and assert not EOF.
 \ fn c_peekChr [ -> c]            : peek at the next character.
-\ fn c_countChr [c -> count]      : count and consume matching characters
 \ fn c_clearToken []              : shift buffer to clear current token
 \
 \ fn assertSzI [szI]              : assert that szI is valid
@@ -840,10 +843,6 @@ $SFN hN $PRE \ {value szI} write a value of szI to heap
   @E_cSz$L2 $xsl panic
 
 $SFN joinSzTyMeta $PRE #4$L0 %SHR %BOR %RET \ {tyMask szI} -> {tyMask}
-
-$SFN assertSzI $PRE \ {szI}
-  %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot \ non-sz bits empty
-  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
 
 $SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
@@ -893,14 +892,6 @@ $SFN c_peekChr \ {} -> {c} peek at a character
   .A%FTGL@c_tokenBuf$h2 .1%FT \ {c}
   #0$L0 .1%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
 
-$SFN c_countChr $PRE \ { chr -> count } count and consume matching chrs
-  #0$L0 $LOOP l0 \ {chr count}
-    %OVR $xsl c_peekChr %NEQ $IF %SWP %DRP %RET $END
-    %INC \ inc count, then inc tokenLen
-    .1%FT@c_tokenLen$h2 %INC  .1%SR@c_tokenLen$h2
-  $AGAIN l0
-
-
 $SFN c_read \ { -> numRead} attempt to read bytes
   #1$L0 @D_read$L0 %DVFT %RET
 
@@ -916,13 +907,16 @@ $SFN c_clearToken \ shift buffer to clear current token
   @D_memSet$L0 %DVSR %RET  \ memMove
 
 \ dotMeta bitmask: OOOO OOOO | DL&@ SXRR
-\ where O=offset byte, D=done, L=local, &=ref, @=deref S=store
+\ where O=refOffset byte, D=done, L=local, &=ref, @=deref S=store
 \ R=number of ref/derefs
 #80 =DOT_DONE   \ if 1 then all compilation is already done.
 #40 =DOT_LOCAL \ 0 = global
 #20 =DOT_REF
 #10 =DOT_DEREF
 #08 =DOT_STORE \ 0 = fetch
+
+$SFN dotMetaRefO \ {dotMeta -> offset}
+  #8$L0 %SHR %RET
 
 $SFN anyDictGetK \ {} -> {&key isFromLocal}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
@@ -1005,75 +999,6 @@ $SFN _refImpl \ {}
   $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _gSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
-
-\ # DOT (.) Compiler
-\ The below is the  initial compiler for below cases:
-\   .var            \ variable fetch
-\   .var = <token>  \ variable store
-\   .&var           \ variable reference (also function)
-\   .@var           \ variable dereference
-\   .@var = <token> \ variable dereference store
-\
-\ These are built to be extended by future dot compiler implementations for
-\ (i.e.) structs, modules, roles, etc.
-
-$SFN c_dotRefs \ { -> dotMeta } get dot meta for de/refs.
-  \ Get the dotMeta for preceeding & or @
-  $xsl c_peekChr %DUP #26$L0 %EQ $IF \ Reference (&) case
-    $xsl c_countChr %DUP #4$L0 %LT_U @E_cBadRefs$L2 $xsl tAssert
-    @DOT_REF$L0 %ADD
-  $ELSE
-    %DUP #40$L1 %EQ $IF \ Dereference (@) case
-      $xsl c_countChr #4$L0 %LT_U @E_cBadRefs$L2 $xsl tAssert
-      @DOT_DEREF$L0 %ADD
-    $ELSE %DRP #0$L0 \ no meta
-    $END
-  $END %RET \ {dotMeta}
-
-$SFN c_dotEq \ {&key dotMeta} ".var =" case
-  %DUP @DOT_REF$L0 %BAND  @E_cRefEq$L2 $xsl tAssertNot \ "&var =" is invalid
-  %DUP @DOT_DEREF$L0 %BAND  $IF \ Deref assignment ".@var ="
-    %DUP #3$L0 %BAND \ {&key dotMeta refCount}
-    %DUP #2$L0 %GE_U $IF \ if refCount >= 2 we do multple fetches then sr.
-      @E_unimpl$L2 $jmpl panic
-    $ELSE \ TODO: switch to _setImpl once it can do SROL.
-      %DRP $xsl _getImpl @SR$c1 \ a FT_L followed by a SR
-    $END
-  $ELSE $jmpl _setImpl
-  $END
-
-$SFN c_dotDeref \ {&key dotMeta}
-  %OVR %SWP $xsl _getImpl \ compile a ft (local or global) {dotMeta}
-  #3$L0 %BAND %DEC $LOOP l0 \ {remainingDerefs}
-    %DUPN $IF %DRP %RET $END \ return when remaining==0
-    @FT $c1 %DEC
-  $AGAIN l0
-
-\ {&key dotMeta} implementation of "standard" dot cases including
-\ fetch/store of ref or deref
-\ $SFN c_dotStd
-\   %DUP @DOT_STORE$L1 %BAND $IF \ Handle ".var =" case
-\     $jmpl c_dotEq
-\   $END
-\   %DUP @DOT_REF$L0 %BAND $IF \ case &var
-\     \ assert refCount == 1. This is all that will ever be allowed.
-\     %DUP #3$L0 %BAND  #1$L0 %EQ  @E_cBadRefs$L2 $xsl tAssert \ {&key dotMeta}
-\     @DOT_LOCAL$L1 %BAND $IF \ {&key}
-\       $xsl _lSetup \ {metaOffset}
-\       %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
-\       @R_LP$L1 %BOR \ {LpOffset}: offset is lower 7 bits
-\       @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
-\     $END
-\     $xsl _gSetup  $jmpl L4 \ write literal directly TODO: use c_lit
-\   $END
-\   %DUP @DOT_DEREF$L0 %BAND $IF $jmpl c_dotDeref \ case @@@var $END
-\   %DRP $jmpl _getImpl \ standard get
-
-\ $SFN c_dot
-\   $xsl anyDictGetK %SWP .A%SRLL #0$h1 \ {dotMeta isFromLocal} cache &key
-\   %ADD %RET
-\ $xsl c_peekChr #3D$L0 %EQ $IF  \ '='
-
 
 $SFN REF  $SMART
   $IF  $xsl dictGetK $xsl _gSetup .A%FT %RET  $END
