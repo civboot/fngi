@@ -95,14 +95,32 @@ $FN min \ [a b] -> [min]
 #1 #2    $min   #1 $tAssertEq
 #42 #333 $min   #42 $tAssertEq
 
-\ Testing Gloabls
+\ Testing Vars
+#0 $reqAlign  #0 $tAssertEq   #1 $reqAlign  #1 $tAssertEq
+#2 $reqAlign  #2 $tAssertEq   #3 $reqAlign  #4 $tAssertEq
+#4 $reqAlign  #4 $tAssertEq   #5 $reqAlign  #4 $tAssertEq
+
+#20 #1 $alignA #20 $tAssertEq   #21 #1  $alignA #21 $tAssertEq
+#20 #2 $alignA #20 $tAssertEq   #21 #2  $alignA #22 $tAssertEq
+#21 #4 $alignA #24 $tAssertEq   #21 #11 $alignA #24 $tAssertEq
+
+$FN testDecl
+  $declL a
+    ^OVR^OVR $tAssert   \ assert(isLocal)
+    ^DUP $isTyped $tAssert
+    ^INCA .1^FT @TY_VAR $tAssertEq
+    ^OVR^OVR  @SZA@TY_VAR_INPUT^JN  @ASIZE $declVar
+    ^DRP  ^INCA .1^FT  @TY_VAR@SZA^JN @TY_VAR_INPUT^JN $tAssertEq
+
 @SZ1 $assertSzI
 @SZ2 $assertSzI
 @SZ4 $assertSzI
 \ #30  $assertSzI \ expect failure.
 \ #01  $assertSzI \ expect failure.
 
-#12345 @SZ4 $GLOBAL myG1   $assertWsEmpty
+$declG myG1  @SZ4 #4 $declVar
+  #12345 $gRef myG1   .4^SR
+
 @myG1 #FF_FFFF ^MSK .4^FT  #12345 $tAssertEq
 
 $SFN myG1Ref  $REF myG1 %RET
@@ -196,8 +214,10 @@ $c_number 0c\   $tAssert   #20 $tAssertEq
 $c_number 0c\s  $tAssert   #20 $tAssertEq
 
 \ Test FTO and SRO
-#1234  @SZ4 $GLOBAL gStruct
-#67    @SZ1 $GLOBAL gStruct1
+$declG gStruct  @SZ4 #4 $declVar
+$declG gStruct1 @SZ1 #1 $declVar
+  #1234  $gRef gStruct  .4^SR
+  #67    $gRef gStruct1 .1^SR
 
 $FN testFTSROffset
   @SZ4 $LOCAL r $END_LOCALS

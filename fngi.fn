@@ -301,7 +301,7 @@ FN AA_init PRE \ {&ba &aa}
   sr4(\ba, GET aa + AA_baOfs); \ init ba
   (GET aa + AA_rootsOfs, 10 << 2)$jmpl memClear \ all roots=NULL
 
-$(0 SZ4) GLOBAL AA_kernel;  $globalReserve(AA_size - 4)
+$declVar(declG AA_kernel, SZA, AA_size)
 $AA_init(REF BA_kernel, REF AA_kernel)
 
 FN AA_findPo2 PRE \ {po2 &aa -> &free gotPo2}: find the closest available po2

@@ -34,15 +34,19 @@ FN testSET PRE
   ret(GET a)
 $tAssertEq(testSET, 5)
 
-$(42 SZ1) GLOBAL glblAnswer
+$declVar(declG glblAnswer, SZ1, 1)
+  $sr1(42, gRef glblAnswer)
+
 $tAssertEq(42, GET glblAnswer)
 
 \ **********
 \ ** Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
 
-$(0 SZ4) GLOBAL BA_fake;  $globalReserve(12 - 4)
-$(0 SZ4) GLOBAL BA_fakeIndexes;
+$declVar(declG BA_fake, SZ4, 12)
+  $sr4(0, gRef BA_fake)
+$declVar(declG BA_fakeIndexes, SZ4, 4)
+  $sr4(0, gRef BA_fakeIndexes)
 
 SFN BA_fakeInitForTest PRE \ {&indexes, &blocks, len) Initialize some fake data
   sr1(\len    , REF BA_fake + BA_lenOfs)
@@ -100,10 +104,14 @@ $testBASimple
 \ **********
 \ ** Test SLL
 
-$(NULL      SZ4) GLOBAL sll_c
-$(REF sll_c SZ4) GLOBAL sll_b
-$(REF sll_b SZ4) GLOBAL sll_a
-$(REF sll_a SZ4) GLOBAL sll_root \ root->a->b->c
+$declVar(declG sll_c,    SZ4, 4)
+$declVar(declG sll_b,    SZ4, 4)
+$declVar(declG sll_a,    SZ4, 4)
+$declVar(declG sll_root, SZ4, 4)
+  $sr4(gRef sll_a, gRef sll_root) \ root->a->b->c->NULL
+  $sr4(gRef sll_b, gRef sll_a)
+  $sr4(gRef sll_c, gRef sll_b)
+  $sr4(NULL, gRef sll_c)
 
 $tAssertEq(REF sll_a, SLL_pop(REF sll_root)) \ root->b->c
 $tAssertEq(REF sll_b, SLL_pop(REF sll_root)) \ root->c
@@ -135,7 +143,7 @@ $tAssertNot(AA_isValidPo2(0))
 $tAssertNot(AA_isValidPo2(1))
 $tAssertNot(AA_isValidPo2(13))
 
-$(0 SZ4) GLOBAL AA_fake;  $globalReserve(AA_size - 4)
+$declVar(declG AA_fake, SZ4, AA_size)
 $AA_init(REF BA_kernel, REF AA_fake)
 
 \ Populate some fake data in freePo2 array
@@ -154,9 +162,10 @@ $tAssertEq(12, AA_findPo2(11, REF AA_fake))
 $tAssertEq(12, AA_findPo2(12, REF AA_fake))
 
 \ test AA_allocExactPo2 (except for po2=12)
-$(BA_alloc(REF BA_kernel)
-  SZA) GLOBAL AA_blk0;
 
+$declVar(declG AA_blk0, SZA, ASIZE)
+  \ TODO: srA
+  $sr4(BA_alloc(REF BA_kernel), gRef AA_blk0)
 
 \ Populate some "real fake" data.
 SFN AA_initForTest PRE \ {&ba}

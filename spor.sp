@@ -620,7 +620,7 @@ $loc c_updateRKey \ [] -> [&key] update and return current key
   %DUP .A%SRGL @c_rKey$h2 \ rKey=newKey
   %RET \ return &key
 
-$loc rKeySet \ {&key meta:U1} -> U4 : apply meta to &key
+$loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
   %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SMART
   .1%FT %JN    \ {&key newMeta}
   %SWP %INCA .1%SR \ update meta
@@ -634,7 +634,7 @@ $loc c_keySetTyped \ {&key} -> []
 $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   %SWP %OVR \ {<dictArgs> &key meta &key}
   %DUP $_xsl c_keySetTyped \ make key "typed" {<dictArgs> &key meta &key}
-  %SWP $_xsl rKeySet \ {<dictArgs> &key}
+  %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
 $loc _declFn \ [<dictArgs> meta]
@@ -650,10 +650,10 @@ $loc FN  \ SMART $FN <token>: define location of function with locals
   $_xsl assertNoInstant $_xsl dictArgs @TY_FN_LARGE$L1 $_jmpl _declFn
 
 $loc SMART \ {} modify current function to be smart
-  %DRP .A%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl rKeySet
+  %DRP .A%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl c_keyJnMeta
 
 $loc INSTANT \ {} modify current function to be smart
-  %DRP .A%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl rKeySet
+  %DRP .A%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl c_keyJnMeta
 
 \ Backfill the fn meta
 $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
@@ -666,7 +666,7 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
   .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %JN   $_jmpl c_makeTy
 
-$loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
+$loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
 #0 $c_makeFn xsl    #0 $c_makeFn loc
 @TY_FN_INSTANT $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
@@ -679,7 +679,7 @@ $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 @TY_FN_PRE $c_makeFn h1   @TY_FN_PRE $c_makeFn h2
 @TY_FN_PRE $c_makeFn h4
 @TY_FN_PRE @TY_FN_INSTANT ^JN  $c_makeFn c1
-@TY_FN_PRE $c_makeFn dictSet
+#0 $c_makeFn dictSet
 #0 $c_makeFn dictGet        #0 $c_makeFn dictGetK
 #0 $c_makeFn dictArgs
 @TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod   @TY_FN_PRE
@@ -688,7 +688,8 @@ $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
 @TY_FN_PRE $c_makeFn isFnLarge
 #0 $c_makeFn c_updateRKey
-@TY_FN_PRE $c_makeFn c_keySetTyped  @TY_FN_PRE $c_makeFn c_dictSetMeta
+@TY_FN_PRE $c_makeFn c_keySetTyped  @TY_FN_PRE $c_makeFn c_keyJnMeta
+@TY_FN_PRE $c_makeFn c_dictSetMeta
 #0 $c_makeFn c_makeTy
 @TY_FN_PRE $c_makeFn assert         @TY_FN_PRE $c_makeFn assertNot
 @TY_FN_PRE $c_makeFn assertNotNull  @TY_FN_PRE $c_makeFn tAssert
@@ -707,7 +708,7 @@ $SFN isFnInstant $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INSTANT$L1  %EQ %
 $SFN isFnSmart   $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART$L1  %EQ %RET
 $SFN isFnSmartI  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART_I$L1  %EQ %RET
 $SFN isTyVar   $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_VAR$L1  %EQ %RET
-$SFN isLocalInput $PRE $keyMeta  @TY_VAR_INPUT$L1 %MSK %RET
+$SFN isVarInput $PRE $keyMeta  @TY_VAR_INPUT$L1 %MSK %RET
 $SFN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
 
 $SFN c_scan        @D_scan$L0   %DVFT %RET
@@ -841,6 +842,9 @@ $SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
        #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
   @E_cSz$L2 $xsl panic
 
+$SFN reqAlign $PRE \ {sz -> sz}: get required alignment
+  %DUP @ASIZE$L0 %DEC %LT_U $retif  %DRP @ASIZE$L0 %RET
+
 $FN align $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
   #1 $h1 \ locals [sz:U1]
   .1%SRLL#0$h1 \ cache sz
@@ -852,6 +856,7 @@ $FN align $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
   $END
   %DRP %RET
 
+$SFN alignA $PRE $xsl reqAlign $xl align %RET \ {aptr sz -> aptr}: align to SZA
 $SFN align4 $PRE #4$L0 $xl align %RET \ {addr -> aligned4Addr}
 $SFN alignSzI $PRE $xsl szIToSz  $xl align  %RET \ {addr szI -> addrAlignedSzI}
 $SFN null2 #0$L0 %DUP %RET
@@ -897,26 +902,19 @@ $SFN c_clearToken \ shift buffer to clear current token
   .1%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
   @D_memSet$L0 %DVSR %RET  \ memMove
 
-\ dotMeta bitmask: OOOO OOOO | DL&@ SXRR
-\ where O=refOffset byte, D=done, L=local, &=ref, @=deref S=store
-\ R=number of ref/derefs
-#80 =DOT_DONE   \ if 1 then all compilation is already done.
-#40 =DOT_LOCAL \ 0 = global
-#20 =DOT_REF
-#10 =DOT_DEREF
-#08 =DOT_STORE \ 0 = fetch
-
-$SFN dotMetaRefO \ {dotMeta -> offset}
-  #8$L0 %SHR %RET
-
 $SFN anyDictGetK \ {} -> {&key isFromLocal}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
-    @DOT_LOCAL$L1 %RET
+    @TRUE$L1 %RET
   $END %DRP
   $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
+$SFN c_updateRLKey \ [] -> [&key] update and return current local key
+  .A%FTGL @c_dictBuf$h2   .2%FTGL @c_dictHeap$h2  %ADD \ ldict.buf
+  .2%FTGL @c_dictLHeap$h2                       \ ldict.heap
+  %ADD \ {&newLkey}
+  %DUP .A%SRGL @c_rLKey$h2  %RET
 
 \ **********
 \ * [9] Globals and Locals
@@ -926,14 +924,34 @@ $SFN anyDictGetK \ {} -> {&key isFromLocal}
 \ fn GET <token>            SMART : compile a FT of token (local or global)
 \ fn _SET <token>           SMART : compile a SR of token (local or global)
 \ fn REF <token>            SMART : compile a "get ref" of token
-\ fn GLOBAL <token> [SzI]   SMART : define a global variable of szI
 \ fn LOCAL <token> [SzI]    SMART : define a local variable of szI
 \ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
 \ fn END_LOCALS             SMART : end locals
 
-$SFN declG \ [-> &key isLocal] create global and return it.
-  $xsl c_updateRKey \ {value &key}
-  $xsl loc \ initialize dictionary entry \ {value &key}
+$SFN declG \ [<token> -> &key isLocal] create global and return it.
+  $xsl c_updateRKey \ {&key}
+  $xsl loc \ initialize dictionary entry \ {&key}
+  %DUP $xsl c_keySetTyped
+  %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key}
+  @FALSE$L0 %RET \ {&key isLocal=FALSE}
+
+$SFN declL \ [<token> -> &key isLocal] create local and return it.
+  $xsl c_updateRLKey \ {&key}
+  #0$L0 $xsl ldictSet \ initialize lDict token (to nothing)
+  %DUP $xsl c_keySetTyped
+  %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key} update meta as local
+  @TRUE$L0 %RET \ {&key isLocal=TRUE}
+
+$FN declVar $PRE \ {&key isLocal meta szBytes} declare a variable (global or local)
+  #1$h1 .1%SRLL #0$h1  .1%SRLL #1$h1   .1%SRLL #2$h1 \ Locals 0=szBytes 1=meta 2=isLocal
+  %DUP .1%FTLL #1$h1 $xsl c_keyJnMeta \ update key meta {&key}
+  .1%FTLL #2$h1 $IF \ if(isLocal) {&key}
+    .2%FTGL @c_localOffset$h2  .1%FTLL #0$h1  $xsl alignA \ {&key offsetAligned}
+    %DUP .1%FTLL #0$h1 %ADD .2%SRGL @c_localOffset$h2 \ update c_localOffset {...}
+  $ELSE
+    .A%FTGL @c_gheap$h2        .1%FTLL #0$h1  $xsl alignA \ {&key gheapAligned}
+    %DUP .1%FTLL #0$h1 %ADD .A%SRGL @c_gheap$h2       \ update gheap {...}
+  $END %SWP .A%SR %RET \ update key's value
 
 $SFN _lSetup $PRE \ {&key} -> {&key} : checked local setup
   %DUP $_xsl assertTyped
@@ -965,7 +983,7 @@ $FN _getSetImpl $PRE
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
   \ {&key dotMeta}
-  @DOT_LOCAL$L1 %MSK $IF
+  $IF
     $xsl _lSetup %DUP $xsl _keySzI \ {&key szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1
   $ELSE
@@ -984,6 +1002,9 @@ $SFN _setImpl $PRE \ {&key dotMeta}
   @SZ1$L1  @SRLL$L1  \ local sz + instr
   @SZ2$L1  @SRGL$L1  \ global sz + instr
   $xl _getSetImpl %RET
+
+$SFN gRef $INSTANT \ [<token> -> &gref] get token's global reference
+  $xsl dictGetK  $xsl _gSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
 
 $SFN _refImpl \ {}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
@@ -1029,32 +1050,8 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 @SZA $c_makeGlobal c_rKey      @SZA $c_makeGlobal c_rLKey
 @SZA $c_makeGlobal c_gheap     @SZ2 $c_makeGlobal c_localOffset
 
-$FN GLOBAL \ <value> <szI> $GLOBAL <token>: define a global variable of sz
-  #2$h1  $SMART $xsl assertNoInstant  \ locals 0=szI 1=meta 4=&key
-  %DUP $xsl assertSzI \ {value szI}
-  .1%SRLL#0$h1 \ set szI {value}
-  $xsl c_updateRKey \ {value &key}
-  $xsl loc \ initialize dictionary entry (location not used) {value &key}
-  $GET c_gheap .1%FTLL#0$h1  $xsl alignSzI \ {value &key alignedGHeap}
-  %DUP $_SET c_gheap \ update gheap to aligned value {value &key alignedGHeap}
-  %OVR .A%SR         \ set dictionary value to alignedGHeap {value &key}
-
-  @TY_VAR$L1  .1%FTLL#0$h1   %JN \ {value &key meta}
-  .1%SRLL#1$h1 .A%SRLL#4$h1 \ {value}
-  $xsl dictArgs  .1%FTLL#1$h1 .A%FTLL#4$h1 \ {value <dictArgs> meta &key}
-  $xsl c_dictSetMeta \ update key ty {value}
-  $GET c_gheap .1%FTLL#0$h1  $xsl srSzI \ store global value
-  $GET c_gheap .1%FTLL#0$h1 $xsl szIToSz %ADD $_SET c_gheap \ gheap += sz
-  %RET
-
 \ **********
 \ * Local Variables
-$SFN c_updateRLKey \ [] -> [&key] update and return current local key
-  $GET c_dictBuf   $GET c_dictHeap  %ADD \ ldict.buf
-  $GET c_dictLHeap                       \ ldict.heap
-  %ADD \ {&newLkey}
-  %DUP $_SET c_rLKey  %RET
-
 \ implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 $FN _localImpl $PRE \ {szI:U1 meta:U1}
   #2$h1 \ locals: 0=szI  1=meta  4=&key
@@ -1096,7 +1093,7 @@ $FN _compileInputs $PRE
   .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
   .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
   %DUP $xsl isTyVar %SWP \ {hasTy isTyVar &key}
-  $xsl isLocalInput %AND %AND %RETZ \ {} all of (hasTy isTyVar isLocalInput)
+  $xsl isVarInput %AND %AND %RETZ \ {} all of (hasTy isTyVar isVarInput)
   .A%FTLL#0$h1  %DUP $xsl _keySzI \ {&key szInstr}
   @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl
   %RET
@@ -1211,7 +1208,9 @@ $SFN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
 \ fn c_number <number> -> [value isNum]   : parse next token (parseNumber).
 
 $FN betweenIncl $PRE \ {value a b} -> a <= value <= b
-  @SZA $INPUT b   $END_LOCALS \ {value a}
+  \ $declL b  @SZA@TY_VAR_INPUT^JN  @ASIZE $declVar  
+  @SZA $INPUT b
+  $END_LOCALS \ {value a}
   %OVR %SWP \ {value value a}
   \ if (value<a) return FALSE;
   %LT_U $IF %DRP @FALSE$L0 %RET $END
@@ -1353,7 +1352,9 @@ $SFN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
 
 $assertWsEmpty
 
-#0 @SZA $GLOBAL c_compFn \ must be a large fn.
+\ declare c_compFn = 0
+$declG c_compFn  @SZA @ASIZE $declVar
+  #0  $gRef c_compFn  .4^SR
 
 $SFN c_updateCompFn $PRE \ {&newCompFn -> &prevCompFn}
   $GET c_compFn %SWP $_SET c_compFn %RET
