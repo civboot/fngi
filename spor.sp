@@ -178,24 +178,24 @@
 
 \ **********
 \ * [3] Constants
-#0 =FALSE
-#1 =TRUE
-#4 =ASIZE \ size of an absolute pointer
+#0  =FALSE
+#1  =TRUE
+#4  =ASIZE \ size of an absolute pointer
 @ASIZE ^INC =DICT_OLEN \ dict name len offset
+#30 =SZ_MASK \ size bit mask (for instr and meta)
 
-\ * [3.a] Dict Ty Bits (meta byte):  TTTX XXXX T=TY_MASK
+\ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
 #40 =KEY_HAS_TY \ in len byte, not meta. If 1, dict entry is a non-constant.
-#E0 =META_TY_MASK \ upper three bits determine type
-#20 =TY_FN      \ function, can be called and has an fnMeta
-#40 =TY_LOCAL   \ local variable, has varMeta. Accessed with FTLL/SRLL
-#60 =TY_GLOBAL  \ global variable, has varMeta. Accessed with FTGL/SRGL
-#80 =TY_DICT    \ a "dictionary" type which has dictMeta.
+#C0 =META_TY_MASK \ upper three bits determine type
+#40 =TY_FN      \ function, can be called and has an fnMeta
+#80 =TY_VAR     \ variable (local, global, struct field, etc). Has varMeta
+#C0 =TY_DICT    \ a "dictionary" type which has dictMeta.
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
-\ FN meta bits [TTTL TTSP] L=locals T=fnTy S=syntax P=pre
-#0C =TY_FN_TY_MASK \ 0b1100
+\ FN meta bits [TTXL FFSP] L=locals F=fnTy S=syntax P=pre
 #01 =TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
+#0C =TY_FN_TY_MASK \ 4 function types
 #00 =TY_FN_NORMAL  \ Normally compiled, can use $ to make instant
 #04 =TY_FN_INSTANT \ Required to be run as instant (must use $)
 #08 =TY_FN_SMART   \ Always run immediately, compiler will pass asInstant
@@ -204,10 +204,10 @@
 #10 =TY_FN_LARGE  \ has locals (called with XL or XW)
 
 \ Local meta bits  [TTTI RRSS] I=input R=ref S=szI
-\ Global meta bits [TTT- RRSS]         R=ref S=szI
-#10 =TY_LOCAL_INPUT
+\ Local meta bits  [TTSS RR-I] I=input R=ref S=szI
+\ Global meta bits [TTSS RR--]         R=ref S=szI
+#01 =TY_VAR_INPUT
 #0C =TY_VAR_REF
-#03 =TY_VAR_SZ
 
 \ * [3.b] Zoab
 #C0 =ZOAB_TY   \ bitmask: all types
@@ -492,9 +492,8 @@ $loc tAssertEq \ {a b}
 \ fn isFnInstant ...
 \ fn isFnSmart   ...
 \ fn isFnSmartI  ...             : "smart instant", only at runtime
-\ fn isTyLocal [&key -> U1]      : is a local offset
-\ fn isTyLocalInput [&key -> U1] : is a local offset input
-\ fn isTyGlobal [&key -> U1]     : is a global variable
+\ fn isTyVar [&key -> U1]      : is a local offset
+\ fn isTyVarInput [&key -> U1] : is a local offset input
 \
 \ fn toMod [ref -> mod]          : get the "module" (upper byte of U4)
 \ fn curMod [ -> mod]            : get the module of the last dict entry
@@ -707,11 +706,9 @@ $SFN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1  %EQ %R
 $SFN isFnInstant $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INSTANT$L1  %EQ %RET
 $SFN isFnSmart   $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART$L1  %EQ %RET
 $SFN isFnSmartI  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART_I$L1  %EQ %RET
-$SFN isTyLocal   $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_LOCAL$L1  %EQ %RET
-$SFN isLocalInput $PRE $keyMeta  @TY_LOCAL_INPUT$L1 %MSK %RET
-$SFN isTyGlobal  $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_GLOBAL$L1  %EQ %RET
-$SFN assertTyLocal $PRE $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
-$SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
+$SFN isTyVar   $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_VAR$L1  %EQ %RET
+$SFN isLocalInput $PRE $keyMeta  @TY_VAR_INPUT$L1 %MSK %RET
+$SFN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
 
 $SFN c_scan        @D_scan$L0   %DVFT %RET
 $SFN panic   $PRE #0$L0 %SWP  $jmpl assert \ {errCode}: panic with errCode
@@ -811,7 +808,6 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn hN [U4 szI]                  : write a value of szI to heap (no align)
 \ fn szToSzI [U4 -> SzI]          : convert number of bytes to SzI
 \ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
-\ fn szILowerToSzI [U1 -> SzI]    : convert lower bit SzI (used in meta)
 \
 \ fn anyDictGetK [-> &key isFromLocal] : any ref to current token.
 \ fn c_read [ -> numRead]         : attempt to read bytes from src.
@@ -825,10 +821,7 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn c_assertToken []             : assert there is a token
 \ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
-$SFN szILowerToSzI $PRE \ convert a szI in lower bits to a proper szI
-  #3$L0 %MSK #4$L0 %SHL %RET
-
-$SFN _keySzI $PRE $keyMeta $jmpl szILowerToSzI \ {&key -> szI}
+$SFN _keySzI $PRE $keyMeta @SZ_MASK$L1 %MSK %RET \ {&key -> szI}
 
 $SFN szIToSz $PRE \ {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -841,8 +834,6 @@ $SFN hN $PRE \ {value szI} write a value of szI to heap
   %DUP @SZ2$L1 %EQ $IF  %DRP $jmpl h2  $END
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
   @E_cSz$L2 $xsl panic
-
-$SFN joinSzTyMeta $PRE #4$L0 %SHR %JN  %RET \ {tyMask szI} -> {tyMask}
 
 $SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
@@ -926,8 +917,9 @@ $SFN anyDictGetK \ {} -> {&key isFromLocal}
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
+
 \ **********
-\ * [9] globals and locals
+\ * [9] Globals and Locals
 \ We need a way to define global and local variables, as well as GET, SET and
 \ obtain a REF to them.
 \
@@ -939,13 +931,17 @@ $SFN anyDictGetK \ {} -> {&key isFromLocal}
 \ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
 \ fn END_LOCALS             SMART : end locals
 
+$SFN declG \ [-> &key isLocal] create global and return it.
+  $xsl c_updateRKey \ {value &key}
+  $xsl loc \ initialize dictionary entry \ {value &key}
+
 $SFN _lSetup $PRE \ {&key} -> {&key} : checked local setup
   %DUP $_xsl assertTyped
-  %DUP $_jmpl assertTyLocal
+  %DUP $_jmpl assertTyVar
 
 $SFN _gSetup $PRE \ {&key} -> {&key} : checked global setup
   %DUP $xsl assertTyped
-  %DUP $jmpl assertTyGlobal
+  %DUP $jmpl assertTyVar
 
 \ {&key szInstr szLit instr} compile a literal memory instr.
 \   szLit the size of the literal to compile for the instr.
@@ -1013,8 +1009,8 @@ $SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImp
 
 $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   #1$h1 \ locals 0=szI:u1
-  .1%SRLL#0$h1  $xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> locals}
-  #4$L0 %SHR  @TY_GLOBAL$L1  %JN   $_jmpl c_makeTy
+  .1%SRLL#0$h1  $xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> szI}
+  @TY_VAR$L1  %JN   $_jmpl c_makeTy
 
 @SZA $c_makeGlobal heap        @SZA $c_makeGlobal topHeap
 @SZA $c_makeGlobal topMem      @SZA $c_makeGlobal err
@@ -1038,12 +1034,12 @@ $FN GLOBAL \ <value> <szI> $GLOBAL <token>: define a global variable of sz
   %DUP $xsl assertSzI \ {value szI}
   .1%SRLL#0$h1 \ set szI {value}
   $xsl c_updateRKey \ {value &key}
-  $xsl loc \ initialize dictionary entry \ {value &key}
+  $xsl loc \ initialize dictionary entry (location not used) {value &key}
   $GET c_gheap .1%FTLL#0$h1  $xsl alignSzI \ {value &key alignedGHeap}
   %DUP $_SET c_gheap \ update gheap to aligned value {value &key alignedGHeap}
   %OVR .A%SR         \ set dictionary value to alignedGHeap {value &key}
 
-  @TY_GLOBAL$L1  .1%FTLL#0$h1   $xsl joinSzTyMeta \ {value &key meta}
+  @TY_VAR$L1  .1%FTLL#0$h1   %JN \ {value &key meta}
   .1%SRLL#1$h1 .A%SRLL#4$h1 \ {value}
   $xsl dictArgs  .1%FTLL#1$h1 .A%FTLL#4$h1 \ {value <dictArgs> meta &key}
   $xsl c_dictSetMeta \ update key ty {value}
@@ -1070,8 +1066,7 @@ $FN _localImpl $PRE \ {szI:U1 meta:U1}
   .1%SRLL#1$h1 \ 1=meta {szI}
   %DUP  $xsl assertSzI \ {szI}
   %DUP  .1%SRLL#0$h1 \ cache szI {szI}
-  @TY_LOCAL$L1  .1%FTLL#1$h1 %JN  \ update full meta {szI meta}
-  %SWP  $xsl joinSzTyMeta  \ {meta}
+  .1%FTLL#1$h1 %JN  @TY_VAR$L1 %JN  \ {meta} meta=szI|meta|TY_VAR
   $GET c_localOffset \ {meta loff}
   .1%FTLL#0$h1  $xsl alignSzI \ align local offset {meta loff}
   \ c_localOffset = offset + sz
@@ -1084,7 +1079,7 @@ $FN _localImpl $PRE \ {szI:U1 meta:U1}
 \ #<szI> $LOCAL myLocal: declare a local variable of sz
 \ This stores the offset and sz for lRef, lGet and lSet to use.
 $SFN LOCAL $SMART $xsl assertNoInstant  #0             $L0 $xl _localImpl %RET
-$SFN INPUT $SMART $xsl assertNoInstant  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
+$SFN INPUT $SMART $xsl assertNoInstant  @TY_VAR_INPUT$L1 $xl _localImpl %RET
 
  \ All of these take &key and output len (U1 len), sz (total key size), nextKey (&key)
 $SFN Dict_keyLen  $PRE @DICT_OLEN$L0 %ADD .1%FT #3F$L1 %MSK %RET
@@ -1100,8 +1095,8 @@ $FN _compileInputs $PRE
   $xsl ldictHeap $reteq \ return if key=ldictHeap
   .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
   .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
-  %DUP $xsl isTyLocal %SWP \ {hasTy isTyLocal &key}
-  $xsl isLocalInput %AND %AND %RETZ \ {} all of (hasTy isTyLocal isLocalInput)
+  %DUP $xsl isTyVar %SWP \ {hasTy isTyVar &key}
+  $xsl isLocalInput %AND %AND %RETZ \ {} all of (hasTy isTyVar isLocalInput)
   .A%FTLL#0$h1  %DUP $xsl _keySzI \ {&key szInstr}
   @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl
   %RET
@@ -1340,21 +1335,21 @@ $SFN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
   $END %DRP \ {asInstant}
   $xsl c_isEof $IF  $jmpl null2  $END
 
-  \ Handle local dictionary. Only constants allowed here.
-  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
-    %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
-    .A%FT $xsl c_lit  $jmpl null2
-  $END %DRP
+ \ Handle local dictionary. Only constants allowed here.
+ $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
+   %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
+   .A%FT $xsl c_lit  $jmpl null2
+ $END %DRP
 
-  $xsl dictArgs  @D_dictK$L0 %DVFT \ {asInstant &key}
+ $xsl dictArgs  @D_dictK$L0 %DVFT \ {asInstant &key}
 
-  \ Constant
-  %DUP  $xsl isTyped %NOT $IF
-    .A%FT $xsl c_lit $jmpl null2
-  $END
+ \ Constant
+ %DUP  $xsl isTyped %NOT $IF
+   .A%FT $xsl c_lit $jmpl null2
+ $END
 
-  \ Must be a function
-  %DUP $jmpl assertFn \ {asInstant &key}
+ \ Must be a function
+ %DUP $jmpl assertFn \ {asInstant &key}
 
 $assertWsEmpty
 

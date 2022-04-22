@@ -129,14 +129,13 @@ $ldictGet shadowed #45 $tAssertEq
 \ $FN fooLocals
 \   @SZ2 $LOCAL myLocal
 \   $ldictGet myLocal
-\   @TY_LOCAL  @SZ2 #4 ^SHR  ^JN  #18 ^SHL
+\   @TY_VAR  @SZ2 #4 ^SHR  ^JN  #18 ^SHL
 \   $tAssertEq
 
 $FN fooLocals
   @SZ2 $LOCAL myLocal
   $ldictGetK myLocal ^INCA .1^FT
-  @TY_LOCAL  @SZ2 #4 ^SHR  ^JN
-  $tAssertEq
+  @TY_VAR @SZ2 ^JN $tAssertEq
 
 \ test R_LP
 $SFN getLp %RGFT @R_LP$h1  %RET
