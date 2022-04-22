@@ -35,7 +35,7 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$dictGetK FN  @TY_FN @TY_FN_SMART ^JN $tAssertKeyMeta
+$dictGetK LFN  @TY_FN @TY_FN_SMART ^JN $tAssertKeyMeta
 $dictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
@@ -65,7 +65,7 @@ $SFN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
 $dictGetK SFN     $isFnSmart $tAssert
-$dictGetK FN      $isFnSmart $tAssert
+$dictGetK LFN     $isFnSmart $tAssert
 $dictGetK IF      $isTyFn      $tAssert
 $dictGetK IF      $isFnSmart $tAssert
 $dictGetK assert  $isFnInstant $tAssertNot
@@ -84,7 +84,7 @@ $SFN testIfElse
 #2 $testIfElse  #15 $tAssertEq
 
 
-$FN min \ [a b] -> [min]
+$LFN min \ [a b] -> [min]
   #1 $h1 \ one local, b
   .4%SRLL #0 $h1
   %DUP \ {a a}
@@ -104,7 +104,7 @@ $FN min \ [a b] -> [min]
 #20 #2 $alignA #20 $tAssertEq   #21 #2  $alignA #22 $tAssertEq
 #21 #4 $alignA #24 $tAssertEq   #21 #11 $alignA #24 $tAssertEq
 
-$FN testDecl
+$LFN testDecl
   $declL a
     ^OVR^OVR $tAssert   \ assert(isLocal)
     ^DUP $isTyped $tAssert
@@ -143,15 +143,8 @@ $SFN notARealFn %RET \ updates ldict
 $ldictGet shadowed #45 $tAssertEq
 @shadowed #12 $tAssertEq
 
-\ TODO: fix test
-\ $FN fooLocals
-\   @SZ2 $LOCAL myLocal
-\   $ldictGet myLocal
-\   @TY_VAR  @SZ2 #4 ^SHR  ^JN  #18 ^SHL
-\   $tAssertEq
-
-$FN fooLocals
-  @SZ2 $LOCAL myLocal
+$LFN fooLocals
+  $declL myLocal  @SZ2  #2 $declVar
   $ldictGetK myLocal ^INCA .1^FT
   @TY_VAR @SZ2 ^JN $tAssertEq
 
@@ -159,12 +152,12 @@ $FN fooLocals
 $SFN getLp %RGFT @R_LP$h1  %RET
 $getLp ^DUP #FFF0 $tAssertEq  =lsTop
 
-$FN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET \ uses locals
+$LFN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET \ uses locals
 $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 
 \ test local variables
-$FN useLocal
-  @SZ2 $LOCAL a $END_LOCALS
+$LFN useLocal
+  $declL a  @SZ2  #2 $declVar $declEnd
 
   #12345$L4 $_SET a
   $GET a
@@ -172,10 +165,10 @@ $FN useLocal
 
 $useLocal #2345 $tAssertEq
 
-$FN badMultiply \ {a b -- a*b} uses loop to implement multiply
-  @SZ2 $INPUT a
-  @SZ2 $INPUT b
-  $END_LOCALS
+$LFN badMultiply \ {a b -- a*b} uses loop to implement multiply
+  $declL a  @SZ2@TY_VAR_INPUT^JN  #2 $declVar
+  $declL b  @SZ2@TY_VAR_INPUT^JN  #2 $declVar
+  $declEnd
 
   #0$L0 \ out = 0
   $LOOP l0
@@ -219,8 +212,8 @@ $declG gStruct1 @SZ1 #1 $declVar
   #1234  $gRef gStruct  .4^SR
   #67    $gRef gStruct1 .1^SR
 
-$FN testFTSROffset
-  @SZ4 $LOCAL r $END_LOCALS
+$LFN testFTSROffset
+  $declL r  @SZ4  #4 $declVar $declEnd
   $REF gStruct $_SET r
   $GET r  .4%FTO #0$h1    #1234$L2 $xsl tAssertEq
   $GET r  #0 @SZ4 $ftoN   #1234$L2 $xsl tAssertEq
@@ -232,7 +225,7 @@ $assertWsEmpty   $testFTSROffset
 
 @TRUE #123 $c_lit #123 $tAssertEq  $assertWsEmpty
 
-$FN two $END_LOCALS #2$L0 %RET \ {} -> 1
+$LFN two $declEnd #2$L0 %RET \ {} -> 1
 
 $SFN test_c_fn   $dictGetK one $c_fn %RET
 $test_c_fn #1 $tAssertEq
@@ -260,8 +253,10 @@ $testFngiSingleNum #C $tAssertEq
 $SFN testFngiSingleOne @fngiSingle $comp1 two %RET
 $testFngiSingleOne #2 $tAssertEq
 
-$FN withLocals
-  @SZ4 $LOCAL s4 @SZ1 $LOCAL s1 $END_LOCALS
+$LFN withLocals
+  $declL s4  @SZ4  #4 $declVar
+  $declL s1  @SZ1  #1 $declVar
+  $declEnd
   %RET
 
 @withLocals .1^FT  #2 $tAssertEq
@@ -302,8 +297,9 @@ $SFN failRecursively2 \ {n} -> {n-1}
   $END
   %DEC $xsl failRecursively2
 
-$FN failRecursively \ {n} -> {n-1}
-  @SZ4 $INPUT n $END_LOCALS
+$LFN failRecursively \ {n} -> {n-1}
+  $declL n  @SZ4@TY_VAR_INPUT^JN  #4 $declVar
+  $declEnd
   $GET n %NOT $IF
     #5$L0 $xsl failRecursively2
     %RET

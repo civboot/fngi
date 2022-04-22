@@ -646,7 +646,7 @@ $loc _declFn \ [<dictArgs> meta]
 $loc SFN  \ SMART $SFN <token>: define location of small function
   $_xsl assertNoInstant $_xsl dictArgs #0$L0         $_jmpl _declFn
 
-$loc FN  \ SMART $FN <token>: define location of function with locals
+$loc LFN  \ SMART $LFN <token>: define location of large function (has locals)
   $_xsl assertNoInstant $_xsl dictArgs @TY_FN_LARGE$L1 $_jmpl _declFn
 
 $loc SMART \ {} modify current function to be smart
@@ -660,8 +660,8 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
   $_xsl dictGetK   \ {meta &key}
   $_jmpl c_dictSetMeta
 
-\ {meta} <token>: set meta for token to be a small function.
-#0$FN c_makeFn \ note: asInstant=#0 for SMART
+\ {{meta} <token>}: set meta for token to be a small function.
+#0$LFN c_makeFn \ note: asInstant=#0 for SMART
   #1$h1  \ locals: 0=meta:U1
   .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %JN   $_jmpl c_makeTy
@@ -670,7 +670,7 @@ $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
 #0 $c_makeFn xsl    #0 $c_makeFn loc
 @TY_FN_INSTANT $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
-@TY_FN_SMART $c_makeFn FN      @TY_FN_SMART $c_makeFn SFN
+@TY_FN_SMART $c_makeFn LFN     @TY_FN_SMART $c_makeFn SFN
 @TY_FN_SMART $c_makeFn PRE     @TY_FN_SMART $c_makeFn SMART
 @TY_FN_SMART $c_makeFn INSTANT
 @TY_FN_PRE $c_makeFn L0   @TY_FN_PRE $c_makeFn L1
@@ -845,7 +845,7 @@ $SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
 $SFN reqAlign $PRE \ {sz -> sz}: get required alignment
   %DUP @ASIZE$L0 %DEC %LT_U $retif  %DRP @ASIZE$L0 %RET
 
-$FN align $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
+$LFN align $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
   #1 $h1 \ locals [sz:U1]
   .1%SRLL#0$h1 \ cache sz
   %DUP \ {aptr aptr}
@@ -926,7 +926,7 @@ $SFN c_updateRLKey \ [] -> [&key] update and return current local key
 \ fn REF <token>            SMART : compile a "get ref" of token
 \ fn LOCAL <token> [SzI]    SMART : define a local variable of szI
 \ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
-\ fn END_LOCALS             SMART : end locals
+\ fn declEnd             SMART : end locals
 
 $SFN declG \ [<token> -> &key isLocal] create global and return it.
   $xsl c_updateRKey \ {&key}
@@ -942,7 +942,7 @@ $SFN declL \ [<token> -> &key isLocal] create local and return it.
   %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key} update meta as local
   @TRUE$L0 %RET \ {&key isLocal=TRUE}
 
-$FN declVar $PRE \ {&key isLocal meta szBytes} declare a variable (global or local)
+$LFN declVar $PRE \ {&key isLocal meta szBytes} declare a variable (global or local)
   #1$h1 .1%SRLL #0$h1  .1%SRLL #1$h1   .1%SRLL #2$h1 \ Locals 0=szBytes 1=meta 2=isLocal
   %DUP .1%FTLL #1$h1 $xsl c_keyJnMeta \ update key meta {&key}
   .1%FTLL #2$h1 $IF \ if(isLocal) {&key}
@@ -964,7 +964,7 @@ $SFN _gSetup $PRE \ {&key} -> {&key} : checked global setup
 \ {&key szInstr szLit instr} compile a literal memory instr.
 \   szLit the size of the literal to compile for the instr.
 \   oRef: either a reference or an offset
-$FN c_instrLitImpl $PRE
+$LFN c_instrLitImpl $PRE
   #1 $h1 \ 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
   .1%SRLL #0$h1 \ var szLit          {&key szInstr}
@@ -978,7 +978,7 @@ $FN c_instrLitImpl $PRE
 \   dotMeta: whether the value to compile is a local or global.
 \   localInstrSz localInstr: if isFromLocal: use these as the literal sz and instr.
 \   globalInstrSz globalInstr: if NOT isFromLocal: use these as the literal sz and instr.
-$FN _getSetImpl $PRE
+$LFN _getSetImpl $PRE
   #1 $h1 \ locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
@@ -1028,7 +1028,7 @@ $SFN GET  $SMART
 
 $SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImpl
 
-$FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
+$LFN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   #1$h1 \ locals 0=szI:u1
   .1%SRLL#0$h1  $xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> szI}
   @TY_VAR$L1  %JN   $_jmpl c_makeTy
@@ -1053,32 +1053,8 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 \ **********
 \ * Local Variables
 \ implement LOCAL or INPUT. Mostly just updating ldict key and globals.
-$FN _localImpl $PRE \ {szI:U1 meta:U1}
-  #2$h1 \ locals: 0=szI  1=meta  4=&key
 
-  \ assert current function is valid
-  .A%FTGL @c_rKey$h2 %DUP $xsl assertTyped \ {szI meta &keyFn}
-  $xsl assertFnLarge \ {szI meta}
-
-  .1%SRLL#1$h1 \ 1=meta {szI}
-  %DUP  $xsl assertSzI \ {szI}
-  %DUP  .1%SRLL#0$h1 \ cache szI {szI}
-  .1%FTLL#1$h1 %JN  @TY_VAR$L1 %JN  \ {meta} meta=szI|meta|TY_VAR
-  $GET c_localOffset \ {meta loff}
-  .1%FTLL#0$h1  $xsl alignSzI \ align local offset {meta loff}
-  \ c_localOffset = offset + sz
-  %DUP  .1%FTLL#0$h1 $xsl szIToSz %ADD  $_SET c_localOffset \ {meta loff}
-  $xsl c_updateRLKey \ {meta loff &key}
-  %SWP $xsl ldictSet  \ set to localOffset {meta &key}
-  .A%SRLL#4$h1 .1%SRLL#1$h1  $xsl dictArgs  .1%FTLL#1$h1 .A%FTLL#4$h1
-  $jmpl c_dictSetMeta
-
-\ #<szI> $LOCAL myLocal: declare a local variable of sz
-\ This stores the offset and sz for lRef, lGet and lSet to use.
-$SFN LOCAL $SMART $xsl assertNoInstant  #0             $L0 $xl _localImpl %RET
-$SFN INPUT $SMART $xsl assertNoInstant  @TY_VAR_INPUT$L1 $xl _localImpl %RET
-
- \ All of these take &key and output len (U1 len), sz (total key size), nextKey (&key)
+\ All of these take &key and output len (U1 len), sz (total key size), nextKey (&key)
 $SFN Dict_keyLen  $PRE @DICT_OLEN$L0 %ADD .1%FT #3F$L1 %MSK %RET
 $SFN Dict_keySz   $PRE $xsl Dict_keyLen @DICT_OLEN^INC$L0 %ADD $jmpl align4
 $SFN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
@@ -1086,7 +1062,7 @@ $SFN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
 \ {&key} -> {} recursive function to compile INPUTs
 \ Inputs are "compiled" (i.e. a SRLL is compiled) in reverse order.
 \ This maps them well to the conventional stack nomenclature.
-$FN _compileInputs $PRE
+$LFN _compileInputs $PRE
   #1$h1 \ locals 0=&key:APtr
   %DUP  .A%SRLL#0$h1 \ {&key} var key
   $xsl ldictHeap $reteq \ return if key=ldictHeap
@@ -1100,7 +1076,7 @@ $FN _compileInputs $PRE
 
 \ - Updates the number of slots for the FN
 \ - compiles SRLL for each INPUT in reverse order.
-$SFN END_LOCALS  $SMART $xsl assertNoInstant
+$SFN declEnd  $SMART $xsl assertNoInstant
   $GET c_localOffset #4$L0 $xl align
   #2$L0 %SHR $xsl h1 \ update number of slots
   $xsl ldictBuf $xl _compileInputs %RET
@@ -1127,8 +1103,8 @@ $SFN |
   %DUP .A%FTGL@topHeap$h2 %SWP %SUB
   @D_zoa$L0 %DVFT .A%SRGL @heap $h2 %RET
 
-$FN c_logAll $PRE \ {&writeStruct len &buf } Write raw data to log output
-  $END_LOCALS \ no locals, but used in XW.
+$LFN c_logAll $PRE \ {&writeStruct len &buf } Write raw data to log output
+  $declEnd \ no locals, but used in XW.
   %DRP
   $LOOP l0
     %OVR %OVR
@@ -1147,8 +1123,8 @@ $loc LOG_ZOAB_START  #80$h1 #03$h1
 $SFN comzStart  #2$L0 @LOG_ZOAB_START$LA  @D_com$L0 %DVSR %RET
 
 $loc TODO #0$h1
-$FN comzArr  $PRE \ {len join}
-  @SZ1 $LOCAL b0 $END_LOCALS \ b0 is used as an array for com
+$LFN comzArr  $PRE \ {len join}
+  $declL b0  @SZ1  #1 $declVar $declEnd \ b0 is used as an array for com
 
   \ $IF @ZOAB_JOIN$L1 $ELSE #0$L0 $END %SWP \ join -> joinTy       {joinTy len}
   \ %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert \ assert len <= 0x3F {joinTy len}
@@ -1207,10 +1183,9 @@ $SFN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
 \ fn c_updateCompFn [newComp -> prevComp] : update c_compFn + ret old
 \ fn c_number <number> -> [value isNum]   : parse next token (parseNumber).
 
-$FN betweenIncl $PRE \ {value a b} -> a <= value <= b
-  \ $declL b  @SZA@TY_VAR_INPUT^JN  @ASIZE $declVar  
-  @SZA $INPUT b
-  $END_LOCALS \ {value a}
+$LFN betweenIncl $PRE \ {value a b} -> a <= value <= b
+  $declL b  @SZA@TY_VAR_INPUT^JN  @ASIZE $declVar
+  $declEnd \ {value a}
   %OVR %SWP \ {value value a}
   \ if (value<a) return FALSE;
   %LT_U $IF %DRP @FALSE$L0 %RET $END
@@ -1256,11 +1231,11 @@ $SFN c_readCharEsc
   $END
   @TRUE$L0 %RET \ just return the character as-is but unknownEscape=true
 
-$FN c_parseNumber \ {} -> {value isNumber}
-  @SZA $LOCAL value
-  @SZ1 $LOCAL i
-  @SZ1 $LOCAL base
-  $END_LOCALS
+$LFN c_parseNumber \ {} -> {value isNumber}
+  $declL value  @SZA  @ASIZE $declVar
+  $declL i      @SZ1  #1     $declVar
+  $declL base   @SZ1  #1     $declVar
+  $declEnd
   #A$L0 $_SET base
   #0$L0 $_SET value
   #0$L0 $_SET i
@@ -1362,8 +1337,9 @@ $SFN c_updateCompFn $PRE \ {&newCompFn -> &prevCompFn}
 \ {asInstant} -> {}: compile a single token.
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
-$FN c_single $PRE
-  @SZA $LOCAL key @SZ1 $LOCAL meta $END_LOCALS
+$LFN c_single $PRE
+  $declL key  @SZA  @ASIZE $declVar
+  $declL meta @SZ1   #1    $declVar $declEnd
 
   \ Handle constants
   $xsl _compConstant \ {asInstant &keyFn[nullable]}
@@ -1392,8 +1368,8 @@ $FN c_single $PRE
     $jmpl execute
   $END $jmpl c_fn \ otherwise compile the function.
 
-$FN fngiSingle \ base c_compFn for fngi tokens.
-  $END_LOCALS \ not really any locals (but this is used as a pointer)
+$LFN fngiSingle \ base c_compFn for fngi tokens.
+  $declEnd \ not really any locals (but this is used as a pointer)
   $xsl c_scan $GET c_tokenLen %RETZ
   @FALSE$L0 $xl c_single %RET
 
@@ -1410,8 +1386,8 @@ $SFN (  $SMART%DRP  \ parens ()
     $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END \ return if we hit ")"
   $AGAIN l0
 
-$FN _spor
-  @SZA $LOCAL compFn $END_LOCALS
+$LFN _spor
+  $declL compFn  @SZA  @ASIZE $declVar $declEnd
   @_spor$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
   $xsl c_scanNoEof
   @D_comp$L0  %DVFT \ compile next token as spor asm
@@ -1419,8 +1395,8 @@ $FN _spor
 
 $SFN spor $SMART $xsl assertNoInstant $xl _spor %RET \ compile as assembly
 
-$FN _instant \ used in $ to make next token/s instant.
-  @SZA $LOCAL compFn $END_LOCALS
+$LFN _instant \ used in $ to make next token/s instant.
+  $declL compFn  @SZA  @ASIZE $declVar $declEnd
   @_instant$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
   $xsl c_scanNoEof
   @TRUE$L0 $xl c_single  \ compile next token as INSTANT
@@ -1428,8 +1404,8 @@ $FN _instant \ used in $ to make next token/s instant.
 
 $SFN $ $SMART $xsl assertNoInstant $xl _instant %RET \ make instant
 
-$FN _comment \ used in \ to make next token ignored (comment)
-  @SZA $LOCAL compFn $END_LOCALS
+$LFN _comment \ used in \ to make next token ignored (comment)
+  $declL compFn  @SZA  @ASIZE $declVar $declEnd
   @_comment$L2  $xsl c_updateCompFn $_SET compFn
   $xsl c_scanNoEof
   \ Execute an open paren, else ignore

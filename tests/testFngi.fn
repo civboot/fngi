@@ -26,8 +26,8 @@ SFN testXsw  ret xsw($lit(FN_REF daAnswer))
 $tAssertEq(0x42, testXsw)
 
 
-FN testSET PRE
-  $SZ4 LOCAL a  END_LOCALS
+LFN testSET PRE
+  $declVar(declL a, SZ4, 4) declEnd
   $assertWsEmpty
   4 _SET a
   SET a = inc(GET a)
@@ -76,10 +76,9 @@ $tAssertEq(0x4000,   BA_iToPtr(3, REF BA_fake))
 \ $tAssertEq(0x5000,   BA_iToPtr(4, REF BA_fake)) \ panics
 
 $BA_init(REF BA_kernel) \ TODO: make this the fake block
-FN testBASimple
-  $SZ4 LOCAL blk
-  $SZ1 LOCAL iBlk
-  END_LOCALS
+LFN testBASimple
+  $declVar(declL blk, SZ4, 4)
+  $declVar(declL iBlk, SZ1, 1) declEnd
   tAssert(ft1(REF BA_kernel + BA_lenOfs))
   tAssertEq(0, ft1(REF BA_kernel + BA_rootOfs));
   tAssertEq(1, BA_iGet(0, REF BA_kernel));
@@ -164,8 +163,7 @@ $tAssertEq(12, AA_findPo2(12, REF AA_fake))
 \ test AA_allocExactPo2 (except for po2=12)
 
 $declVar(declG AA_blk0, SZA, ASIZE)
-  \ TODO: srA
-  $sr4(BA_alloc(REF BA_kernel), gRef AA_blk0)
+  $srA(BA_alloc(REF BA_kernel), gRef AA_blk0)
 
 \ Populate some "real fake" data.
 SFN AA_initForTest PRE \ {&ba}
