@@ -35,8 +35,8 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$dictGetK FN  @TY_FN @TY_FN_SMART ^BOR $tAssertKeyMeta
-$dictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^BOR^BOR $tAssertKeyMeta
+$dictGetK FN  @TY_FN @TY_FN_SMART ^JN $tAssertKeyMeta
+$dictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
 $SFN myXs #22 $L0 %RET
@@ -48,8 +48,8 @@ $callMyXs #22 $tAssertEq
 $c_updateRKey ^DRP
 
 \ assert @rKey == @(&dict.buf + &dict.heap)
-  @c_rKey @REF_MASK ^BAND .4^FT
-  @c_dictBuf @REF_MASK ^BAND .4^FT   @c_dictHeap @REF_MASK ^BAND .2^FT   .4^ADD
+  @c_rKey @REF_MASK ^MSK .4^FT
+  @c_dictBuf @REF_MASK ^MSK .4^FT   @c_dictHeap @REF_MASK ^MSK .2^FT   .4^ADD
   $tAssertEq
 
 
@@ -103,10 +103,10 @@ $FN min \ [a b] -> [min]
 \ #01  $assertSzI \ expect failure.
 
 #12345 @SZ4 $GLOBAL myG1   $assertWsEmpty
-@myG1 #FF_FFFF ^BAND .4^FT  #12345 $tAssertEq
+@myG1 #FF_FFFF ^MSK .4^FT  #12345 $tAssertEq
 
 $SFN myG1Ref  $REF myG1 %RET
-$myG1Ref  @myG1 #FF_FFFF ^BAND  $tAssertEq
+$myG1Ref  @myG1 #FF_FFFF ^MSK  $tAssertEq
 
 $SFN myG1Get  $GET myG1 %RET
 $myG1Get  #12345 $tAssertEq
@@ -129,13 +129,13 @@ $ldictGet shadowed #45 $tAssertEq
 \ $FN fooLocals
 \   @SZ2 $LOCAL myLocal
 \   $ldictGet myLocal
-\   @TY_LOCAL  @SZ2 #4 ^SHR  ^BOR  #18 ^SHL
+\   @TY_LOCAL  @SZ2 #4 ^SHR  ^JN  #18 ^SHL
 \   $tAssertEq
 
 $FN fooLocals
   @SZ2 $LOCAL myLocal
   $ldictGetK myLocal ^INCA .1^FT
-  @TY_LOCAL  @SZ2 #4 ^SHR  ^BOR
+  @TY_LOCAL  @SZ2 #4 ^SHR  ^JN
   $tAssertEq
 
 \ test R_LP

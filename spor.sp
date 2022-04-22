@@ -78,11 +78,11 @@
 #22 =MOD   \ {l %  r } integer modulo (remainder)
 #23 =SHL   \ {l << r } bit shift left
 #24 =SHR   \ {l >> r } bit shift right
-#25 =BAND  \ {l &  r } bitwise and
-#26 =BOR   \ {l |  r } bitwise or
+#25 =MSK  \ {l &  r } bitwise and
+#26 =JN    \ {l |  r } bitwise or
 #27 =XOR   \ {l ^  r } bitwise xor
-#28 =LAND  \ {l && r } logical and
-#29 =LOR   \ {l || r } logical or
+#28 =AND  \ {l && r } logical and
+#29 =OR    \ {l || r } logical or
 #2A =EQ    \ {l == r } equal
 #2B =NEQ   \ {l != r } not equal
 #2C =GE_U  \ {l >= r } unsigned greater than or equal
@@ -140,8 +140,8 @@
 #C8 =LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ Common instr+szs
-@SZ2 @XSL  ^BOR  =XSL2
-@SZ2 @JMPL ^BOR  =JMPL2
+@SZ2 @XSL  ^JN   =XSL2
+@SZ2 @JMPL ^JN   =JMPL2
 
 \ **********
 \ * [2] Registers and Device Operations: RGXX|DVXX w/ 1 byte literal
@@ -392,9 +392,9 @@ $_h =h1  \ h1: {val:1} push 1bytes from stack to heap
   %RET
 
 $_h =L0   \ L0: compile a small literal (unchecked)
-  .1%LIT  #3F, %BAND \ truncated to bottom 6 bits
+  .1%LIT  #3F, %MSK \ truncated to bottom 6 bits
   .1%LIT  @SLIT,
-  %BOR    .2%JMPL @h1, \ made into SLIT instr and stored.
+  %JN     .2%JMPL @h1, \ made into SLIT instr and stored.
 
 $_h =srBE2 \ {val addr} store a value at addr encoded BE2 (big-endian 2)
   %OVR #48.1, %SHR \ {val addr val>>8} note: #48 is SLIT(8)
@@ -535,7 +535,7 @@ $loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
   .2%JMPL @_j2 $h2
 
 $loc L1 \ {U1} compile 1 byte literal
-  .1%LIT  @SZ1 @LIT ^BOR  $h1 \ push .1%LIT instr
+  .1%LIT  @SZ1 @LIT ^JN   $h1 \ push .1%LIT instr
   $_xsl h1 \ compile it
   $_jmpl h1
 
@@ -549,11 +549,11 @@ $loc c1
   $_jmpl _j2
 
 $loc L2 \ {U2} compile 2 byte literal
-  @SZ2 @LIT  ^BOR  $c1  \ compile .2%LIT instr
+  @SZ2 @LIT  ^JN   $c1  \ compile .2%LIT instr
   $_jmpl h2  \ compile the 2 byte literal
 
 $loc L4 \ {U4} compile 4 byte literal
-  @SZ4 @LIT  ^BOR  $c1 \ compile .4%LIT
+  @SZ4 @LIT  ^JN   $c1 \ compile .4%LIT
   $_jmpl h4  \ compile the 4 byte literal
 
 @L2 @L4    @ASIZE #2 ^EQ  $select =LA \ {UA} comipile ASIZE literal
@@ -561,15 +561,15 @@ $loc L4 \ {U4} compile 4 byte literal
 $loc keyMeta \ SMART {&key -> meta}
   .1%JZL #4$h1 %INCA .1%FT %RET \ if(asInstant) get it
   @INCA $c1
-  @SZ1 @FT ^BOR $c1 %RET
+  @SZ1 @FT ^JN  $c1 %RET
 
 $loc isTyped  \ {&key} dict value is a constant
   %DUP @E_cNoKey$L2 $_xsl assert \ no key if &key=NULL
-  @DICT_OLEN$L0 %ADD .1%FT @KEY_HAS_TY$L1 %BAND %RET
+  @DICT_OLEN$L0 %ADD .1%FT @KEY_HAS_TY$L1 %MSK %RET
 
 \ These take {&key} and tell information about it
-$loc isTyFn      #0$keyMeta  @META_TY_MASK$L1 %BAND  @TY_FN$L1  %EQ %RET
-$loc isFnLarge   #0$keyMeta  @TY_FN_LARGE$L1 %BAND %RET
+$loc isTyFn      #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
+$loc isFnLarge   #0$keyMeta  @TY_FN_LARGE$L1 %MSK %RET
 $loc assertNotNull @E_null$L2 $_jmpl assert
 
 $loc assertTyped \ [&key]
@@ -585,7 +585,7 @@ $loc assertFnLarge \ [&key]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
 
-$loc toMod @MOD_MASK $L4 %BAND %RET \ {ref} -> {mod}
+$loc toMod @MOD_MASK $L4 %MSK %RET \ {ref} -> {mod}
 $loc isSameMod \ {ref ref} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
@@ -608,7 +608,7 @@ $loc xl \ $xl <token> : compile .2%xl
   $_xsl dictGetK \ {&key}
   %DUP $_xsl assertFnLarge
   .A%FT %DUP $_xsl assertCurMod
-  @SZ2 @XL ^BOR  $L1  $_jmpl _j2
+  @SZ2 @XL ^JN   $L1  $_jmpl _j2
 
 $loc jmpl  \ $jmpl <token> : compile jmpl2
   $_xsl dictGetK $_xsl _jSetup \ {ref}
@@ -623,13 +623,13 @@ $loc c_updateRKey \ [] -> [&key] update and return current key
 
 $loc rKeySet \ {&key meta:U1} -> U4 : apply meta to &key
   %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SMART
-  .1%FT %BOR   \ {&key newMeta}
+  .1%FT %JN    \ {&key newMeta}
   %SWP %INCA .1%SR \ update meta
   %RET
 
 $loc c_keySetTyped \ {&key} -> []
   @DICT_OLEN$L0 %ADD %DUP   \ {&len &len}
-  .1%FT @KEY_HAS_TY$L1 %BOR \ {&len tyKeyLen}
+  .1%FT @KEY_HAS_TY$L1 %JN  \ {&len tyKeyLen}
   %SWP .1%SR %RET           \ update tyKeyLen
 
 $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
@@ -639,7 +639,7 @@ $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
 $loc _declFn \ [<dictArgs> meta]
-  @TY_FN$L1 %BOR \ {<dictArgs> meta}
+  @TY_FN$L1 %JN  \ {<dictArgs> meta}
   $_xsl c_updateRKey \ {<dictArgs> meta &key}
   $_xsl loc
   $_jmpl c_dictSetMeta
@@ -665,7 +665,7 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
 #0$FN c_makeFn \ note: asInstant=#0 for SMART
   #1$h1  \ locals: 0=meta:U1
   .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
-  @TY_FN$L1 %BOR  $_jmpl c_makeTy
+  @TY_FN$L1 %JN   $_jmpl c_makeTy
 
 $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 
@@ -679,7 +679,7 @@ $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl rKeySet
 @TY_FN_PRE $c_makeFn LA
 @TY_FN_PRE $c_makeFn h1   @TY_FN_PRE $c_makeFn h2
 @TY_FN_PRE $c_makeFn h4
-@TY_FN_PRE @TY_FN_INSTANT ^BOR $c_makeFn c1
+@TY_FN_PRE @TY_FN_INSTANT ^JN  $c_makeFn c1
 @TY_FN_PRE $c_makeFn dictSet
 #0 $c_makeFn dictGet        #0 $c_makeFn dictGetK
 #0 $c_makeFn dictArgs
@@ -698,18 +698,18 @@ $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn assertFnLarge  @TY_FN_PRE $c_makeFn assertCurMod
 @TY_FN_PRE $c_makeFn assertTyped    #0 $c_makeFn assertNoInstant
 
-$SFN metaIsFnSmart   $PRE  @TY_FN_TY_MASK$L1 %BAND @TY_FN_SMART$L1   %EQ %RET
-$SFN metaIsFnSmartI  $PRE  @TY_FN_TY_MASK$L1 %BAND @TY_FN_SMART_I$L1 %EQ %RET
-$SFN metaIsFnInstant $PRE  @TY_FN_TY_MASK$L1 %BAND @TY_FN_INSTANT$L1  %EQ %RET
+$SFN metaIsFnSmart   $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SMART$L1   %EQ %RET
+$SFN metaIsFnSmartI  $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SMART_I$L1 %EQ %RET
+$SFN metaIsFnInstant $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_INSTANT$L1  %EQ %RET
 
-$SFN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1 %BAND %RET
-$SFN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_NORMAL$L1  %EQ %RET
-$SFN isFnInstant $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_INSTANT$L1  %EQ %RET
-$SFN isFnSmart   $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_SMART$L1  %EQ %RET
-$SFN isFnSmartI  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %BAND  @TY_FN_SMART_I$L1  %EQ %RET
-$SFN isTyLocal   $PRE $keyMeta  @META_TY_MASK$L1 %BAND  @TY_LOCAL$L1  %EQ %RET
-$SFN isLocalInput $PRE $keyMeta  @TY_LOCAL_INPUT$L1 %BAND %RET
-$SFN isTyGlobal  $PRE $keyMeta  @META_TY_MASK$L1 %BAND  @TY_GLOBAL$L1  %EQ %RET
+$SFN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1 %MSK %RET
+$SFN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1  %EQ %RET
+$SFN isFnInstant $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INSTANT$L1  %EQ %RET
+$SFN isFnSmart   $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART$L1  %EQ %RET
+$SFN isFnSmartI  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART_I$L1  %EQ %RET
+$SFN isTyLocal   $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_LOCAL$L1  %EQ %RET
+$SFN isLocalInput $PRE $keyMeta  @TY_LOCAL_INPUT$L1 %MSK %RET
+$SFN isTyGlobal  $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_GLOBAL$L1  %EQ %RET
 $SFN assertTyLocal $PRE $xsl isTyLocal  @E_cNotLocal$L2 $jmpl assert
 $SFN assertTyGlobal $PRE $xsl isTyGlobal  @E_cNotGlobal$L2 $jmpl assert
 
@@ -721,7 +721,7 @@ $SFN assertLt128    $PRE #80 $L1 %LT_U  @E_cJmpL1 $L2   $jmpl assert
 $SFN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
 
 $SFN assertSzI $PRE \ {szI}
-  %DUP #CF$L1 %BAND @E_cSz$L2 $xsl assertNot \ non-sz bits empty
+  %DUP #CF$L1 %MSK @E_cSz$L2 $xsl assertNot \ non-sz bits empty
   #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
 
 $SFN ftoN $INSTANT  \ {offset szI} compile FTO szI w/offset
@@ -759,7 +759,7 @@ $SFN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
 \   if/else: $IF ... $ELSE ... $END
 \   loop:    $LOOP <l0> ... $BREAK0 <b0> ... $AGAIN <l0> $BREAK_END <b0>
 $SFN IF  $PRE $SMART $xsl assertNoInstant \ {} -> {&jmpTo} : start an if block
-  @SZ1 @JZL  ^BOR  $c1 \ compile .1%JZL instr
+  @SZ1 @JZL  ^JN   $c1 \ compile .1%JZL instr
   .A%FTGL @heap$h2 \ {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 \ compile 0 (jump pad)
   %RET
@@ -826,7 +826,7 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
 $SFN szILowerToSzI $PRE \ convert a szI in lower bits to a proper szI
-  #3$L0 %BAND #4$L0 %SHL %RET
+  #3$L0 %MSK #4$L0 %SHL %RET
 
 $SFN _keySzI $PRE $keyMeta $jmpl szILowerToSzI \ {&key -> szI}
 
@@ -842,7 +842,7 @@ $SFN hN $PRE \ {value szI} write a value of szI to heap
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
   @E_cSz$L2 $xsl panic
 
-$SFN joinSzTyMeta $PRE #4$L0 %SHR %BOR %RET \ {tyMask szI} -> {tyMask}
+$SFN joinSzTyMeta $PRE #4$L0 %SHR %JN  %RET \ {tyMask szI} -> {tyMask}
 
 $SFN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
@@ -954,7 +954,7 @@ $FN c_instrLitImpl $PRE
   #1 $h1 \ 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
   .1%SRLL #0$h1 \ var szLit          {&key szInstr}
-  .1%FTLL #1$h1 %BOR $xsl h1 \ compile (szInstr | instr) {&key}
+  .1%FTLL #1$h1 %JN  $xsl h1 \ compile (szInstr | instr) {&key}
   .A%FT \ {oRef} offset or reference
   .1%FTLL #0$h1  $jmpl hN \ compile literal of proper instrSz
 
@@ -969,7 +969,7 @@ $FN _getSetImpl $PRE
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
   \ {&key dotMeta}
-  @DOT_LOCAL$L1 %BAND $IF
+  @DOT_LOCAL$L1 %MSK $IF
     $xsl _lSetup %DUP $xsl _keySzI \ {&key szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1
   $ELSE
@@ -993,7 +993,7 @@ $SFN _refImpl \ {}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _lSetup \ {&key}
     .A%FT %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
-    @R_LP$L1 %BOR \ {LpOffset}: offset is lower 7 bits
+    @R_LP$L1 %JN  \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
   $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
@@ -1014,7 +1014,7 @@ $SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImp
 $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   #1$h1 \ locals 0=szI:u1
   .1%SRLL#0$h1  $xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> locals}
-  #4$L0 %SHR  @TY_GLOBAL$L1  %BOR  $_jmpl c_makeTy
+  #4$L0 %SHR  @TY_GLOBAL$L1  %JN   $_jmpl c_makeTy
 
 @SZA $c_makeGlobal heap        @SZA $c_makeGlobal topHeap
 @SZA $c_makeGlobal topMem      @SZA $c_makeGlobal err
@@ -1070,7 +1070,7 @@ $FN _localImpl $PRE \ {szI:U1 meta:U1}
   .1%SRLL#1$h1 \ 1=meta {szI}
   %DUP  $xsl assertSzI \ {szI}
   %DUP  .1%SRLL#0$h1 \ cache szI {szI}
-  @TY_LOCAL$L1  .1%FTLL#1$h1 %BOR \ update full meta {szI meta}
+  @TY_LOCAL$L1  .1%FTLL#1$h1 %JN  \ update full meta {szI meta}
   %SWP  $xsl joinSzTyMeta  \ {meta}
   $GET c_localOffset \ {meta loff}
   .1%FTLL#0$h1  $xsl alignSzI \ align local offset {meta loff}
@@ -1087,7 +1087,7 @@ $SFN LOCAL $SMART $xsl assertNoInstant  #0             $L0 $xl _localImpl %RET
 $SFN INPUT $SMART $xsl assertNoInstant  @TY_LOCAL_INPUT$L1 $xl _localImpl %RET
 
  \ All of these take &key and output len (U1 len), sz (total key size), nextKey (&key)
-$SFN Dict_keyLen  $PRE @DICT_OLEN$L0 %ADD .1%FT #3F$L1 %BAND %RET
+$SFN Dict_keyLen  $PRE @DICT_OLEN$L0 %ADD .1%FT #3F$L1 %MSK %RET
 $SFN Dict_keySz   $PRE $xsl Dict_keyLen @DICT_OLEN^INC$L0 %ADD $jmpl align4
 $SFN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
 
@@ -1101,7 +1101,7 @@ $FN _compileInputs $PRE
   .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
   .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
   %DUP $xsl isTyLocal %SWP \ {hasTy isTyLocal &key}
-  $xsl isLocalInput %LAND %LAND %RETZ \ {} all of (hasTy isTyLocal isLocalInput)
+  $xsl isLocalInput %AND %AND %RETZ \ {} all of (hasTy isTyLocal isLocalInput)
   .A%FTLL#0$h1  %DUP $xsl _keySzI \ {&key szInstr}
   @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl
   %RET
@@ -1160,11 +1160,11 @@ $FN comzArr  $PRE \ {len join}
 
   \ $IF @ZOAB_JOIN$L1 $ELSE #0$L0 $END %SWP \ join -> joinTy       {joinTy len}
   \ %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert \ assert len <= 0x3F {joinTy len}
-  \ %BOR $_SET b0
+  \ %JN  $_SET b0
   \ #33$L0 $REF b0 $jmpl com \ send via com
 
   %DRP \ ignore join TODO
-  @ZOAB_ARR$L1 %BOR \ len->arrLen
+  @ZOAB_ARR$L1 %JN  \ len->arrLen
   @TODO$L2 .1%SR \ store len @TODO
   #1$L0 @TODO$L2 @D_com$L0 %DVSR %RET \ {len &raw} communicate directly
 
@@ -1380,7 +1380,7 @@ $FN c_single $PRE
     @TY_FN_INSTANT$L1 \ {&keyFn meta}
   $ELSE \ {&keyFn asInstant}
     %OVR $keyMeta %SWP \ {&keyFn meta asInstant}
-    $IF @TY_FN_INSTANT$L1  %BOR  $END \ if(asInstant) meta = INSTANT or SMART_I
+    $IF @TY_FN_INSTANT$L1  %JN   $END \ if(asInstant) meta = INSTANT or SMART_I
   $END \ {&key meta}
 
   \ if pre, recursively call fngiSingle (compile next token first)
@@ -1454,7 +1454,7 @@ $SFN c_peekNoScan
 \    \( ... ) : a block comment
 $SFN \ $SMART %DRP
   \ Line comment if '\' is followed by space or newline
-  $xsl c_peekNoScan %DUP #20$L0 %EQ %SWP #A$L0 %EQ %LOR
+  $xsl c_peekNoScan %DUP #20$L0 %EQ %SWP #A$L0 %EQ %OR
   $IF @D_scan$L0 %DVSR %RET $END \ scanEol
   $xl _comment %RET \ else token comment
 

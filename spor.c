@@ -128,8 +128,8 @@ typedef enum {
   CI2  = 0x18,
 
   ADD  = 0x20, SUB  = 0x21, MOD  = 0x22, SHL  = 0x23,
-  SHR  = 0x24, BAND = 0x25, BOR  = 0x26, XOR  = 0x27,
-  LAND = 0x28, LOR  = 0x29, EQ   = 0x2A, NEQ  = 0x2B,
+  SHR  = 0x24, MSK  = 0x25, JN   = 0x26, XOR  = 0x27,
+  LAND = 0x28, OR   = 0x29, EQ   = 0x2A, NEQ  = 0x2B,
   GE_U = 0x2C, LT_U = 0x2D, GE_S = 0x2E, LT_S = 0x2F,
 
   MUL  = 0x30, DIV_U= 0x31, DIV_S= 0x32,
@@ -713,11 +713,11 @@ inline static void executeInstr(Instr instr) {
     case MOD : r = WS_POP(); WS_PUSH(WS_POP() % r); return;
     case SHL : r = WS_POP(); WS_PUSH(WS_POP() << r); return;
     case SHR : r = WS_POP(); WS_PUSH(WS_POP() >> r); return;
-    case BAND: r = WS_POP(); WS_PUSH(WS_POP() & r); return;
-    case BOR : r = WS_POP(); WS_PUSH(WS_POP() | r); return;
+    case MSK : r = WS_POP(); WS_PUSH(WS_POP() & r); return;
+    case JN  : r = WS_POP(); WS_PUSH(WS_POP() | r); return;
     case XOR : r = WS_POP(); WS_PUSH(WS_POP() ^ r); return;
     case LAND: r = WS_POP(); WS_PUSH(WS_POP() && r); return;
-    case LOR : r = WS_POP(); WS_PUSH(WS_POP() || r); return;
+    case OR  : r = WS_POP(); WS_PUSH(WS_POP() || r); return;
     case EQ  : r = WS_POP(); WS_PUSH(WS_POP() == r); return;
     case NEQ : r = WS_POP(); WS_PUSH(WS_POP() != r); return;
     case GE_U: r = WS_POP(); WS_PUSH(WS_POP() >= r); return;
