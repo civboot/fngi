@@ -89,6 +89,22 @@ FN strEq PRE \ {aLen &a bLen &b}
   IF(\aLen != GET bLen)  drp; ret FALSE;  END \ {&a}
   ret(memCmp(\a, GET b, GET bLen) == 0)
 
+FN zEq PRE \ {&aZ &bZ} compare two zoab strings
+  $declVar(declL bZ, TY_VAR_INPUT+SZA, ASIZE) $declEnd
+         ft1(dup) -> swp -> inc; \ {aLen &a}
+  GET bZ ft1(dup) -> swp -> inc; \ {aLen &a bLen &b}
+  -> ret strEq;
+
+$loc TOKEN_COMMA  |,|
+$loc TOKEN_SEMI   |;|
+$loc TOKEN_ARROW  |->|
+FN c_isComment \ [ -> bool] return true if token is a comment
+  TRUE -> retif(ft1(GET c_tokenBuf) == 0c\\)
+          retif(zEq(REF c_tokenLen, TOKEN_COMMA))
+          retif(zEq(REF c_tokenLen, TOKEN_SEMI))
+          retif(zEq(REF c_tokenLen, TOKEN_ARROW))
+  drp; ret(FALSE)
+
 FN skipComments \ skip any comments in tokens.
   LOOP l0  retif(ft1(GET c_tokenBuf) != 0c\\)
     c_single(FALSE); c_scanNoEof;  AGAIN l0
