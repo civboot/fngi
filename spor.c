@@ -45,6 +45,7 @@ typedef uint8_t Bool;
 typedef uint8_t U1;
 typedef uint16_t U2;
 typedef uint32_t U4;
+typedef uint32_t UA;
 typedef int8_t I1;
 typedef int16_t I2;
 typedef int32_t I4;
@@ -70,8 +71,8 @@ typedef CSz CPtr;
 #define ZOAB_JOIN 0x80
 #define ZOAB_ARR  0x40
 
-#define SET_ERR(E)  if(TRUE) { assert(E); *env.err = E; longjmp(*err_jmp, 1); }
-#define ASSERT_NO_ERR()    assert(!*env.err)
+#define SET_ERR(E)  if(TRUE) { assert(E); env.g->err = E; longjmp(*err_jmp, 1); }
+#define ASSERT_NO_ERR()    assert(!env.g->err)
 #define ASM_ASSERT(C, E)   if(!(C)) { SET_ERR(E); }
 
 // Error classes
@@ -177,6 +178,22 @@ typedef enum {
 } ErrValTy;
 
 typedef struct {
+  APtr buf;  // buffer of dicts
+  U2 heap;  // heap offset
+  U2 end;   // end offset
+  U2 lheap; // local heap
+  U2 _align;
+} Dict;
+
+typedef struct {
+  APtr buf; // buffer.
+  U1 len;   // length of token
+  U1 size;  // total characters buffered
+  U1 group;
+  U1 _align;
+} TokenState;
+
+typedef struct {
   U1 valTy;
   U1 _align;
   U2 _align2;
@@ -195,40 +212,39 @@ typedef struct {
   U1 root;
 } BlockAllocator;
 
-// Environment
-// TODO: move globals into a separate struct instead of manually setting in ENV
 typedef struct {
+  APtr _null;
+  APtr heap;
+  APtr topHeap;
+  APtr topMem;
+  U4 err;
+  U4 state;
+  U4 testIdx;
+  U2 sysLogLvl;
+  U2 usrLogLvl;
+  Dict dict;
+  TokenState ts;
+  ErrData errData;
+  BlockAllocator ba;
+} Globals;
+
+// Environment
+typedef struct {
+  Globals* g;
   APtr ep;  // execution pointer
   APtr gb;  // Global Base
-  APtr* heap;
-  APtr* topHeap;
-  APtr* topMem;
-  U4* err;
-  U4* state;
-  U4* testIdx;
-  U2* sysLogLvl;
-  U2* usrLogLvl;
-  ErrData* errData;
-  BlockAllocator* ba;
-  U1 szI; // global instr sz
   Stk ls;
 
-  // Separate from mem
+  // Working and Call Stack. Note: separate from mem
   Stk ws;
   Stk cs;
+
+  U1 szI; // global instr sz
 } Env;
 
 #define LS_SP           (env.ls.mem - mem + env.ls.sp)
 #define CS_SP           (env.cs.mem - mem + env.cs.sp)
 #define ENV_MOD_HIGH()  (MOD_HIGH_MASK & env.ep)
-
-typedef struct {
-  APtr buf;  // buffer of dicts
-  U2 heap;  // heap offset
-  U2 end;   // end offset
-  U2 lheap; // local heap
-  U2 _align;
-} Dict;
 
 typedef struct {
   APtr buf;
@@ -238,7 +254,7 @@ typedef struct {
 } DictRef;
 
 #define DEFAULT_DICT \
-  {.buf = dict->buf, .end = dict->end, .heap = &dict->heap, .isLocal=FALSE}
+  {.buf = env.g->dict.buf, .end = env.g->dict.end, .heap = &env.g->dict.heap, .isLocal=FALSE}
 
 typedef struct {
   U4 value;
@@ -268,14 +284,6 @@ typedef enum {
   T_WHITE = 5,
 } TokenGroup;
 
-typedef struct {
-  APtr buf; // buffer.
-  U1 len;   // length of token
-  U1 size;  // total characters buffered
-  U1 group;
-  U1 _align;
-} TokenState;
-
 // Debugging
 static inline void logInstr(Instr instr);
 void dbgInstr(Instr instr, Bool lit);
@@ -291,8 +299,6 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz);
 
 Env env;
 U1* mem = NULL;
-Dict* dict = NULL;
-TokenState* tokenState = NULL;
 FILE* srcFile;
 U1 (*readAtLeast)(U1 num) = NULL; // Read num bytes into tokenBuf
 U4 line = 1;
@@ -371,7 +377,7 @@ void zoab_infoStart(U1* str, U2 extraLen) {
 }
 
 void zoab_info(U1* str) {
-  if(LOG_INFO & *env.usrLogLvl) {
+  if(LOG_INFO & env.g->usrLogLvl) {
     zoab_infoStart(str, 0);
     fflush(stdout);
   }
@@ -436,7 +442,7 @@ SzI szToSzI(U1 sz) {
 
 /*fn*/ void store(U1* mem, APtr aptr, U4 value, SzI szI) {
   ASM_ASSERT(aptr, E_null);
-  ASM_ASSERT(aptr < *env.topMem, E_oob);
+  ASM_ASSERT(aptr < env.g->topMem, E_oob);
   switch (szI) {
     case SzI1:
       *(mem+aptr) = (U1)value;
@@ -455,7 +461,7 @@ SzI szToSzI(U1 sz) {
 
 /*fn*/ U4 fetch(U1* mem, APtr aptr, SzI szI) {
   ASM_ASSERT(aptr, E_null);
-  ASM_ASSERT(aptr < *env.topMem, E_oob);
+  ASM_ASSERT(aptr < env.g->topMem, E_oob);
   switch (szI) {
     case SzI1:
       return (U4) *((U1*) (mem+aptr));
@@ -471,7 +477,7 @@ SzI szToSzI(U1 sz) {
 
 /*fn*/ U4 fetchBE(U1* mem, APtr aptr, SzI szI) {
   ASM_ASSERT(aptr, E_null);
-  ASM_ASSERT(aptr < *env.topMem, E_oob);
+  ASM_ASSERT(aptr < env.g->topMem, E_oob);
   switch (szI) {
     case SzI1: return *(mem + aptr);
     case SzI2: return
@@ -488,7 +494,7 @@ SzI szToSzI(U1 sz) {
 
 void storeBE(U1* mem, APtr aptr, U4 value, SzI szI) {
   ASM_ASSERT(aptr, E_null);
-  ASM_ASSERT(aptr < *env.topMem, E_oob);
+  ASM_ASSERT(aptr < env.g->topMem, E_oob);
   switch (szI) {
     case SzI1:
       *(mem+aptr) = (U1)value;
@@ -586,15 +592,15 @@ void zoab_err(U4 err, U1 isCaught) {
   zoab_ws(WS_LEN);
   zoab_int(line);
 
-  switch (env.errData->valTy) {
+  switch (env.g->errData.valTy) {
     case ERR_DATA_NONE:
       zoab_arr(0, FALSE);
       break;
     case ERR_DATA_INT2:
       zoab_arr(3, FALSE);
-      zoab_int(env.errData->valTy);
-      zoab_int(env.errData->valueA);
-      zoab_int(env.errData->valueB);
+      zoab_int(env.g->errData.valTy);
+      zoab_int(env.g->errData.valueA);
+      zoab_int(env.g->errData.valueB);
       break;
     default: assert(FALSE);
   }
@@ -869,7 +875,7 @@ LIT: case SzI2 + LIT:
   key->meta = 0;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
-  if((LOG_COMPILER & *env.sysLogLvl)) zoab_dict(d, offset);
+  if((LOG_COMPILER & env.g->sysLogLvl)) zoab_dict(d, offset);
   *d.heap += alignAPtr(keySizeWLen(slen), 4);
   return offset;
 }
@@ -881,16 +887,16 @@ LIT: case SzI2 + LIT:
 }
 
 /*fn*/ void Dict_forget(U1 slen, char* s) {
-  DictRef d = {.buf = dict->buf, .end = dict->end, .heap = &dict->heap, .isLocal=FALSE};
-  dict->heap = Dict_find(d, slen, s);
+  DictRef d = {.buf = env.g->dict.buf, .end = env.g->dict.end, .heap = &env.g->dict.heap, .isLocal=FALSE};
+  env.g->dict.heap = Dict_find(d, slen, s);
 }
 
 
 // ********************************************
 // ** Scanner
-#define tokenBufSize (tokenState->size)
-#define tokenLen tokenState->len
-#define tokenBuf ((char*) mem + tokenState->buf)
+#define tokenBufSize (env.g->ts.size)
+#define tokenLen env.g->ts.len
+#define tokenBuf ((char*) mem + env.g->ts.buf)
 
 /*fn*/ TokenGroup toTokenGroup(U1 c) {
   if(c <= ' ') return T_WHITE;
@@ -943,8 +949,8 @@ void readNewAtLeast(U1 num) {
   if(!tokenBufSize) { readAtLeast(1); }
 
   U1 c = tokenBuf[tokenLen];
-  tokenState->group = toTokenGroup(c);
-  if(tokenState->group == T_SINGLE) {
+  env.g->ts.group = toTokenGroup(c);
+  if(env.g->ts.group == T_SINGLE) {
     tokenLen += 1; // SINGLE: always single-char token
     return;
   }
@@ -958,8 +964,8 @@ void readNewAtLeast(U1 num) {
     c = tokenBuf[tokenLen];
 
     TokenGroup tg = toTokenGroup(c);
-    if (tg == tokenState->group) {}
-    else if ((tokenState->group <= T_ALPHA) && (tg <= T_ALPHA)) {}
+    if (tg == env.g->ts.group) {}
+    else if ((env.g->ts.group <= T_ALPHA) && (tg <= T_ALPHA)) {}
     else break;
     tokenLen += 1;
   }
@@ -1018,14 +1024,14 @@ U1 scanInstr() {
 
 /*fn*/ void cWriteHeap() { // `,`
   U4 value = WS_POP();
-  storeBE(mem, *env.heap, value, env.szI);
-  *env.heap += szIToSz(env.szI);
+  storeBE(mem, env.g->heap, value, env.szI);
+  env.g->heap += szIToSz(env.szI);
 }
 
 /*fn*/ void cWriteInstr() { // `%`
   U1 instr = scanInstr();
-  store(mem, *env.heap, (U1)instr, SzI1);
-  *env.heap += 1;
+  store(mem, env.g->heap, (U1)instr, SzI1);
+  env.g->heap += 1;
 }
 
 /*fn*/ void cExecuteInstr() { // ^
@@ -1078,8 +1084,8 @@ U1 scanInstr() {
   err_jmp = &local_err_jmp;
 
   if(setjmp(local_err_jmp)) {
-    eprintf("\n\n!!! ERROR (stderr): 0x%X\n\n", *env.err);
-    zoab_err(*env.err, FALSE);
+    eprintf("\n\n!!! ERROR (stderr): 0x%X\n\n", env.g->err);
+    zoab_err(env.g->err, FALSE);
   } else {
     while(TRUE) {
       scan();
@@ -1097,7 +1103,7 @@ DictRef popDictRef() {
   return (DictRef) {
     .heap = (U2*) (mem + rHeap),
     .buf = buf,
-    .end = dict->end,
+    .end = env.g->dict.end,
     .isLocal = isLocal,
   };
 }
@@ -1149,8 +1155,8 @@ void deviceOpCatch() {
   err_jmp = prev_err_jmp;
 
   // Push current error to WS and clear it.
-  U4 out = *env.err;
-  *env.err = 0;
+  U4 out = env.g->err;
+  env.g->err = 0;
   WS_PUSH(out);
 }
 
@@ -1352,7 +1358,7 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
       tmp = WS_POP();
       if(!tmp) SET_ERR(E_cErr);
       if(!WS_POP()) SET_ERR(tmp);
-      env.errData->valTy = ERR_DATA_NONE;
+      env.g->errData.valTy = ERR_DATA_NONE;
       break;
     case D_wslen: WS_PUSH(WS_LEN); break;
     case D_cslen: WS_PUSH(Stk_len(env.cs)); break;
@@ -1420,63 +1426,38 @@ U1 readSrcAtLeast(U1 num) {
   memset(wsMem, 0, WS);                   \
   memset(callStkMem, 0, RS);              \
   env = (Env) {                           \
-    .ep = 1,                              \
-    .gb = 0,                              \
-    .heap =    (APtr*) (mem + 0x4),       \
-    .topHeap = (APtr*) (mem + 0x8),       \
-    .topMem =  (APtr*) (mem + 0xC),       \
-    .err =     (U4*) (mem + 0x10),        \
-    .state =   (U4*) (mem + 0x14),        \
-    .testIdx = (U4*) (mem + 0x18),        \
-    .sysLogLvl   = (U2*) (mem + 0x1C),    \
-    .usrLogLvl   = (U2*) (mem + 0x1E),    \
+    .g = (Globals*) mem,                  \
+    .ep = 1, .gb = 0,                     \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
     .cs = \
       { .size = RS, .sp = RS, .mem = callStkMem }, \
     .szI = SzI4, \
   };                                      \
-  *env.sysLogLvl = startingSysLogLvl;     \
-  *env.usrLogLvl = startingUsrLogLvl;     \
-  /* configure heap+topheap */            \
-  *env.heap = GS; /*bottom is globals*/   \
-  APtr glbls = 0x1E + 2;                  \
-  dict = (Dict*) (mem + glbls);           \
-  dict->heap = 0;                         \
-  dict->end = DS;                         \
-  glbls += sizeof(Dict);                  \
-  assert(0x2C == glbls);                  \
-  /* Then Token State*/                   \
-  tokenState = (TokenState*) (mem + glbls); \
-  glbls += sizeof(TokenState);            \
-  assert(0x34 == glbls);                  \
-  /* Then errData*/                       \
-  env.errData = (ErrData*) (mem + glbls); \
-  memset(env.errData, 0, sizeof(ErrData));\
-  glbls += sizeof(ErrData);               \
-  assert(0x48 == glbls);                  \
-  /* Configure topHeap w/ blocks */       \
-  *env.topMem = MS;                       \
-  *env.topHeap =            \
+  memset(env.g, 0, sizeof(Globals));      \
+  env.g->usrLogLvl = startingUsrLogLvl;   \
+  env.g->sysLogLvl = startingSysLogLvl;   \
+  env.g->heap = GS; /*bottom is globals*/ \
+  env.g->dict.end = DS; /*heap=0*/        \
+\
+  env.g->topMem = MS;                       \
+  env.g->topHeap =            \
     MS                      \
     - (BLKS << BLOCK_PO2)   \
     - BLKS;                 \
   /* Block Allocator (see fngi.fn) */     \
-  env.ba = (BlockAllocator*) (mem + glbls); \
-  env.ba->indexes = *env.topHeap;         \
-  env.ba->blocks = *env.topHeap + BLKS;   \
-  env.ba->len = BLKS;                     \
-  glbls += sizeof(BlockAllocator);        \
-  assert(0x54 == glbls);                  \
+  env.g->ba.indexes = env.g->topHeap;         \
+  env.g->ba.blocks = env.g->topHeap + BLKS;   \
+  env.g->ba.len = BLKS;                     \
   /* Reserve space for local stack*/      \
-  *env.topHeap -= LS;                     \
-  env.ls.mem = mem + *env.topHeap;        \
+  env.g->topHeap -= LS;                     \
+  env.ls.mem = mem + env.g->topHeap;        \
   /* Then dictionary */                   \
-  *env.topHeap -= DS;                     \
-  dict->buf = *env.topHeap;               \
+  env.g->topHeap -= DS;                     \
+  env.g->dict.buf = env.g->topHeap;               \
   /* Then Token Buf*/                     \
-  *env.topHeap -= TOKEN_BUF;              \
-  tokenState->buf = *env.topHeap;
+  env.g->topHeap -= TOKEN_BUF;              \
+  env.g->ts.buf = env.g->topHeap;
 
 #define SMALL_ENV_BARE \
   /*           MS       WS     RS     LS     DICT    GS    BLKS */    \
@@ -1497,7 +1478,7 @@ void compileFile(char* s) {
 
 #define NEW_ENV(MS, WS, RS, LS, DS, GS, BLKS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS); \
-  WS_PUSH(*env.heap); \
+  WS_PUSH(env.g->heap); \
   compileFile("spor.sp");
 
 #define SMALL_ENV \
@@ -1536,7 +1517,7 @@ Bool _dbgMemInvalid(SzI szI, APtr aptr) {
   U1 sz = szIToSz(szI);
   if (aptr != alignAPtr(aptr, sz))  return TRUE;
   if (aptr == 0)                    return TRUE;
-  if (aptr + sz > *env.topHeap)     return TRUE;
+  if (aptr + sz > env.g->topHeap)     return TRUE;
   return FALSE;
 }
 
@@ -1620,8 +1601,8 @@ static inline Bool isExecute(Instr instr) {
 }
 
 static inline Bool doLogInstr(Instr instr) {
-  if(LOG_INSTR == (LOG_INSTR & *env.sysLogLvl)) return TRUE;
-  if((LOG_EXECUTE == (LOG_EXECUTE & *env.sysLogLvl))
+  if(LOG_INSTR == (LOG_INSTR & env.g->sysLogLvl)) return TRUE;
+  if((LOG_EXECUTE == (LOG_EXECUTE & env.g->sysLogLvl))
      && isExecute(instr)) return TRUE;
   return FALSE;
 }
@@ -1634,11 +1615,11 @@ static inline void logInstr(Instr instr) {
 
 #define TEST_ENV_BARE \
   SMALL_ENV_BARE; \
-  U4 heapStart = *env.heap
+  U4 heapStart = env.g->heap
 
 #define TEST_ENV \
   SMALL_ENV \
-  U4 heapStart = *env.heap
+  U4 heapStart = env.g->heap
 
 
 char* testBuf = NULL;
@@ -1647,7 +1628,7 @@ U2 testBufIdx = 0;
 // Note: `n` is completely ignored, just fill the buffer if possible.
 /*test*/ U1 testingReadAtLeast(U1 n) {
   U1 numRead = 0;
-  while (tokenState->size < TOKEN_BUF) {
+  while (env.g->ts.size < TOKEN_BUF) {
     U1 c = testBuf[testBufIdx];
     if(c == 0) return numRead;
     tokenBuf[tokenBufSize] = c;
@@ -1750,49 +1731,49 @@ void assertNoWs() {
   zoab_info("## testSpore");
   // TODO: refactor
   // char* logit = "\nTEST printing works!\n";
-  // memcpy(mem + *env.heap, logit, strlen(logit));
-  // WS_PUSH(*env.heap);  WS_PUSH(strlen(logit));
+  // memcpy(mem + env.g->heap, logit, strlen(logit));
+  // WS_PUSH(env.g->heap);  WS_PUSH(strlen(logit));
   // deviceOpCom();
   // assert(!WS_POP());
 
   // Test zoa str
-  heapStart = *env.heap;
+  heapStart = env.g->heap;
   compileStr("$| \\nzoa!\\n|");
   assert(6 == fetch(mem, heapStart, SzI1));
   assert(0 == memcmp("\nzoa!\n", mem + heapStart + 1, 6));
   assertNoWs();
 
   // Test h1
-  heapStart = *env.heap;
+  heapStart = env.g->heap;
   compileStr(".1 #42 ,  #43 $h1");
-  assert(heapStart+2 == *env.heap);
+  assert(heapStart+2 == env.g->heap);
   assert(0x42 == fetch(mem, heapStart, SzI1));
   assert(0x43 == fetch(mem, heapStart + 1, SzI1));
 
   // Test L0
-  heapStart = *env.heap;
+  heapStart = env.g->heap;
   compileStr("#7 $L0");
-  assert(heapStart+1 == *env.heap);
+  assert(heapStart+1 == env.g->heap);
   U4 v1 = fetch(mem, heapStart, SzI1);
   assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
 
   // Test h2
-  *env.heap = alignAPtr(*env.heap, 2);
-  heapStart = *env.heap;
+  env.g->heap = alignAPtr(env.g->heap, 2);
+  heapStart = env.g->heap;
   compileStr("#1234 $h2");
-  assert(heapStart+2 == *env.heap);
+  assert(heapStart+2 == env.g->heap);
   assert(0x3412 == fetch(mem, heapStart, SzI2));
 
   // Test h4
-  *env.heap = alignAPtr(*env.heap, 4);
-  heapStart = *env.heap;
+  env.g->heap = alignAPtr(env.g->heap, 4);
+  heapStart = env.g->heap;
   compileStr("#987654 $h4");
-  assert(heapStart+4 == *env.heap);
+  assert(heapStart+4 == env.g->heap);
   assert(0x54769800 == fetch(mem, heapStart, SzI4));
 
   // Test various
   compileStr("$_h");
-  assert(*env.heap == WS_POP());
+  assert(env.g->heap == WS_POP());
 
   compileFile("tests/testSpore.sp");
   compileLoop(); ASSERT_NO_ERR();
