@@ -823,7 +823,7 @@ $SFN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn c_assertToken []             : assert there is a token
 \ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
-$SFN _keySzI $PRE $keyMeta @SZ_MASK$L1 %MSK %RET \ {&key -> szI}
+$SFN keySzI $PRE $keyMeta @SZ_MASK$L1 %MSK %RET \ {&key -> szI}
 
 $SFN szIToSz $PRE \ {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -985,10 +985,10 @@ $LFN _getSetImpl $PRE
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
   \ {&key dotMeta}
   $IF
-    $xsl _lSetup %DUP $xsl _keySzI \ {&key szInstr}
+    $xsl _lSetup %DUP $xsl keySzI \ {&key szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1
   $ELSE
-    $xsl _gSetup %DUP $xsl _keySzI \ {&key szInstr}
+    $xsl _gSetup %DUP $xsl keySzI \ {&key szInstr}
     .1%FTLL#2$h1 .1%FTLL#3$h1
   $END
   $xl c_instrLitImpl %RET
@@ -1019,15 +1019,22 @@ $SFN _refImpl \ {}
   $END @E_cNotType$L2 $xsl panic
 
 $SFN REF  $SMART
-  $IF  $xsl dictGetK $xsl _gSetup .A%FT %RET  $END
+  $IF \ asInstant: we can get &fn or &global
+    $xsl dictGetK \ next: assert(isTyVar or isTyFn)
+    %DUP $xsl assertTyped
+      %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
+      @E_cNotType$L2 $xsl assert
+    .A%FT %RET
+  $END \ else: we can get &local or &global
   $xsl c_scan $jmpl _refImpl
 
 $SFN GET  $SMART
-  $IF  $xsl dictGetK $xsl _gSetup %DUP $xsl _keySzI \ {&key szInstr}
+  $IF  $xsl dictGetK $xsl _gSetup %DUP $xsl keySzI \ {&key szInstr}
        %SWP .A%FT %SWP $jmpl ftSzI   $END
   $xsl c_scan $xsl anyDictGetK $jmpl _getImpl
 
-$SFN _SET $SMART $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImpl
+$SFN _SET $SMART
+  $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImpl
 
 $LFN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   #1$h1 \ locals 0=szI:u1
@@ -1071,7 +1078,7 @@ $LFN _compileInputs $PRE
   .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
   %DUP $xsl isTyVar %SWP \ {hasTy isTyVar &key}
   $xsl isVarInput %AND %AND %RETZ \ {} all of (hasTy isTyVar isVarInput)
-  .A%FTLL#0$h1  %DUP $xsl _keySzI \ {&key szInstr}
+  .A%FTLL#0$h1  %DUP $xsl keySzI \ {&key szInstr}
   @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl
   %RET
 
@@ -1126,7 +1133,6 @@ $SFN comzStart  #2$L0 @LOG_ZOAB_START$LA  @D_com$L0 %DVSR %RET
 $loc TODO #0$h1
 $LFN comzArr  $PRE \ {len join}
   $declL b0  @SZ1  #1 $declVar $declEnd \ b0 is used as an array for com
-
   \ $IF @ZOAB_JOIN$L1 $ELSE #0$L0 $END %SWP \ join -> joinTy       {joinTy len}
   \ %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert \ assert len <= 0x3F {joinTy len}
   \ %JN  $_SET b0
@@ -1396,14 +1402,14 @@ $LFN _spor
 
 $SFN spor $SMART $xsl assertNoInstant $xl _spor %RET \ compile as assembly
 
-$LFN _instant \ used in $ to make next token/s instant.
+$LFN c_instant \ used in $ to make next token/s instant.
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
-  @_instant$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
+  @c_instant$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
   $xsl c_scanNoEof
   @TRUE$L0 $xl c_single  \ compile next token as INSTANT
   $GET compFn $_SET c_compFn %RET
 
-$SFN $ $SMART $xsl assertNoInstant $xl _instant %RET \ make instant
+$SFN $ $SMART $xsl assertNoInstant $xl c_instant %RET \ make instant
 
 $LFN _comment \ used in \ to make next token ignored (comment)
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
@@ -1435,6 +1441,7 @@ $SFN ret $PRE $SMART $xsl assertNoInstant @RET $c1 %RET \ ret 4, or just ret;
 
 \ These do nothing and are used for more readable code.
 $SFN _ $SMART%DRP %RET  $SFN , $SMART%DRP %RET  $SFN ; $SMART%DRP %RET
+$SFN -> $SMART%DRP %RET
 
 $SFN c_fngi \ fngi compile loop
   $LOOP l0
