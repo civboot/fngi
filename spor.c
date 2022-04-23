@@ -217,9 +217,10 @@ typedef struct {
   APtr heap;
   APtr topHeap;
   APtr topMem;
-  U4 err;
-  U4 state;
-  U4 testIdx;
+  U2 err;
+  U2 state;
+  U4 _unimpl1;
+  U4 _unimpl2;
   U2 sysLogLvl;
   U2 usrLogLvl;
   Dict dict;

@@ -313,9 +313,10 @@
 #0000_0004 =heap
 #0000_0008 =topHeap
 #0000_000C =topMem
-#0000_0010 =err
-#0000_0014 =c_state
-#0000_0018 =testIdx
+#0000_0010 =err      \ U2
+#0000_0012 =c_state  \ U2
+\ #0000_0014 =_unimpl1
+\ #0000_0018 =_unimpl2
 #0000_001C =sysLogLvl
 #0000_001E =usrLogLvl
 
@@ -1034,8 +1035,8 @@ $LFN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   @TY_VAR$L1  %JN   $_jmpl c_makeTy
 
 @SZA $c_makeGlobal heap        @SZA $c_makeGlobal topHeap
-@SZA $c_makeGlobal topMem      @SZA $c_makeGlobal err
-@SZA $c_makeGlobal c_state     @SZA $c_makeGlobal testIdx
+@SZA $c_makeGlobal topMem      @SZ2 $c_makeGlobal err
+@SZ2 $c_makeGlobal c_state
 @SZ2 $c_makeGlobal sysLogLvl   @SZ2 $c_makeGlobal usrLogLvl
 @SZA $c_makeGlobal c_dictBuf   @SZ2 $c_makeGlobal c_dictHeap
 @SZ2 $c_makeGlobal c_dictEnd   @SZ2 $c_makeGlobal c_dictLHeap
