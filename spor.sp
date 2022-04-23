@@ -692,7 +692,7 @@ $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn tAssertNot     @TY_FN_PRE $c_makeFn tAssertEq
 @TY_FN_PRE $c_makeFn assertFn       @TY_FN_PRE $c_makeFn assertFnSmall
 @TY_FN_PRE $c_makeFn assertFnLarge  @TY_FN_PRE $c_makeFn assertCurMod
-@TY_FN_PRE $c_makeFn assertTyped    #0 $c_makeFn assertNoInstant
+@TY_FN_PRE $c_makeFn assertTyped    @TY_FN_PRE $c_makeFn assertNoInstant
 
 $FN metaIsFnSmart   $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SMART$L1   %EQ %RET
 $FN metaIsFnSmartI  $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SMART_I$L1 %EQ %RET

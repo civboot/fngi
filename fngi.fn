@@ -45,8 +45,8 @@ FN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
 FN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
 FN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
-FN xsw  PRE SMART assertNoInstant $c1(SZA+XSW) ret;
-FN xw   PRE SMART assertNoInstant $c1(SZA+XW)  ret;
+FN xsw  PRE SMART assertNoInstant(_) $c1(SZA+XSW) ret;
+FN xw   PRE SMART assertNoInstant(_) $c1(SZA+XW)  ret;
 
 
 \ memSet: {dst v len}   "dst = v"
@@ -76,8 +76,8 @@ FN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
 FN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
 
 \ TODO: alias?
-$(select(REF sr2, REF sr4, ASIZE == 2); dictSet srA)
-$(TY_FN_PRE + TY_FN_SMART                     c_makeFn srA)
+$(select(REF sr2, REF sr4, ASIZE == 2) -> dictSet srA) 
+$(TY_FN_PRE + TY_FN_SMART -> c_makeFn srA)
 
 FN strEq PRE \ {aLen &a bLen &b}
   $declVar(declL bLen, TY_VAR_INPUT+SZA, ASIZE)
@@ -93,7 +93,7 @@ FN assertToken PRE \ {&zStr}
   (_, E_cNeedToken) $jmpl assert
 
 $loc TOKEN_EQ |=|
-FN CONST  SMART assertNoInstant \ CONST <name> = <value>
+FN CONST  SMART assertNoInstant(_) \ CONST <name> = <value>
   c_updateRKey; loc; \ {&key}: update c_rKey and initialize dict@name
   c_scan; assertToken(TOKEN_EQ) \ {&key}: expect "="
   c_instant; \ compile next token as instant (like it was $)
@@ -105,7 +105,8 @@ FN between PRE \ {value a b -> bool} value is between [a b)
   IF(\value < \a)  drp; ret FALSE;  END
   ret(\value < GET b);
 
-\ FN ufn SMART \ ufn <token> [ <inputs> -> <locals> ] do ( <code> )
-\   0 -> $xsl FN \ declare small function (to start)
+FN ufn SMART \ ufn <token> [ <inputs> -> <locals> ] do ( <code> )
+  assertNoInstant(_)
+  0 -> $xsl FN \ declare small function (to start)
 
 
