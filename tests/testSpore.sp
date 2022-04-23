@@ -35,14 +35,13 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$dictGetK LFN  @TY_FN @TY_FN_SMART ^JN $tAssertKeyMeta
 $dictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
-$SFN myXs #22 $L0 %RET
+$FN myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
 
-$SFN callMyXs $xsl myXs %RET
+$FN callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
 $c_updateRKey ^DRP
@@ -58,33 +57,32 @@ $assertWsEmpty
 
 \ Test core macros
 
-$SFN one   #1 $L0 %RET
-$SFN add   %ADD %RET
+$FN one   #1 $L0 %RET
+$FN add   %ADD %RET
 
-$SFN test_xslJmpl $xsl one   $xsl one   $jmpl add
+$FN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
-$dictGetK SFN     $isFnSmart $tAssert
-$dictGetK LFN     $isFnSmart $tAssert
+$dictGetK FN      $isFnSmart $tAssert
 $dictGetK IF      $isTyFn      $tAssert
 $dictGetK IF      $isFnSmart $tAssert
 $dictGetK assert  $isFnInstant $tAssertNot
 
 \ Test control flow
-$SFN testIf \ converts 1->10 else: 42
+$FN testIf \ converts 1->10 else: 42
   #1 $L0 %EQ  $IF   #4 $L0 %RET
               $END  #13 $L0 %RET
 #1 $testIf      #4 $tAssertEq
 #2 $testIf      #13 $tAssertEq
 
-$SFN testIfElse
+$FN testIfElse
   #1$L0 %EQ $IF #4$L0 $ELSE #13$L0 $END
   #2$L0 %ADD %RET
 #1 $testIfElse  #6 $tAssertEq
 #2 $testIfElse  #15 $tAssertEq
 
 
-$LFN min \ [a b] -> [min]
+$FN min $LARGE \ [a b] -> [min]
   #1 $h1 \ one local, b
   .4%SRLL #0 $h1
   %DUP \ {a a}
@@ -104,7 +102,7 @@ $LFN min \ [a b] -> [min]
 #20 #2 $alignA #20 $tAssertEq   #21 #2  $alignA #22 $tAssertEq
 #21 #4 $alignA #24 $tAssertEq   #21 #11 $alignA #24 $tAssertEq
 
-$LFN testDecl
+$FN testDecl $LARGE
   $declL a
     ^OVR^OVR $tAssert   \ assert(isLocal)
     ^DUP $isTyped $tAssert
@@ -123,40 +121,40 @@ $declG myG1  @SZ4 #4 $declVar
 
 @myG1 #FF_FFFF ^MSK .4^FT  #12345 $tAssertEq
 
-$SFN myG1Ref  $REF myG1 %RET
+$FN myG1Ref  $REF myG1 %RET
 $myG1Ref  @myG1 #FF_FFFF ^MSK  $tAssertEq
 
-$SFN myG1Get  $GET myG1 %RET
+$FN myG1Get  $GET myG1 %RET
 $myG1Get  #12345 $tAssertEq
 
-$SFN myG1Set  $_SET myG1 %RET
+$FN myG1Set  $_SET myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
 \ *****
 \ * Testing Locals
 \ test ldict
 #12 =shadowed
-$SFN notARealFn %RET \ updates ldict
+$FN notARealFn %RET \ updates ldict
 @shadowed #12 $tAssertEq
 
 #45 $ldictSet shadowed
 $ldictGet shadowed #45 $tAssertEq
 @shadowed #12 $tAssertEq
 
-$LFN fooLocals
+$FN fooLocals
   $declL myLocal  @SZ2  #2 $declVar
   $ldictGetK myLocal ^INCA .1^FT
   @TY_VAR @SZ2 ^JN $tAssertEq
 
 \ test R_LP
-$SFN getLp %RGFT @R_LP$h1  %RET
+$FN getLp %RGFT @R_LP$h1  %RET
 $getLp ^DUP #FFF0 $tAssertEq  =lsTop
 
-$LFN getLpWLocal #1$h1  %RGFT @R_LP$h1  %RET \ uses locals
+$FN getLpWLocal #1$h1 $LARGE  %RGFT @R_LP$h1  %RET
 $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 
 \ test local variables
-$LFN useLocal
+$FN useLocal
   $declL a  @SZ2  #2 $declVar $declEnd
 
   #12345$L4 $_SET a
@@ -165,7 +163,7 @@ $LFN useLocal
 
 $useLocal #2345 $tAssertEq
 
-$LFN badMultiply \ {a b -- a*b} uses loop to implement multiply
+$FN badMultiply \ {a b -- a*b} uses loop to implement multiply
   $declL a  @SZ2@TY_VAR_INPUT^JN  #2 $declVar
   $declL b  @SZ2@TY_VAR_INPUT^JN  #2 $declVar
   $declEnd
@@ -212,7 +210,7 @@ $declG gStruct1 @SZ1 #1 $declVar
   #1234  $gRef gStruct  .4^SR
   #67    $gRef gStruct1 .1^SR
 
-$LFN testFTSROffset
+$FN testFTSROffset
   $declL r  @SZ4  #4 $declVar $declEnd
   $REF gStruct $_SET r
   $GET r  .4%FTO #0$h1    #1234$L2 $xsl tAssertEq
@@ -225,35 +223,35 @@ $assertWsEmpty   $testFTSROffset
 
 @TRUE #123 $c_lit #123 $tAssertEq  $assertWsEmpty
 
-$LFN two $declEnd #2$L0 %RET \ {} -> 1
+$FN two $declEnd #2$L0 %RET \ {} -> 1
 
-$SFN test_c_fn   $dictGetK one $c_fn %RET
+$FN test_c_fn   $dictGetK one $c_fn %RET
 $test_c_fn #1 $tAssertEq
 $assertWsEmpty
 
-$SFN test_c_fnTwo   $dictGetK two $c_fn %RET
+$FN test_c_fnTwo   $dictGetK two $c_fn %RET
 $test_c_fnTwo #2 $tAssertEq
 
 $dictGetK test_c_fnTwo $execute
 $dictGetK test_c_fn    $execute
   ^ADD #3 $tAssertEq
 
-$SFN test_c_compFnExists $GET c_compFn %RET
+$FN test_c_compFnExists $GET c_compFn %RET
 $test_c_compFnExists  @fngiSingle $tAssertEq
 
 \ Test essential functions
 
 $c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq \ 0x24 = '$'
 
-$SFN comp1 .4%XW %RET
+$FN comp1 .4%XW %RET
 
-$SFN testFngiSingleNum @fngiSingle $comp1 12 %RET
+$FN testFngiSingleNum @fngiSingle $comp1 12 %RET
 $testFngiSingleNum #C $tAssertEq
 
-$SFN testFngiSingleOne @fngiSingle $comp1 two %RET
+$FN testFngiSingleOne @fngiSingle $comp1 two %RET
 $testFngiSingleOne #2 $tAssertEq
 
-$LFN withLocals
+$FN withLocals
   $declL s4  @SZ4  #4 $declVar
   $declL s1  @SZ1  #1 $declVar
   $declEnd
@@ -273,13 +271,13 @@ $(
   \( block comment )
 )
 
-$( SFN hi 32 one spor%RET )
+$( FN hi 32 one spor%RET )
 $hi
   #1 $tAssertEq
   #20 $tAssertEq
 
-$SFN add1 $PRE %INC %RET \ {a} -> {a+1}
-$( SFN three ret(add1(2)) )
+$FN add1 $PRE %INC %RET \ {a} -> {a+1}
+$( FN three ret(add1(2)) )
 $three  #3 $tAssertEq
 
 $loc sporMsg  $| Hello world from testSpor.sp!\n|
@@ -289,7 +287,7 @@ $assertWsEmpty
 $assertWsEmpty
 
 
-$SFN failRecursively2 \ {n} -> {n-1}
+$FN failRecursively2 \ {n} -> {n-1}
   %DUP %NOT $IF
     %DRP
     #1$L0 #7$L0  $xsl tAssertEq
@@ -297,7 +295,7 @@ $SFN failRecursively2 \ {n} -> {n-1}
   $END
   %DEC $xsl failRecursively2
 
-$LFN failRecursively \ {n} -> {n-1}
+$FN failRecursively \ {n} -> {n-1}
   $declL n  @SZ4@TY_VAR_INPUT^JN  #4 $declVar
   $declEnd
   $GET n %NOT $IF

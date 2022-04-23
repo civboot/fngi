@@ -9,77 +9,77 @@
 $c_fngi
 
 \ Stack operators. These are /not/ PRE since they directly modify the stack.
-SFN swp      SMART IF() spor%SWP    ELSE $c1(SWP )   END ret;
-SFN drp      SMART IF() spor%DRP    ELSE $c1(DRP )   END ret;
-SFN ovr      SMART IF() spor%OVR    ELSE $c1(OVR )   END ret;
-SFN dup      SMART IF() spor%DUP    ELSE $c1(DUP )   END ret;
-SFN dupn     SMART IF() spor%DUPN   ELSE $c1(DUPN)   END ret;
+FN swp      SMART IF() spor%SWP    ELSE $c1(SWP )   END ret;
+FN drp      SMART IF() spor%DRP    ELSE $c1(DRP )   END ret;
+FN ovr      SMART IF() spor%OVR    ELSE $c1(OVR )   END ret;
+FN dup      SMART IF() spor%DUP    ELSE $c1(DUP )   END ret;
+FN dupn     SMART IF() spor%DUPN   ELSE $c1(DUPN)   END ret;
 
 \ Standard operators that use PRE syntax
-SFN dvft PRE SMART IF() spor%DVFT   ELSE $c1(DVFT)   END ret;
-SFN dvsr PRE SMART IF() spor%DVSR   ELSE $c1(DVSR)   END ret;
-SFN inc  PRE SMART IF() spor%INC    ELSE $c1(INC )   END ret;
-SFN inc2 PRE SMART IF() spor%INC2   ELSE $c1(INC2)   END ret;
-SFN inc4 PRE SMART IF() spor%INC4   ELSE $c1(INC4)   END ret;
-SFN dec  PRE SMART IF() spor%DEC    ELSE $c1(DEC )   END ret;
-SFN inv  PRE SMART IF() spor%INV    ELSE $c1(INV )   END ret;
-SFN neg  PRE SMART IF() spor%NEG    ELSE $c1(NEG )   END ret;
-SFN not  PRE SMART IF() spor%NOT    ELSE $c1(NOT )   END ret;
-SFN i1to4 PRE SMART IF() spor%CI1    ELSE $c1(CI1 )  END ret;
-SFN i2to4 PRE SMART IF() spor%CI2    ELSE $c1(CI2 )  END ret;
+FN dvft PRE SMART IF() spor%DVFT   ELSE $c1(DVFT)   END ret;
+FN dvsr PRE SMART IF() spor%DVSR   ELSE $c1(DVSR)   END ret;
+FN inc  PRE SMART IF() spor%INC    ELSE $c1(INC )   END ret;
+FN inc2 PRE SMART IF() spor%INC2   ELSE $c1(INC2)   END ret;
+FN inc4 PRE SMART IF() spor%INC4   ELSE $c1(INC4)   END ret;
+FN dec  PRE SMART IF() spor%DEC    ELSE $c1(DEC )   END ret;
+FN inv  PRE SMART IF() spor%INV    ELSE $c1(INV )   END ret;
+FN neg  PRE SMART IF() spor%NEG    ELSE $c1(NEG )   END ret;
+FN not  PRE SMART IF() spor%NOT    ELSE $c1(NOT )   END ret;
+FN i1to4 PRE SMART IF() spor%CI1    ELSE $c1(CI1 )  END ret;
+FN i2to4 PRE SMART IF() spor%CI2    ELSE $c1(CI2 )  END ret;
 
-SFN +    PRE SMART IF() spor%ADD    ELSE $c1(ADD )   END ret;
-SFN -    PRE SMART IF() spor%SUB    ELSE $c1(SUB )   END ret;
-SFN %    PRE SMART IF() spor%MOD    ELSE $c1(MOD )   END ret;
-SFN <<   PRE SMART IF() spor%SHL    ELSE $c1(SHL )   END ret;
-SFN >>   PRE SMART IF() spor%SHR    ELSE $c1(SHR )   END ret;
-SFN msk  PRE SMART IF() spor%MSK    ELSE $c1(MSK)    END ret;
-SFN jn   PRE SMART IF() spor%JN     ELSE $c1(JN  )   END ret;
-SFN xor  PRE SMART IF() spor%XOR    ELSE $c1(XOR )   END ret;
-SFN and  PRE SMART IF() spor%AND    ELSE $c1(AND)    END ret;
-SFN or   PRE SMART IF() spor%OR     ELSE $c1(OR  )   END ret;
-SFN ==   PRE SMART IF() spor%EQ     ELSE $c1(EQ  )   END ret;
-SFN !=   PRE SMART IF() spor%NEQ    ELSE $c1(NEQ )   END ret;
-SFN >=   PRE SMART IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
-SFN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
-SFN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
-SFN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
+FN +    PRE SMART IF() spor%ADD    ELSE $c1(ADD )   END ret;
+FN -    PRE SMART IF() spor%SUB    ELSE $c1(SUB )   END ret;
+FN %    PRE SMART IF() spor%MOD    ELSE $c1(MOD )   END ret;
+FN <<   PRE SMART IF() spor%SHL    ELSE $c1(SHL )   END ret;
+FN >>   PRE SMART IF() spor%SHR    ELSE $c1(SHR )   END ret;
+FN msk  PRE SMART IF() spor%MSK    ELSE $c1(MSK)    END ret;
+FN jn   PRE SMART IF() spor%JN     ELSE $c1(JN  )   END ret;
+FN xor  PRE SMART IF() spor%XOR    ELSE $c1(XOR )   END ret;
+FN and  PRE SMART IF() spor%AND    ELSE $c1(AND)    END ret;
+FN or   PRE SMART IF() spor%OR     ELSE $c1(OR  )   END ret;
+FN ==   PRE SMART IF() spor%EQ     ELSE $c1(EQ  )   END ret;
+FN !=   PRE SMART IF() spor%NEQ    ELSE $c1(NEQ )   END ret;
+FN >=   PRE SMART IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
+FN <    PRE SMART IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
+FN *    PRE SMART IF() spor%MUL    ELSE $c1(MUL )   END ret;
+FN /    PRE SMART IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
-SFN xsw  PRE SMART assertNoInstant $c1(SZA+XSW) ret;
-SFN xw   PRE SMART assertNoInstant $c1(SZA+XW)  ret;
+FN xsw  PRE SMART assertNoInstant $c1(SZA+XSW) ret;
+FN xw   PRE SMART assertNoInstant $c1(SZA+XW)  ret;
 
 
 \ memSet: {dst v len}   "dst = v"
 \ memMove {dst src len} "dst = src"
 \ memCmp: {&a &b len -> cmp}
-SFN memSet  PRE SMART IF() dvft(D_memSet) ELSE lit(D_memSet) $c1(DVFT) END ret;
-SFN memMove PRE SMART IF() dvsr(D_memSet) ELSE lit(D_memSet) $c1(DVSR) END ret;
-SFN memCmp  PRE SMART IF() dvft(D_memCmp) ELSE lit(D_memCmp) $c1(DVFT) END ret;
-SFN memClear PRE  0 swp; ret memSet(_, _) \ {addr len} clear memory
+FN memSet  PRE SMART IF() dvft(D_memSet) ELSE lit(D_memSet) $c1(DVFT) END ret;
+FN memMove PRE SMART IF() dvsr(D_memSet) ELSE lit(D_memSet) $c1(DVSR) END ret;
+FN memCmp  PRE SMART IF() dvft(D_memCmp) ELSE lit(D_memCmp) $c1(DVFT) END ret;
+FN memClear PRE  0 swp; ret memSet(_, _) \ {addr len} clear memory
 
 \ {a b} return if a < b
-SFN retlt PRE SMART assertNoInstant(_) $c1(GE_U) $c1(RETZ) ret;
+FN retlt PRE SMART assertNoInstant(_) $c1(GE_U) $c1(RETZ) ret;
 
 \ ftN(addr): fetch a value of sz N from address.
-SFN ft1    PRE SMART IF() spor$(.1%FT) ELSE $c1(SZ1+FT) END ret;
-SFN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2+FT) END ret;
-SFN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4+FT) END ret;
+FN ft1    PRE SMART IF() spor$(.1%FT) ELSE $c1(SZ1+FT) END ret;
+FN ft2    PRE SMART IF() spor$(.2%FT) ELSE $c1(SZ2+FT) END ret;
+FN ft4    PRE SMART IF() spor$(.4%FT) ELSE $c1(SZ4+FT) END ret;
 
 \ srN(value, addr): store a value of sz N to address.
-SFN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
-SFN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
-SFN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
+FN sr1    PRE SMART IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
+FN sr2    PRE SMART IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
+FN sr4    PRE SMART IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
 
-SFN = SMART drp panic(E_cToken)    \ prevent hanging =
-SFN ) SMART drp panic(E_cUnclosed) \ prevent hanging )
-SFN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
-SFN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
+FN = SMART drp panic(E_cToken)    \ prevent hanging =
+FN ) SMART drp panic(E_cUnclosed) \ prevent hanging )
+FN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
+FN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
 
 \ TODO: alias?
 $(select(REF sr2, REF sr4, ASIZE == 2); dictSet srA)
 $(TY_FN_PRE + TY_FN_SMART                     c_makeFn srA)
 
-LFN strEq PRE \ {aLen &a bLen &b}
+FN strEq PRE \ {aLen &a bLen &b}
   $declVar(declL bLen, TY_VAR_INPUT+SZA, ASIZE)
   $declVar(declL b, TY_VAR_INPUT+SZA, ASIZE)
   declEnd
@@ -87,30 +87,25 @@ LFN strEq PRE \ {aLen &a bLen &b}
   IF(\aLen != GET bLen)  drp; ret FALSE;  END \ {&a}
   ret(memCmp(\a, GET b, GET bLen) == 0)
 
-SFN assertToken PRE \ {&zStr}
+FN assertToken PRE \ {&zStr}
   ft1(dup); swp; inc(\zStr) \ {expectLen &expect}
   strEq(\expectLen, \(&expect), GET c_tokenLen, GET c_tokenBuf)
   (_, E_cNeedToken) $jmpl assert
 
 $loc TOKEN_EQ |=|
-SFN CONST  SMART assertNoInstant \ CONST <name> = <value>
+FN CONST  SMART assertNoInstant \ CONST <name> = <value>
   c_updateRKey; loc; \ {&key}: update c_rKey and initialize dict@name
   c_scan; assertToken(TOKEN_EQ) \ {&key}: expect "="
   c_instant; \ compile next token as instant (like it was $)
   swp; ret sr4(\num, \(&key));
 
-LFN SET  SMART \ SET <name> = <value>
-  $declVar(declL rKey, SZA, ASIZE)
-  $declVar(declL isFromLocal, SZ1, 1) declEnd
-  assertNoInstant;
-  c_scan; anyDictGetK;  _SET isFromLocal  _SET rKey \ cache <name>
-  c_scan; assertToken(TOKEN_EQ) \ "SET name ="
-  xw(GET c_compFn) \ <value>
-  ret _setImpl(GET rKey, GET isFromLocal)
-
-LFN between PRE \ {value a b -> bool} value is between [a b)
+FN between PRE \ {value a b -> bool} value is between [a b)
   $declVar(declL b, TY_VAR_INPUT+SZA, ASIZE) declEnd \ {value a}
   ovr; swp; \ {value value a}
   IF(\value < \a)  drp; ret FALSE;  END
   ret(\value < GET b);
+
+\ FN ufn SMART \ ufn <token> [ <inputs> -> <locals> ] do ( <code> )
+\   0 -> $xsl FN \ declare small function (to start)
+
 

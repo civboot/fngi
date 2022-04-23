@@ -3,7 +3,7 @@ $c_fngi
 $tAssert(1)
 $tAssertNot(0)
 $tAssert(1 == 1)
-SFN useEq ret(1 == 2);
+FN useEq ret(1 == 2);
 $tAssertNot(useEq)
 
 $tAssert(0x42 >= 0x30)
@@ -21,11 +21,11 @@ $tAssertEq(REF useEq, dictGet useEq)
 $loc testFngiMsg  | Hello world from testFngi.fn!\n|
 $_printz(testFngiMsg)
 
-SFN daAnswer ret 0x42
-SFN testXsw  ret xsw($lit(REF daAnswer))
+FN daAnswer ret 0x42
+FN testXsw  ret xsw($lit(REF daAnswer))
 $tAssertEq(0x42, testXsw)
 
-LFN testSET PRE
+FN testSET PRE
   $declVar(declL a, SZ4, 4) declEnd
   $assertWsEmpty;
   4          -> _SET a
