@@ -664,7 +664,7 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
 
 $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
-#0 $c_makeFn xsl    #0 $c_makeFn loc
+#0 $c_makeFn xsl    #0 $c_makeFn loc   #0 $c_makeFn xl
 @TY_FN_INSTANT $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
 @TY_FN_SMART $c_makeFn FN
 @TY_FN_SMART $c_makeFn PRE     @TY_FN_SMART $c_makeFn SMART
@@ -758,7 +758,7 @@ $FN IF  $PRE $SMART $xsl assertNoInstant \ {} -> {&jmpTo} : start an if block
   #0$L0  $xsl h1 \ compile 0 (jump pad)
   %RET
 
-$FN _END
+$FN _END $PRE \ {&jmpTo} end of IF
   %DUP          \ {&jmpTo &jmpTo}
   .A%FTGL @heap$h2  \ {&jmpTo &jmpTo heap}
   %SWP %SUB     \ {&jmpTo (heap-&jmpTo)}
@@ -922,7 +922,8 @@ $FN c_updateRLKey \ [] -> [&key] update and return current local key
 \ fn REF <token>            SMART : compile a "get ref" of token
 \ fn LOCAL <token> [SzI]    SMART : define a local variable of szI
 \ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
-\ fn declEnd             SMART : end locals
+\ fn declVar                      : declare a local/gloabl variable
+\ fn declEnd                      : end locals declaration
 
 $FN declG \ [<token> -> &key isLocal] create global and return it.
   $xsl c_updateRKey \ {&key}
@@ -1076,9 +1077,9 @@ $FN _compileInputs $PRE $LARGE
   .A%FTLL#0$h1  %DUP $xsl keySzI \ {&key szInstr}
   @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl %RET
 
-\ - Updates the number of slots for the FN
-\ - compiles SRLL for each INPUT in reverse order.
-$FN declEnd  $SMART $xsl assertNoInstant
+\ End locals declaration. Update FN slots and LARGE.
+\ Compiles SRLL for each TY_VAR_INPUT, in reverse order.
+$FN declEnd
   $GET c_localOffset $IF \ if localOffset: update fn to large
     $GET c_rKey @TY_FN_LARGE$L0 $xsl c_keyJnMeta
   $END
@@ -1222,6 +1223,7 @@ $FN c_readCharEsc
   %DUP #5C$L1 %NEQ $IF @FALSE$L0 %RET $END \ if(c != '\\') ret;
   \ c is an escape character: \
   %DRP $xsl c_charNext
+  %DUP #5C$L1 %EQ $IF             @FALSE$L0 %RET $END \ \\: escape
   %DUP #74$L1 %EQ $IF %DRP #09$L0 @FALSE$L0 %RET $END \ \t: tab
   %DUP #6E$L1 %EQ $IF %DRP #0A$L0 @FALSE$L0 %RET $END \ \n: newline
   %DUP #20$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END \ \ : space (raw)

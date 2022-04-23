@@ -907,7 +907,7 @@ LIT: case SzI2 + LIT:
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
   if(c == '_') return T_ALPHA;
-  if(c == '%' || c == '\'' || c == '$' || c == '|' ||
+  if(c == '%' || c == '\\' || c == '$' || c == '|' ||
      c == '.' || c ==  '(' || c == ')') {
     return T_SINGLE;
   }
@@ -1723,7 +1723,11 @@ void compileStr(char* s) {
 }
 
 void assertNoWs() {
-  if(WS_LEN) { zoab_start(); zoab_ws(WS_LEN); assert(FALSE); }
+  if(WS_LEN) {
+    eprint("! WS not empty\n");
+    zoab_start(); zoab_ws(WS_LEN); 
+    assert(FALSE);
+  }
 }
 
 /*test*/ void testSpore() {

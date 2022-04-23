@@ -26,7 +26,7 @@ FN testXsw  ret xsw($lit(REF daAnswer))
 $tAssertEq(0x42, testXsw)
 
 FN testSET PRE
-  $declVar(declL a, SZ4, 4) declEnd
+  $declVar(declL a, SZ4, 4) $declEnd
   $assertWsEmpty;
   4          -> _SET a
   inc(GET a) -> _SET a
@@ -38,3 +38,14 @@ $declVar(declG glblAnswer, SZ1, 1)
 
 $tAssertEq(42, GET glblAnswer)
 
+FN testIf  PRE
+  if  (dup == 1) do (drp; 0x42)
+  elif(dup == 7) do (drp; 0x777)
+  else (drp; 0x22)
+  ret(_)
+
+$tAssertEq(0x42,  testIf(1))
+$tAssertEq(0x777, testIf(7))
+$tAssertEq(0x22,  testIf(0))
+
+$assertWsEmpty
