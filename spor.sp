@@ -300,9 +300,9 @@
 #E0F0  =E_cUnknownEsc \ unknown character escape
 #E0F1  =E_cZoab       \ Zoab invalid
 #E0F2  =E_cNeedToken  \ token not present
-#E0F2  =E_cNeedNumber \ number not present
-#E0F3  =E_cBadRefs    \ too many de/refs
-#E0F3  =E_cRefEq      \ .&var = not allowed.
+#E0F3  =E_cNeedNumber \ number not present
+#E0F4  =E_cBadRefs    \ too many de/refs
+#E0F5  =E_cRefEq      \ .&var = not allowed.
 
 #E0B0  =E_iBlock      \ invalid block index
 #E0B1  =E_ptrBlk      \ invalid block ptr
@@ -310,6 +310,10 @@
 
 \ **********
 \ * [4] Globals: many of these must be the same as in spor.c
+\ There are a few "core structs". Types such as TokenState embed these for
+\ interroperability:
+\   struct Slc [AP ref; U2 len]         : a slice of data
+\   struct Buf [AP ref; U2 len; U2 cap] : buffer (len used and capacity)
 #0000_0004 =heap
 #0000_0008 =topHeap
 #0000_000C =topMem
@@ -328,26 +332,26 @@
 
 \ TokenBuf Struct
 #0000_002C =c_tokenBuf   \ [APtr] TokenBuf struct
-#0000_0030 =c_tokenLen   \ [U1] length of token
-#0000_0031 =c_tokenSize  \ [U1] characters buffered
-#0000_0032 =c_tokenGroup \ [U1] token group
+#0000_0030 =c_tokenLen   \ [U2] length of token
+#0000_0032 =c_tokenSize  \ [U2] characters buffered
+#0000_0034 =c_tokenGroup \ [U1] token group
 
 \ Global Error Variables
-#0000_0034 =c_errValTy     \ [U1]
-#0000_0038 =c_dataASz      \ [U2]
-#0000_003A =c_dataBSz      \ [U2]
-#0000_003C =c_errVal1      \ [U4]
-#0000_0040 =c_errVal2      \ [U4]
-#0000_0044 =c_msg          \ [APtr]
+#0000_0038 =c_errValTy     \ [U1] + 3align
+#0000_003C =c_dataASz      \ [U2]
+#0000_003E =c_dataBSz      \ [U2]
+#0000_0040 =c_errVal1      \ [U4]
+#0000_0044 =c_errVal2      \ [U4]
+#0000_0048 =c_msg          \ [APtr]
 
 \ Block allocator (12 bytes, see fngi.fn)
-#0000_0048 =BA_kernel
+#0000_004C =BA_kernel
 
 \ Global Compiler Variables
-#0000_0054 =c_rKey         \ [U4] &key of current dict key
-#0000_0058 =c_rLKey        \ [U4] &key of current ldict key.
-#0000_005C =c_gheap        \ [U4] global heap
-#0000_0060 =c_localOffset  \ [U2] Local Offset (for local var setup)
+#0000_0058 =c_rKey         \ [U4] &key of current dict key
+#0000_005C =c_rLKey        \ [U4] &key of current ldict key.
+#0000_0060 =c_gheap        \ [U4] global heap
+#0000_0064 =c_localOffset  \ [U2] Local Offset (for local var setup)
 
 #00  =ERR_DATA_NONE
 #01  =ERR_DATA_INT1
@@ -355,7 +359,7 @@
 #03  =ERR_DATA_INT2
 #04  =ERR_DATA_DATA2
 
-#62 @c_gheap .A^SR  \ initial value of global heap
+#66 @c_gheap .A^SR  \ initial value of global heap
 
 \ **********
 \ * [5] Bootstrap Macros
@@ -462,6 +466,12 @@ $loc tAssertEq \ {a b}
    %DUP .A%SRGL @c_errVal1$h2 \ a {a}
         .A%FTGL @c_errVal2$h2 \ {a b}
   %EQ   .2%JMPL @tAssert,
+
+
+#1 $tAssert
+#0 $tAssertNot
+#1 #1
+  $tAssertEq
 
 \ **********
 \ * [6] Core functions and macros
@@ -869,8 +879,8 @@ $FN srSzI \ {value &addr szI}
        @SZ4$L1 %EQ $IF      .4%SR %RET $END
   @E_cSz$L2 $jmpl panic
 
-$FN c_isEof .1%FTGL@c_tokenLen$h2 %NOT %RET
-$FN c_assertToken .1%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
+$FN c_isEof .2%FTGL@c_tokenLen$h2 %NOT %RET
+$FN c_assertToken .2%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
 $FN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot \ {numRead}
 
 $FN c_scanNoEof
@@ -882,20 +892,20 @@ $FN c_peekChr \ {} -> {c} peek at a character
   $xsl c_scan
   $xsl c_isEof $IF  #0$L0 %RET  $END
   .A%FTGL@c_tokenBuf$h2 .1%FT \ {c}
-  #0$L0 .1%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
+  #0$L0 .2%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
 
 $FN c_read \ { -> numRead} attempt to read bytes
   #1$L0 @D_read$L0 %DVFT %RET
 
 $FN c_readNew \ { -> numRead} clear token buf and read bytes
-  #0$L0 .1%SRGL@c_tokenLen$h2
-  #0$L0 .1%SRGL@c_tokenSize$h2
+  #0$L0 .2%SRGL@c_tokenLen$h2
+  #0$L0 .2%SRGL@c_tokenSize$h2
   #1$L0 @D_read$L0 %DVFT %RET
 
 $FN c_clearToken \ shift buffer to clear current token
   .A%FTGL@c_tokenBuf$h2                 \ {&tokenBuf}
-  %DUP .1%FTGL@c_tokenLen$h2 %ADD \ {&tokenBuf &tokenEnd}
-  .1%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
+  %DUP .2%FTGL@c_tokenLen$h2 %ADD \ {&tokenBuf &tokenEnd}
+  .2%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
   @D_memSet$L0 %DVSR %RET  \ memMove
 
 $FN anyDictGetK \ {} -> {&key isFromLocal}
@@ -1043,8 +1053,8 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 @SZ2 $c_makeGlobal sysLogLvl   @SZ2 $c_makeGlobal usrLogLvl
 @SZA $c_makeGlobal c_dictBuf   @SZ2 $c_makeGlobal c_dictHeap
 @SZ2 $c_makeGlobal c_dictEnd   @SZ2 $c_makeGlobal c_dictLHeap
-@SZA $c_makeGlobal c_tokenBuf  @SZ1 $c_makeGlobal c_tokenLen
-@SZ1 $c_makeGlobal c_tokenSize @SZ1 $c_makeGlobal c_tokenGroup
+@SZA $c_makeGlobal c_tokenBuf  @SZ2 $c_makeGlobal c_tokenLen
+@SZ2 $c_makeGlobal c_tokenSize @SZ1 $c_makeGlobal c_tokenGroup
 @SZ1 $c_makeGlobal c_errValTy
 @SZ2 $c_makeGlobal c_dataASz   @SZ2 $c_makeGlobal c_dataBSz
 @SZA $c_makeGlobal c_errVal1   @SZA $c_makeGlobal c_errVal2
@@ -1210,7 +1220,6 @@ $FN charToInt $PRE \ {c} -> {U8}
 \ {} -> {c}: read next character from AFTER tokenLen.
 \ Increments tokenLen. This is destructive to token, use with care.
 $FN c_charNext
-  \ IF(GET c_tokenLen >= GET c_tokenSize)
   $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
     $xsl c_readNew  $xsl c_assertNoEof
   $END
@@ -1376,7 +1385,7 @@ $FN c_single $PRE
   $END $jmpl c_fn \ otherwise compile the function.
 
 $FN fngiSingle \ base c_compFn for fngi tokens.
-  $declEnd \ not really any locals (but this is used as a pointer)
+  #0$h1 $LARGE \ not really any locals (but called with XW)
   $xsl c_scan $GET c_tokenLen %RETZ
   @FALSE$L0 $xl c_single %RET
 

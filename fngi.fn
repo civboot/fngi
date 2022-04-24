@@ -99,10 +99,10 @@ $loc TOKEN_COMMA  |,|
 $loc TOKEN_SEMI   |;|
 $loc TOKEN_ARROW  |->|
 FN c_isComment \ [ -> bool] return true if token is a comment
-  TRUE -> retif(ft1(GET c_tokenBuf) == 0c\\)
-          retif(zEq(REF c_tokenLen, TOKEN_COMMA))
-          retif(zEq(REF c_tokenLen, TOKEN_SEMI))
-          retif(zEq(REF c_tokenLen, TOKEN_ARROW))
+  TRUE -> retif (ft1(GET c_tokenBuf) == 0c\\)
+          \ retif(zEq(GET c_tokenLen, TOKEN_COMMA))
+          \ retif(zEq(GET c_tokenLen, TOKEN_SEMI))
+          \ retif(zEq(GET c_tokenLen, TOKEN_ARROW))
   drp; ret(FALSE)
 
 FN skipComments \ skip any comments in tokens.

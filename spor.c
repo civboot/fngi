@@ -187,17 +187,13 @@ typedef struct {
 
 typedef struct {
   APtr buf; // buffer.
-  U1 len;   // length of token
-  U1 size;  // total characters buffered
-  U1 group;
-  U1 _align;
+  U2 len;   // length of token
+  U2 size;  // total characters buffered
+  U1 group;     U1 _align; U2 _align2;
 } TokenState;
 
 typedef struct {
-  U1 valTy;
-  U1 _align;
-  U2 _align2;
-
+  U1 valTy;     U1 _align;  U2 _align2;
   U2 valueASz;
   U2 valueBSz;
   U4 valueA;
@@ -315,7 +311,7 @@ U1* START_BYTES = "\x80\x03";
 // Start a zoab log entry.
 void zoab_start() { ASM_ASSERT(fwrite(START_BYTES, 1, 2, stdout), E_io); }
 
-void writeOutbuf(U1 len) {
+void writeOutbuf(U2 len) {
   U4 out = fwrite(outbuf, 1, len, stdout);
 }
 
@@ -850,7 +846,7 @@ LIT: case SzI2 + LIT:
 }
 
 // find key offset from dict. Else return dict.heap
-/*fn*/ U2 Dict_find(DictRef d, U1 slen, char* s) {
+/*fn*/ U2 Dict_find(DictRef d, U2 slen, char* s) {
   ASM_ASSERT(slen < 0x40, E_cKeyLen);
   U2 offset = 0;
   assert(*d.heap < d.end);
@@ -864,7 +860,7 @@ LIT: case SzI2 + LIT:
   return offset;
 }
 
-/*fn*/ U2 Dict_set(DictRef d, U1 slen, char* s, U4 value) {
+/*fn*/ U2 Dict_set(DictRef d, U2 slen, char* s, U4 value) {
   // Set a key to a value, returning the offset
   U2 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset == *d.heap, E_cKey)
@@ -881,13 +877,13 @@ LIT: case SzI2 + LIT:
   return offset;
 }
 
-/*fn*/ U4 Dict_get(DictRef d, U1 slen, char* s) {
+/*fn*/ U4 Dict_get(DictRef d, U2 slen, char* s) {
   U2 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset != *d.heap, E_cNoKey);
   return Dict_key(d, offset)->value;
 }
 
-/*fn*/ void Dict_forget(U1 slen, char* s) {
+/*fn*/ void Dict_forget(U2 slen, char* s) {
   DictRef d = {.buf = env.g->dict.buf, .end = env.g->dict.end, .heap = &env.g->dict.heap, .isLocal=FALSE};
   env.g->dict.heap = Dict_find(d, slen, s);
 }
@@ -924,7 +920,7 @@ void readNewAtLeast(U1 num) {
 /*fn*/ void shiftBuf() {
   // Shift buffer left from end of token
   if(tokenLen == 0) return;
-  U1 newStart = tokenLen;
+  U2 newStart = tokenLen;
   U1 i = 0;
   while(tokenLen < tokenBufSize) {
     tokenBuf[i] = tokenBuf[tokenLen];
@@ -1436,6 +1432,7 @@ U1 readSrcAtLeast(U1 num) {
     .szI = SzI4, \
   };                                      \
   memset(env.g, 0, sizeof(Globals));      \
+  /* TODO: set gheap */                   \
   env.g->usrLogLvl = startingUsrLogLvl;   \
   env.g->sysLogLvl = startingSysLogLvl;   \
   env.g->heap = GS; /*bottom is globals*/ \
@@ -1655,6 +1652,22 @@ void compileStr(char* s) {
 
 // ********************************************
 // ** Tests
+//
+/*test*/ void testMem() {
+  TEST_ENV_BARE;
+  zoab_info("## testMem");
+  // Test our calculations on memory locations (hard-coded in spor.sp).
+  assert(0x2C == (size_t) &env.g->ts      - (size_t) env.g);
+  assert(0x30 == (size_t) &env.g->ts.len  - (size_t) env.g);
+  assert(0x32 == (size_t) &env.g->ts.size - (size_t) env.g);
+  assert(0x38 == (size_t) &env.g->errData - (size_t) env.g);
+  assert(0x3C == (size_t) &env.g->errData.valueASz - (size_t) env.g);
+  assert(0x3E == (size_t) &env.g->errData.valueBSz - (size_t) env.g);
+  assert(0x40 == (size_t) &env.g->errData.valueA - (size_t) env.g);
+  assert(0x44 == (size_t) &env.g->errData.valueB - (size_t) env.g);
+  assert(0x4C == (size_t) &env.g->ba      - (size_t) env.g);
+  assert(0x58 == (size_t) &env.g->ba      - (size_t) env.g + sizeof(BlockAllocator));
+}
 
 /*test*/ void testHex() {
   TEST_ENV_BARE;
@@ -1805,6 +1818,7 @@ void assertNoWs() {
   assert(20 == sizeof(ErrData));
   if (LOG_INFO & startingUsrLogLvl) zoab_infoStart("++ Starting Tests ++", 0);
 
+  testMem();
   testHex();
   testDictDeps();
   testDict();
