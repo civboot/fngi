@@ -178,11 +178,9 @@ typedef enum {
 } ErrValTy;
 
 typedef struct {
-  APtr buf;  // buffer of dicts
-  U2 heap;  // heap offset
-  U2 end;   // end offset
-  U2 lheap; // local heap
-  U2 _align;
+  APtr ref; // Dictionary data
+  U2 len;   // Bytes used.
+  U2 cap;   // Bytes available.
 } Dict;
 
 typedef struct {
@@ -220,9 +218,14 @@ typedef struct {
   U2 sysLogLvl;
   U2 usrLogLvl;
   Dict dict;
+  Dict ldict;
   TokenState ts;
   ErrData errData;
   BlockAllocator ba;
+  APtr gkey;
+  APtr lkey;
+  APtr gheap;
+  U2 localOffset;
 } Globals;
 
 // Environment
@@ -251,7 +254,7 @@ typedef struct {
 } DictRef;
 
 #define DEFAULT_DICT \
-  {.buf = env.g->dict.buf, .end = env.g->dict.end, .heap = &env.g->dict.heap, .isLocal=FALSE}
+  {.buf = env.g->dict.ref, .end = env.g->dict.cap, .heap = &env.g->dict.len, .isLocal=FALSE}
 
 typedef struct {
   U4 value;
@@ -845,7 +848,7 @@ LIT: case SzI2 + LIT:
   return TRUE;
 }
 
-// find key offset from dict. Else return dict.heap
+// find key offset from dict. Else return dict.len
 /*fn*/ U2 Dict_find(DictRef d, U2 slen, char* s) {
   ASM_ASSERT(slen < 0x40, E_cKeyLen);
   U2 offset = 0;
@@ -884,8 +887,8 @@ LIT: case SzI2 + LIT:
 }
 
 /*fn*/ void Dict_forget(U2 slen, char* s) {
-  DictRef d = {.buf = env.g->dict.buf, .end = env.g->dict.end, .heap = &env.g->dict.heap, .isLocal=FALSE};
-  env.g->dict.heap = Dict_find(d, slen, s);
+  DictRef d = {.buf = env.g->dict.ref, .end = env.g->dict.cap, .heap = &env.g->dict.len, .isLocal=FALSE};
+  env.g->dict.len = Dict_find(d, slen, s);
 }
 
 
@@ -1100,7 +1103,7 @@ DictRef popDictRef() {
   return (DictRef) {
     .heap = (U2*) (mem + rHeap),
     .buf = buf,
-    .end = env.g->dict.end,
+    .end = env.g->dict.cap,
     .isLocal = isLocal,
   };
 }
@@ -1432,11 +1435,11 @@ U1 readSrcAtLeast(U1 num) {
     .szI = SzI4, \
   };                                      \
   memset(env.g, 0, sizeof(Globals));      \
-  /* TODO: set gheap */                   \
+  env.g->gheap = sizeof(Globals);         \
   env.g->usrLogLvl = startingUsrLogLvl;   \
   env.g->sysLogLvl = startingSysLogLvl;   \
   env.g->heap = GS; /*bottom is globals*/ \
-  env.g->dict.end = DS; /*heap=0*/        \
+  env.g->dict.cap = DS; /*heap=0*/        \
 \
   env.g->topMem = MS;                       \
   env.g->topHeap =            \
@@ -1452,7 +1455,7 @@ U1 readSrcAtLeast(U1 num) {
   env.ls.mem = mem + env.g->topHeap;        \
   /* Then dictionary */                   \
   env.g->topHeap -= DS;                     \
-  env.g->dict.buf = env.g->topHeap;               \
+  env.g->dict.ref = env.g->topHeap;               \
   /* Then Token Buf*/                     \
   env.g->topHeap -= TOKEN_BUF;              \
   env.g->ts.buf = env.g->topHeap;
@@ -1657,16 +1660,18 @@ void compileStr(char* s) {
   TEST_ENV_BARE;
   zoab_info("## testMem");
   // Test our calculations on memory locations (hard-coded in spor.sp).
-  assert(0x2C == (size_t) &env.g->ts      - (size_t) env.g);
-  assert(0x30 == (size_t) &env.g->ts.len  - (size_t) env.g);
-  assert(0x32 == (size_t) &env.g->ts.size - (size_t) env.g);
-  assert(0x38 == (size_t) &env.g->errData - (size_t) env.g);
-  assert(0x3C == (size_t) &env.g->errData.valueASz - (size_t) env.g);
-  assert(0x3E == (size_t) &env.g->errData.valueBSz - (size_t) env.g);
-  assert(0x40 == (size_t) &env.g->errData.valueA - (size_t) env.g);
-  assert(0x44 == (size_t) &env.g->errData.valueB - (size_t) env.g);
-  assert(0x4C == (size_t) &env.g->ba      - (size_t) env.g);
-  assert(0x58 == (size_t) &env.g->ba      - (size_t) env.g + sizeof(BlockAllocator));
+  assert(0x20 == (size_t) &env.g->dict    - (size_t) env.g);
+  assert(0x28 == (size_t) &env.g->ldict   - (size_t) env.g);
+  assert(0x30 == (size_t) &env.g->ts      - (size_t) env.g);
+  assert(0x34 == (size_t) &env.g->ts.len  - (size_t) env.g);
+  assert(0x36 == (size_t) &env.g->ts.size - (size_t) env.g);
+  assert(0x3C == (size_t) &env.g->errData - (size_t) env.g);
+  assert(0x40 == (size_t) &env.g->errData.valueASz - (size_t) env.g);
+  assert(0x42 == (size_t) &env.g->errData.valueBSz - (size_t) env.g);
+  assert(0x44 == (size_t) &env.g->errData.valueA - (size_t) env.g);
+  assert(0x48 == (size_t) &env.g->errData.valueB - (size_t) env.g);
+  assert(0x50 == (size_t) &env.g->ba      - (size_t) env.g);
+  assert(0x5C == (size_t) &env.g->ba      - (size_t) env.g + sizeof(BlockAllocator));
 }
 
 /*test*/ void testHex() {

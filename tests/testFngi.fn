@@ -16,7 +16,7 @@ $tAssertEq(or(0x0, 0x8), TRUE)
 $tAssertEq(jn(0x0, 0x8), 0x8)
 $tAssertEq(0c\t, 0x09)
 
-$tAssertEq(REF useEq, dictGet useEq)
+$tAssertEq(REF useEq, gdictGet useEq)
 
 $loc testFngiMsg  | Hello world from testFngi.fn!\n|
 $_printz(testFngiMsg)

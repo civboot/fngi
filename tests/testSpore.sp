@@ -16,10 +16,10 @@ $assertWsEmpty
 #400 #1 ^SHL    #800 $tAssertEq
 
 \ Test dictionary
-#444 $dictSet foo
-$dictGet foo   #444 $tAssertEq
-#123455 $dictSet foo2
-$dictGet foo2 #123455 $tAssertEq
+#444 $gdictSet foo
+$gdictGet foo   #444 $tAssertEq
+#123455 $gdictSet foo2
+$gdictGet foo2 #123455 $tAssertEq
 
 
 \ Test loc
@@ -35,7 +35,7 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$dictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^JN ^JN $tAssertKeyMeta
+$gdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
 $FN myXs #22 $L0 %RET
@@ -48,7 +48,7 @@ $c_updateRKey ^DRP
 
 \ assert @rKey == @(&dict.buf + &dict.heap)
   @c_rKey @REF_MASK ^MSK .4^FT
-  @c_dictBuf @REF_MASK ^MSK .4^FT   @c_dictHeap @REF_MASK ^MSK .2^FT   .4^ADD
+  @c_gdictRef @REF_MASK ^MSK .4^FT   @c_gdictLen @REF_MASK ^MSK .2^FT   .4^ADD
   $tAssertEq
 
 
@@ -63,10 +63,10 @@ $FN add   %ADD %RET
 $FN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
-$dictGetK FN      $isFnSmart $tAssert
-$dictGetK IF      $isTyFn      $tAssert
-$dictGetK IF      $isFnSmart $tAssert
-$dictGetK assert  $isFnInstant $tAssertNot
+$gdictGetK FN      $isFnSmart $tAssert
+$gdictGetK IF      $isTyFn      $tAssert
+$gdictGetK IF      $isFnSmart $tAssert
+$gdictGetK assert  $isFnInstant $tAssertNot
 
 \ Test control flow
 $FN testIf \ converts 1->10 else: 42
@@ -225,15 +225,15 @@ $assertWsEmpty   $testFTSROffset
 
 $FN two $declEnd #2$L0 %RET \ {} -> 1
 
-$FN test_c_fn   $dictGetK one $c_fn %RET
+$FN test_c_fn   $gdictGetK one $c_fn %RET
 $test_c_fn #1 $tAssertEq
 $assertWsEmpty
 
-$FN test_c_fnTwo   $dictGetK two $c_fn %RET
+$FN test_c_fnTwo   $gdictGetK two $c_fn %RET
 $test_c_fnTwo #2 $tAssertEq
 
-$dictGetK test_c_fnTwo $execute
-$dictGetK test_c_fn    $execute
+$gdictGetK test_c_fnTwo $execute
+$gdictGetK test_c_fn    $execute
   ^ADD #3 $tAssertEq
 
 $FN test_c_compFnExists $GET c_compFn %RET

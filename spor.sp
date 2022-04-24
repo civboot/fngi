@@ -310,8 +310,8 @@
 
 \ **********
 \ * [4] Globals: many of these must be the same as in spor.c
-\ There are a few "core structs". Types such as TokenState embed these for
-\ interroperability:
+\ There are a few "core structs". Types such as TokenState and Dict embed these
+\ for interroperability:
 \   struct Slc [AP ref; U2 len]         : a slice of data
 \   struct Buf [AP ref; U2 len; U2 cap] : buffer (len used and capacity)
 #0000_0004 =heap
@@ -325,41 +325,42 @@
 #0000_001E =usrLogLvl
 
 \ Dictionary Struct
-#0000_0020 =c_dictBuf   \ U4
-#0000_0024 =c_dictHeap  \ U2
-#0000_0026 =c_dictEnd   \ U2
-#0000_0028 =c_dictLHeap \ U2 + U2(align)
+#0000_0020 =c_gdictRef   \ U4
+#0000_0024 =c_gdictLen   \ U2
+#0000_0026 =c_gdictCap   \ U2
+
+#0000_0028 =c_ldictRef  \ U4
+#0000_0028 =c_ldictLen  \ U2
+#0000_0026 =c_ldictCap  \ U2
 
 \ TokenBuf Struct
-#0000_002C =c_tokenBuf   \ [APtr] TokenBuf struct
-#0000_0030 =c_tokenLen   \ [U2] length of token
-#0000_0032 =c_tokenSize  \ [U2] characters buffered
-#0000_0034 =c_tokenGroup \ [U1] token group
+#0000_0030 =c_tokenBuf   \ [APtr] TokenBuf struct
+#0000_0034 =c_tokenLen   \ [U2] length of token
+#0000_0036 =c_tokenSize  \ [U2] characters buffered
+#0000_0038 =c_tokenGroup \ [U1] token group
 
 \ Global Error Variables
-#0000_0038 =c_errValTy     \ [U1] + 3align
-#0000_003C =c_dataASz      \ [U2]
-#0000_003E =c_dataBSz      \ [U2]
-#0000_0040 =c_errVal1      \ [U4]
-#0000_0044 =c_errVal2      \ [U4]
-#0000_0048 =c_msg          \ [APtr]
+#0000_003C =c_errValTy     \ [U1] + 3align
+#0000_0040 =c_dataASz      \ [U2]
+#0000_0042 =c_dataBSz      \ [U2]
+#0000_0044 =c_errVal1      \ [U4]
+#0000_0048 =c_errVal2      \ [U4]
+#0000_004C =c_msg          \ [APtr]
 
 \ Block allocator (12 bytes, see fngi.fn)
-#0000_004C =BA_kernel
+#0000_0050 =BA_kernel
 
 \ Global Compiler Variables
-#0000_0058 =c_rKey         \ [U4] &key of current dict key
-#0000_005C =c_rLKey        \ [U4] &key of current ldict key.
-#0000_0060 =c_gheap        \ [U4] global heap
-#0000_0064 =c_localOffset  \ [U2] Local Offset (for local var setup)
+#0000_005C =c_rKey         \ [U4] &key of current dict key
+#0000_0060 =c_rLKey        \ [U4] &key of current ldict key.
+#0000_0064 =c_gheap        \ [U4] global heap
+#0000_0068 =c_localOffset  \ [U2] Local Offset (for local var setup)
 
 #00  =ERR_DATA_NONE
 #01  =ERR_DATA_INT1
 #02  =ERR_DATA_DATA1
 #03  =ERR_DATA_INT2
 #04  =ERR_DATA_DATA2
-
-#66 @c_gheap .A^SR  \ initial value of global heap
 
 \ **********
 \ * [5] Bootstrap Macros
@@ -371,9 +372,9 @@
 \   fn h2 [U2] -> []                : push 2 byte to heap
 \   fn h4 [U4] -> []                : push 4 byte to heap
 \   fn L0 [U1] -> []                : compile a small literal [#0 - #3F]
-\   fn $dictSet <key> [U4] -> []    : set a dictionary key to value
-\   fn $dictGet <key>  [] -> [U4]   : get dictionary key's value
-\   fn $dictGetK <key> [] -> [APtr] : get the key's &key
+\   fn $gdictSet <key> [U4] -> []    : set a dictionary key to value
+\   fn $gdictGet <key>  [] -> [U4]   : get dictionary key's value
+\   fn $gdictGetK <key> [] -> [APtr] : get the key's &key
 \   fn $loc <token> [] -> []        : set token to the current heap location
 \
 \ Assertions: these panic with the supplied errCode if cond is not met.
@@ -423,29 +424,29 @@ $_h =h4  \ h4: {val:4} push 4bytes from stack to heap
   .A%FTGL @heap.2,  %INC4     .A%SRGL @heap.2, \ heap=heap+4
   %RET
 
-$_h =dictArgs \ args for dict.
+$_h =gdictArgs \ [ -> &buf &heap isLocal] args for dict.
   \ put {dict.buf &dict.heap isLocal=FALSE} on stack
-  .A%FTGL @c_dictBuf $h2
-  .2%LIT @c_dictHeap $h2
+  .A%FTGL @c_gdictRef $h2
+  .2%LIT @c_gdictLen $h2
   #0$L0     %RET \ isLocal=FALSE
 
 $_h =_dict
-  @D_scan$L0  %DVFT .2%JMPL @dictArgs$h2
+  @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
 
-$_h =dictSet \ dictSet: Set "standard" dictionary to next token.
+$_h =gdictSet \ gdictSet: Set "standard" dictionary to next token.
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  %RET
 
-$_h =dictGet \ dictGet: Get the value of the next token.
+$_h =gdictGet \ gdictGet: Get the value of the next token.
   .2%XSL @_dict $h2   @D_dict$L0   %DVFT  %RET
 
-$_h =dictGetK \ dictGetK: Get the &key of the next token.
+$_h =gdictGetK \ gdictGetK: Get the &key of the next token.
   .2%XSL @_dict $h2   @D_dictK$L0   %DVFT  %RET
 
 $_h =loc \ $loc <name>: define a location
-  .A%FTGL @heap$h2  .2%XSL @dictSet$h2
+  .A%FTGL @heap$h2  .2%XSL @gdictSet$h2
   \ Clear ldict (locals dict)
   #0$L0        .2%SRGL @c_localOffset $h2  \ zero localDict.offset
-  #0$L0        .A%SRGL @c_dictLHeap $h2    \ zero localDict.heap
+  #0$L0        .A%SRGL @c_ldictLen $h2    \ zero localDict.heap
   %RET
 
 \ Assert checks a condition or panics with an error
@@ -521,8 +522,8 @@ $loc tAssertEq \ {a b}
 \ fn assertFnSmall [&key]         : assert fn is small (no locals)
 \ fn assertFnLarge [&key]         : assert fn is large (has locals)
 \
-\ fn c_updateRKey [ -> &key]      : update rKey=dictHeap and return it
-\ fn ldictBuf / ldictArgs / ldictHeap : interface directly with local dict
+\ fn c_updateRKey [ -> &key]      : update rKey=dictLen and return it
+\ fn ldictRef / ldictArgs / ldictLen  : interface directly with local dict
 \ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
 \ fn c_keySetTyped [&key]                    : make a key non-global
 \ fn c_makeTy <token> [<dictArgs> meta]      : make token be typed meta
@@ -536,12 +537,12 @@ $loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
   .2%JMPL @h2 $h2     \ compile addr
 
 $loc _xsl \ $_xsl <token> : compile unchecked xsl
-  .2%XSL @dictGet $h2 \ {key}
+  .2%XSL @gdictGet $h2 \ {key}
   .1%LIT @XSL2 $h1  \ push .2%XSL instr
   .2%JMPL @_j2 $h2
 
 $loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
-  $_xsl dictGet             \ {key}
+  $_xsl gdictGet             \ {key}
   .1%LIT @JMPL2 $h1 \ push .2%JMPL instr
   .2%JMPL @_j2 $h2
 
@@ -612,22 +613,22 @@ $loc _jSetup \ [&key] -> [ref]: checked jmp setup
 $loc  assertNoInstant @E_cNoInstant$L2 $_jmpl assertNot   \ {asInstant} -> {}
 
 $loc xsl \ $xsl <token> : compile .2%xsl
-  $_xsl dictGetK $_xsl _jSetup \ {ref}
+  $_xsl gdictGetK $_xsl _jSetup \ {ref}
   @XSL2 $L1 $_jmpl _j2
 
 $loc xl \ $xl <token> : compile .2%xl
-  $_xsl dictGetK \ {&key}
+  $_xsl gdictGetK \ {&key}
   %DUP $_xsl assertFnLarge
   .A%FT %DUP $_xsl assertCurMod
   @SZ2 @XL ^JN   $L1  $_jmpl _j2
 
 $loc jmpl  \ $jmpl <token> : compile jmpl2
-  $_xsl dictGetK $_xsl _jSetup \ {ref}
+  $_xsl gdictGetK $_xsl _jSetup \ {ref}
   @JMPL2$L1  $_jmpl _j2
 
 $loc c_updateRKey \ [] -> [&key] update and return current key
-  .A%FTGL @c_dictBuf$h2  \ dict.buf
-  .2%FTGL @c_dictHeap$h2 \ dict.heap
+  .A%FTGL @c_gdictRef$h2 \ dict.buf
+  .2%FTGL @c_gdictLen$h2 \ dict.heap
   %ADD \ {&newKey}
   %DUP .A%SRGL @c_rKey$h2 \ rKey=newKey
   %RET \ return &key
@@ -656,20 +657,20 @@ $loc _declFn \ [<dictArgs> meta]
   $_jmpl c_dictSetMeta
 
 \ example: $FN <token> $SMART $LARGE: declare a function with attributes.
-$loc FN      $_xsl assertNoInstant $_xsl dictArgs #0$L0 $_jmpl _declFn
+$loc FN      $_xsl assertNoInstant $_xsl gdictArgs #0$L0 $_jmpl _declFn
 $loc SMART   %DRP .A%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl c_keyJnMeta
 $loc INSTANT %DRP .A%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl c_keyJnMeta
 $loc LARGE   %DRP .A%FTGL @c_rKey$h2  @TY_FN_LARGE$L1   $_jmpl c_keyJnMeta
 
 \ Backfill the fn meta
 $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
-  $_xsl dictGetK   \ {meta &key}
+  $_xsl gdictGetK   \ {meta &key}
   $_jmpl c_dictSetMeta
 
 \ {{meta} <token>}: set meta for token to be a small function.
 #0$FN c_makeFn #0$LARGE \ note: asInstant=#0 for SMART
   #1$h1  \ locals: 0=meta:U1
-  .1%SRLL#0$h1  $_xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
+  .1%SRLL#0$h1  $_xsl gdictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %JN   $_jmpl c_makeTy
 
 $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
@@ -685,9 +686,9 @@ $loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 @TY_FN_PRE $c_makeFn h1   @TY_FN_PRE $c_makeFn h2
 @TY_FN_PRE $c_makeFn h4
 @TY_FN_PRE @TY_FN_INSTANT ^JN  $c_makeFn c1
-#0 $c_makeFn dictSet
-#0 $c_makeFn dictGet        #0 $c_makeFn dictGetK
-#0 $c_makeFn dictArgs
+#0 $c_makeFn gdictSet
+#0 $c_makeFn gdictGet        #0 $c_makeFn gdictGetK
+#0 $c_makeFn gdictArgs
 @TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod   @TY_FN_PRE
 @TY_FN_PRE @TY_FN_SMART ^ADD $c_makeFn keyMeta
 $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
@@ -732,20 +733,20 @@ $FN ftoN $INSTANT  \ {offset szI} compile FTO szI w/offset
   %DUP $xsl assertSzI  @FTO$L1 %ADD $xsl h1 $jmpl h1
 
 \ Update the harness with the new dictionary
-$FN c_dictDump       $xsl dictArgs @D_dictDump$L0 %DVSR %RET \ {}
+$FN c_dictDump       $xsl gdictArgs @D_dictDump$L0 %DVSR %RET \ {}
 $c_dictDump
 
-$FN ldictBuf \ {} -> {ldict.buf:APtr}
-  .A%FTGL @c_dictBuf$h2
-  .2%FTGL @c_dictHeap$h2
+$FN ldictRef \ {} -> {ldict.buf:APtr}
+  .A%FTGL @c_gdictRef$h2
+  .2%FTGL @c_gdictLen$h2
   %ADD %RET
 
 $FN ldictArgs \ {} -> dictArgs
-  $xsl ldictBuf
-  @c_dictLHeap$L2  \ &ldict.heap
+  $xsl ldictRef
+  @c_ldictLen$L2  \ &ldict.heap
   #1$L0 \ isLocal=TRUE
   %RET
-$FN ldictHeap $xsl ldictArgs %DRP .2%FT %ADD %RET \ {} -> ldictHeap
+$FN ldictLen $xsl ldictArgs %DRP .2%FT %ADD %RET \ {} -> ldictLen
 
 $FN _ldict $xsl c_scan $jmpl ldictArgs
 $FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
@@ -912,13 +913,13 @@ $FN anyDictGetK \ {} -> {&key isFromLocal}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @TRUE$L1 %RET
   $END %DRP
-  $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF
+  $xsl gdictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
 $FN c_updateRLKey \ [] -> [&key] update and return current local key
-  .A%FTGL @c_dictBuf$h2   .2%FTGL @c_dictHeap$h2  %ADD \ ldict.buf
-  .2%FTGL @c_dictLHeap$h2                       \ ldict.heap
+  .A%FTGL @c_gdictRef$h2   .2%FTGL @c_gdictLen$h2  %ADD \ ldict.buf
+  .2%FTGL @c_ldictLen$h2                       \ ldict.heap
   %ADD \ {&newLkey}
   %DUP .A%SRGL @c_rLKey$h2  %RET
 
@@ -1011,7 +1012,7 @@ $FN _setImpl $PRE \ {&key dotMeta}
   $xl _getSetImpl %RET
 
 $FN gRef $INSTANT \ [<token> -> &gref] get token's global reference
-  $xsl dictGetK  $xsl _gSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
+  $xsl gdictGetK  $xsl _gSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
 
 $FN _refImpl \ {}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
@@ -1020,13 +1021,13 @@ $FN _refImpl \ {}
     @R_LP$L1 %JN  \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
-  $xsl dictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
+  $xsl gdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _gSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
 $FN REF  $SMART
   $IF \ asInstant: we can get &fn or &global
-    $xsl dictGetK \ next: assert(isTyVar or isTyFn)
+    $xsl gdictGetK \ next: assert(isTyVar or isTyFn)
     %DUP $xsl assertTyped
       %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
       @E_cNotType$L2 $xsl assert
@@ -1035,7 +1036,7 @@ $FN REF  $SMART
   $xsl c_scan $jmpl _refImpl
 
 $FN GET  $SMART
-  $IF  $xsl dictGetK $xsl _gSetup %DUP $xsl keySzI \ {&key szInstr}
+  $IF  $xsl gdictGetK $xsl _gSetup %DUP $xsl keySzI \ {&key szInstr}
        %SWP .A%FT %SWP $jmpl ftSzI   $END
   $xsl c_scan $xsl anyDictGetK $jmpl _getImpl
 
@@ -1044,15 +1045,15 @@ $FN _SET $SMART
 
 $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   $LARGE #1$h1 \ locals 0=szI:u1
-  .1%SRLL#0$h1  $xsl dictArgs .1%FTLL#0$h1 \ {<dictArgs> szI}
+  .1%SRLL#0$h1  $xsl gdictArgs .1%FTLL#0$h1 \ {<dictArgs> szI}
   @TY_VAR$L1  %JN   $_jmpl c_makeTy
 
 @SZA $c_makeGlobal heap        @SZA $c_makeGlobal topHeap
 @SZA $c_makeGlobal topMem      @SZ2 $c_makeGlobal err
 @SZ2 $c_makeGlobal c_state
 @SZ2 $c_makeGlobal sysLogLvl   @SZ2 $c_makeGlobal usrLogLvl
-@SZA $c_makeGlobal c_dictBuf   @SZ2 $c_makeGlobal c_dictHeap
-@SZ2 $c_makeGlobal c_dictEnd   @SZ2 $c_makeGlobal c_dictLHeap
+@SZA $c_makeGlobal c_gdictRef   @SZ2 $c_makeGlobal c_gdictLen
+@SZ2 $c_makeGlobal c_gdictCap   @SZ2 $c_makeGlobal c_ldictLen
 @SZA $c_makeGlobal c_tokenBuf  @SZ2 $c_makeGlobal c_tokenLen
 @SZ2 $c_makeGlobal c_tokenSize @SZ1 $c_makeGlobal c_tokenGroup
 @SZ1 $c_makeGlobal c_errValTy
@@ -1079,7 +1080,7 @@ $FN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
 $FN _compileInputs $PRE $LARGE
   #1$h1 \ locals 0=&key:APtr
   %DUP  .A%SRLL#0$h1 \ {&key} var key
-  $xsl ldictHeap $reteq \ return if key=ldictHeap
+  $xsl ldictLen $reteq \ return if key=ldictLen
   .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
   .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
   %DUP $xsl isTyVar %SWP \ {hasTy isTyVar &key}
@@ -1095,7 +1096,7 @@ $FN declEnd
   $END
   $GET c_localOffset #4$L0 $xl align
   @APO2$L0 %SHR $xsl h1 \ update number of slots
-  $xsl ldictBuf $xl _compileInputs
+  $xsl ldictRef $xl _compileInputs
   %RET
 
 \ **********
@@ -1331,7 +1332,7 @@ $FN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
    .A%FT $xsl c_lit  $jmpl null2
  $END %DRP
 
- $xsl dictArgs  @D_dictK$L0 %DVFT \ {asInstant &key}
+ $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asInstant &key}
 
  \ Constant
  %DUP  $xsl isTyped %NOT $IF

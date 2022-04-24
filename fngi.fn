@@ -76,8 +76,8 @@ FN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
 FN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
 
 \ TODO: alias?
-$(select(REF sr2, REF sr4, ASIZE == 2) -> dictSet srA)
-$(select(REF sr2, REF sr4, ASIZE == 2) -> dictSet ftA)
+$(select(REF sr2, REF sr4, ASIZE == 2) -> gdictSet srA)
+$(select(REF sr2, REF sr4, ASIZE == 2) -> gdictSet ftA)
 $(TY_FN_PRE + TY_FN_SMART -> c_makeFn srA)
 $(TY_FN_PRE + TY_FN_SMART -> c_makeFn ftA)
 
