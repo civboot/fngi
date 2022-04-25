@@ -434,9 +434,10 @@ $_h =_dict
   @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
 
 $_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
-  #0$L0 .4%SRGL @c_ldictRef$h2  #0$L0 .2%SRGL @c_ldictLen$h2 \ clear local dict
-  #0$L0        .2%SRGL @c_localOffset $h2  \ zero localDict.offset
-  .2%XSL @_dict $h2  @D_dict$L0   %DVSR  %RET
+  .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
+  .4%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
+    %ADD  .4%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
+  #0$L0 .2%SRGL @c_ldictLen$h2   #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
 $_h =gdictGet \ gdictGet: Get the value of the next token.
   .2%XSL @_dict $h2   @D_dict$L0   %DVFT  %RET
