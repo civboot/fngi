@@ -44,7 +44,7 @@ FN testIsComment
   ret;
 
 \ TODO: for some reason if you put testIsComment inside of the assertEq
-\ block, it causes the c_scanNoEof in c_instant to trigger an exception.
+\ block, it causes the c_scanNoEof in c_now to trigger an exception.
 $testIsComment \hello -> $tAssertEq(TRUE)
 
 \ FN testIf  PRE \ {s -> o}

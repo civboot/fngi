@@ -91,13 +91,13 @@ fn fib [n:U4] -> U4 do (
 
 Let's explain a few details on how the parser/compiler stays extremely minimal:
 
-- `fn` is an SMART function, meaning the compiler executes it instead of
+- `fn` is an SYN function, meaning the compiler executes it instead of
   compiling it to the heap. It is a "syntax function" that expects the syntax to
   be structured as follows: `fn [fn-name] [inputs] -> [outputs] do [code]`
-- `(..)` is NOT an expression. `(` is simply an instant function that compiles
+- `(..)` is NOT an expression. `(` is simply an NOW function that compiles
   until it encounters the token `)`. In this case, what is between them is the
   function body.
-- `if` is another smart "syntax function" which expects syntax of the form
+- `if` is another syn "syntax function" which expects syntax of the form
   `if [check] do [code]`. It can also peek at whether the next token is `elif`
   or `else` then it can look like: `if [check] do [code] elif [check] do [code]
   ... else [code]`
@@ -105,7 +105,7 @@ Let's explain a few details on how the parser/compiler stays extremely minimal:
   for fetching and storing variables of all types (globals, inputs or locals),
   as well as references, module lookups, etc.
 - If a token can be interpreted as a number, then it is a number. Otherwise it's
-  treated as a constant or function (which might be SMART/INSTANT).
+  treated as a constant or function (which might be SYN/NOW).
 
 ## Fngi syntax
 Fngi has the following rules for token groups.
@@ -113,7 +113,7 @@ Fngi has the following rules for token groups.
 "Single tokens": these tokens are never grouped together
 
 * `( ... )`: groups an execution.
-* `   $   `: run next token/s instantly. Can be `$( ... )`
+* `   $   `: run next token/s NOW (compile time). Can be `$( ... )`
 * `   .   `: enter name compiler `.foo = myFn(3)`
 
 Otherwise a token is a group of:
@@ -126,36 +126,36 @@ Functions can be defined for any token that is not purely numeric
   (ascii character)`
 * Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
 
-## Fngi "macros": SMART and INSTANT
-Fngi allows any function to be run "instantly" at compile time. In spor this is
+## Fngi "macros": SYN and NOW
+Fngi allows any function to be run "NOW" at compile time. In spor this is
 done using `$token` and it is very similar in fngi.
 
-In fngi, `$token(1, 2)` will run not only `token` instantly, but also it's args
+In fngi, `$token(1, 2)` will run not only `token` NOW, but also it's args
 (assuming `token` is PRE).
 
 > The mechanism by which this is accomplished involves very little code and is a
 > bit clever, see the definitions in `./spor.sp` if you are curious.
 
-Some functions are defined as INSTANT, which means they will panic if executed
+Some functions are defined as NOW, which means they will panic if executed
 without `$` (or in a `$(...)` block).
 
-Other functions are defined as SMART, and these are the true workhorses of fngi.
-A SMART function is (1) always run instantly and (2) it is passed a boolean
-(`asInstant`) which indicates whether the user wanted it to be run instantly
+Other functions are defined as SYN, and these are the true workhorses of fngi.
+A SYN function is (1) always run NOW and (2) it is passed a boolean
+(`asNow`) which indicates whether the user wanted it to be run NOW
 (i.e. whether the user used `$`).
 
-Some smart functions call `assertNoInstant(_)` right away, meaning they never
+Some syn functions call `assertNoNow(_)` right away, meaning they never
 want to be called with `$`. These typically implement some syntax such as `fn`,
 `if`, etc.
 
-Other smart functions have different behavior whether called instantly or not.
+Other syn functions have different behavior whether called with `$` or not.
 For example `$(1 + 3)` will put `4` on the stack at compile time. However,
 `1 + 3` will compile both the literals and the `%ADD` instruction into the
 function.
 
 # Similarities to FORTH
 Like FORTH, fngi allows you to define functions that are either compiled or
-run instantly (affecting compilation, often called "macros" in other
+run NOW (affecting compilation, often called "macros" in other
 languages). Also like FORTH, fngi's functions operate by push/poping from a
 working stack and uses a call stack to track calls/returns.  In addition, both
 FORTH and fngi have very low requirements for implementation.  Fngi is
@@ -211,10 +211,10 @@ though:
   and fngi comes along for the ride!
 * Support of the locals stack requres an extra stack, but also reduces the
   needed size of the working (data) stack.
-* Support of a range of dictionary types, like constant, smart, pre, etc has a
-  little more complexity. However, FORTH already had to handle instant
-  (IMMEDIATE) functions, so the complexity is largely in the forth compiler too.
-  Add to this that fngi provides basic type checking from the beginning (you
-  can't execute a constant for instance) makes things well worth it.
+* Support of a range of dictionary types, like constant, syn, pre, etc has a
+  little more complexity. However, FORTH already had to handle NOW functions, so
+  the complexity is largely in the forth compiler too.  Add to this that fngi
+  provides basic type checking from the beginning (you can't execute a constant
+  for instance) makes things well worth it.
 
 

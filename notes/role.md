@@ -94,7 +94,7 @@ able to having a Fake used for testing clients of it.
 
 On the code generation front, fngi supports insanely powerful macros instead. If
 you want to generate a function for multiple types then it should be possible to
-create a set of INSTANT functions (macros) to help you with that; but as a
+create a set of NOW functions (macros) to help you with that; but as a
 library, not as part of the core language. IMO creating bloat with something
 like code generation should be explicit, not implicit in using a new concrete
 type with a function.

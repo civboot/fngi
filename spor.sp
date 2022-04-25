@@ -10,6 +10,7 @@
 \ # Table of Contents
 \ Search for these headings to find information
 \
+\ [0] Documented Core Structs and Fn Types
 \ [1] Instructions: contains definition of spore assembly instructions and
 \    documentation.
 \    [1.a] Operations: Special
@@ -33,7 +34,24 @@
 \ [9] globals and locals
 \ [10] Zoa strings and logging zoab
 \ [11] Fngi compile loop
-
+\
+\ **********
+\ * [0] Documented Core Structs and Fn Types
+\
+\ There are a few "core structs" and associated "core function types". These allow
+\ cohesion and interoperability among various APIs in spor/fngi.
+\
+\ Structs:
+\   struct Slc [ref: &uty; len: U2]          : a slice of data
+\   struct Buf [ref: &uty; len: U2; cap: U2] : buffer (len and total capacity)
+\   struct Sll [next: AP]                    : singly linked list
+\
+\ Fn Types:
+\   fn wlkr [ref: &uty -> ref: AP, done:Bool]: function walker, used with wlk
+\   fn wlk  [ref: &uty, w: wlkr -> AP]       : walk a walker. Call until done,
+\   fn sllwlkr [ref: &Sll -> done:Bool]      : Sll version of walker.
+\   fn sllwlk  [ref: &Sll, w:sllwlkr -> AP]  : walk an Sll walker, ret done ref.
+\
 \ **********
 \ * [1] Instructions: these are constants that can be used directly by: % ^
 \ Spor uses 8 bit instructions with the following bit layout (S=size bit):
@@ -193,15 +211,15 @@
 #FF_FFFF =REF_MASK
 #FF_0000 =MOD_MASK
 
-\ FN meta bits [TTXL FFSP] L=locals F=fnTy S=syntax P=pre
-#01 =TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
-#0C =TY_FN_TY_MASK \ 4 function types
-#00 =TY_FN_NORMAL  \ Normally compiled, can use $ to make instant
-#04 =TY_FN_INSTANT \ Required to be run as instant (must use $)
-#08 =TY_FN_SMART   \ Always run immediately, compiler will pass asInstant
-#0C =TY_FN_SMART_I \ A smart function was called as asInstant (runtime only)
+\ FN meta bits [TTPL FF--] L=locals F=fnTy P=pre
+#20 =TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
+#10 =TY_FN_LARGE   \ large, has locals (called with XL or XW)
 
-#10 =TY_FN_LARGE  \ has locals (called with XL or XW)
+#0C =TY_FN_TY_MASK \ 4 function types
+#00 =TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
+#04 =TY_FN_NOW     \ Required to be run as NOW (must use $)
+#08 =TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
+#0C =TY_FN_SYN_I   \ A syn function was called as asNow (runtime only)
 
 \ Local meta bits  [TTTI RRSS] I=input R=ref S=szI
 \ Local meta bits  [TTSS RR-I] I=input R=ref S=szI
@@ -295,8 +313,8 @@
 #E0EC  =E_cNotFnOrConst
 #E0ED  =E_eof
 #E0EE  =E_cUnclosed   \ unclosed paren/brace/etc
-#E0EF  =E_cReqInstant \ fn is INSTANT but no '$' used
-#E0EF  =E_cNoInstant   \ fn is SMART and requires no $ used.
+#E0EF  =E_cReqNow     \ fn is NOW but no '$' used
+#E0EF  =E_cNoNow      \ fn is SYN and requires no $ used.
 #E0F0  =E_cUnknownEsc \ unknown character escape
 #E0F1  =E_cZoab       \ Zoab invalid
 #E0F2  =E_cNeedToken  \ token not present
@@ -310,10 +328,6 @@
 
 \ **********
 \ * [4] Globals: many of these must be the same as in spor.c
-\ There are a few "core structs". Types such as TokenState and Dict embed these
-\ for interroperability:
-\   struct Slc [AP ref; U2 len]         : a slice of data
-\   struct Buf [AP ref; U2 len; U2 cap] : buffer (len used and capacity)
 #0000_0004 =heap
 #0000_0008 =topHeap
 #0000_000C =topMem
@@ -351,8 +365,8 @@
 #0000_0050 =BA_kernel
 
 \ Global Compiler Variables
-#0000_005C =c_rKey         \ [U4] &key of current dict key
-#0000_0060 =c_rLKey        \ [U4] &key of current ldict key.
+#0000_005C =c_gkey         \ [U4] current gdict &key
+#0000_0060 =c_lkey         \ [U4] current ldict &key
 #0000_0064 =c_gheap        \ [U4] global heap
 #0000_0068 =c_localOffset  \ [U2] Local Offset (for local var setup)
 
@@ -367,15 +381,15 @@
 \ These macros must be defined in pure ASM. They build on eachother
 \ to make the syntax much more readable.
 \
-\   fn select [a b s -> a|b]        : a if s else b
-\   fn h1 [U1] -> []                : push 1 byte to heap
-\   fn h2 [U2] -> []                : push 2 byte to heap
-\   fn h4 [U4] -> []                : push 4 byte to heap
-\   fn L0 [U1] -> []                : compile a small literal [#0 - #3F]
-\   fn $gdictSet <key> [U4] -> []    : set a dictionary key to value
-\   fn $gdictGet <key>  [] -> [U4]   : get dictionary key's value
-\   fn $gdictGetK <key> [] -> [APtr] : get the key's &key
-\   fn $loc <token> [] -> []        : set token to the current heap location
+\   fn select [a b s -> a|b]      : a if s else b
+\   fn h1 [U1] -> []              : push 1 byte to heap
+\   fn h2 [U2] -> []              : push 2 byte to heap
+\   fn h4 [U4] -> []              : push 4 byte to heap
+\   fn L0 [U1] -> []              : compile a small literal [#0 - #3F]
+\   fn $gdictSet <key> [U4]       : set a dictionary key to value
+\   fn $gdictGet <key>  [-> U4]   : get dictionary key's value
+\   fn $gdictGetK <key> [-> APtr] : get the key's &key
+\   fn $loc <token> []            : set token to the current heap location
 \
 \ Assertions: these panic with the supplied errCode if cond is not met.
 \   assert [cond errCode]
@@ -440,10 +454,10 @@ $_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
   #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
 $_h =gdictGet \ gdictGet: Get the value of the next token.
-  .2%XSL @_dict $h2   @D_dict$L0   %DVFT  %RET
+  .2%XSL @_dict$h2   @D_dict$L0   %DVFT  %RET
 
 $_h =gdictGetK \ gdictGetK: Get the &key of the next token.
-  .2%XSL @_dict $h2   @D_dictK$L0   %DVFT  %RET
+  .2%XSL @_dict$h2   @D_dictK$L0   %DVFT  %RET
 
 $_h =loc .A%FTGL @heap$h2  .2%JMPL @gdictSet$h2 \ $loc <name>: define location
 
@@ -466,7 +480,6 @@ $loc tAssertEq \ {a b}
         .A%FTGL @c_errVal2$h2 \ {a b}
   %EQ   .2%JMPL @tAssert,
 
-
 \ **********
 \ * [6] Core functions and macros
 \ These are the bread and butter of spor assembly needed to create the fngi compiler.
@@ -484,46 +497,46 @@ $loc tAssertEq \ {a b}
 \
 \ fn FN <name>                    : declare a function
 \ fn PRE                          : make function "pre" (run after next token)
-\ fn SMART                        : make function "smart" (always instant)
-\ fn INSTANT                      : require function to be instant
+\ fn SYN                          : make function "syn" (syntax, always now)
+\ fn NOW                          : require function to be "now" (use $)
 \ fn LARGE                        : make function large (has locals)
 \
-\ fn $c1 [instr]                  : INSTANT to compile instr when executed
+\ fn $c1 [instr]                  : NOW to compile instr when executed
 \ fn keyMeta [&key] -> [meta]     : get meta of key
 \ fn isTyped     [&key] -> [U]    : &key has a type (is not const)
 \ fn isTyFn      [&key] -> [U1]   : &key is a fn
 \ fn isFnLarge   [&key] -> [U1]   : &key is a large fn (has locals)
 \ fn isFnPre     ...
 \ fn isFnNormal  ...
-\ fn isFnInstant ...
-\ fn isFnSmart   ...
-\ fn isFnSmartI  ...             : "smart instant", only at runtime
+\ fn isFnNow     ...
+\ fn isFnSyn     ...
+\ fn isFnSynN    ...              : "syn now", only at runtime
 \ fn isTyVar [&key -> U1]      : is a local offset
 \ fn isTyVarInput [&key -> U1] : is a local offset input
 \
-\ fn toMod [ref -> mod]          : get the "module" (upper byte of U4)
-\ fn curMod [ -> mod]            : get the module of the last dict entry
-\ fn isCurMod [ref -> mod]       : get whether ref is curMod
+\ fn toMod [ref -> mod]           : get the "module" (upper byte of U4)
+\ fn curMod [ -> mod]             : get the module of the last dict entry
+\ fn isCurMod [ref -> mod]        : get whether ref is curMod
 \
 \ fn panic [errCode]              : instantly panic with error
 \ fn unreach []                   : instantly panic with E_unreach
 \ fn assertWsEmpty []             : assert the working stack is empty (E_wsEmpty)
-\ fn assertNoInstant [asInstant]  : used by SMART to assert not called with $
+\ fn assertNoNow [asNow]          : used by SYN to assert not called with $
 \ fn assertCurMod [ref]           : assert ref is cur mod
 \ fn assertNotNull [&r]           : E_null if r is NULL
 \ fn assertTyped [&key]           :
 \ fn assertFnSmall [&key]         : assert fn is small (no locals)
 \ fn assertFnLarge [&key]         : assert fn is large (has locals)
 \
-\ fn c_updateRKey [ -> &key]      : update rKey=dictLen and return it
+\ fn c_updateGkey [ -> &key]      : update gkey=dictLen and return it
 \ fn ldictRef / ldictArgs / ldictLen  : interface directly with local dict
 \ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
 \ fn c_keySetTyped [&key]                    : make a key non-global
 \ fn c_makeTy <token> [<dictArgs> meta]      : make token be typed meta
 \ fn c_dictSetMeta [<dictArgs> meta:U1 &key] : update dict key meta
 \
-\ Note: any SMART function must be prefixed with asInstant (typically #0)
-\ since it will not be tagged as SMART until c_makeFn.
+\ Note: any SYN function must be prefixed with asNow (typically #0)
+\ since it will not be tagged as SYN until c_makeFn.
 
 $loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
   .2%XSL @h1 $h2      \ compile instr {ref}
@@ -544,7 +557,7 @@ $loc L1 \ {U1} compile 1 byte literal
   $_xsl h1 \ compile it
   $_jmpl h1
 
-\ INSTANT PRE $c1: {instr:U1}
+\ NOW PRE $c1: {instr:U1}
 \ Compiles code so that when executed the instr will be compiled.
 $loc c1
   $_xsl L1    \ compile the instr literal itself
@@ -563,8 +576,8 @@ $loc L4 \ {U4} compile 4 byte literal
 
 @L2 @L4    @ASIZE #2 ^EQ  $select =LA \ {UA} comipile ASIZE literal
 
-$loc keyMeta \ SMART {&key -> meta}
-  .1%JZL #4$h1 %INCA .1%FT %RET \ if(asInstant) get it
+$loc keyMeta \ SYN {&key -> meta}
+  .1%JZL #4$h1 %INCA .1%FT %RET \ if(asNow) get it
   @INCA $c1
   @SZ1 @FT ^JN  $c1 %RET
 
@@ -594,7 +607,7 @@ $loc toMod @MOD_MASK $L4 %MSK %RET \ {ref} -> {mod}
 $loc isSameMod \ {ref ref} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
-$loc curMod   .2%FTGL @c_rKey$h2 .A%FT  $_jmpl toMod \ [] -> [mod]
+$loc curMod   .2%FTGL @c_gkey$h2 .A%FT  $_jmpl toMod \ [] -> [mod]
 $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
@@ -603,7 +616,7 @@ $loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall
   .A%FT %DUP $_jmpl assertCurMod \ {ref}
 
-$loc  assertNoInstant @E_cNoInstant$L2 $_jmpl assertNot   \ {asInstant} -> {}
+$loc  assertNoNow @E_cNoNow$L2 $_jmpl assertNot   \ {asNow} -> {}
 
 $loc xsl \ $xsl <token> : compile .2%xsl
   $_xsl gdictGetK $_xsl _jSetup \ {ref}
@@ -619,15 +632,15 @@ $loc jmpl  \ $jmpl <token> : compile jmpl2
   $_xsl gdictGetK $_xsl _jSetup \ {ref}
   @JMPL2$L1  $_jmpl _j2
 
-$loc c_updateRKey \ [] -> [&key] update and return current key
+$loc c_updateGkey \ [] -> [&key] update and return current key
   .A%FTGL @c_gdictRef$h2 \ dict.buf
   .2%FTGL @c_gdictLen$h2 \ dict.heap
   %ADD \ {&newKey}
-  %DUP .A%SRGL @c_rKey$h2 \ rKey=newKey
+  %DUP .A%SRGL @c_gkey$h2 \ gkey=newKey
   %RET \ return &key
 
 $loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
-  %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SMART
+  %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SYN
   .1%FT %JN    \ {&key newMeta}
   %SWP %INCA .1%SR \ update meta
   %RET
@@ -645,15 +658,15 @@ $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
 
 $loc _declFn \ [<dictArgs> meta]
   @TY_FN$L1 %JN  \ {<dictArgs> meta}
-  $_xsl c_updateRKey \ {<dictArgs> meta &key}
+  $_xsl c_updateGkey \ {<dictArgs> meta &key}
   $_xsl loc
   $_jmpl c_dictSetMeta
 
-\ example: $FN <token> $SMART $LARGE: declare a function with attributes.
-$loc FN      $_xsl assertNoInstant $_xsl gdictArgs #0$L0 $_jmpl _declFn
-$loc SMART   %DRP .A%FTGL @c_rKey$h2  @TY_FN_SMART$L1   $_jmpl c_keyJnMeta
-$loc INSTANT %DRP .A%FTGL @c_rKey$h2  @TY_FN_INSTANT$L1 $_jmpl c_keyJnMeta
-$loc LARGE   %DRP .A%FTGL @c_rKey$h2  @TY_FN_LARGE$L1   $_jmpl c_keyJnMeta
+\ example: $FN <token> $SYN $LARGE: declare a function with attributes.
+$loc FN      $_xsl assertNoNow $_xsl gdictArgs #0$L0 $_jmpl _declFn
+$loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmpl c_keyJnMeta
+$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
+$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
 
 \ Backfill the fn meta
 $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
@@ -661,33 +674,33 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
   $_jmpl c_dictSetMeta
 
 \ {{meta} <token>}: set meta for token to be a small function.
-#0$FN c_makeFn #0$LARGE \ note: asInstant=#0 for SMART
+#0$FN c_makeFn #0$LARGE \ note: asNow=#0 for SYN
   #1$h1  \ locals: 0=meta:U1
   .1%SRLL#0$h1  $_xsl gdictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %JN   $_jmpl c_makeTy
 
-$loc PRE %DRP .A%FTGL @c_rKey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
+$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
 #0 $c_makeFn xsl    #0 $c_makeFn loc   #0 $c_makeFn xl
-@TY_FN_INSTANT $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
-@TY_FN_SMART $c_makeFn FN
-@TY_FN_SMART $c_makeFn PRE     @TY_FN_SMART $c_makeFn SMART
-@TY_FN_SMART $c_makeFn INSTANT @TY_FN_SMART $c_makeFn LARGE
-@TY_FN_PRE $c_makeFn L0   @TY_FN_PRE $c_makeFn L1
-@TY_FN_PRE $c_makeFn L2   @TY_FN_PRE $c_makeFn L4
+@TY_FN_NOW $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
+@TY_FN_SYN $c_makeFn FN
+@TY_FN_SYN $c_makeFn PRE   @TY_FN_SYN $c_makeFn SYN
+@TY_FN_SYN $c_makeFn NOW   @TY_FN_SYN $c_makeFn LARGE
+@TY_FN_PRE $c_makeFn L0    @TY_FN_PRE $c_makeFn L1
+@TY_FN_PRE $c_makeFn L2    @TY_FN_PRE $c_makeFn L4
 @TY_FN_PRE $c_makeFn LA
-@TY_FN_PRE $c_makeFn h1   @TY_FN_PRE $c_makeFn h2
+@TY_FN_PRE $c_makeFn h1    @TY_FN_PRE $c_makeFn h2
 @TY_FN_PRE $c_makeFn h4
-@TY_FN_PRE @TY_FN_INSTANT ^JN  $c_makeFn c1
+@TY_FN_PRE @TY_FN_NOW ^JN  $c_makeFn c1
 #0 $c_makeFn gdictSet
 #0 $c_makeFn gdictGet        #0 $c_makeFn gdictGetK
 #0 $c_makeFn gdictArgs
 @TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod   @TY_FN_PRE
-@TY_FN_PRE @TY_FN_SMART ^ADD $c_makeFn keyMeta
+@TY_FN_PRE @TY_FN_SYN ^ADD $c_makeFn keyMeta
 $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
 @TY_FN_PRE $c_makeFn isFnLarge
-#0 $c_makeFn c_updateRKey
+#0 $c_makeFn c_updateGkey
 @TY_FN_PRE $c_makeFn c_keySetTyped  @TY_FN_PRE $c_makeFn c_keyJnMeta
 @TY_FN_PRE $c_makeFn c_dictSetMeta
 #0 $c_makeFn c_makeTy
@@ -696,18 +709,18 @@ $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn tAssertNot     @TY_FN_PRE $c_makeFn tAssertEq
 @TY_FN_PRE $c_makeFn assertFn       @TY_FN_PRE $c_makeFn assertFnSmall
 @TY_FN_PRE $c_makeFn assertFnLarge  @TY_FN_PRE $c_makeFn assertCurMod
-@TY_FN_PRE $c_makeFn assertTyped    @TY_FN_PRE $c_makeFn assertNoInstant
+@TY_FN_PRE $c_makeFn assertTyped    @TY_FN_PRE $c_makeFn assertNoNow
 
-$FN metaIsFnSmart   $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SMART$L1   %EQ %RET
-$FN metaIsFnSmartI  $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SMART_I$L1 %EQ %RET
-$FN metaIsFnInstant $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_INSTANT$L1  %EQ %RET
+$FN metaIsFnSyn     $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN$L1   %EQ %RET
+$FN metaIsFnSynN    $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN_I$L1 %EQ %RET
+$FN metaIsFnNow     $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_NOW$L1  %EQ %RET
 
 $FN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1 %MSK %RET
 $FN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1  %EQ %RET
-$FN isFnInstant $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INSTANT$L1  %EQ %RET
-$FN isFnSmart   $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART$L1  %EQ %RET
-$FN isFnSmartI  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SMART_I$L1  %EQ %RET
-$FN isTyVar   $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_VAR$L1  %EQ %RET
+$FN isFnNow $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1  %EQ %RET
+$FN isFnSyn     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1  %EQ %RET
+$FN isFnSynN    $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN_I$L1  %EQ %RET
+$FN isTyVar     $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_VAR$L1  %EQ %RET
 $FN isVarInput $PRE $keyMeta  @TY_VAR_INPUT$L1 %MSK %RET
 $FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
 
@@ -722,7 +735,7 @@ $FN assertSzI $PRE \ {szI}
   %DUP #CF$L1 %MSK @E_cSz$L2 $xsl assertNot \ non-sz bits empty
   #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
 
-$FN ftoN $INSTANT  \ {offset szI} compile FTO szI w/offset
+$FN ftoN $NOW  \ {offset szI} compile FTO szI w/offset
   %DUP $xsl assertSzI  @FTO$L1 %ADD $xsl h1 $jmpl h1
 
 \ Update the harness with the new dictionary
@@ -736,9 +749,9 @@ $FN _ldict $xsl c_scan $jmpl ldictArgs
 $FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $FN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
 $FN ldictGetK  $xsl _ldict @D_dictK$L0 %DVFT %RET
-$FN retz  $PRE $SMART $xsl assertNoInstant @RETZ$c1 %RET
-$FN reteq $PRE $SMART $xsl assertNoInstant @NEQ$c1 @RETZ$c1 %RET
-$FN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
+$FN retz  $PRE $SYN $xsl assertNoNow @RETZ$c1 %RET
+$FN reteq $PRE $SYN $xsl assertNoNow @NEQ$c1 @RETZ$c1 %RET
+$FN retif $PRE $SYN $xsl assertNoNow @NOT$c1 @RETZ$c1 %RET
 
 \ **********
 \ * [7] ASM (initial) Flow Control
@@ -747,7 +760,7 @@ $FN retif $PRE $SMART $xsl assertNoInstant @NOT$c1 @RETZ$c1 %RET
 \
 \   if/else: $IF ... $ELSE ... $END
 \   loop:    $LOOP <l0> ... $BREAK0 <b0> ... $AGAIN <l0> $BREAK_END <b0>
-$FN IF  $PRE $SMART $xsl assertNoInstant \ {} -> {&jmpTo} : start an if block
+$FN IF  $PRE $SYN $xsl assertNoNow \ {} -> {&jmpTo} : start an if block
   @SZ1 @JZL  ^JN   $c1 \ compile .1%JZL instr
   .A%FTGL @heap$h2 \ {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 \ compile 0 (jump pad)
@@ -759,21 +772,21 @@ $FN _END $PRE \ {&jmpTo} end of IF
   %SWP %SUB     \ {&jmpTo (heap-&jmpTo)}
   %DUP $xsl assertLt128
   %SWP .1%SR %RET \ store at location after start (1 byte literal)
-$FN END $SMART $xsl assertNoInstant $jmpl _END  \ {&jmpTo} -> {} : end of IF or BREAK0
+$FN END $SYN $xsl assertNoNow $jmpl _END  \ {&jmpTo} -> {} : end of IF or BREAK0
 
-$FN ELSE $SMART $xsl assertNoInstant \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
+$FN ELSE $SYN $xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1         \ (end IF) compile unconditional jmp to end of ELSE
   .A%FTGL @heap$h2 %SWP \ {&elseBlockJmpTo &ifNotJmpTo}
   #0$L0 $xsl h1     \ compile jmp lit for &elseBlockJmpTo
   $jmpl _END        \ end of IF block (beginning of ELSE)
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
-$FN LOOP   $SMART $xsl assertNoInstant .A%FTGL @heap$h2  $jmpl ldictSet
-$FN BREAK0 $PRE $SMART   $xsl IF $jmpl ldictSet
-$FN BREAK_IF  $PRE $SMART @NOT$c1  $jmpl BREAK0 \ break if true
-$FN BREAK_EQ  $PRE $SMART @NEQ$c1  $jmpl BREAK0 \ break if equal
-$FN BREAK_NEQ $PRE $SMART @EQ$c1  $jmpl BREAK0 \ break if equal
-$FN AGAIN $SMART $xsl assertNoInstant
+$FN LOOP   $SYN $xsl assertNoNow .A%FTGL @heap$h2  $jmpl ldictSet
+$FN BREAK0 $PRE $SYN   $xsl IF $jmpl ldictSet
+$FN BREAK_IF  $PRE $SYN @NOT$c1  $jmpl BREAK0 \ break if true
+$FN BREAK_EQ  $PRE $SYN @NEQ$c1  $jmpl BREAK0 \ break if equal
+$FN BREAK_NEQ $PRE $SYN @EQ$c1  $jmpl BREAK0 \ break if equal
+$FN AGAIN $SYN $xsl assertNoNow
   @JMPL $c1  \ compile jmp
   .A%FTGL @heap$h2  \ {heap}
   $xsl ldictGet \ {heap &loopTo}
@@ -782,9 +795,9 @@ $FN AGAIN $SMART $xsl assertNoInstant
   %NEG          \ make negative for backwards jmp
   $jmpl h1      \ compile as jmp offset
 
-$FN END_BREAK $SMART $xsl assertNoInstant $xsl ldictGet $jmpl _END
+$FN END_BREAK $SYN $xsl assertNoNow $xsl ldictGet $jmpl _END
 
-$FN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
+$FN END_N $PRE $SYN $xsl assertNoNow \ {...(N &jmpTo) numJmpTo}
   $LOOP l0 %DUP %RETZ
     %SWP #0$L0 $xsl _END
     %DEC \ dec numJmpTo
@@ -801,7 +814,7 @@ $FN END_N $PRE $SMART $xsl assertNoInstant \ {...(N &jmpTo) numJmpTo}
 \ fn szToSzI [U4 -> SzI]          : convert number of bytes to SzI
 \ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
 \
-\ fn anyDictGetK [-> &key isFromLocal] : any ref to current token.
+\ fn dictK [-> &key isFromLocal]  : any ref to current token.
 \ fn c_read [ -> numRead]         : attempt to read bytes from src.
 \ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
 \ fn c_scanNoEof []               : scan and assert not EOF.
@@ -893,7 +906,7 @@ $FN c_clearToken \ shift buffer to clear current token
   .2%FTGL@c_tokenLen$h2           \ {&tokenBuf &tokenEnd tokenLen}
   @D_memSet$L0 %DVSR %RET  \ memMove
 
-$FN anyDictGetK \ {} -> {&key isFromLocal}
+$FN dictK \ {} -> {&key isFromLocal}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @TRUE$L1 %RET
   $END %DRP
@@ -901,11 +914,11 @@ $FN anyDictGetK \ {} -> {&key isFromLocal}
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
-$FN c_updateRLKey \ [] -> [&key] update and return current local key
+$FN c_updateLkey \ [] -> [&key] update and return current local key
   .A%FTGL @c_ldictRef$h2 \ dict.buf
   .2%FTGL @c_ldictLen$h2 \ dict.heap
   %ADD \ {&newLKey}
-  %DUP .A%SRGL @c_rLKey$h2 \ rKey=newKey
+  %DUP .A%SRGL @c_lkey$h2 \ gkey=newKey
   %RET \ return &key
 
 \ **********
@@ -913,24 +926,24 @@ $FN c_updateRLKey \ [] -> [&key] update and return current local key
 \ We need a way to define global and local variables, as well as GET, SET and
 \ obtain a REF to them.
 \
-\ fn GET <token>            SMART : compile a FT of token (local or global)
-\ fn _SET <token>           SMART : compile a SR of token (local or global)
-\ fn REF <token>            SMART : compile a "get ref" of token
-\ fn LOCAL <token> [SzI]    SMART : define a local variable of szI
-\ fn INPUT <token> [SzI]    SMART : define a local input variable of szI
-\ fn declVar                      : declare a local/gloabl variable
-\ fn declEnd                      : end locals declaration
+\ fn GET <token>            SYN : compile a FT of token (local or global)
+\ fn _SET <token>           SYN : compile a SR of token (local or global)
+\ fn REF <token>            SYN : compile a "get ref" of token
+\ fn LOCAL <token> [SzI]    SYN : define a local variable of szI
+\ fn INPUT <token> [SzI]    SYN : define a local input variable of szI
+\ fn declVar                    : declare a local/gloabl variable
+\ fn declEnd                    : end locals declaration
 
 $FN declG \ [<token> -> &key isLocal] create global and return it.
-  $xsl c_updateRKey \ {&key}
+  $xsl c_updateGkey \ {&key}
   $xsl loc \ initialize dictionary entry \ {&key}
   %DUP $xsl c_keySetTyped
   %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key}
   @FALSE$L0 %RET \ {&key isLocal=FALSE}
 
 $FN declL \ [<token> -> &key isLocal] create local and return it.
-  $xsl c_updateRLKey \ {&key}
-  #0$L0 $xsl ldictSet \ initialize lDict token (to nothing)
+  $xsl c_updateLkey \ {&key}
+  #0$L0 $xsl ldictSet \ initialize lDict token (to heap for now)
   %DUP $xsl c_keySetTyped
   %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key} update meta as local
   @TRUE$L0 %RET \ {&key isLocal=TRUE}
@@ -946,13 +959,9 @@ $FN declVar $LARGE $PRE \ {&key isLocal meta szBytes} declare a variable (global
     %DUP .1%FTLL #0$h1 %ADD .A%SRGL @c_gheap$h2       \ update gheap {...}
   $END %SWP .A%SR %RET \ update key's value
 
-$FN _lSetup $PRE \ {&key} -> {&key} : checked local setup
+$FN _varSetup $PRE \ {&key} -> {&key} : checked local setup
   %DUP $_xsl assertTyped
   %DUP $_jmpl assertTyVar
-
-$FN _gSetup $PRE \ {&key} -> {&key} : checked global setup
-  %DUP $xsl assertTyped
-  %DUP $jmpl assertTyVar
 
 \ {&key szInstr szLit instr} compile a literal memory instr.
 \   szLit the size of the literal to compile for the instr.
@@ -977,10 +986,10 @@ $FN _getSetImpl $PRE $LARGE
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
   \ {&key dotMeta}
   $IF
-    $xsl _lSetup %DUP $xsl keySzI \ {&key szInstr}
+    $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
     .1%FTLL#0$h1 .1%FTLL#1$h1
   $ELSE
-    $xsl _gSetup %DUP $xsl keySzI \ {&key szInstr}
+    $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
     .1%FTLL#2$h1 .1%FTLL#3$h1
   $END
   $xl c_instrLitImpl %RET
@@ -996,22 +1005,22 @@ $FN _setImpl $PRE \ {&key dotMeta}
   @SZ2$L1  @SRGL$L1  \ global sz + instr
   $xl _getSetImpl %RET
 
-$FN gRef $INSTANT \ [<token> -> &gref] get token's global reference
-  $xsl gdictGetK  $xsl _gSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
+$FN gRef $NOW \ [<token> -> &gref] get token's global reference
+  $xsl gdictGetK  $xsl _varSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
 
 $FN _refImpl \ {}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
-    $xsl _lSetup \ {&key}
+    $xsl _varSetup \ {&key}
     .A%FT %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
     @R_LP$L1 %JN  \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
   $xsl gdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
-    $xsl _gSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
+    $xsl _varSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
-$FN REF  $SMART
-  $IF \ asInstant: we can get &fn or &global
+$FN REF  $SYN
+  $IF \ asNow: we can get &fn or &global
     $xsl gdictGetK \ next: assert(isTyVar or isTyFn)
     %DUP $xsl assertTyped
       %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
@@ -1020,13 +1029,13 @@ $FN REF  $SMART
   $END \ else: we can get &local or &global
   $xsl c_scan $jmpl _refImpl
 
-$FN GET  $SMART
-  $IF  $xsl gdictGetK $xsl _gSetup %DUP $xsl keySzI \ {&key szInstr}
+$FN GET  $SYN
+  $IF  $xsl gdictGetK $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
        %SWP .A%FT %SWP $jmpl ftSzI   $END
-  $xsl c_scan $xsl anyDictGetK $jmpl _getImpl
+  $xsl c_scan $xsl dictK $jmpl _getImpl
 
-$FN _SET $SMART
-  $xsl assertNoInstant $xsl c_scan $xsl anyDictGetK $jmpl _setImpl
+$FN _SET $SYN
+  $xsl assertNoNow $xsl c_scan $xsl dictK $jmpl _setImpl
 
 $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
   $LARGE #1$h1 \ locals 0=szI:u1
@@ -1049,7 +1058,7 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 @SZA $c_makeGlobal c_msg
 @SZA $c_makeGlobal BA_kernel
 
-@SZA $c_makeGlobal c_rKey      @SZA $c_makeGlobal c_rLKey
+@SZA $c_makeGlobal c_gkey      @SZA $c_makeGlobal c_lkey
 @SZA $c_makeGlobal c_gheap     @SZ2 $c_makeGlobal c_localOffset
 
 \ **********
@@ -1080,7 +1089,7 @@ $FN _compileInputs $PRE $LARGE
 \ Compiles SRLL for each TY_VAR_INPUT, in reverse order.
 $FN declEnd
   $GET c_localOffset $IF \ if localOffset: update fn to large
-    $GET c_rKey @TY_FN_LARGE$L0 $xsl c_keyJnMeta
+    $GET c_gkey @TY_FN_LARGE$L0 $xsl c_keyJnMeta
   $END
   $GET c_localOffset #4$L0 $xl align
   @APO2$L0 %SHR $xsl h1 \ update number of slots
@@ -1103,7 +1112,7 @@ $FN declEnd
 \ |zoa string literal|
 \ Creates a zoa string in the heap.
 $FN |
-  $SMART $xsl assertNoInstant
+  $SYN $xsl assertNoNow
   $GET heap
   \ maxLen: (topHeap - heap)
   %DUP .A%FTGL@topHeap$h2 %SWP %SUB
@@ -1166,7 +1175,7 @@ $FN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
 \
 \ fn spor <token>                 : compile token as spor.
 \ fn ( <...> )                    : ( compiles tokens until )
-\ fn $ <token>                    : execute token asInstant
+\ fn $ <token>                    : execute token asNow
 \ fn ret [U4]                     : compile %RET
 \ fn _   fn ,   fn ;              : syntax helpers that do nothing.
 \
@@ -1176,7 +1185,7 @@ $FN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
 \
 \ c_fngi                          : fngi compile loop.
 \ fn fngiSingle [ -> ...]         : starting (base) c_compFn
-\ fn c_single [asInstant -> ...]  : compile/execute a single token (c_compFn).
+\ fn c_single [asNow -> ...]  : compile/execute a single token (c_compFn).
 \ fn c_fn [&key]                  : compile a function (small or large)
 \ fn execute [&key]               : execute a function (small or large)
 \ fn parseNumber [ -> value isNum]: parse token as number
@@ -1287,10 +1296,10 @@ $FN lit  $PRE \ {U4} compile literal
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
   $jmpl L4
 
-\ {asInstant value:U4} -> {?instantVal}: compile proper sized literal
-\ if asInstant=true the value is left on the stack.
+\ {asNow value:U4} -> {?nowVal}: compile proper sized literal
+\ if asNow=true the value is left on the stack.
 $FN c_lit
-  %SWP %NOT %RETZ \ if instant, leave on stack
+  %SWP %NOT %RETZ \ if now, leave on stack
   $jmpl lit
 
 $FN xSzI $PRE \ {&key} -> {szI}: return the size requirement of the X instr
@@ -1307,11 +1316,11 @@ $FN execute \ {&key} -> {...}: tycheck and execute a dictionary key
   %DUP $xsl isFnLarge  $IF .A%FT .A%XW %RET $END
   .A%FT .A%JMPW
 
-$FN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
-  $xl c_parseNumber \ {asInstant value isNumber}
-  $IF \ {asInstant value}
+$FN _compConstant $PRE \ {asNow} -> {asNow &keyFn[nullable]}
+  $xl c_parseNumber \ {asNow value isNumber}
+  $IF \ {asNow value}
     $xsl c_lit $jmpl null2
-  $END %DRP \ {asInstant}
+  $END %DRP \ {asNow}
   $xsl c_isEof $IF  $jmpl null2  $END
 
  \ Handle local dictionary. Only constants allowed here.
@@ -1320,7 +1329,7 @@ $FN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
    .A%FT $xsl c_lit  $jmpl null2
  $END %DRP
 
- $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asInstant &key}
+ $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
 
  \ Constant
  %DUP  $xsl isTyped %NOT $IF
@@ -1328,7 +1337,7 @@ $FN _compConstant $PRE \ {asInstant} -> {asInstant &keyFn[nullable]}
  $END
 
  \ Must be a function
- %DUP $jmpl assertFn \ {asInstant &key}
+ %DUP $jmpl assertFn \ {asNow &key}
 
 $assertWsEmpty
 
@@ -1339,7 +1348,7 @@ $declG c_compFn  @SZA @ASIZE $declVar
 $FN c_updateCompFn $PRE \ {&newCompFn -> &prevCompFn}
   $GET c_compFn %SWP $_SET c_compFn %RET
 
-\ {asInstant} -> {}: compile a single token.
+\ {asNow} -> {}: compile a single token.
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
 $FN c_single $PRE
@@ -1347,17 +1356,17 @@ $FN c_single $PRE
   $declL meta @SZ1   #1    $declVar $declEnd
 
   \ Handle constants
-  $xsl _compConstant \ {asInstant &keyFn[nullable]}
-  \ If &keyFn=null then already compiled, drop asInstant and &keyFn
-  %DUP %NOT $IF  %DRP %DRP %RET  $END \ {asInstant &keyFn}
+  $xsl _compConstant \ {asNow &keyFn[nullable]}
+  \ If &keyFn=null then already compiled, drop asNow and &keyFn
+  %DUP %NOT $IF  %DRP %DRP %RET  $END \ {asNow &keyFn}
 
-  %SWP %OVR  \ {&keyFn asInstant &keyFn}
-  $xsl isFnInstant $IF \ {&keyFn asInstant}
-    @E_cReqInstant$L2 $xsl assert \ assert asInstant
-    @TY_FN_INSTANT$L1 \ {&keyFn meta}
-  $ELSE \ {&keyFn asInstant}
-    %OVR $keyMeta %SWP \ {&keyFn meta asInstant}
-    $IF @TY_FN_INSTANT$L1  %JN   $END \ if(asInstant) meta = INSTANT or SMART_I
+  %SWP %OVR  \ {&keyFn asNow &keyFn}
+  $xsl isFnNow $IF \ {&keyFn asNow}
+    @E_cReqNow$L2 $xsl assert \ assert asNow
+    @TY_FN_NOW$L1 \ {&keyFn meta}
+  $ELSE \ {&keyFn asNow}
+    %OVR $keyMeta %SWP \ {&keyFn meta asNow}
+    $IF @TY_FN_NOW$L1  %JN   $END \ if(asNow) meta = NOW or SYN_I
   $END \ {&key meta}
 
   \ if pre, recursively call fngiSingle (compile next token first)
@@ -1365,11 +1374,11 @@ $FN c_single $PRE
     $_SET meta $_SET key  $GET c_compFn .A%XW  $GET key $GET meta
   $END \ {&key meta}
 
-  %DUP $xsl metaIsFnSmart $IF
-    %DRP @FALSE$L0 %SWP $jmpl execute \ smart: not instant. asInstant=FALSE
-  $END %DUP $xsl metaIsFnSmartI $IF
-    %DRP @TRUE$L0 %SWP $jmpl execute \ smart: instant. asInstant=TRUE
-  $END $xsl metaIsFnInstant $IF \ regular instant. Just call immediately.
+  %DUP $xsl metaIsFnSyn $IF
+    %DRP @FALSE$L0 %SWP $jmpl execute \ syn: not NOW. asNow=FALSE
+  $END %DUP $xsl metaIsFnSynN $IF
+    %DRP @TRUE$L0 %SWP $jmpl execute \ syn: NOW. asNow=TRUE
+  $END $xsl metaIsFnNow $IF \ regular NOW. Just call immediately.
     $jmpl execute
   $END $jmpl c_fn \ otherwise compile the function.
 
@@ -1382,7 +1391,7 @@ $FN fngiSingle \ base c_compFn for fngi tokens.
 
 $FN c_number $xsl c_scan $xl c_parseNumber %RET \ compile next token as number.
 
-$FN (  $SMART%DRP  \ parens ()
+$FN (  $SYN%DRP  \ parens ()
   $xsl c_assertToken
   $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END \ return if we hit ")"
   $LOOP l0
@@ -1398,16 +1407,16 @@ $FN _spor
   @D_comp$L0  %DVFT \ compile next token as spor asm
   $GET compFn $_SET c_compFn %RET
 
-$FN spor $SMART $xsl assertNoInstant $xl _spor %RET \ compile as assembly
+$FN spor $SYN $xsl assertNoNow $xl _spor %RET \ compile as assembly
 
-$FN c_instant \ used in $ to make next token/s instant.
+$FN c_now \ used in $ to make next token/s run NOW.
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
-  @c_instant$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
+  @c_now$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
   $xsl c_scanNoEof
-  @TRUE$L0 $xl c_single  \ compile next token as INSTANT
+  @TRUE$L0 $xl c_single  \ compile next token as NOW
   $GET compFn $_SET c_compFn %RET
 
-$FN $ $SMART $xsl assertNoInstant $xl c_instant %RET \ make instant
+$FN $ $SYN $xsl assertNoNow $xl c_now %RET \ make NOW
 
 $FN _comment \ used in \ to make next token ignored (comment)
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
@@ -1429,17 +1438,17 @@ $FN c_peekNoScan
 \    \        : a line comment
 \    \foo     : an inline comment, commenting out one token
 \    \( ... ) : a block comment
-$FN \ $SMART %DRP
+$FN \ $SYN %DRP
   \ Line comment if '\' is followed by space or newline
   $xsl c_peekNoScan %DUP #20$L0 %EQ %SWP #A$L0 %EQ %OR
   $IF @D_scan$L0 %DVSR %RET $END \ scanEol
   $xl _comment %RET \ else token comment
 
-$FN ret $PRE $SMART $xsl assertNoInstant @RET $c1 %RET \ ret 4, or just ret;
+$FN ret $PRE $SYN $xsl assertNoNow @RET $c1 %RET \ ret 4, or just ret;
 
 \ These do nothing and are used for more readable code.
-$FN _ $SMART%DRP %RET  $FN , $SMART%DRP %RET  $FN ; $SMART%DRP %RET
-$FN -> $SMART%DRP %RET
+$FN _ $SYN%DRP %RET  $FN , $SYN%DRP %RET  $FN ; $SYN%DRP %RET
+$FN -> $SYN%DRP %RET
 
 $FN c_fngi \ fngi compile loop
   $LOOP l0

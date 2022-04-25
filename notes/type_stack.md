@@ -102,7 +102,7 @@ function like a small, etc).
 There are 5 `TY_*` bitmaps stored in the dictionary meta. They are:
 
 - `TY_CONST`: a UA constant.
-- `TY_FN`: a function `NORMAL|INSTANT|SMART|SMART_I`, `POST|PRE`
+- `TY_FN`: a function `NORMAL|NOW|SYN|SYN_I`, `POST|PRE`
   - If defined on a Struct/Enum/Role the fn is considered a method. When type
     checked, the dot compiler will auto-insert the instance reference if it is the
     last input type (top of stack).
@@ -129,6 +129,9 @@ you to look up a type if you know the dictionary pointer.
 
 
 ## Executable Types
+> Cancel all of this: "executable types" are just SYN. The SYN function can
+> check if it is being called during a type block and act accordingly.
+
 Executable types do not have a dictionary entry. Instead, they are a role
 instance of the following form:
 
@@ -151,7 +154,7 @@ Some important points:
 - `register` is supposed to create a globally-unique instance (i.e. a struct) of
   the types it consumes, so that if it is called again with the same types it
   will return the same pointer. This allows you to compare the types!
-- ExecTy are kind of like `INSTANT` or `SMART` functions, except for the type
+- ExecTy are kind of like `NOW` or `SYN` functions, except for the type
   stack. Instead of being "compiled" they are "executed."
 - ExecTy's are very powerful. They can consume any syntax, they can store
   whatever context they want, etc.

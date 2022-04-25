@@ -24,7 +24,7 @@ typedef enum {
 } UsrLogLvl;
 
 typedef enum {
-  LOG_INSTANT   = 0x20,
+  LOG_NOW       = 0x20,
   LOG_INSTR     = 0x1F, LOG_EXECUTE   = 0x07, LOG_ASM       = 0x03,
   LOG_COMPILER  = 0x01,
 } SysLogLvl;
@@ -110,9 +110,9 @@ typedef CSz CPtr;
 
 #define REF_MASK    0xFFFFFF
 #define TY_FN_LARGE  0x10
-#define TY_FN_SMART  0x08
+#define TY_FN_SYN    0x08
 #define TY_FN_LARGE_MREF  (TY_FN_LARGE << 0x18)
-#define TY_FN_SMART_MREF  (TY_FN_SMART << 0x18)
+#define TY_FN_SYN_MREF    (TY_FN_SYN << 0x18)
 
 typedef enum {
   C_OP   = 0x00, C_SLIT = 0x40, C_JMP =  0x80, C_MEM =  0xC0,
@@ -1040,9 +1040,9 @@ U1 scanInstr() {
   U2 offset = Dict_find(d, tokenLen, tokenBuf);
   ASM_ASSERT(offset != d->len, E_cKey);
   Key* key = Dict_key(d, offset);
-  if((TY_FN_SMART_MREF & key->value)
-     || (TY_FN_SMART & key->meta)) {
-    WS_PUSH(FALSE); // pass asInstant=FALSE
+  if((TY_FN_SYN_MREF & key->value)
+     || (TY_FN_SYN & key->meta)) {
+    WS_PUSH(FALSE); // pass asNow=FALSE
   }
   WS_PUSH(REF_MASK & key->value);
   if((TY_FN_LARGE_MREF & key->value)

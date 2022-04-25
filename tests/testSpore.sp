@@ -35,7 +35,7 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$gdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SMART ^JN ^JN $tAssertKeyMeta
+$gdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SYN ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
 $FN myXs #22 $L0 %RET
@@ -44,10 +44,10 @@ $myXs #22 $tAssertEq
 $FN callMyXs $xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
-$c_updateRKey ^DRP
+$c_updateGkey ^DRP
 
-\ assert @rKey == @(&dict.buf + &dict.heap)
-  @c_rKey @REF_MASK ^MSK .4^FT
+\ assert @gkey == @(&dict.buf + &dict.heap)
+  @c_gkey @REF_MASK ^MSK .4^FT
   @c_gdictRef @REF_MASK ^MSK .4^FT   @c_gdictLen @REF_MASK ^MSK .2^FT   .4^ADD
   $tAssertEq
 
@@ -63,10 +63,10 @@ $FN add   %ADD %RET
 $FN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
-$gdictGetK FN      $isFnSmart $tAssert
-$gdictGetK IF      $isTyFn      $tAssert
-$gdictGetK IF      $isFnSmart $tAssert
-$gdictGetK assert  $isFnInstant $tAssertNot
+$gdictGetK FN      $isFnSyn   $tAssert
+$gdictGetK IF      $isTyFn    $tAssert
+$gdictGetK IF      $isFnSyn   $tAssert
+$gdictGetK assert  $isFnNow   $tAssertNot
 
 \ Test control flow
 $FN testIf \ converts 1->10 else: 42

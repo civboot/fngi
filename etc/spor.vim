@@ -22,8 +22,8 @@ syn keyword elInstr
 
 syn match elSymbol    '[^!'()_a-zA-Z0-9.]' nextgroup=elSpecial
 syn match elSpecial   '[!'()]' nextgroup=elNum
-syn match elNum       '#[_0-9a-fA-F]\+' nextgroup=elInstant
-syn match elInstant       '$[_0-9a-zA-Z]\+' nextgroup=elInstrDot
+syn match elNum       '#[_0-9a-fA-F]\+' nextgroup=elNow
+syn match elNow       '$[_0-9a-zA-Z]\+' nextgroup=elInstrDot
 syn match elInstrDot  '[.][0-4A]\+'         nextgroup=elComment
 syn match elComment   '\\.*$'
 
@@ -35,5 +35,5 @@ hi def link elInstrDot    PreProc
 hi def link elSymbol      Type
 hi def link elSpecial     Keyword
 hi def link elNum         Constant
-hi def link elInstant     Macro
+hi def link elNow         Macro
 hi def link elComment     Comment
