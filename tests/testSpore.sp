@@ -47,8 +47,8 @@ $callMyXs #22 $tAssertEq
 $c_updateGkey ^DRP
 
 \ assert @gkey == @(&dict.buf + &dict.heap)
-  @c_gkey @REF_MASK ^MSK .4^FT
-  @c_gdictRef @REF_MASK ^MSK .4^FT   @c_gdictLen @REF_MASK ^MSK .2^FT   .4^ADD
+  @c_gkey .4^FT
+  @c_gdictRef .4^FT   @c_gdictLen .2^FT   .4^ADD
   $tAssertEq
 
 

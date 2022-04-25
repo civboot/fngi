@@ -108,7 +108,6 @@ typedef CSz CPtr;
 
 #define E_cZoab     0xE0F1 // Zoab invalid
 
-#define REF_MASK    0xFFFFFF
 #define TY_FN_LARGE  0x10
 #define TY_FN_SYN    0x08
 #define TY_FN_LARGE_MREF  (TY_FN_LARGE << 0x18)
@@ -238,6 +237,7 @@ typedef struct {
   // Working and Call Stack. Note: separate from mem
   Stk ws;
   Stk cs;
+  Stk csSz;
 
   U1 szI; // global instr sz
 } Env;
@@ -528,6 +528,19 @@ void storeBE(U1* mem, APtr aptr, U4 value, SzI szI) {
   return out;
 }
 
+/*fn*/ void Stk_pushU1(Stk* stk, U1 value) {
+  _CHK_GROW(stk, 1);
+  store(stk->mem, stk->sp - 1, value, SzI1);
+  stk->sp -= 1;
+}
+
+/*fn*/ U4 Stk_popU1(Stk* stk) {
+  ASM_ASSERT(stk->sp + 1 <= stk->size, E_stkUnd);
+  U4 out = fetch(stk->mem, stk->sp, SzI1);
+  stk->sp += 1;
+  return out;
+}
+
 /*fn*/ void Stk_grow(Stk* stk, U2 sz) {
   _CHK_GROW(stk, sz);
   stk->sp -= sz;
@@ -613,13 +626,14 @@ void xImpl(APtr aptr) { // impl for "execute"
   // get amount to grow, must be multipled by APtr size .
   U2 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
-  // Callstack has 4 byte value: growLs | mp | cptrHigh | cptrLow
-  Stk_push(&env.cs, (growLs << 24) + env.ep);
+  Stk_push(&env.cs, env.ep);
+  Stk_pushU1(&env.csSz, (U1) growLs);
   env.ep = aptr + 1;
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
   Stk_push(&env.cs, env.ep);
+  Stk_pushU1(&env.csSz, (U1) 0);
   env.ep = aptr;
 }
 
@@ -660,8 +674,8 @@ inline static void executeInstr(Instr instr) {
       // intentional fallthrough
     case RET:
       U4 callMeta = Stk_pop(&env.cs);
-      Stk_shrink(&env.ls, (callMeta >> 24) << APO2);
-      env.ep = REF_MASK & callMeta;
+      Stk_shrink(&env.ls, Stk_popU1(&env.csSz) << APO2);
+      env.ep = callMeta;
       return;
     case SWP:
       r = WS_POP();
@@ -1044,7 +1058,7 @@ U1 scanInstr() {
      || (TY_FN_SYN & key->meta)) {
     WS_PUSH(FALSE); // pass asNow=FALSE
   }
-  WS_PUSH(REF_MASK & key->value);
+  WS_PUSH(key->value);
   if((TY_FN_LARGE_MREF & key->value)
      || (TY_FN_LARGE & key->meta))  execute(SzI4 + XW);
   else                              execute(SzI4 + XSW);
@@ -1132,6 +1146,7 @@ void deviceOpCatch() {
   // ALWAYS Reset ep, call, and local stack and clear WS.
   env.ep = ep;
   env.cs.sp = cs_sp;
+  env.csSz.sp = cs_sp / 4;
   env.ls.sp = ls_sp;
   env.ws.sp = env.ws.size; // clear WS
 
@@ -1390,7 +1405,8 @@ U1 readSrcAtLeast(U1 num) {
 }
 #define ENV_CLEANUP() \
     free(mem); \
-    free(env.ws.mem); free(env.cs.mem);
+    free(env.ws.mem); free(env.cs.mem); \
+    free(env.csSz.mem);
 
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS)  \
   assert(MS == alignAPtr(MS, 1 << BLOCK_PO2));      \
@@ -1404,6 +1420,7 @@ U1 readSrcAtLeast(U1 num) {
     ));                     \
   U1* wsMem = malloc(WS);      assert(wsMem);       \
   U1* callStkMem = malloc(RS); assert(callStkMem);  \
+  U1* csSzMem = malloc(RS / 4); assert(csSzMem);    \
   mem = malloc(MS);            assert(mem);         \
   dbgCount = 0;                           \
   memset(mem, 0, MS);                     \
@@ -1416,6 +1433,8 @@ U1 readSrcAtLeast(U1 num) {
     .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
     .cs = \
       { .size = RS, .sp = RS, .mem = callStkMem }, \
+    .csSz = \
+      { .size = RS / 4, .sp = RS / 4, .mem = csSzMem }, \
     .szI = SzI4, \
   };                                      \
   memset(env.g, 0, sizeof(Globals));      \
