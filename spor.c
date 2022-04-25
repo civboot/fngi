@@ -246,15 +246,8 @@ typedef struct {
 #define CS_SP           (env.cs.mem - mem + env.cs.sp)
 #define ENV_MOD_HIGH()  (MOD_HIGH_MASK & env.ep)
 
-typedef struct {
-  APtr buf;
-  U2 end;
-  U2* heap;
-  U1 isLocal;
-} DictRef;
-
-#define DEFAULT_DICT \
-  {.buf = env.g->dict.ref, .end = env.g->dict.cap, .heap = &env.g->dict.len, .isLocal=FALSE}
+#define DEFAULT_DICT (&env.g->dict)
+#define isLocalDict(dr) (&env.g->dict == dr)
 
 typedef struct {
   U4 value;
@@ -264,7 +257,7 @@ typedef struct {
 } Key;
 
 #define keySizeWLen(LEN)  (4 + 1 + 1 + (LEN))
-#define Dict_key(D, OFFSET)  ((Key*) (mem + D.buf + (OFFSET)))
+#define Dict_key(D, OFFSET)  ((Key*) (mem + D->ref + (OFFSET)))
 #define KEY_HAS_TY 0x40   // if 1, dict entry is a non-constant
 
 // Get key len. The top two bits are used for metadata (i.e. constant)
@@ -383,7 +376,7 @@ void zoab_info(U1* str) {
   }
 }
 
-void zoab_dict(DictRef d, U4 offset) {
+void zoab_dict(Dict* d, U4 offset) {
   Key* key = Dict_key(d, offset);
 
   zoab_start();
@@ -391,10 +384,10 @@ void zoab_dict(DictRef d, U4 offset) {
   zoab_data(2, LOG_DICT_PTR, /*join=*/ FALSE);
   zoab_data(Key_len(key), (char *)key->s, /*join=*/ FALSE); // key
   zoab_int(key->value);
-  zoab_int(d.buf);
+  zoab_int(d->ref);
   zoab_int(offset);
   zoab_int(!(KEY_HAS_TY & key->len));
-  zoab_int(d.isLocal);
+  zoab_int(isLocalDict(d));
 }
 
 
@@ -658,6 +651,7 @@ inline static void executeInstr(Instr instr) {
   U4 l, r;
   logInstr(instr);
   SzI szI = SzI2;
+  // eprintf("## Instr: %X  line=%u\n", instr, line);
   switch ((U1)instr) {
     // Operation Cases
     case NOP: return;
@@ -849,45 +843,45 @@ LIT: case SzI2 + LIT:
 }
 
 // find key offset from dict. Else return dict.len
-/*fn*/ U2 Dict_find(DictRef d, U2 slen, char* s) {
+/*fn*/ U2 Dict_find(Dict* d, U2 slen, char* s) {
   ASM_ASSERT(slen < 0x40, E_cKeyLen);
   U2 offset = 0;
-  assert(*d.heap < d.end);
-  while(offset < *d.heap) {
+  assert(d->len < d->cap);
+  while(offset < d->len) {
     Key* key = Dict_key(d, offset);
     if(cstrEq(Key_len(key), slen, (char *)key->s, s)) return offset;
     U2 entrySz = alignAPtr(keySizeWLen(Key_len(key)), 4);
     offset += entrySz;
   }
-  assert(offset == *d.heap);
+  assert(offset == d->len);
   return offset;
 }
 
-/*fn*/ U2 Dict_set(DictRef d, U2 slen, char* s, U4 value) {
+/*fn*/ U2 Dict_set(Dict* d, U2 slen, char* s, U4 value) {
   // Set a key to a value, returning the offset
   U2 offset = Dict_find(d, slen, s);
-  ASM_ASSERT(offset == *d.heap, E_cKey)
+  ASM_ASSERT(offset == d->len, E_cKey)
   Key* key = Dict_key(d, offset);
   U2 addedSize = alignAPtr(keySizeWLen(slen), 4);
 
-  ASM_ASSERT(*d.heap + addedSize <= d.end, E_cDictOvr);
+  ASM_ASSERT(d->len + addedSize <= d->cap, E_cDictOvr);
   key->value = value;
   key->meta = 0;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
   if((LOG_COMPILER & env.g->sysLogLvl)) zoab_dict(d, offset);
-  *d.heap += alignAPtr(keySizeWLen(slen), 4);
+  d->len += alignAPtr(keySizeWLen(slen), 4);
   return offset;
 }
 
-/*fn*/ U4 Dict_get(DictRef d, U2 slen, char* s) {
+/*fn*/ U4 Dict_get(Dict* d, U2 slen, char* s) {
   U2 offset = Dict_find(d, slen, s);
-  ASM_ASSERT(offset != *d.heap, E_cNoKey);
+  ASM_ASSERT(offset != d->len, E_cNoKey);
   return Dict_key(d, offset)->value;
 }
 
 /*fn*/ void Dict_forget(U2 slen, char* s) {
-  DictRef d = {.buf = env.g->dict.ref, .end = env.g->dict.cap, .heap = &env.g->dict.len, .isLocal=FALSE};
+  Dict* d = DEFAULT_DICT;
   env.g->dict.len = Dict_find(d, slen, s);
 }
 
@@ -972,7 +966,7 @@ void readNewAtLeast(U1 num) {
 }
 
 U1 scanInstr() {
-  DictRef d = DEFAULT_DICT;
+  Dict* d = DEFAULT_DICT;
   scan();
   U1 instr = Dict_get(d, tokenLen, tokenBuf);
   return mergeInstrSzI(env.szI, instr);
@@ -1011,13 +1005,13 @@ U1 scanInstr() {
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
   U4 value = WS_POP();
-  DictRef d = DEFAULT_DICT;
+  Dict* d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value);
 }
 
 /*fn*/ void cDictGet() { // `@`
   scan();
-  DictRef d = DEFAULT_DICT;
+  Dict* d = DEFAULT_DICT;
   U4 value = Dict_get(d, tokenLen, tokenBuf);
   WS_PUSH(value);
 }
@@ -1042,9 +1036,9 @@ U1 scanInstr() {
 
 /*fn*/ void cExecute() { // $
   scan();
-  DictRef d = DEFAULT_DICT;
+  Dict* d = DEFAULT_DICT;
   U2 offset = Dict_find(d, tokenLen, tokenBuf);
-  ASM_ASSERT(offset != *d.heap, E_cKey);
+  ASM_ASSERT(offset != d->len, E_cKey);
   Key* key = Dict_key(d, offset);
   if((TY_FN_SMART_MREF & key->value)
      || (TY_FN_SMART & key->meta)) {
@@ -1096,20 +1090,10 @@ U1 scanInstr() {
   err_jmp = prev_err_jmp;
 }
 
-DictRef popDictRef() {
-  U1 isLocal = WS_POP();
-  U4 rHeap = WS_POP();
-  U4 buf = WS_POP();
-  return (DictRef) {
-    .heap = (U2*) (mem + rHeap),
-    .buf = buf,
-    .end = env.g->dict.cap,
-    .isLocal = isLocal,
-  };
-}
+Dict* popDictRef() { return (Dict*) (mem + WS_POP()); }
 
 void deviceOp_dict(Bool isFetch) {
-  DictRef d = popDictRef();
+  Dict* d = popDictRef();
   if(isFetch) {
     WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
   } else {
@@ -1118,14 +1102,14 @@ void deviceOp_dict(Bool isFetch) {
 }
 
 void deviceOpRDict(Bool isFetch) {
-  DictRef d = popDictRef();
+  Dict* d = popDictRef();
   if(isFetch) {
     U4 offset = Dict_find(d, tokenLen, tokenBuf);
-    if(offset == *d.heap) {
+    if(offset == d->len) {
       WS_PUSH(0); // not found
       return;
     }
-    WS_PUSH(d.buf + offset);
+    WS_PUSH(d->ref + offset);
   } else Dict_forget(tokenLen, tokenBuf);
 }
 
@@ -1316,11 +1300,11 @@ void deviceOpZoa() {
 void deviceOpDictDump(U1 isFetch) {
   APtr entry = 0;
   if (isFetch) entry = WS_POP();
-  DictRef d = popDictRef();
-  if (isFetch) return zoab_dict(d, entry - d.buf); // single entry
+  Dict* d = popDictRef();
+  if (isFetch) return zoab_dict(d, entry - d->ref); // single entry
 
   U2 offset = 0;
-  while(offset < *d.heap) {
+  while(offset < d->len) {
     zoab_dict(d, offset);
     Key* key = Dict_key(d, offset);
     offset += alignAPtr(keySizeWLen(Key_len(key)), 4);
@@ -1671,7 +1655,10 @@ void compileStr(char* s) {
   assert(0x44 == (size_t) &env.g->errData.valueA - (size_t) env.g);
   assert(0x48 == (size_t) &env.g->errData.valueB - (size_t) env.g);
   assert(0x50 == (size_t) &env.g->ba      - (size_t) env.g);
-  assert(0x5C == (size_t) &env.g->ba      - (size_t) env.g + sizeof(BlockAllocator));
+  assert(0x5C == (size_t) &env.g->gkey    - (size_t) env.g);
+  assert(0x60 == (size_t) &env.g->lkey    - (size_t) env.g);
+  assert(0x64 == (size_t) &env.g->gheap   - (size_t) env.g);
+  assert(0x68 == (size_t) &env.g->localOffset - (size_t) env.g);
 }
 
 /*test*/ void testHex() {
@@ -1699,7 +1686,7 @@ void compileStr(char* s) {
 /*test*/ void testDictDeps() {
   TEST_ENV_BARE;
   zoab_info("## testDictDeps");
-  DictRef d = DEFAULT_DICT;
+  Dict* d = DEFAULT_DICT;
   assert(cstrEq(1, 1, "a", "a"));
   assert(!cstrEq(1, 1, "a", "b"));
 

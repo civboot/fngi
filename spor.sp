@@ -157,8 +157,8 @@
 \ The DV 1 byte literal select the operation
 #00 =D_read   \ read from src, filling up tokenBuf
 #01 =D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
-#02 =D_dict   \ [&buf &heap isLocal] FT=get SR=set dict key=tokenBuf
-#03 =D_dictK  \ [&buf &heap] FT=get reference to val  SR=forget including key
+#02 =D_dict   \ [(SR-only)value &dict] FT=get SR=set dict key=tokenBuf
+#03 =D_dictK  \ [&dict] FT=get reference to val  SR=forget including key
 #05 =D_comp   \ compile (assemble) the token in tokenBuf
 #06 =D_assert \ error if != 0
 #07 =D_wslen  \ get working stack length (in slots)
@@ -330,8 +330,8 @@
 #0000_0026 =c_gdictCap   \ U2
 
 #0000_0028 =c_ldictRef  \ U4
-#0000_0028 =c_ldictLen  \ U2
-#0000_0026 =c_ldictCap  \ U2
+#0000_002C =c_ldictLen  \ U2
+#0000_002E =c_ldictCap  \ U2
 
 \ TokenBuf Struct
 #0000_0030 =c_tokenBuf   \ [APtr] TokenBuf struct
@@ -424,20 +424,20 @@ $_h =h4  \ h4: {val:4} push 4bytes from stack to heap
   .A%FTGL @heap.2,  %INC4     .A%SRGL @heap.2, \ heap=heap+4
   %RET
 
-$_h =gdictArgs \ [ -> &buf &heap isLocal] args for dict.
-  \ put {dict.buf &dict.heap isLocal=FALSE} on stack
-  .A%FTGL @c_gdictRef $h2
-  .2%LIT @c_gdictLen $h2
-  #0$L0     %RET \ isLocal=FALSE
+$_h =gdictArgs \ [ -> &buf &len isLocal] args for dict.
+  .2%LIT @c_gdictRef$h2 %RET \ TODO: add R_GB to it.
 
 $_h =_dict
   @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
 
 $_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
-  .4%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
-    %ADD  .4%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
-  #0$L0 .2%SRGL @c_ldictLen$h2   #0$L0 .2%SRGL @c_localOffset$h2 %RET
+  .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
+    %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
+  #0$L0 .2%SRGL @c_ldictLen$h2   \ ldictLen = 0
+  .2%FTGL @c_gdictCap$h2  .2%FTGL @c_gdictLen$h2
+    %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = gdictCap - gdictLen
+  #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
 $_h =gdictGet \ gdictGet: Get the value of the next token.
   .2%XSL @_dict $h2   @D_dict$L0   %DVFT  %RET
@@ -466,11 +466,6 @@ $loc tAssertEq \ {a b}
         .A%FTGL @c_errVal2$h2 \ {a b}
   %EQ   .2%JMPL @tAssert,
 
-
-#1 $tAssert
-#0 $tAssertNot
-#1 #1
-  $tAssertEq
 
 \ **********
 \ * [6] Core functions and macros
@@ -734,17 +729,8 @@ $FN ftoN $INSTANT  \ {offset szI} compile FTO szI w/offset
 $FN c_dictDump       $xsl gdictArgs @D_dictDump$L0 %DVSR %RET \ {}
 $c_dictDump
 
-$FN ldictRef \ {} -> {ldict.buf:APtr}
-  .A%FTGL @c_gdictRef$h2
-  .2%FTGL @c_gdictLen$h2
-  %ADD %RET
-
 $FN ldictArgs \ {} -> dictArgs
-  $xsl ldictRef
-  @c_ldictLen$L2  \ &ldict.heap
-  #1$L0 \ isLocal=TRUE
-  %RET
-$FN ldictLen $xsl ldictArgs %DRP .2%FT %ADD %RET \ {} -> ldictLen
+  @c_ldictRef$L2 %RET \ TODO: add R_GB to it.
 
 $FN _ldict $xsl c_scan $jmpl ldictArgs
 $FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
@@ -916,10 +902,11 @@ $FN anyDictGetK \ {} -> {&key isFromLocal}
   $END @E_cNotType$L2 $xsl panic
 
 $FN c_updateRLKey \ [] -> [&key] update and return current local key
-  .A%FTGL @c_gdictRef$h2   .2%FTGL @c_gdictLen$h2  %ADD \ ldict.buf
-  .2%FTGL @c_ldictLen$h2                       \ ldict.heap
-  %ADD \ {&newLkey}
-  %DUP .A%SRGL @c_rLKey$h2  %RET
+  .A%FTGL @c_ldictRef$h2 \ dict.buf
+  .2%FTGL @c_ldictLen$h2 \ dict.heap
+  %ADD \ {&newLKey}
+  %DUP .A%SRGL @c_rLKey$h2 \ rKey=newKey
+  %RET \ return &key
 
 \ **********
 \ * [9] Globals and Locals
@@ -1051,7 +1038,9 @@ $FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
 @SZ2 $c_makeGlobal c_state
 @SZ2 $c_makeGlobal sysLogLvl   @SZ2 $c_makeGlobal usrLogLvl
 @SZA $c_makeGlobal c_gdictRef   @SZ2 $c_makeGlobal c_gdictLen
-@SZ2 $c_makeGlobal c_gdictCap   @SZ2 $c_makeGlobal c_ldictLen
+@SZ2 $c_makeGlobal c_gdictCap
+@SZA $c_makeGlobal c_ldictRef   @SZ2 $c_makeGlobal c_ldictLen
+@SZ2 $c_makeGlobal c_ldictCap
 @SZA $c_makeGlobal c_tokenBuf  @SZ2 $c_makeGlobal c_tokenLen
 @SZ2 $c_makeGlobal c_tokenSize @SZ1 $c_makeGlobal c_tokenGroup
 @SZ1 $c_makeGlobal c_errValTy
@@ -1078,7 +1067,8 @@ $FN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
 $FN _compileInputs $PRE $LARGE
   #1$h1 \ locals 0=&key:APtr
   %DUP  .A%SRLL#0$h1 \ {&key} var key
-  $xsl ldictLen $reteq \ return if key=ldictLen
+  .A%FTGL @c_ldictRef$h2 .2%FTGL @c_ldictLen$h2 %ADD \ {&key &ldictEnd}
+    $reteq \ return if key=ldictEnd
   .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
   .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
   %DUP $xsl isTyVar %SWP \ {hasTy isTyVar &key}
@@ -1094,7 +1084,7 @@ $FN declEnd
   $END
   $GET c_localOffset #4$L0 $xl align
   @APO2$L0 %SHR $xsl h1 \ update number of slots
-  $xsl ldictRef $xl _compileInputs
+  $GET c_ldictRef  $xl _compileInputs
   %RET
 
 \ **********
