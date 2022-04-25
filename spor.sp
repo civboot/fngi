@@ -386,7 +386,6 @@
 \   fn h2 [U2] -> []              : push 2 byte to heap
 \   fn h4 [U4] -> []              : push 4 byte to heap
 \   fn L0 [U1] -> []              : compile a small literal [#0 - #3F]
-\   fn $gdictSet <key> [U4]       : set a dictionary key to value
 \   fn $gdictGet <key>  [-> U4]   : get dictionary key's value
 \   fn $gdictGetK <key> [-> APtr] : get the key's &key
 \   fn $loc <token> []            : set token to the current heap location
@@ -444,6 +443,7 @@ $_h =gdictArgs \ [ -> &buf &len isLocal] args for dict.
 $_h =_dict
   @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
 
+\ TODO: remove
 $_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
   .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
@@ -459,7 +459,15 @@ $_h =gdictGet \ gdictGet: Get the value of the next token.
 $_h =gdictGetK \ gdictGetK: Get the &key of the next token.
   .2%XSL @_dict$h2   @D_dictK$L0   %DVFT  %RET
 
-$_h =loc .A%FTGL @heap$h2  .2%JMPL @gdictSet$h2 \ $loc <name>: define location
+$_h =loc \ $loc <name>: define location
+  .A%FTGL @heap$h2
+  .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
+  .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
+    %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
+  #0$L0 .2%SRGL @c_ldictLen$h2   \ ldictLen = 0
+  .2%FTGL @c_gdictCap$h2  .2%FTGL @c_gdictLen$h2
+    %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = gdictCap - gdictLen
+  #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
@@ -638,6 +646,7 @@ $loc c_updateGkey \ [] -> [&key] update and return current key
   %ADD \ {&newKey}
   %DUP .A%SRGL @c_gkey$h2 \ gkey=newKey
   %RET \ return &key
+$loc locK $_xsl c_updateGkey $_jmpl loc \ { <token> -> &key} def loc, ret &key
 
 $loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
   %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SYN
@@ -656,14 +665,14 @@ $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
+
 $loc _declFn \ [<dictArgs> meta]
   @TY_FN$L1 %JN  \ {<dictArgs> meta}
-  $_xsl c_updateGkey \ {<dictArgs> meta &key}
-  $_xsl loc
-  $_jmpl c_dictSetMeta
+  $_xsl locK  $_jmpl c_dictSetMeta
 
 \ example: $FN <token> $SYN $LARGE: declare a function with attributes.
-$loc FN      $_xsl assertNoNow $_xsl gdictArgs #0$L0 $_jmpl _declFn
+$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
+$loc FN      $_xsl assertNoNow $_xsl assertWsEmpty $_xsl gdictArgs #0$L0 $_jmpl _declFn
 $loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmpl c_keyJnMeta
 $loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
 $loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
@@ -684,6 +693,7 @@ $loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 #0 $c_makeFn xsl    #0 $c_makeFn loc   #0 $c_makeFn xl
 @TY_FN_NOW $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
 @TY_FN_SYN $c_makeFn FN
+#0 $c_makeFn assertWsEmpty
 @TY_FN_SYN $c_makeFn PRE   @TY_FN_SYN $c_makeFn SYN
 @TY_FN_SYN $c_makeFn NOW   @TY_FN_SYN $c_makeFn LARGE
 @TY_FN_PRE $c_makeFn L0    @TY_FN_PRE $c_makeFn L1
@@ -700,7 +710,7 @@ $loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
 @TY_FN_PRE $c_makeFn isFnLarge
-#0 $c_makeFn c_updateGkey
+#0 $c_makeFn c_updateGkey           #0 $c_makeFn locK
 @TY_FN_PRE $c_makeFn c_keySetTyped  @TY_FN_PRE $c_makeFn c_keyJnMeta
 @TY_FN_PRE $c_makeFn c_dictSetMeta
 #0 $c_makeFn c_makeTy
@@ -726,8 +736,8 @@ $FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
 
 $FN c_scan        @D_scan$L0   %DVFT %RET
 $FN panic   $PRE #0$L0 %SWP  $jmpl assert \ {errCode}: panic with errCode
-$FN unreach @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
-$FN assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $jmpl assertNot
+$FN unreach      @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
+$FN unimplIfTrue $PRE @E_unimpl$L2 $jmpl assert \ {}: if true raise unimpl
 $FN assertLt128    $PRE #80 $L1 %LT_U  @E_cJmpL1 $L2   $jmpl assert
 $FN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
 
@@ -879,7 +889,7 @@ $FN srSzI \ {value &addr szI}
 
 $FN c_isEof .2%FTGL@c_tokenLen$h2 %NOT %RET
 $FN c_assertToken .2%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
-$FN c_assertNoEof $PRE @E_eof$L2 $jmpl assertNot \ {numRead}
+$FN c_assertNoEof $PRE @E_eof$L2 $jmpl assert \ {numRead}
 
 $FN c_scanNoEof
   $xsl c_scan
@@ -935,8 +945,7 @@ $FN c_updateLkey \ [] -> [&key] update and return current local key
 \ fn declEnd                    : end locals declaration
 
 $FN declG \ [<token> -> &key isLocal] create global and return it.
-  $xsl c_updateGkey \ {&key}
-  $xsl loc \ initialize dictionary entry \ {&key}
+  $xsl locK
   %DUP $xsl c_keySetTyped
   %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key}
   @FALSE$L0 %RET \ {&key isLocal=FALSE}
@@ -1116,7 +1125,7 @@ $FN |
   $GET heap
   \ maxLen: (topHeap - heap)
   %DUP .A%FTGL@topHeap$h2 %SWP %SUB
-  @D_zoa$L0 %DVFT .A%SRGL @heap $h2 %RET
+  @D_zoa$L0 %DVFT .A%SRGL @heap$h2 %RET
 
 $FN c_logAll $PRE \ {&writeStruct len &buf } Write raw data to log output
   $LARGE $declEnd \ no locals, but used in XW.
@@ -1362,7 +1371,7 @@ $FN c_single $PRE
 
   %SWP %OVR  \ {&keyFn asNow &keyFn}
   $xsl isFnNow $IF \ {&keyFn asNow}
-    @E_cReqNow$L2 $xsl assert \ assert asNow
+    @E_cReqNow$L2 $xsl assert \ assert asNow {&keyFn}
     @TY_FN_NOW$L1 \ {&keyFn meta}
   $ELSE \ {&keyFn asNow}
     %OVR $keyMeta %SWP \ {&keyFn meta asNow}
@@ -1424,13 +1433,12 @@ $FN _comment \ used in \ to make next token ignored (comment)
   $xsl c_scanNoEof
   \ Execute an open paren, else ignore
   $GET c_tokenBuf .1%FT #28$L0 %EQ $IF @TRUE$L0 $xl c_single $END
-  $GET compFn $_SET c_compFn %RET \ scan and ignore
+  $GET compFn $_SET c_compFn %RET
 
 \ {-> c} peek at the char after current token.
 $FN c_peekNoScan
   $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
-    \ ensure a char exists, if not return
-    $xsl c_read $GET c_tokenSize $GET c_tokenLen %SUB %RETZ
+    $xsl c_read $xsl c_assertNoEof \ ensure a char exists
   $END
   $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT %RET
 
@@ -1438,9 +1446,10 @@ $FN c_peekNoScan
 \    \        : a line comment
 \    \foo     : an inline comment, commenting out one token
 \    \( ... ) : a block comment
-$FN \ $SYN %DRP
+$FN \
+  $SYN %NOP %DRP
   \ Line comment if '\' is followed by space or newline
-  $xsl c_peekNoScan %DUP #20$L0 %EQ %SWP #A$L0 %EQ %OR
+  $xsl c_peekNoScan #20$L0 %EQ
   $IF @D_scan$L0 %DVSR %RET $END \ scanEol
   $xl _comment %RET \ else token comment
 

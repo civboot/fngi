@@ -280,6 +280,7 @@ typedef enum {
 // Debugging
 static inline void logInstr(Instr instr);
 void dbgInstr(Instr instr, Bool lit);
+void dbgWs(); void dbgFn();
 
 // ********************************************
 // ** Globals
@@ -624,6 +625,7 @@ void zoab_err(U4 err, U1 isCaught) {
 
 void xImpl(APtr aptr) { // impl for "execute"
   // get amount to grow, must be multipled by APtr size .
+  dbgFn("X", aptr);
   U2 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
   Stk_push(&env.cs, env.ep);
@@ -632,6 +634,7 @@ void xImpl(APtr aptr) { // impl for "execute"
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
+  dbgFn("XS", aptr);
   Stk_push(&env.cs, env.ep);
   Stk_pushU1(&env.csSz, (U1) 0);
   env.ep = aptr;
@@ -673,9 +676,10 @@ inline static void executeInstr(Instr instr) {
       if(WS_POP()) return;
       // intentional fallthrough
     case RET:
-      U4 callMeta = Stk_pop(&env.cs);
+      U4 cont = Stk_pop(&env.cs);
+      eprint("RET: )"); dbgWs();
       Stk_shrink(&env.ls, Stk_popU1(&env.csSz) << APO2);
-      env.ep = callMeta;
+      env.ep = cont;
       return;
     case SWP:
       r = WS_POP();
@@ -947,7 +951,7 @@ void readNewAtLeast(U1 num) {
 
   // Skip whitespace
   while(TRUE) {
-    if(tokenLen >= tokenBufSize) readNewAtLeast(1);
+    if(tokenLen >= tokenBufSize) { readNewAtLeast(1); }
     if(tokenBufSize == 0) return;
     if(toTokenGroup(tokenBuf[tokenLen]) != T_WHITE) break;
     if(tokenBuf[tokenLen] == '\n') line += 1;
@@ -955,16 +959,20 @@ void readNewAtLeast(U1 num) {
   }
   shiftBuf(); // Moves buffer to the left (tokenLen=0)
   if(!tokenBufSize) { readAtLeast(1); }
+  assert(tokenBufSize);
 
   U1 c = tokenBuf[tokenLen];
   env.g->ts.group = toTokenGroup(c);
   if(env.g->ts.group == T_SINGLE) {
     tokenLen += 1; // SINGLE: always single-char token
+    eprintf("??? Parsed single[line=%u]: %.*s\n", line, tokenLen, tokenBuf);
+    dbgWs();
     return;
   }
 
   // Parse token until the group changes.
   while (TRUE) {
+    eprintf("??? tl=%u tbs=%u c=%c [%X]\n", tokenLen, tokenBufSize, c, c);
     if (tokenLen >= tokenBufSize) readAtLeast(1);
     if (tokenLen >= tokenBufSize) break;
 
@@ -977,6 +985,8 @@ void readNewAtLeast(U1 num) {
     else break;
     tokenLen += 1;
   }
+  eprintf("??? Parsed token[line=%u]: %.*s\n", line, tokenLen, tokenBuf);
+  dbgWs();
 }
 
 U1 scanInstr() {
@@ -995,8 +1005,8 @@ U1 scanInstr() {
 /*fn*/ void cComment() {
   while(TRUE) {
     if (tokenLen >= tokenBufSize) readNewAtLeast(1);
-    if (tokenBufSize == 0) return;
-    if (tokenBuf[tokenLen] == '\n') return;
+    if (tokenBufSize == 0) break;
+    if (tokenBuf[tokenLen] == '\n') break;
     tokenLen += 1;
   }
 }
@@ -1292,6 +1302,7 @@ void ignoreWhitespace() {
         break;
     }
     if (len >= 63) {
+      assert(FALSE);
       // Overflow of single segment, make join segment and start anew.
       store(mem, start, ZOAB_JOIN + len, SzI1);
       start = buffer;
@@ -1309,7 +1320,13 @@ void ignoreWhitespace() {
 void deviceOpZoa() {
   U4 maxLen = WS_POP();
   APtr buffer = WS_POP();
-  WS_PUSH(parseStr(buffer, maxLen));
+  APtr out = parseStr(buffer, maxLen);
+  WS_PUSH(out);
+  eprintf("??? buffer=%X maxLen=%X\n", buffer, maxLen);
+  U1 len = fetch(mem, buffer, SzI1);
+  assert(out == buffer + len + 1);
+  eprintf("??? len=%X\n", len);
+  eprintf(">> zoa str: %.*s\n", len, mem+buffer+1);
 }
 
 void deviceOpDictDump(U1 isFetch) {
@@ -1344,8 +1361,16 @@ void deviceOpComZoab(U1 isFetch) {
 void deviceOp(Bool isFetch, SzI szI, U1 sz) {
   U4 op = WS_POP();
   U4 tmp;
+  eprintf("??? DV start op=0x%X isFetch=%u: ", op, isFetch); dbgWs();
   switch(op) {
-    case D_read: WS_PUSH(readAtLeast(WS_POP())); break;
+    case D_read:
+      tmp = readAtLeast(WS_POP());
+      eprintf("??? dvRead=%u ", tmp); dbgWs();
+      WS_PUSH(tmp);
+      eprintf("??? tryPop=%u\n", WS_POP());
+      WS_PUSH(tmp);
+      eprint("??? after ws push "); dbgWs();
+      break;
     case D_scan:
       if(isFetch) scan();
       else        cComment();
@@ -1371,6 +1396,7 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
     case D_comDone: deviceOpComDone(); break;
     default: SET_ERR(E_cDevOp);
   }
+  eprintf("??? DV end op=0x%X isFetch=%u: ", op, isFetch); dbgWs();
 }
 
 // ********************************************
@@ -1382,9 +1408,10 @@ U4 max(U4 a, U4 b) { if (a > b) return a; return b; }
 // If EOF is reached return the number of bytes read.
 // If this would overflow tokenBuf, return the number of bytes actually read.
 U1 readSrcAtLeast(U1 num) {
-  U1 out = 0;
+  U4 out = 0;
   num = min(TOKEN_BUF, num);
   assert(num);
+  eprint("??? rdsrc start: "); dbgWs();
   while (TRUE) {
     ssize_t numRead = read(
       fileno(srcFile),                      // filedes
@@ -1398,9 +1425,11 @@ U1 readSrcAtLeast(U1 num) {
     if(TOKEN_BUF - tokenBufSize == 0) break;
     if(numRead >= num) break;
   }
-  // eprintf("??? readSrcAtLeast read bytes=%3u: ", out);
-  // fwrite(tokenBuf + tokenBufSize - out, 1, out, stderr);
-  // eprint("\n");
+  eprintf("??? readSrcAtLeast numRead=%u: ", out);
+  fwrite(tokenBuf + tokenBufSize - out, 1, out, stderr);
+  eprintf("\n ??? Token len=%u: %.*s", tokenLen, tokenLen, tokenBuf);
+  eprint("\n??? rdsrc end: "); dbgWs();
+  assert(out <= 0xFF);
   return out;
 }
 #define ENV_CLEANUP() \
@@ -1767,7 +1796,7 @@ void assertNoWs() {
 
   // Test zoa str
   heapStart = env.g->heap;
-  compileStr("$| \\nzoa!\\n|");
+  compileStr("$|\\nzoa!\\n|");
   assert(6 == fetch(mem, heapStart, SzI1));
   assert(0 == memcmp("\nzoa!\n", mem + heapStart + 1, 6));
   assertNoWs();
@@ -1843,4 +1872,25 @@ void assertNoWs() {
 
   zoab_start(); zoab_arr(2, FALSE);
   zoab_int(LOG_USER); zoab_ntStr("Hello world from spor.c!\n", FALSE);
+}
+
+void dbgWs() {
+  eprintf("??? WS[%u]:", WS_LEN);
+  for(int i = 1; i <= WS_LEN; i++) {
+    eprintf(" %X", fetch(env.ws.mem, env.ws.sp + ((WS_LEN - i) * 4), SzI4));
+  }
+  eprint("\n");
+}
+
+void dbgFn(char* pre, APtr rFn) {
+  Dict* d = DEFAULT_DICT;
+  U2 offset = 0;
+  while(offset < d->len) {
+    Key* key = Dict_key(d, offset);
+    if(rFn == key->value) {
+      eprintf("## %s %.*s: ", pre, Key_len(key), key->s); dbgWs();
+      break;
+    }
+    offset += alignAPtr(keySizeWLen(Key_len(key)), 4);
+  }
 }

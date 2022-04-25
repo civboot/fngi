@@ -75,6 +75,10 @@ FN ) SYN drp panic(E_cUnclosed) \ prevent hanging )
 FN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
 FN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
 
+
+FN c_alias PRE \ {&key, isLocal, meta}
+
+
 \ TODO: alias?
 $(select(REF sr2, REF sr4, ASIZE == 2) -> gdictSet srA)
 $(select(REF sr2, REF sr4, ASIZE == 2) -> gdictSet ftA)
@@ -95,9 +99,9 @@ FN zEq PRE \ {&aZ &bZ} compare two zoab strings
   GET bZ ft1(dup) -> swp -> inc; \ {aLen &a bLen &b}
   -> ret strEq;
 
-$loc TOKEN_COMMA  |,|
-$loc TOKEN_SEMI   |;|
-$loc TOKEN_ARROW  |->|
+$loc TOKEN_COMMA  | ,|
+$loc TOKEN_SEMI   | ;|
+$loc TOKEN_ARROW  | ->|
 FN c_isComment \ [ -> bool] return true if token is a comment
   TRUE -> retif (ft1(GET c_tokenBuf) == 0c\\)
           \ retif(zEq(GET c_tokenLen, TOKEN_COMMA))
@@ -115,7 +119,7 @@ FN eqToken PRE \ [&zStr -> bool]
   ret strEq(\(expectLen, &expect), GET c_tokenLen, GET c_tokenBuf)
 FN assertToken PRE \(&zStr) eqToken(_), E_cNeedToken -> $jmpl assert
 
-$loc TOKEN_EQ |=|
+$loc TOKEN_EQ | =|
 FN CONST  SYN assertNoNow(_) \ CONST <name> = <value>
   c_updateGkey; loc; \ {&key}: update c_gkey and initialize dict@name
   c_scan; assertToken(TOKEN_EQ) \ {&key}: expect "="
@@ -130,7 +134,7 @@ FN between PRE \ {value a b -> bool} value is between [a b)
 
 FN elif unreach;  FN else unreach;
 
-$loc TOKEN_DO |do|
+$loc TOKEN_DO   |do|
 $loc TOKEN_ELIF |elif|
 $loc TOKEN_ELSE |else|
 
@@ -139,8 +143,13 @@ $loc TOKEN_ELSE |else|
 \ elif <token> do <token>  ->  ELSE <token> IF  <token>
 \ else            <token>  ->  ELSE             <token>
 \                              END END END
-FN _if \ [] recursive function of `if`
-  $declVar(declL h, SZA, ASIZE) $declEnd
+FN
+_if
+\ [] recursive function of `if`
+$assertWsEmpty \ UUUUU
+
+$
+declVar(declL h, SZA, ASIZE) $declEnd
   c_single(c_scan; FALSE) \ compile token after if
   0 -> $xsl IF -> _SET h
   assertToken(c_scan; TOKEN_DO) c_single(c_scan; FALSE) \ do <token>
