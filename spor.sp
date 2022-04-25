@@ -433,7 +433,9 @@ $_h =gdictArgs \ [ -> &buf &heap isLocal] args for dict.
 $_h =_dict
   @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
 
-$_h =gdictSet \ gdictSet: Set "standard" dictionary to next token.
+$_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
+  #0$L0 .4%SRGL @c_ldictRef$h2  #0$L0 .2%SRGL @c_ldictLen$h2 \ clear local dict
+  #0$L0        .2%SRGL @c_localOffset $h2  \ zero localDict.offset
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  %RET
 
 $_h =gdictGet \ gdictGet: Get the value of the next token.
@@ -442,12 +444,7 @@ $_h =gdictGet \ gdictGet: Get the value of the next token.
 $_h =gdictGetK \ gdictGetK: Get the &key of the next token.
   .2%XSL @_dict $h2   @D_dictK$L0   %DVFT  %RET
 
-$_h =loc \ $loc <name>: define a location
-  .A%FTGL @heap$h2  .2%XSL @gdictSet$h2
-  \ Clear ldict (locals dict)
-  #0$L0        .2%SRGL @c_localOffset $h2  \ zero localDict.offset
-  #0$L0        .A%SRGL @c_ldictLen $h2    \ zero localDict.heap
-  %RET
+$_h =loc .A%FTGL @heap$h2  .2%JMPL @gdictSet$h2 \ $loc <name>: define location
 
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
