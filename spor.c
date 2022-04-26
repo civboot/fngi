@@ -1056,14 +1056,10 @@ U1 scanInstr() {
   U2 offset = Dict_find(d, tokenLen, tokenBuf);
   ASM_ASSERT(offset != d->len, E_cKey);
   Key* key = Dict_key(d, offset);
-  if((TY_FN_SYN_MREF & key->value)
-     || (TY_FN_SYN & key->meta)) {
-    WS_PUSH(FALSE); // pass asNow=FALSE
-  }
+  if(TY_FN_SYN & key->meta) WS_PUSH(FALSE); // pass asNow=FALSE
   WS_PUSH(key->value);
-  if((TY_FN_LARGE_MREF & key->value)
-     || (TY_FN_LARGE & key->meta))  execute(SzI4 + XW);
-  else                              execute(SzI4 + XSW);
+  if(TY_FN_LARGE & key->meta) execute(SzI4 + XW);
+  else                        execute(SzI4 + XSW);
 }
 
 /*fn*/ Bool compile() {

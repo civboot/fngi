@@ -246,10 +246,10 @@ $c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq \ 0x24 = '$'
 $FN comp1 .4%XW %RET
 
 $FN testFngiSingleNum @fngiSingle $comp1 12 %RET
-$testFngiSingleNum #C $tAssertEq
+$testFngiSingleNum #C $tAssertEq   $assertWsEmpty
 
 $FN testFngiSingleOne @fngiSingle $comp1 two %RET
-$testFngiSingleOne #2 $tAssertEq
+$testFngiSingleOne #2 $tAssertEq   $assertWsEmpty
 
 $FN withLocals
   $declL s4  @SZ4  #4 $declVar

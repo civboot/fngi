@@ -219,7 +219,6 @@
 #00 =TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
 #04 =TY_FN_NOW     \ Required to be run as NOW (must use $)
 #08 =TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
-#0C =TY_FN_SYN_I   \ A syn function was called as asNow (runtime only)
 
 \ Local meta bits  [TTTI RRSS] I=input R=ref S=szI
 \ Local meta bits  [TTSS RR-I] I=input R=ref S=szI
@@ -518,7 +517,6 @@ $loc tAssertEq \ {a b}
 \ fn isFnNormal  ...
 \ fn isFnNow     ...
 \ fn isFnSyn     ...
-\ fn isFnSynN    ...              : "syn now", only at runtime
 \ fn isTyVar [&key -> U1]      : is a local offset
 \ fn isTyVarInput [&key -> U1] : is a local offset input
 \
@@ -721,17 +719,12 @@ $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn assertFnLarge  @TY_FN_PRE $c_makeFn assertCurMod
 @TY_FN_PRE $c_makeFn assertTyped    @TY_FN_PRE $c_makeFn assertNoNow
 
-$FN metaIsFnSyn     $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN$L1   %EQ %RET
-$FN metaIsFnSynN    $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN_I$L1 %EQ %RET
-$FN metaIsFnNow     $PRE  @TY_FN_TY_MASK$L1 %MSK @TY_FN_NOW$L1  %EQ %RET
-
-$FN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1 %MSK %RET
-$FN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1  %EQ %RET
-$FN isFnNow $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1  %EQ %RET
-$FN isFnSyn     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1  %EQ %RET
-$FN isFnSynN    $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN_I$L1  %EQ %RET
-$FN isTyVar     $PRE $keyMeta  @META_TY_MASK$L1 %MSK  @TY_VAR$L1  %EQ %RET
-$FN isVarInput $PRE $keyMeta  @TY_VAR_INPUT$L1 %MSK %RET
+$FN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1     %MSK %RET
+$FN isVarInput  $PRE $keyMeta  @TY_VAR_INPUT$L1  %MSK %RET
+$FN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1 %EQ %RET
+$FN isFnNow     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
+$FN isFnSyn     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
+$FN isTyVar     $PRE $keyMeta  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
 $FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
 
 $FN c_scan        @D_scan$L0   %DVFT %RET
@@ -873,7 +866,6 @@ $FN align $LARGE $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
 $FN alignA $PRE $xsl reqAlign $xl align %RET \ {aptr sz -> aptr}: align to SZA
 $FN align4 $PRE #4$L0 $xl align %RET \ {addr -> aligned4Addr}
 $FN alignSzI $PRE $xsl szIToSz  $xl align  %RET \ {addr szI -> addrAlignedSzI}
-$FN null2 #0$L0 %DUP %RET
 
 $FN ftSzI \ {&addr szI}
   %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
@@ -1190,7 +1182,6 @@ $FN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
 \
 \ fn betweenIncl [value a b -> bool]  : return whether value between [a,b]
 \ fn charToInt [c -> U8]          : convert ascii -> hex
-\ fn null2 [ -> NULL NULL]        : return two null values
 \
 \ c_fngi                          : fngi compile loop.
 \ fn fngiSingle [ -> ...]         : starting (base) c_compFn
@@ -1325,28 +1316,20 @@ $FN execute \ {&key} -> {...}: tycheck and execute a dictionary key
   %DUP $xsl isFnLarge  $IF .A%FT .A%XW %RET $END
   .A%FT .A%JMPW
 
-$FN _compConstant $PRE \ {asNow} -> {asNow &keyFn[nullable]}
+$FN _compConstant $PRE \ {asNow} -> {&keyFn[nullable]}
   $xl c_parseNumber \ {asNow value isNumber}
-  $IF \ {asNow value}
-    $xsl c_lit $jmpl null2
+  $IF  $xsl c_lit #0$L0 %RET  $END %DRP \ {asNow}
+  $xsl c_isEof $IF  %DRP #0$L0 %RET  $END \ {asNow}
+
+  \ Handle local dictionary. Only constants allowed here.
+  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {asNow &key}
+    %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
+    .A%FT $xsl c_lit  #0$L0 %RET
   $END %DRP \ {asNow}
-  $xsl c_isEof $IF  $jmpl null2  $END
-
- \ Handle local dictionary. Only constants allowed here.
- $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
-   %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
-   .A%FT $xsl c_lit  $jmpl null2
- $END %DRP
-
- $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
-
- \ Constant
- %DUP  $xsl isTyped %NOT $IF
-   .A%FT $xsl c_lit $jmpl null2
- $END
-
- \ Must be a function
- %DUP $jmpl assertFn \ {asNow &key}
+  $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
+  %DUP $xsl isTyped %NOT $IF \ Constant case {asNow &key}
+    .A%FT $xsl c_lit #0$L0 %RET
+  $END %SWP %DRP %DUP $jmpl assertFn \ {&key}
 
 $assertWsEmpty
 
@@ -1361,35 +1344,15 @@ $FN c_updateCompFn $PRE \ {&newCompFn -> &prevCompFn}
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
 $FN c_single $PRE
-  $declL key  @SZA  @ASIZE $declVar
-  $declL meta @SZ1   #1    $declVar $declEnd
-
-  \ Handle constants
-  $xsl _compConstant \ {asNow &keyFn[nullable]}
-  \ If &keyFn=null then already compiled, drop asNow and &keyFn
-  %DUP %NOT $IF  %DRP %DRP %RET  $END \ {asNow &keyFn}
-
-  %SWP %OVR  \ {&keyFn asNow &keyFn}
-  $xsl isFnNow $IF \ {&keyFn asNow}
-    @E_cReqNow$L2 $xsl assert \ assert asNow {&keyFn}
-    @TY_FN_NOW$L1 \ {&keyFn meta}
-  $ELSE \ {&keyFn asNow}
-    %OVR $keyMeta %SWP \ {&keyFn meta asNow}
-    $IF @TY_FN_NOW$L1  %JN   $END \ if(asNow) meta = NOW or SYN_I
-  $END \ {&key meta}
-
+  $declL asNow @SZ1 #1     $declVar
+  $declL key   @SZA @ASIZE $declVar $declEnd
+  \ Handle constants, return if it compiled the token.
+  %DUP $_SET asNow $xsl _compConstant %DUP $_SET key %RETZ
   \ if pre, recursively call fngiSingle (compile next token first)
-  %OVR $xsl isFnPre $IF
-    $_SET meta $_SET key  $GET c_compFn .A%XW  $GET key $GET meta
-  $END \ {&key meta}
-
-  %DUP $xsl metaIsFnSyn $IF
-    %DRP @FALSE$L0 %SWP $jmpl execute \ syn: not NOW. asNow=FALSE
-  $END %DUP $xsl metaIsFnSynN $IF
-    %DRP @TRUE$L0 %SWP $jmpl execute \ syn: NOW. asNow=TRUE
-  $END $xsl metaIsFnNow $IF \ regular NOW. Just call immediately.
-    $jmpl execute
-  $END $jmpl c_fn \ otherwise compile the function.
+  $GET key $xsl isFnPre $IF $GET c_compFn .A%XW $END \ recurse for PRE
+  $GET key $xsl isFnSyn $IF $GET asNow $GET key $jmpl execute    $END
+  $GET key $xsl isFnNow $IF $GET asNow @E_cReqNow$L2 $xsl assert $END
+  $GET key $GET asNow $IF  $jmpl execute  $END  $jmpl c_fn
 
 $FN fngiSingle \ base c_compFn for fngi tokens.
   #0$h1 $LARGE \ not really any locals (but called with XW)
