@@ -1,0 +1,70 @@
+bitmap Lvl [
+\ name    var   msk
+  SILENT  0x00  0xFF
+  SYS     0x40
+  USER    0x20
+  TRACE   0x1F  0x1F
+  DEBUG   0x0F  0x1F
+  INFO    0x07  0x1F
+  WARN    0x03  0x1F
+  CRIT    0x01  0x1F
+]
+
+struct WorkingStk [
+  totalLen: Int
+  data: Arr[Int]
+]
+
+struct BasicEvent [ lvl: Lvl; msg: Bytes ]
+
+struct DictEvent [
+  name: Bytes
+  value: Int
+  ref: Int
+  offset: Int
+  meta: Int
+  isLocalDict: Int  \ bool
+]
+
+struct ErrEvent [
+  errCode: Int
+  errName: Bytes
+  isCaught: Int \ bool
+  ep: Int
+  ws: WorkingStk
+  lineNo: Int
+  data: Arr[Int]
+  callStkLen: Int
+  callStk: Bytes
+  localsStk: Bytes
+]
+
+struct JmpEvent [
+  instr: Int
+  name: Bytes
+  fnName: Bytes
+  szBytes: Int
+  jloc: Int
+  ws: WorkingStk
+  xDepth: Int
+]
+
+struct RetSuccessEvent [
+  instr: Int
+  name: Bytes
+  jloc: Int
+  ws: WorkingStk
+  xDepth: Int
+]
+
+enum EventEnum [
+  basic: BasicEvent
+  dict: DictEvent
+  err: ErrEvent
+  ret_success: RetSuccessEvent
+]
+
+struct Event [
+  lvl: Lvl
+  e: EventEnum
+]
