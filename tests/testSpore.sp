@@ -280,13 +280,6 @@ $FN add1 $PRE %INC %RET \ {a} -> {a+1}
 $( FN three ret(add1(2)) )
 $three  #3 $tAssertEq
 
-$loc sporMsg  $| Hello world from testSpor.sp!\n|
-$assertWsEmpty
-
-@sporMsg $_printz
-$assertWsEmpty
-
-
 $FN failRecursively2 \ {n} -> {n-1}
   %DUP %NOT $IF
     %DRP

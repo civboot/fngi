@@ -92,6 +92,77 @@ $c_dotRefs @@       #2 @DOT_DEREF ^ADD $tAssertEq
 $c_dotRefs          #0                 $tAssertEq
 ```
 
+# Zoa in spor
+```
+\ **********
+\ * [10] Zoa strings and logging zoab
+\ See ./harness.md for design reasoning.
+\
+\ fn $loc <name> |zoa string literal|    : define a zoa string
+\
+\ fn comzStart []                 : zoab start
+\ fn comzArr [len join]           : start an array of len and join
+\ fn comzLogStart [lvl extraLen]  : start a log arr of data len exraLen
+\ fn print [len &raw]             : print raw data to the user (LOG_USER)
+\ fn _printz [&z]                 : print zoab bytes (<=63) to the user
+\ fn TODO: not finished
+
+\ |zoa string literal|
+\ Creates a zoa string in the heap.
+$FN |
+  $SYN $xsl assertNoNow
+  $GET heap
+  \ maxLen: (topHeap - heap)
+  %DUP .A%FTGL@topHeap$h2 %SWP %SUB
+  @D_zoa$L0 %DVFT .A%SRGL @heap$h2 %RET
+
+$FN c_logAll $PRE \ {&writeStruct len &buf } Write raw data to log output
+  $LARGE $declEnd \ no locals, but used in XW.
+  %DRP
+  $LOOP l0
+    %OVR %OVR
+    @D_com$L0 %DVFT
+    %NOT $IF %DRP %DRP %RET $END
+  $AGAIN l0
+
+$FN ft4BE $PRE \ {&a -> U4} fetch4 unaligned big-endian
+  %DUP%INC %DUP%INC %DUP%INC .1%FT \ {&a &a+1 &a+2                 a@3 }
+  %SWP .1%FT #08$L0%SHL %ADD       \ {&a &a+1            (a@2<<8 + a@3)}
+  %SWP .1%FT #10$L0%SHL %ADD       \ {&a       (a@1<<16 + a@2<<8 + a@3)}
+  %SWP .1%FT #18$L0%SHL %ADD       \ {a@0<<24 + a@1<<16 + a@2<<8 + a@3 }
+  %RET
+
+$loc LOG_ZOAB_START  #80$h1 #03$h1
+$FN comzStart  #2$L0 @LOG_ZOAB_START$LA  @D_com$L0 %DVSR %RET
+
+$loc TODO #0$h1
+$FN comzArr  $PRE \ {len join}
+  $declL b0  @SZ1  #1 $declVar $declEnd \ b0 is used as an array for com
+  \ $IF @ZOAB_JOIN$L1 $ELSE #0$L0 $END %SWP \ join -> joinTy       {joinTy len}
+  \ %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert \ assert len <= 0x3F {joinTy len}
+  \ %JN  $_SET b0
+  \ #33$L0 $REF b0 $jmpl com \ send via com
+
+  %DRP \ ignore join TODO
+  @ZOAB_ARR$L1 %JN  \ len->arrLen
+  @TODO$L2 .1%SR \ store len @TODO
+  #1$L0 @TODO$L2 @D_com$L0 %DVSR %RET \ {len &raw} communicate directly
+
+$FN comzLogStart  $PRE \ {lvl extraLen}  extraLen is in addition to sending the lvl
+  $xsl comzStart \ TODO: check return code once it's added
+  %INC @FALSE$L0 $xl comzArr
+  @D_comZoab$L0 %DVFT %RET \ send lvl
+
+$FN print  $PRE \ {len &raw}: print data to user
+  @LOG_USER$L1 #1$L0 $xsl comzLogStart
+  @FALSE$L0 @D_comZoab$L0 %DVSR %RET
+
+$FN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
+  %DUP .1%FT %DUP #40$L1 %LT_U @E_cZoab$L2 $xsl assert \ {len}
+  %SWP %INC  $xsl print
+  @D_comDone$L0 %DVFT %RET
+```
+
 # Block Allocator
 ```
 \ **********
@@ -149,7 +220,10 @@ LFN BA_ptrToI PRE \ {&blk &ba -> bi}
   IF(not GET blk)  ret BA_iNull;  END
   assert(BA_isPtrValid(GET blk, GET ba), E_ptrBlk)
   ret((GET blk - ft4(GET ba + BA_blocksOfs)) >> BA_blockPo2);
+```
 
+
+```
 SFN BA_iGet  PRE ret ft1(_ + ft4(_)) \ {bi &ba -> bi}
 SFN BA_iSet  PRE  \ {value bi &ba}  set ba@bi = value
   _ + ft4(_) \ {value &index}
@@ -201,7 +275,9 @@ SFN BA_alloc PRE \ {&ba -> &blockNullable}E
 SFN BA_free  PRE \ {&block &ba}
   swp; ovr; \ {&ba &block &ba}
   BA_ptrToI(\ba); swp; ret BA_iFree(\bi, \ba);
+```
 
+```
 \ **********
 \ * Singly Linked List (SLL)
 \ Singly linked lists are used throughout fngi because of their simplicity
@@ -226,7 +302,9 @@ SFN SLL_push PRE \ {&a &root}: Push a node onto the SLL
   ft4(\root); swp;    \ {&a &root &b &a}
   sr4(\b, \a);        \ a->b
   ret sr4(\a, \root); \ root->a
+```
 
+```
 \ **********
 \ * Arena Allocator (AA)
 \ The arena budy allocator is built on top of the BA. It allows allocations of
@@ -334,7 +412,9 @@ LFN AA_allocPo2 PRE \ {po2 &aa -> &free} allocate memory of size po2
 \   \ END LOOP l0
 
 $c_dictDump
+```
 
+```
 \ **********
 \ ** Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
@@ -483,7 +563,9 @@ $tAssertEq(GET AA_blk0 + (1<<5) , AA_allocExactPo2(5, REF AA_fake))
 $tAssertEq(NULL                 , AA_allocExactPo2(6, REF AA_fake))
 $tAssertEq(GET AA_blk0 + (1<<10), AA_allocExactPo2(10, REF AA_fake))
 $tAssertEq(NULL                 , AA_allocExactPo2(11, REF AA_fake))
+```
 
+```
 \ All roots are now null
 $tAssertEq(NULL, ft4(REF AA_fake + (2<<2)))
 $tAssertEq(NULL, ft4(REF AA_fake + (3<<2)))

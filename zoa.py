@@ -195,7 +195,10 @@ class StructBase:
     posArgs = Int.frZ(z.arr[0]) # number of positional args
     fields = iter(cls._fields)
     for pos in range(posArgs):
-      _name, f = next(fields)
+      try:
+        _name, f = next(fields)
+      except StopIteration:
+        import pdb; pdb.set_trace()
       assert f.zid is None
       args.append(f.ty.frZ(z.arr[1 + pos]))
     kwargs = {}

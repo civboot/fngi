@@ -240,7 +240,7 @@ typedef struct {
   // Working and Call Stack. Note: separate from mem
   Stk ws;
   Stk cs;
-  Stk csSz;
+  Stk lsSz;
 
   U1 szI; // global instr sz
 } Env;
@@ -360,7 +360,7 @@ void zoab_struct(U1 posArgs) { zoab_arr(posArgs + 1, FALSE); zoab_int(posArgs); 
 
 
 void zoab_file(U2 len, char* file) {
-  zoab_arrStart(2); zoab_int(Ev_file); zoab_data(len, file, FALSE);
+  zoab_enumStart(Ev_file); zoab_struct(1); zoab_data(len, file, FALSE);
 }
 
 void zoab_dict(Dict* d, U4 offset) {
@@ -570,6 +570,7 @@ void zoab_ws(U2 n) {
 
 // Dump the call/locals stack
 void zoab_cs() { zoab_data(X_DEPTH << APO2, env.cs.mem + env.cs.sp, /*join=*/ FALSE); }
+void zoab_lsSz() { zoab_data(X_DEPTH, env.lsSz.mem + env.lsSz.sp, /*join=*/ FALSE); }
 void zoab_ls() { zoab_data(Stk_len(env.ls) << APO2, env.ls.mem + env.ls.sp, /*join=*/ FALSE); }
 
 void zoab_err(U4 err, U1 isCaught) {
@@ -577,7 +578,6 @@ void zoab_err(U4 err, U1 isCaught) {
   zoab_int(err);
   zoab_int(isCaught);
   zoab_int(env.ep);
-  zoab_ws(WS_LEN);
   zoab_int(line);
   switch (env.g->errData.valTy) {
     case ERR_DATA_NONE:
@@ -592,6 +592,7 @@ void zoab_err(U4 err, U1 isCaught) {
     default: assert(FALSE);
   }
   zoab_cs();
+  zoab_lsSz();
   zoab_ls();
   fflush(stdout);
 }
@@ -604,13 +605,13 @@ void xImpl(APtr aptr) { // impl for "execute"
   U2 growLs = fetch(mem, aptr, SzI1);
   Stk_grow(&env.ls, growLs << APO2);
   Stk_push(&env.cs, env.ep);
-  Stk_pushU1(&env.csSz, (U1) growLs);
+  Stk_pushU1(&env.lsSz, (U1) growLs);
   env.ep = aptr + 1;
 }
 
 void xsImpl(APtr aptr) { // impl for "execute small"
   Stk_push(&env.cs, env.ep);
-  Stk_pushU1(&env.csSz, (U1) 0);
+  Stk_pushU1(&env.lsSz, (U1) 0);
   env.ep = aptr;
 }
 
@@ -651,7 +652,7 @@ inline static void executeInstr(Instr instr) {
       // intentional fallthrough
     case RET:
       U4 cont = Stk_pop(&env.cs);
-      Stk_shrink(&env.ls, Stk_popU1(&env.csSz) << APO2);
+      Stk_shrink(&env.ls, Stk_popU1(&env.lsSz) << APO2);
       env.ep = cont;
       return;
     case SWP:
@@ -1120,7 +1121,7 @@ void deviceOpCatch() {
   // ALWAYS Reset ep, call, and local stack and clear WS.
   env.ep = ep;
   env.cs.sp = cs_sp;
-  env.csSz.sp = cs_sp / 4;
+  env.lsSz.sp = cs_sp / 4;
   env.ls.sp = ls_sp;
   env.ws.sp = env.ws.size; // clear WS
 
@@ -1387,7 +1388,7 @@ U1 readSrcAtLeast(U1 num) {
 #define ENV_CLEANUP() \
     free(mem); \
     free(env.ws.mem); free(env.cs.mem); \
-    free(env.csSz.mem);
+    free(env.lsSz.mem);
 
 #define NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS)  \
   assert(MS == alignAPtr(MS, 1 << BLOCK_PO2));      \
@@ -1401,7 +1402,7 @@ U1 readSrcAtLeast(U1 num) {
     ));                     \
   U1* wsMem = malloc(WS);      assert(wsMem);       \
   U1* callStkMem = malloc(RS); assert(callStkMem);  \
-  U1* csSzMem = malloc(RS / 4); assert(csSzMem);    \
+  U1* lsSzMem = malloc(RS / 4); assert(lsSzMem);    \
   mem = malloc(MS);            assert(mem);         \
   dbgCount = 0;                           \
   memset(mem, 0, MS);                     \
@@ -1414,8 +1415,8 @@ U1 readSrcAtLeast(U1 num) {
     .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
     .cs = \
       { .size = RS, .sp = RS, .mem = callStkMem }, \
-    .csSz = \
-      { .size = RS / 4, .sp = RS / 4, .mem = csSzMem }, \
+    .lsSz = \
+      { .size = RS / 4, .sp = RS / 4, .mem = lsSzMem }, \
     .szI = SzI4, \
   };                                      \
   memset(env.g, 0, sizeof(Globals));      \
@@ -1743,13 +1744,6 @@ void assertNoWs() {
   // deviceOpCom();
   // assert(!WS_POP());
 
-  // Test zoa str
-  heapStart = env.g->heap;
-  compileStr("$|\\nzoa!\\n|");
-  assert(6 == fetch(mem, heapStart, SzI1));
-  assert(0 == memcmp("\nzoa!\n", mem + heapStart + 1, 6));
-  assertNoWs();
-
   // Test h1
   heapStart = env.g->heap;
   compileStr(".1 #42 ,  #43 $h1");
@@ -1818,9 +1812,6 @@ void assertNoWs() {
   assert(0 == WS_LEN);
   if (LOG_INFO & startingUsrLogLvl) zoab_infoStart("++ Tests Complete ++", 0);
   eprint("++ Tests Complete\n");
-
-  zoab_start(); zoab_arr(2, FALSE);
-  zoab_int(LOG_USER); zoab_ntStr("Hello world from spor.c!\n", FALSE);
 }
 
 void dbgWs() {

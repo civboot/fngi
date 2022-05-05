@@ -82,7 +82,7 @@ def nice(value):
 
 def integerBE(data): return int.from_bytes(data, 'big')
 def integerLE(data, l=None): return int.from_bytes(data, 'little')
-
+LVL = {0x1F: 'trace', 0x17: 'debug', 0x13: 'info', 0x11: 'warn', 0x10: 'crit'}
 
 @dataclass
 class FnEntry:
@@ -133,24 +133,24 @@ def orderFns(dicts):
   fns = []
   for d in dicts.values():
     for f in d.values():
-      if f.isFn(): fns.append(f)
+      if f.meta.is_fn(): fns.append(f)
 
-  fns.sort(key=DictEvent.ref)
+  fns.sort(key=lambda f: f.ref)
   return fns
 
 def findFnLesser(fns, addr):
   # A few notes:
   # - The ep that gets put on the call stack is the one where execution
   #   will CONTINUE.
-  # - Therefore if the addr=fn.ref() then the previous function called
+  # - Therefore if the addr=fn.ref then the previous function called
   #   something and bleeds into the next function on return
   #   (this may be intentional fall-through or they expect failure).
   if addr == 0: return None
-  if fns[0].ref() > addr: return None
-  if fns[-1].ref() < addr: return len(fns) - 1
+  if fns[0].value > addr: return None
+  if fns[-1].value < addr: return len(fns) - 1
   i = 0
   while i < len(fns):
-    if fns[i].ref() >= addr:
+    if fns[i].value >= addr:
       return i - 1
     i += 1
 
@@ -169,31 +169,28 @@ class CallStkItem:
 
 def extractCallStack(fns, ev):
   out = []
-  cs_i = 0
-  ls_i = 0
-  while cs_i < len(ev.callStk):
-    lszRef = integerLE(ev.callStk[cs_i:cs_i+4])
-    lszBytes = (lszRef >> 24) * 4
-    ep = toRef(lszRef)
-    lsData = ev.localsStk[ls_i:ls_i+lszBytes]
+  i, ls_i = 0, 0
+  while i < len(ev.localsStkSz):
+    ep = integerLE(ev.callStk[i*4:(i*4)+4])
+    lSz = ev.localsStkSz[i] * 4
+    lsData = ev.localsStk[ls_i:ls_i + lSz]
     fnI = findFnLesser(fns, ep)
     fn, fnNext = getFnAndNext(fns, fnI)
     out.append(CallStkItem(ep=ep, fn=fn, fnNext=fnNext, localData=lsData))
-
-    cs_i += 4
-    ls_i += lszBytes
+    i += 1
+    ls_i += lSz
   return out
 
 def printCallStack(callStk):
   for i, item in enumerate(callStk):
     ep, key, ref = nice(item.ep), "BASE", 0
     if item.fn:
-      key, ref = nice(item.fn.key), nice(item.fn.ref())
+      key, ref = nice(item.fn.key), nice(item.fn.value)
     loc = "in"
     if ref:
-      loc = f"{item.ep - item.fn.ref():>5} bytes"
+      loc = f"{item.ep - item.fn.value:>5} bytes"
       if item.fnNext:
-        p = (item.ep - item.fn.ref()) / (item.fnNext.ref() - item.fn.ref())
+        p = (item.ep - item.fn.value) / (item.fnNext.value - item.fn.value)
         p = int(100 * p)
         loc = loc + f" ({p:>3}%) into"
       else: loc += "        into"
@@ -223,10 +220,9 @@ def handleDictEvent(env, ev):
   - if the event is a local it updates the current function's local offsets.
   """
   value = ev # the value to add to ev.dicts
-
   if not ev.isConst:
-    if ev.isLocal:
-      env.currentFn.localOffsets[ev.value] = ev
+    if ev.isLocal and env.currentFn:
+      env.currentFn.loffsets[ev.value] = ev
     elif ev.meta.is_fn():
       # We store a FnEntry instead of a raw event.
       # This allows us to track the local values as we recieve them.
@@ -234,18 +230,18 @@ def handleDictEvent(env, ev):
       env.currentFn = value
       env.fnLookup[ev.ref] = nice(ev.key)
 
-  env.dicts[ev.buf][ev.key] = value
+  env.dicts[ev.ref][ev.key] = value
 
 def handleErrEvent(env, ev):
-  file = wantStr(env.file)
+  file = wantStr(env.file.name)
+  name = env.codes.get(ev.code, "Unknown Err"),
 
   if ev.isCaught: print(" -- Caught Error", end="")
   else:
     print(" !! ERROR", end="")
     env.uncaughtErr = ev
-
   print(f" (file: {file} [{ev.lineNo}])", end="")
-  print(f" [{nice(ev.errCode)}] \"{ev.errName}\"  ")
+  print(f" [{nice(ev.code)}] \"{name}\"  ")
   if len(ev.data) == 1:
     print("  V:", nice(ev.data[0]))
   if len(ev.data) == 2:
@@ -253,18 +249,13 @@ def handleErrEvent(env, ev):
     print("    A:", nice(ev.data[0]))
     print("    B:", nice(ev.data[1]))
 
-  print("Working Stk:", ev.ws)
-  if   not ev.callStkLen: pass
-  else:
-    print(f"  Call Stack (depth={ev.callStkLen})")
-    if not ev.callStk: return
-    fns = orderFns(env.dicts)
-    callStk = extractCallStack(fns, ev)
-    lastFnI = findFnLesser(fns, ev.ep)
-    fn, fnNext = getFnAndNext(fns, lastFnI)
-    lastCs = CallStkItem(ep=ev.ep, fn=fn, fnNext=fnNext, localData=b'')
-    callStk.insert(0, lastCs)
-    printCallStack(callStk)
+  fns = orderFns(env.dicts)
+  callStk = extractCallStack(fns, ev)
+  lastFnI = findFnLesser(fns, ev.ep)
+  fn, fnNext = getFnAndNext(fns, lastFnI)
+  lastCs = CallStkItem(ep=ev.ep, fn=fn, fnNext=fnNext, localData=b'')
+  callStk.insert(0, lastCs)
+  printCallStack(callStk)
 
 
 def harness(env, io):
@@ -292,10 +283,10 @@ def _harness(env, io):
   for i, ev in enumerate(inputs_stream(env, io)):
     if ev is None: print(f"ev is none at i={i}");
     elif ev.log:
-      assert ev.log.lvl.is_silent(), "unimplemented"
-      print(nice(ev.log.msg), end="")
+      if ev.log.lvl.is_silent(): print(nice(ev.log.msg), end="")
+      else: print(f"{LVL[ev.log.lvl.value]}: {nice(ev.log.msg)}")
     elif ev.dict: handleDictEvent(env, ev.dict);
-    elif ev.err: handleErrEvent(env, ev);
+    elif ev.err: handleErrEvent(env, ev.err);
     elif ev.file: env.file = ev.file
     else: raise ValueError(ev)
 

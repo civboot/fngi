@@ -58,13 +58,13 @@ struct DictEvent [
 ]
 
 struct ErrEvent [
-  errCode: Int
+  code: Int
   isCaught: Int \ bool
   ep: Int
-  ws: WorkingStk
   lineNo: Int
   data: Arr[Int]
   callStk: Bytes
+  localsStkSz: Bytes
   localsStk: Bytes
 ]
 

@@ -18,9 +18,6 @@ $tAssertEq(0c\t, 0x09)
 
 $tAssertEq(REF useEq, gdictGet useEq)
 
-$loc testFngiMsg  | Hello world from testFngi.fn!\n|
-$_printz(testFngiMsg)
-
 FN daAnswer ret 0x42
 FN testXsw  ret xsw($lit(REF daAnswer))
 $tAssertEq(0x42, testXsw)
@@ -38,23 +35,23 @@ $declVar(declG glblAnswer, SZ1, 1)
 
 $tAssertEq(42, GET glblAnswer)
 
-FN testIsComment
-  c_scan; c_isComment;
-  0 -> _SET c_tokenLen
-  ret;
-
-\ TODO: for some reason if you put testIsComment inside of the assertEq
-\ block, it causes the c_scanNoEof in c_now to trigger an exception.
-$testIsComment \hello -> $tAssertEq(TRUE)
-
-\ FN testIf  PRE \ {s -> o}
-\   if  (dup == 1) do (drp; 0x42)
-\   elif(dup == 7) do (drp; 0x777)
-\   else (drp; 0x22)
-\   ret(_)
+\ FN testIsComment
+\   c_scan; c_isComment;
+\   0 -> _SET c_tokenLen
+\   ret;
 \ 
-\ $tAssertEq(0x42,  testIf(1))
-\ $tAssertEq(0x777, testIf(7))
-\ $tAssertEq(0x22,  testIf(0))
-
-$assertWsEmpty
+\ \ TODO: for some reason if you put testIsComment inside of the assertEq
+\ \ block, it causes the c_scanNoEof in c_now to trigger an exception.
+\ $testIsComment \hello -> $tAssertEq(TRUE)
+\ 
+\ \ FN testIf  PRE \ {s -> o}
+\ \   if  (dup == 1) do (drp; 0x42)
+\ \   elif(dup == 7) do (drp; 0x777)
+\ \   else (drp; 0x22)
+\ \   ret(_)
+\ \ 
+\ \ $tAssertEq(0x42,  testIf(1))
+\ \ $tAssertEq(0x777, testIf(7))
+\ \ $tAssertEq(0x22,  testIf(0))
+\ 
+\ $assertWsEmpty
