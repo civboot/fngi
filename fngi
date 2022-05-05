@@ -19,10 +19,7 @@ import subprocess
 import argparse
 
 DONE = False
-def sigint(signal, frame):
-  global DONE
-  DONE = True
-
+def sigint(signal, frame): global DONE; DONE = True
 signal.signal(signal.SIGINT, sigint)
 
 parser = argparse.ArgumentParser(description='Fngi linux harness.')
@@ -31,6 +28,7 @@ parser.add_argument('--test', action='store_true', help="Run tests")
 parser.add_argument('--valgrind', action='store_true', help="Run with valgrind")
 parser.add_argument('--log', default='LOG_USER', help="The log level, i.e. LOG_INFO.")
 parser.add_argument('--syslog', default='LOG_COMPILER', help="The log level, i.e. LOG_INFO.")
+parser.add_argument('--pdb', action='store_true', help="Enter debug on failure")
 
 import zoa
 from zoa import readexact
@@ -39,22 +37,13 @@ with open(os.path.join(PWD, 'harness/types.ty'), 'rb') as f:
   _parser = zoa.Parser(f.read())
 _parser.parse()
 tys = _parser.env.tys
-
-SZ_MASK   = 0x30
-NOSZ_MASK = 0xCF
-
-SZ1 = 0x00
-SZ2 = 0x10
-SZ4 = 0x20
-SZA = 0x20
-
-META_TY_MASK = 0xE0 # Upper three bits determine type
-TY_LOCAL     = 0x40 # local variable, has varMeta. Accessed with FTLL/SRLL
-TY_FN        = 0x20 # function, can be called and has an fnMeta
-TY_LOCAL     = 0x40 # local variable, has varMeta. Accessed with FTLL/SRLL
-TY_GLOBAL    = 0x60 # global variable, has varMeta. Accessed with FTGL/SRGL
-
-ZOAB_LOG = 0x03
+Lvl = tys[b'Lvl'];           Meta = tys[b'Meta']
+Instr = tys[b'Instr'];
+WorkingStk = tys[b'WorkingStk']
+LogEvent = tys[b'LogEvent']; FileEvent = tys[b'FileEvent']; 
+DictEvent = tys[b'DictEvent']
+ErrEvent = tys[b'ErrEvent']; JmpEvent = tys[b'JmpEvent']
+RetEvent = tys[b'RetEvent']; Event = tys[b'Event']
 
 ERRORS = []
 
@@ -88,73 +77,17 @@ def nice(value):
   if isinstance(value, bytes):
     return wantStr(value)
   if isinstance(value, int):
-    return f"0x{value:X}"
-
-def toRef(metaRef): return 0xFFFFFF & metaRef
-def isTyLocal(meta):  return TY_LOCAL == (META_TY_MASK & meta)
-def isTyFn(meta):     return TY_FN == (META_TY_MASK & meta)
-def isTyGlobal(meta): return TY_GLOBAL == (META_TY_MASK & meta)
-def metaSzI(meta):
-  assert isTyLocal(meta) or isTyGlobal(meta)
-  return (0x3 & meta) << 4
-
-def szIToBytes(szI):
-  szI = SZ_MASK & szI
-  if szI == SZ1: return 1
-  if szI == SZ2: return 2
-  if szI == SZ4: return 4
-  raise ValueError(szI)
-
-class Lvl(enum.Enum):
-  SILENT    = 0x00
-  SYS       = 0x40
-  USER      = 0x20
-  TRACE     = 0x1F
-  DEBUG     = 0x0F
-  INFO      = 0x07
-  WARN      = 0x03
-  CRIT      = 0x01
-
-LOG_SYS = 0x40
-
-LOG_DICT = 0x02
-LOG_ERR  = 0x05
-LOG_FILE = 0x06
-LOG_JMP   = 0x08
-LOG_OP    = 0x09
-LOG_LIT   = 0x0A
-LOG_RET_SUCCESS = 0x0B
-LOG_MEM   = 0x0C
-
-class InstrClass(enum.Enum):
-  C_OP   = 0x00
-  C_SLIT = 0x40
-  C_JMP =  0x80
-  C_MEM =  0xC0
-
-FIELD_ERR_CODE = 0x01
-FIELD_MSG = 0x02
+    return hex(value)
 
 
-def integerBE(data):
-  if len(data) == 1:
-    return data[0]
-  if len(data) == 2:
-    return (data[0] << 8) + data[1]
-  if len(data) == 4:
-    return (data[0] << 24) + (data[1] << 16) + (data[2] << 8) + data[3]
-  raise ValueError(data)
+def integerBE(data): return int.from_bytes(data, 'big')
+def integerLE(data, l=None): return int.from_bytes(data, 'little')
 
-def integerLE(data, l=None):
-  if l is None: l = len(data)
-  if l == 1:
-    return data[0]
-  if l == 2:
-    return data[0] + (data[1] << 8)
-  if l == 4:
-    return data[0] + (data[1] << 8) + (data[2] << 16) + (data[3] << 24)
-  raise ValueError(data)
 
+@dataclass
+class FnEntry:
+  d: DictEvent
+  loffsets: Dict[int, DictEvent]
 
 @dataclass
 class FngiEnv:
@@ -169,242 +102,8 @@ class FngiEnv:
   currentFn: "DictEvent" = None
   instrLookup: dict = None
 
-class Event:
-  pass
-
-@dataclass
-class BasicEvent(Event):
-  lvl: Lvl
-  payload: List
-
-@dataclass
-class DictEvent(Event):
-  localOffsets: Dict[int, "DictEvent"]
-  isConst: bool
-  key: bytes
-  value: int
-  buf: int
-  offset: int
-  isConstant: bool
-  inLocalDict: bool
-  localOffsets: dict
-
-  @classmethod
-  def from_(cls, z, env):
-    key = z[1]
-    value = integerBE(z[2])
-    buf = integerBE(z[3])
-
-    localOffsets = {}
-    existing = env.dicts.get(buf, {}).get(key)
-    if existing and toRef(existing.value) == toRef(value):
-      localOffsets = existing.localOffsets  # keep existing locals
-
-    return cls(
-      isConst=bool(z[0][1]), # after lvl
-      key=key,
-      value=value,
-      buf=buf,
-      offset=integerBE(z[4]),
-      isConstant=bool(integerBE(z[5])),
-      inLocalDict=bool(integerBE(z[6])),
-      localOffsets=localOffsets,
-    )
-
-  def isFn(self): return not self.isConstant and isTyFn(self.meta())
-  def isLocal(self): return not self.isConstant and isTyLocal(self.meta())
-  def isGlobal(self): return not self.isConstant and isTyGlobal(self.meta())
-
-  def meta(self):
-    assert not self.isConstant
-    return self.value >> 24
-
-  def ref(self):
-    assert self.isGlobal() or self.isFn()
-    return toRef(self.value)
-
-  def localOffset(self):
-    assert self.isLocal()
-    return 0xFF & self.value
-
-  def __repr__(self):
-    if self.isConstant:
-      return f"DictConstant[{nice(self.value)}]"
-    if self.isLocal():
-      return f"DictLocal[{nice(self.localOffset())}]"
-
-    return (f"DictFn[{nice(self.meta())} @{nice(self.ref())} "
-          + f"numLocals={len(self.localOffsets)}]")
-
-ERR_DATA_NONE  = 0x00
-ERR_DATA_INT1  = 0x01
-ERR_DATA_DATA1 = 0x02
-ERR_DATA_INT2  = 0x03
-ERR_DATA_DATA2 = 0x04
-
-def errData(z):
-  print(z)
-  if not z: return z
-  ty = ord(z[0])
-  if ty == ERR_DATA_INT1: return (integerBE(z[1]),)
-  if ty == ERR_DATA_INT2: return (integerBE(z[1]), integerBE(z[2]))
-  return z[1:]
-
-@dataclass
-class WorkingStk:
-  totalLen: int
-  data: List[int]
-
-  @classmethod
-  def from_(cls, z):
-    data = [integerLE(z[1][i:i+4]) for i in range(len(z[1]) // 4)]
-    data.reverse()
-    return cls(
-      totalLen=integerBE(z[0]),
-      data=data,
-    )
-
-  def __repr__(self):
-    andMore = ''
-    if len(self.data) < self.totalLen:
-      andMore = f'{self.totalLen - len(self.data):>3}... '
-
-    data = ' '.join(f'#{v:<8X}' for v in self.data)
-    return f"{{{andMore}{data}}}"
-
-@dataclass
-class ErrEvent(Event):
-  errCode: int
-  errName: str
-  isCaught: bool
-  ep: int
-  ws: WorkingStk
-  lineNo: int
-  data: list
-  callStkLen: int
-  callStk: bytes
-  localsStk: bytes
-
-  def __repr__(self):
-    return f"ErrEvent(code={nice(self.errCode)} name={self.errName.split()[0]})"
-
-  @classmethod
-  def from_(cls, z, env):
-    code = integerBE(z[1])
-    isCaught = bool(integerBE(z[2]))
-    callStk, localsStk = None, None
-    if isCaught: callStkLen = integerBE(z[7])
-    else:
-      callStk, localsStk = z[7]
-      callStkLen = len(callStk) // 4
-    return cls(
-      errCode=code,
-      errName=env.codes.get(code, "Unknown Err"),
-      isCaught=isCaught,
-      ep=integerBE(z[3]),
-      ws=WorkingStk.from_(z[4]),
-      lineNo=integerBE(z[5]),
-      data=errData(z[6]),
-      callStkLen=callStkLen,
-      callStk=callStk,
-      localsStk=localsStk,
-    )
-
-@dataclass
-class FileEvent(Event):
-  file: str
-
-  @classmethod
-  def from_(cls, z):
-    return cls(file=z[1])
-
-
-class ExecutionEvent(Event):
-  pass
-
-def fmtXDepth(xDepth):
-  return '+' * xDepth
-
-@dataclass
-class JmpEvent(ExecutionEvent):
-  instr: int
-  name: str
-  fnName: str
-  szBytes: int
-  jloc: int
-  ws: WorkingStk
-  xDepth: int
-
-  @classmethod
-  def from_(cls, z, env):
-    instr = integerBE(z[1])
-    jloc = integerBE(z[2])
-    return cls(
-      instr=instr,
-      name=env.instrLookup.get(NOSZ_MASK & instr),
-      fnName=env.fnLookup.get(jloc),
-      szBytes=szIToBytes(instr),
-      jloc=jloc,
-      ws=WorkingStk.from_(z[3]),
-      xDepth=integerBE(z[4]),
-    )
-
-  def __repr__(self):
-    return (
-        f"{fmtXDepth(self.xDepth):<10} {str(self.ws):<42} {self.name:>4}"
-        + f"[{self.fnName}@{nice(self.jloc):<10}]"
-    )
-
-
-@dataclass
-class RetSuccessEvent(ExecutionEvent):
-  instr: int
-  name: str
-  jloc: int
-  ws: WorkingStk
-  xDepth: int
-
-  @classmethod
-  def from_(cls, z, env):
-    instr = integerBE(z[1])
-    return cls(
-      instr=instr,
-      name=env.instrLookup.get(instr),
-      jloc=integerBE(z[2]),
-      ws=WorkingStk.from_(z[3]),
-      xDepth=integerBE(z[4]),
-    )
-
-  def __repr__(self):
-    return (
-      f"{fmtXDepth(self.xDepth):<10} {str(self.ws):<42} {self.name:>4}"
-      + f"[@{nice(self.jloc):<10}]"
-    )
-
-RETZ = 0x01
-RET  = 0x02
-XL   = 0x84,
-XW   = 0x85,
-XSL  = 0x86,
-XSW  = 0x87,
-
-CALLSTACK_INSTRS = {XL, XW, XSL, XSW}
-
-def waitForStart(io):
-  buf = bytearray()
-  while True:
-    buf.clear()
-    readexact(io, buf, 1)
-    if buf[0] == 0x80:
-      buf.clear(); readexact(io, buf, 1)
-      if buf[0] == ZOAB_LOG:
-        return
-      print(f"??? Unknown byte after 0x80: {chr(buf[0])} ({nice(buf[0])})")
-    else:
-      c = 0
-      try: chr(buf[0])
-      except ValueError: pass
-      print(f"??? Unknown byte: {chr(buf[0])} ({nice(buf[0])})")
+def isCallstk(instr: Instr):
+  return instr.is_xl() or instr.is_xw() or instr.is_xsl() or instr.is_xsw()
 
 SP_REGEX = re.compile(
   r'^#(?P<value>[\w_]+)\s+=(?P<name>.+)$',
@@ -429,53 +128,6 @@ def findGlobals():
 def findErrorCodes(glbls):
   return {value: name for (name, value) in glbls.items()
           if name.startswith('E_')}
-
-def sysEvent(env, z):
-  control = z[0]
-  sysTy = Lvl.TRACE.value & control[0]
-  if sysTy == LOG_DICT:
-    return DictEvent.from_(z, env)
-  if sysTy == LOG_ERR:
-    return ErrEvent.from_(z, env)
-  if sysTy == LOG_FILE:
-    return FileEvent.from_(z)
-  if sysTy == LOG_JMP:
-    return JmpEvent.from_(z, env)
-  if sysTy == LOG_OP:
-    return print("??? op", z)
-  if sysTy == LOG_LIT:
-    return print("??? lit", z)
-  if sysTy == LOG_RET_SUCCESS:
-    return RetSuccessEvent.from_(z, env)
-  if sysTy == LOG_MEM:
-    return print("??? mem", z)
-  raise ValueError(f"Unknown sysTy: {nice(sysTy)}")
-
-def inputs_stream(env, io):
-  while True:
-    waitForStart(io)
-    z = zoa.from_zoab(io).to_py()
-    if not z: continue
-    control = z[0]
-    if isinstance(control, int):
-      print("?? got int control?"); continue
-
-    if Lvl.SYS.value & control[0]:
-      yield sysEvent(env, z)
-      continue
-
-    lvl = Lvl(control[0])
-    payload = list(z[1:])
-
-    yield BasicEvent(lvl=lvl, payload=payload)
-
-
-@dataclass
-class CallStkItem:
-  ep: int
-  fn: DictEvent
-  fnNext: DictEvent
-  localData: bytes
 
 def orderFns(dicts):
   fns = []
@@ -507,6 +159,13 @@ def getFnAndNext(fns, fnI):
   fn, fnNext = fns[fnI], None
   if fnI < len(fns) - 1: fnNext = fns[fnI + 1]
   return fn, fnNext
+
+@dataclass
+class CallStkItem:
+  ep: int
+  fn: DictEvent
+  fnNext: DictEvent
+  localData: bytes
 
 def extractCallStack(fns, ev):
   out = []
@@ -543,15 +202,39 @@ def printCallStack(callStk):
     else:      print("    + Called from", end="")
     print(f" @{ep:<10} {loc} {key} (defined @{ref})")
 
-def handleDictEvent(env, ev):
-  env.dicts[ev.buf][ev.key] = ev
-  if not ev.isConst:
-    if ev.isLocal():
-      env.currentFn.localOffsets[ev.localOffset()] = ev
-    elif ev.isFn(): env.currentFn = ev
+def waitForStart(io):
+  buf = bytearray()
+  while True:
+    buf.clear()
+    readexact(io, buf, 1)
+    if buf[0] == zoa.ZOA_JOIN:
+      buf.clear(); readexact(io, buf, 1)
+      if buf[0] == 0x03: return
+      print(f"??? Unknown byte after 0x80: {chr(buf[0])} ({nice(buf[0])})")
+    else:
+      c = 0
+      try: chr(buf[0])
+      except ValueError: pass
+      print(f"??? Unknown byte: {chr(buf[0])} ({nice(buf[0])})")
 
-  if ev.isFn() and not ev.isLocal():
-    env.fnLookup[ev.ref()] = nice(ev.key)
+def handleDictEvent(env, ev):
+  """Dict events need to do two things:
+  - if the event is a function, it updates the fnLookup and the currentFn
+  - if the event is a local it updates the current function's local offsets.
+  """
+  value = ev # the value to add to ev.dicts
+
+  if not ev.isConst:
+    if ev.isLocal:
+      env.currentFn.localOffsets[ev.value] = ev
+    elif ev.meta.is_fn():
+      # We store a FnEntry instead of a raw event.
+      # This allows us to track the local values as we recieve them.
+      value = FnEntry(ev, {})
+      env.currentFn = value
+      env.fnLookup[ev.ref] = nice(ev.key)
+
+  env.dicts[ev.buf][ev.key] = value
 
 def handleErrEvent(env, ev):
   file = wantStr(env.file)
@@ -592,6 +275,13 @@ def harness(env, io):
     ERRORS.append(e)
     raise
 
+def inputs_stream(env, io):
+  while True:
+    waitForStart(io)
+    z = zoa.from_zoab(io)
+    if not z.arr: continue
+    yield Event.frZ(z)
+
 def _harness(env, io):
   """Harness for spor.
 
@@ -600,28 +290,14 @@ def _harness(env, io):
   """
 
   for i, ev in enumerate(inputs_stream(env, io)):
-    if ev is None: print(f"ev is none at i={i}"); continue
-    if isinstance(ev, DictEvent):
-      handleDictEvent(env, ev)
-      continue
-    if isinstance(ev, ErrEvent):
-      handleErrEvent(env, ev)
-      continue
-    if isinstance(ev, FileEvent):
-      env.file = ev.file
-      continue
-    if isinstance(ev, ExecutionEvent):
-      print(ev)
-      continue
-    if isinstance(ev, BasicEvent) and ev.lvl == Lvl.USER:
-      assert len(ev.payload) == 1 and isinstance(ev.payload[0], bytes), "invalid LOG_USER"
-      print(ev.payload[0].decode('utf-8'), end="")
-      continue
-
-    print(f"{ev.lvl}[{i:>8d}]: ", end='')
-    payload = ev.payload
-    if len(payload) == 1: payload = payload[0]
-    pprint.pprint(payload)
+    if ev is None: print(f"ev is none at i={i}");
+    elif ev.log:
+      assert ev.log.lvl.is_silent(), "unimplemented"
+      print(nice(ev.log.msg), end="")
+    elif ev.dict: handleDictEvent(env, ev.dict);
+    elif ev.err: handleErrEvent(env, ev);
+    elif ev.file: env.file = ev.file
+    else: raise ValueError(ev)
 
 def compileSpore():
   print("Recompiling spore")
@@ -665,9 +341,8 @@ def _readPassLoop(inp, toOut):
     if eof and not writeBuf:
       return
 
-def main():
+def main(args):
   global DONE
-  args = parser.parse_args()
   if args.compile: compileSpore()
 
   glbls = findGlobals()
@@ -712,14 +387,15 @@ def main():
       stderr=sys.stderr)
 
   procOut = CheckDoneReader(p.stdout)
-  harnessTh = threading.Thread(target=harness, args=(env, procOut))
+  # harnessTh = threading.Thread(target=harness, args=(env, procOut))
   readTh = threading.Thread(target=readPassLoop, args=(sys.stdin, p.stdin))
   try:
-    harnessTh.start()
+    # harnessTh.start()
     readTh.start()
-    while p.returncode is None and harnessTh.is_alive():
-      time.sleep(0.2)
-      p.poll()
+    harness(env, procOut)
+    # while p.returncode is None and harnessTh.is_alive():
+    #   time.sleep(0.2)
+    #   p.poll()
   finally:
     # time.sleep(0.5) # Allow some time for buffers to flush
     DONE = True
@@ -736,15 +412,12 @@ def main():
     raise ERRORS[0]
 
 if __name__ == '__main__':
-  main()
-
-  # env = FngiEnv(
-  #   dicts = collections.defaultdict(dict),
-  #   codes = findErrorCodes())
-  # try:
-  #   harness(env)
-  # except zoa.Eof:
-  #   print("Program terminated")
-  # pprint.pprint(env.dicts)
-  # for key, value in env.codes.items():
-  #   print(f"  {nice(key)}: {value}")
+  args = parser.parse_args()
+  try:
+    main(args)
+  except Exception:
+    if not args.pdb: raise
+    import pdb, traceback
+    extype, value, tb = sys.exc_info()
+    traceback.print_exc()
+    pdb.post_mortem(tb)

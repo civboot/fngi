@@ -1,13 +1,42 @@
+bitmap Instr [
+\ name    var   msk
+  sz1     0x00  0x30
+  sz2     0x01  0x30
+  sz4     0x02  0x30
+  szA     0x02  0x30
+
+  retz    0x01
+  ret     0x02
+  xl      0x84
+  xw      0x85
+  xsl     0x86
+  xsw     0x87
+]
+
+bitmap Meta [
+  fn         0x40 0xC0
+  var        0x80 0xC0
+  dict       0xC0 0xC0
+
+  fn        0x40 0xC0
+  fnPre     0x60
+  fnLarge   0x50
+  fnNormal  0x40 0x4C
+  fnNow     0x44 0x4C
+  fnSyn     0x48 0x4C
+]
+
 bitmap Lvl [
 \ name    var   msk
-  SILENT  0x00  0xFF
-  SYS     0x40
-  USER    0x20
-  TRACE   0x1F  0x1F
-  DEBUG   0x0F  0x1F
-  INFO    0x07  0x1F
-  WARN    0x03  0x1F
-  CRIT    0x01  0x1F
+  silent  0x00  0xFF
+
+  \ User: 0b001X XXXX
+  user    0x10
+  trace   0x1F  0x5F
+  debug   0x17  0x5F
+  info    0x13  0x5F
+  warn    0x11  0x5F
+  crit    0x10  0x5F
 ]
 
 struct WorkingStk [
@@ -15,56 +44,49 @@ struct WorkingStk [
   data: Arr[Int]
 ]
 
-struct BasicEvent [ lvl: Lvl; msg: Bytes ]
+struct LogEvent [ lvl: Lvl; msg: Bytes ]
+struct FileEvent [ name: Bytes ]
 
 struct DictEvent [
-  name: Bytes
+  key: Bytes
   value: Int
   ref: Int
   offset: Int
-  meta: Int
-  isLocalDict: Int  \ bool
+  meta: Meta
+  isLocal: Int  \ bool
+  isConst: Int  \ bool
 ]
 
 struct ErrEvent [
   errCode: Int
-  errName: Bytes
   isCaught: Int \ bool
   ep: Int
   ws: WorkingStk
   lineNo: Int
   data: Arr[Int]
-  callStkLen: Int
   callStk: Bytes
   localsStk: Bytes
 ]
 
 struct JmpEvent [
   instr: Int
-  name: Bytes
-  fnName: Bytes
-  szBytes: Int
   jloc: Int
   ws: WorkingStk
   xDepth: Int
 ]
 
-struct RetSuccessEvent [
+struct RetEvent [
   instr: Int
-  name: Bytes
   jloc: Int
   ws: WorkingStk
   xDepth: Int
 ]
 
-enum EventEnum [
-  basic: BasicEvent
+enum Event [
+  log: LogEvent
+  file: FileEvent
   dict: DictEvent
   err: ErrEvent
-  ret_success: RetSuccessEvent
-]
-
-struct Event [
-  lvl: Lvl
-  e: EventEnum
+  jmp: JmpEvent
+  ret: RetEvent
 ]

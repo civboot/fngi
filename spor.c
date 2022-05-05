@@ -17,26 +17,29 @@
 #define eprint(str)   fprintf (stderr, str)
 #define eprintf(format, args...)   fprintf (stderr, format, args)
 
-typedef enum {
-  LOG_SILENT    = 0x00, LOG_SYS       = 0x40, LOG_USER      = 0x20,
-  LOG_TRACE     = 0x1F, LOG_DEBUG     = 0x0F, LOG_INFO      = 0x07,
-  LOG_WARN      = 0x03, LOG_CRIT      = 0x01,
-} UsrLogLvl;
+#define LOG_USER      0x10
+#define LOG_SYS       0x20
 
 typedef enum {
-  LOG_NOW       = 0x20,
-  LOG_INSTR     = 0x1F, LOG_EXECUTE   = 0x07, LOG_ASM       = 0x03,
-  LOG_COMPILER  = 0x01,
-} SysLogLvl;
+  LOG_SILENT  = 0x00,
 
-#define LOG_DICT  0x02
-#define LOG_ERR   0x05
-#define LOG_FILE  0x06
-#define LOG_JMP   0x08
-#define LOG_OP    0x09
-#define LOG_LIT   0x0A
-#define LOG_RET_SUCCESS   0x0B
-#define LOG_MEM   0x0C
+  // User: 0b0001 XXXX
+  LOG_TRACE     = 0x1F,
+  LOG_DEBUG     = 0x17,
+  LOG_INFO      = 0x13,
+  LOG_WARN      = 0x11,
+  LOG_CRIT      = 0x10,
+
+  // Sys: 0b0010 XXXX
+  LOG_INSTR     = 0x27,
+  LOG_EXECUTE   = 0x23,
+  LOG_ASM       = 0x21,
+  LOG_COMPILER  = 0x20,
+} Lvl;
+
+typedef enum {
+  Ev_log = 0, Ev_file = 1, Ev_dict = 2, Ev_err = 3, Ev_jmp = 4, Ev_ret = 5,
+} EventVar;
 
 // ********************************************
 // ** Core Types
@@ -312,15 +315,7 @@ void writeOutbuf(U2 len) {
   U4 out = fwrite(outbuf, 1, len, stdout);
 }
 
-// Start an array of length and join bit.
-void zoab_arr(U1 len, U1 join) {
-  if(join) len = ZOAB_ARR | ZOAB_JOIN | len;
-  else len = ZOAB_ARR | len;
-  outbuf[0] = len;
-  writeOutbuf(1);
-}
-
-// Write a string of length and join bit.
+// Write data of length and join bit.
 void zoab_data(U2 len, U1* str, U1 join) {
   while(TRUE) {
     if(len <= 63) {
@@ -339,35 +334,48 @@ void zoab_data(U2 len, U1* str, U1 join) {
   }
 }
 
-// Write an integer (bigendian)
-void zoab_int(U4 value) {
+// Start an array of length and join bit.
+void zoab_arr(U1 len, U1 join) {
+  if(join) len = ZOAB_ARR | ZOAB_JOIN | len;
+  else len = ZOAB_ARR | len;
+  outbuf[0] = len;
+  writeOutbuf(1);
+}
+void zoab_int(U4 value) { // Write an integer (bigendian)
+  // TODO: why start at 8?
   outbuf[8]  = value >> 24;
   outbuf[9]  = value >> 16;
   outbuf[10] = value >> 8;
   outbuf[11] = value;
-  if (value <= 0xFF) {
-    zoab_data(1, outbuf+11, FALSE);
-  } else if (value <= 0xFFFF) {
-    zoab_data(2, outbuf+10, FALSE);
-  } else {
-    zoab_data(4, outbuf+8, FALSE);
-  }
+  if      (value <= 0xFF)     zoab_data(1, outbuf+11, FALSE);
+  else if (value <= 0xFFFF)   zoab_data(2, outbuf+10, FALSE);
+  else if (value <= 0xFFFFFF) zoab_data(3, outbuf+9, FALSE);
+  else                        zoab_data(4, outbuf+8, FALSE);
 }
 
-// Write a null-terminated string.
-void zoab_ntStr(U1* str, U1 join) {
-  zoab_data(strlen(str), str, join);
+void zoab_ntStr(U1* str, U1 join) { zoab_data(strlen(str), str, join); }
+void zoab_arrStart(U1 len) { zoab_start(); zoab_arr(len, FALSE); }
+void zoab_enumStart(U1 var) { zoab_arrStart(2); zoab_int(var); }
+void zoab_struct(U1 posArgs) { zoab_arr(posArgs + 1, FALSE); zoab_int(posArgs); }
+
+
+void zoab_file(U2 len, char* file) {
+  zoab_arrStart(2); zoab_int(Ev_file); zoab_data(len, file, FALSE);
 }
 
-
-
-U1 LOG_DICT_PTR[] = {LOG_SYS | LOG_DICT, 0};
-U1 LOG_ERR_PTR[] = {LOG_SYS | LOG_ERR, 0};
-U1 LOG_FILE_PTR[] = {LOG_SYS | LOG_FILE, 0};
+void zoab_dict(Dict* d, U4 offset) {
+  Key* key = Dict_key(d, offset);
+  zoab_enumStart(Ev_dict);
+  zoab_struct(7);
+  zoab_data(Key_len(key), (char *)key->s, /*join=*/ FALSE); // key
+  zoab_int(key->value);
+  zoab_int(d->ref);    zoab_int(offset);
+  zoab_int(key->meta); zoab_int(isLocalDict(d));
+  zoab_int(!(KEY_HAS_TY & key->len)); // isConst
+}
 
 void zoab_infoStart(U1* str, U2 extraLen) {
-  zoab_start(); zoab_arr(2 + extraLen, FALSE);
-  zoab_int(LOG_INFO); zoab_ntStr(str, FALSE);
+  zoab_enumStart(Ev_log); zoab_struct(2); zoab_int(LOG_INFO); zoab_ntStr(str, FALSE);
 }
 
 void zoab_info(U1* str) {
@@ -377,26 +385,6 @@ void zoab_info(U1* str) {
   }
 }
 
-void zoab_dict(Dict* d, U4 offset) {
-  Key* key = Dict_key(d, offset);
-
-  zoab_start();
-  zoab_arr(7, /*join=*/ FALSE);
-  zoab_data(2, LOG_DICT_PTR, /*join=*/ FALSE);
-  zoab_data(Key_len(key), (char *)key->s, /*join=*/ FALSE); // key
-  zoab_int(key->value);
-  zoab_int(d->ref);
-  zoab_int(offset);
-  zoab_int(!(KEY_HAS_TY & key->len));
-  zoab_int(isLocalDict(d));
-}
-
-
-void zoab_file(U2 len, char* file) {
-  zoab_start(); zoab_arr(2, FALSE);
-  zoab_data(2, LOG_FILE_PTR, FALSE);
-  zoab_data(len, file, FALSE);
-}
 
 // ********************************************
 // ** Utilities
@@ -580,25 +568,17 @@ void zoab_ws(U2 n) {
   zoab_data(min(WS_LEN, n) << APO2, env.ws.mem + env.ws.sp, /*join=*/ FALSE);
 }
 
-// Dump the call stack
-void zoab_cs() {
-  zoab_data(X_DEPTH << APO2, env.cs.mem + env.cs.sp, /*join=*/ FALSE);
-}
-
-// Dump the locals stack
-void zoab_ls() {
-  zoab_data(Stk_len(env.ls) << APO2, env.ls.mem + env.ls.sp, /*join=*/ FALSE);
-}
+// Dump the call/locals stack
+void zoab_cs() { zoab_data(X_DEPTH << APO2, env.cs.mem + env.cs.sp, /*join=*/ FALSE); }
+void zoab_ls() { zoab_data(Stk_len(env.ls) << APO2, env.ls.mem + env.ls.sp, /*join=*/ FALSE); }
 
 void zoab_err(U4 err, U1 isCaught) {
-  zoab_start(); zoab_arr(8, FALSE);
-  zoab_data(2, LOG_ERR_PTR, FALSE);
+  zoab_enumStart(Ev_err); zoab_struct(8);
   zoab_int(err);
   zoab_int(isCaught);
   zoab_int(env.ep);
   zoab_ws(WS_LEN);
   zoab_int(line);
-
   switch (env.g->errData.valTy) {
     case ERR_DATA_NONE:
       zoab_arr(0, FALSE);
@@ -611,12 +591,8 @@ void zoab_err(U4 err, U1 isCaught) {
       break;
     default: assert(FALSE);
   }
-
-  if(isCaught) zoab_int(X_DEPTH); // just update the execution depth
-  else {
-    zoab_arr(2, FALSE); zoab_cs(); zoab_ls();
-  }
-
+  zoab_cs();
+  zoab_ls();
   fflush(stdout);
 }
 
@@ -1548,53 +1524,50 @@ void dbgJmp(Instr instr) {
       if (!WS_LEN) return;
       jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
   }
-  zoab_start();
-  zoab_arr(5, FALSE);
-  zoab_int(LOG_SYS | LOG_JMP);  zoab_int(instr);
-  zoab_int(jloc); zoab_ws(WS_LEN); zoab_int(X_DEPTH);
+  zoab_arrStart(5); zoab_int(Ev_jmp);
+  zoab_int(instr); zoab_int(jloc);
+  zoab_ws(WS_LEN); zoab_int(X_DEPTH);
 }
 
 void dbgMem(Instr instr) {
-  SzI szI;
-  switch (INSTR_NO_SZ(instr)) {
-    case LIT: szI = INSTR_SZI(instr); break;
-    case FTLL:
-    case SRLL: szI = SzI1; break;
-    case FTGL:
-    case SRGL: szI = SzI2; break;
-    default: return;
-  }
-  if(_dbgMemInvalid(szI, env.ep)) return;
-  zoab_arr(3, FALSE);
-  zoab_int(LOG_SYS | LOG_MEM);  zoab_int(instr);
-  zoab_int(fetchBE(mem, env.ep, szI));
-  return;
+  // SzI szI;
+  // switch (INSTR_NO_SZ(instr)) {
+  //   case LIT: szI = INSTR_SZI(instr); break;
+  //   case FTLL:
+  //   case SRLL: szI = SzI1; break;
+  //   case FTGL:
+  //   case SRGL: szI = SzI2; break;
+  //   default: return;
+  // }
+  // if(_dbgMemInvalid(szI, env.ep)) return;
+  // zoab_arr(3, FALSE);
+  // zoab_int(LOG_SYS | LOG_MEM);  zoab_int(instr);
+  // zoab_int(fetchBE(mem, env.ep, szI));
 }
 
 void dbgInstr(Instr instr, Bool lit) {
   SzI szI;
-
   if (instr == RET || (instr == RETZ && WS_LEN && (WS_TOP() == 0))) {
-      zoab_start();   zoab_arr(5, FALSE);
-      zoab_int(LOG_SYS | LOG_RET_SUCCESS);  zoab_int(instr);
-      if(env.cs.sp == env.cs.size) zoab_int(0);
-      else zoab_int(fetch(env.cs.mem, env.cs.sp, SzI4));
+      zoab_arrStart(5); zoab_int(Ev_ret); zoab_int(instr);
+      if(env.cs.sp == env.cs.size) zoab_int(0); // jloc=0 if empty
+      else zoab_int(fetch(env.cs.mem, env.cs.sp, SzI4)); // jloc
       zoab_ws(WS_LEN); zoab_int(X_DEPTH);
       return;
   }
+  assert(FALSE);
 
-  switch (INSTR_CLASS(instr)) {
-    case C_OP:
-      zoab_start();   zoab_arr(3, FALSE);
-      zoab_int(LOG_SYS | LOG_OP); zoab_int(instr); zoab_ws(2);
-      return;
-    case C_SLIT:
-      zoab_start();  zoab_arr(2, FALSE);
-      zoab_int(LOG_SYS | LOG_LIT);  zoab_int(0x3F & instr);
-      return;
-    case C_MEM: return dbgMem(instr);
-    case C_JMP: return dbgJmp(instr);
-  }
+  // switch (INSTR_CLASS(instr)) {
+  //   case C_OP:
+  //     zoab_start();   zoab_arr(3, FALSE);
+  //     zoab_int(LOG_SYS | LOG_OP); zoab_int(instr); zoab_ws(2);
+  //     return;
+  //   case C_SLIT:
+  //     zoab_start();  zoab_arr(2, FALSE);
+  //     zoab_int(LOG_SYS | LOG_LIT);  zoab_int(0x3F & instr);
+  //     return;
+  //   case C_MEM: return dbgMem(instr);
+  //   case C_JMP: return dbgJmp(instr);
+  // }
 }
 
 static inline Bool isExecute(Instr instr) {

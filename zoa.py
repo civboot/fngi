@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Tuple, Iterable
 from dataclasses import dataclass
 
 ZOA_LEN_MASK = 0x3F
-ZOA_JOIN = 0x80
-ZOA_ARR = 0x40
-ZOA_DATA = 0x00
+ZOA_JOIN =     0x80
+ZOA_ARR =      0x40
+ZOA_DATA =     0x00
 
 class Eof(Exception): pass
 
@@ -226,8 +226,8 @@ class EnumBase:
   @classmethod
   def frZ(cls, z: ZoaRaw) -> 'EnumBase':
     variant = Int.frZ(z.arr[0])
-    name, ty = self._variants[variant]
-    return cls(**{name.decode('utf-8'): ty})
+    name, ty = cls._variants[variant]
+    return cls(**{name.decode('utf-8'): ty.frZ(z.arr[1])})
 
   def toZ(self) -> ZoaRaw:
     variant, value = None, None
@@ -264,9 +264,13 @@ class BmVar: # Bitmap Variant
       return varSelf.msk & bitmapSelf.value == varSelf.var
     return closure
 
-@dataclass(init=False)
+@dataclass
 class BitmapBase:
   value: int = 0
+
+  @classmethod
+  def frZ(cls, z: ZoaRaw) -> 'BitmapBase': return cls(int(Int.frZ(z)))
+  def toZ(self) -> ZoaRaw: return Int(self.value).toZ()
 
 def modname(mod, name): return mod + '.' + name if mod else name
 
