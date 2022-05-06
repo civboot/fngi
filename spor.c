@@ -261,7 +261,6 @@ typedef struct {
 
 #define keySizeWLen(LEN)  (4 + 1 + 1 + (LEN))
 #define Dict_key(D, OFFSET)  ((Key*) (mem + D->ref + (OFFSET)))
-#define KEY_HAS_TY 0x40   // if 1, dict entry is a non-constant
 
 // Get key len. The top two bits are used for metadata (i.e. constant)
 static inline U1 Key_len(Key* key) {
@@ -366,12 +365,11 @@ void zoab_file(U2 len, char* file) {
 void zoab_dict(Dict* d, U4 offset) {
   Key* key = Dict_key(d, offset);
   zoab_enumStart(Ev_dict);
-  zoab_struct(7);
+  zoab_struct(6);
   zoab_data(Key_len(key), (char *)key->s, /*join=*/ FALSE); // key
   zoab_int(key->value);
   zoab_int(d->ref);    zoab_int(offset);
   zoab_int(key->meta); zoab_int(isLocalDict(d));
-  zoab_int(!(KEY_HAS_TY & key->len)); // isConst
 }
 
 void zoab_infoStart(U1* str, U2 extraLen) {
@@ -1079,7 +1077,11 @@ U1 scanInstr() {
   err_jmp = prev_err_jmp;
 }
 
-Dict* popDictRef() { return (Dict*) (mem + WS_POP()); }
+Dict* popDictRef() { 
+  APtr d = WS_POP();
+  ASM_ASSERT(d, E_null);
+  return (Dict*) (mem + d);
+}
 
 void deviceOp_dict(Bool isFetch) {
   Dict* d = popDictRef();
@@ -1293,7 +1295,10 @@ void deviceOpZoa() {
 
 void deviceOpDictDump(U1 isFetch) {
   APtr entry = 0;
-  if (isFetch) entry = WS_POP();
+  if (isFetch) {
+    entry = WS_POP();
+    ASM_ASSERT(entry, E_null);
+  }
   Dict* d = popDictRef();
   if (isFetch) return zoab_dict(d, entry - d->ref); // single entry
 

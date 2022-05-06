@@ -105,7 +105,7 @@ $FN min $LARGE \ [a b] -> [min]
 $FN testDecl $LARGE
   $declL a
     ^OVR^OVR $tAssert   \ assert(isLocal)
-    ^DUP $isTyped $tAssert
+    ^DUP $isTyConst $tAssertNot
     ^INCA .1^FT @TY_VAR $tAssertEq
     ^OVR^OVR  @SZA@TY_VAR_INPUT^JN  @ASIZE $declVar
     ^DRP  ^INCA .1^FT  @TY_VAR@SZA^JN @TY_VAR_INPUT^JN $tAssertEq

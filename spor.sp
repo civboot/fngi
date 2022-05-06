@@ -203,8 +203,8 @@
 #30 =SZ_MASK \ size bit mask (for instr and meta)
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
-#40 =KEY_HAS_TY \ in len byte, not meta. If 1, dict entry is a non-constant.
 #C0 =META_TY_MASK \ upper three bits determine type
+#00 =TY_CONST   \ constant, the value is used directly
 #40 =TY_FN      \ function, can be called and has an fnMeta
 #80 =TY_VAR     \ variable (local, global, struct field, etc). Has varMeta
 #C0 =TY_DICT    \ a "dictionary" type which has dictMeta.
@@ -435,7 +435,7 @@ $_h =h4  \ h4: {val:4} push 4bytes from stack to heap
   .A%FTGL @heap.2,  %INC4     .A%SRGL @heap.2, \ heap=heap+4
   %RET
 
-$_h =gdictArgs \ [ -> &buf &len isLocal] args for dict.
+$_h =gdictArgs \ [ -> &gdict] args for dict.
   .2%LIT @c_gdictRef$h2 %RET \ TODO: add R_GB to it.
 
 $_h =_dict
@@ -509,7 +509,7 @@ $loc tAssertEq \ {a b}
 \
 \ fn $c1 [instr]                  : NOW to compile instr when executed
 \ fn keyMeta [&key] -> [meta]     : get meta of key
-\ fn isTyped     [&key] -> [U]    : &key has a type (is not const)
+\ fn isTyConst   [&key] -> [U]    : &key has a type (is not const)
 \ fn isTyFn      [&key] -> [U1]   : &key is a fn
 \ fn isFnLarge   [&key] -> [U1]   : &key is a large fn (has locals)
 \ fn isFnPre     ...
@@ -536,7 +536,6 @@ $loc tAssertEq \ {a b}
 \ fn c_updateGkey [ -> &key]      : update gkey=dictLen and return it
 \ fn ldictRef / ldictArgs / ldictLen  : interface directly with local dict
 \ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
-\ fn c_keySetTyped [&key]                    : make a key non-global
 \ fn c_makeTy <token> [<dictArgs> meta]      : make token be typed meta
 \ fn c_dictSetMeta [<dictArgs> meta:U1 &key] : update dict key meta
 \
@@ -586,18 +585,11 @@ $loc keyMeta \ SYN {&key -> meta}
   @INCA $c1
   @SZ1 @FT ^JN  $c1 %RET
 
-$loc isTyped  \ {&key} dict value is a constant
-  %DUP @E_cNoKey$L2 $_xsl assert \ no key if &key=NULL
-  @DICT_OLEN$L0 %ADD .1%FT @KEY_HAS_TY$L1 %MSK %RET
-
 \ These take {&key} and tell information about it
+$loc isTyConst   #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
 $loc isTyFn      #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
 $loc isFnLarge   #0$keyMeta  @TY_FN_LARGE$L1 %MSK %RET
 $loc assertNotNull @E_null$L2 $_jmpl assert
-
-$loc assertTyped \ [&key]
-  %DUP @E_cKey$L2 $_xsl assert \ assert key was found
-  $_xsl isTyped @E_cNotType $L2 $_jmpl assert
 $loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [&key] -> []
 
 $loc assertFnSmall \ [&key]
@@ -617,7 +609,6 @@ $loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
 $loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
 $loc _jSetup \ [&key] -> [ref]: checked jmp setup
-  %DUP $_xsl assertTyped
   %DUP $_xsl assertFnSmall
   .A%FT %DUP $_jmpl assertCurMod \ {ref}
 
@@ -651,14 +642,8 @@ $loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
   %SWP %INCA .1%SR \ update meta
   %RET
 
-$loc c_keySetTyped \ {&key} -> []
-  @DICT_OLEN$L0 %ADD %DUP   \ {&len &len}
-  .1%FT @KEY_HAS_TY$L1 %JN  \ {&len tyKeyLen}
-  %SWP .1%SR %RET           \ update tyKeyLen
-
 $loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   %SWP %OVR \ {<dictArgs> &key meta &key}
-  %DUP $_xsl c_keySetTyped \ make key "typed" {<dictArgs> &key meta &key}
   %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
@@ -676,8 +661,7 @@ $loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
 
 \ Backfill the fn meta
 $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
-  $_xsl gdictGetK   \ {meta &key}
-  $_jmpl c_dictSetMeta
+  $_xsl gdictGetK  $_jmpl c_dictSetMeta
 
 \ {{meta} <token>}: set meta for token to be a small function.
 #0$FN c_makeFn #0$LARGE \ note: asNow=#0 for SYN
@@ -687,6 +671,8 @@ $loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
 
 $loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
+
+$assertWsEmpty
 #0 $c_makeFn xsl    #0 $c_makeFn loc   #0 $c_makeFn xl
 @TY_FN_NOW $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
 @TY_FN_SYN $c_makeFn FN
@@ -702,13 +688,13 @@ $loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 #0 $c_makeFn gdictSet
 #0 $c_makeFn gdictGet        #0 $c_makeFn gdictGetK
 #0 $c_makeFn gdictArgs
-@TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod   @TY_FN_PRE
+@TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod
 @TY_FN_PRE @TY_FN_SYN ^ADD $c_makeFn keyMeta
-$c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
+@TY_FN_PRE  $c_makeFn isTyConst  @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
 @TY_FN_PRE $c_makeFn isFnLarge
 #0 $c_makeFn c_updateGkey           #0 $c_makeFn locK
-@TY_FN_PRE $c_makeFn c_keySetTyped  @TY_FN_PRE $c_makeFn c_keyJnMeta
+@TY_FN_PRE $c_makeFn c_keyJnMeta
 @TY_FN_PRE $c_makeFn c_dictSetMeta
 #0 $c_makeFn c_makeTy
 @TY_FN_PRE $c_makeFn assert         @TY_FN_PRE $c_makeFn assertNot
@@ -716,7 +702,7 @@ $c_makeFn isTyped                @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn tAssertNot     @TY_FN_PRE $c_makeFn tAssertEq
 @TY_FN_PRE $c_makeFn assertFn       @TY_FN_PRE $c_makeFn assertFnSmall
 @TY_FN_PRE $c_makeFn assertFnLarge  @TY_FN_PRE $c_makeFn assertCurMod
-@TY_FN_PRE $c_makeFn assertTyped    @TY_FN_PRE $c_makeFn assertNoNow
+@TY_FN_PRE $c_makeFn assertNoNow
 
 $FN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1     %MSK %RET
 $FN isVarInput  $PRE $keyMeta  @TY_VAR_INPUT$L1  %MSK %RET
@@ -937,14 +923,12 @@ $FN c_updateLkey \ [] -> [&key] update and return current local key
 
 $FN declG \ [<token> -> &key isLocal] create global and return it.
   $xsl locK
-  %DUP $xsl c_keySetTyped
   %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key}
   @FALSE$L0 %RET \ {&key isLocal=FALSE}
 
 $FN declL \ [<token> -> &key isLocal] create local and return it.
   $xsl c_updateLkey \ {&key}
   #0$L0 $xsl ldictSet \ initialize lDict token (to heap for now)
-  %DUP $xsl c_keySetTyped
   %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key} update meta as local
   @TRUE$L0 %RET \ {&key isLocal=TRUE}
 
@@ -960,7 +944,6 @@ $FN declVar $LARGE $PRE \ {&key isLocal meta szBytes} declare a variable (global
   $END %SWP .A%SR %RET \ update key's value
 
 $FN _varSetup $PRE \ {&key} -> {&key} : checked local setup
-  %DUP $_xsl assertTyped
   %DUP $_jmpl assertTyVar
 
 \ {&key szInstr szLit instr} compile a literal memory instr.
@@ -1022,7 +1005,6 @@ $FN _refImpl \ {}
 $FN REF  $SYN
   $IF \ asNow: we can get &fn or &global
     $xsl gdictGetK \ next: assert(isTyVar or isTyFn)
-    %DUP $xsl assertTyped
       %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
       @E_cNotType$L2 $xsl assert
     .A%FT %RET
@@ -1079,9 +1061,8 @@ $FN _compileInputs $PRE $LARGE
   .A%FTGL @c_ldictRef$h2 .2%FTGL @c_ldictLen$h2 %ADD \ {&key &ldictEnd}
     $reteq \ return if key=ldictEnd
   .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
-  .A%FTLL#0$h1  %DUP $xsl isTyped %SWP \ {hasTy &key}
-  %DUP $xsl isTyVar %SWP \ {hasTy isTyVar &key}
-  $xsl isVarInput %AND %AND %RETZ \ {} all of (hasTy isTyVar isVarInput)
+  .A%FTLL#0$h1  %DUP $xsl isTyVar %SWP \ {isTyVar &key}
+  $xsl isVarInput %AND %RETZ \ {} all of (isTyVar isVarInput)
   .A%FTLL#0$h1  %DUP $xsl keySzI \ {&key szInstr}
   @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl %RET
 
@@ -1254,11 +1235,11 @@ $FN _compConstant $PRE \ {asNow} -> {&keyFn[nullable]}
 
   \ Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {asNow &key}
-    %DUP $xsl isTyped  @E_cNotFnOrConst$L2 $xsl assertNot
+    %DUP $xsl isTyConst  @E_cNotFnOrConst$L2 $xsl assert
     .A%FT $xsl c_lit  #0$L0 %RET
   $END %DRP \ {asNow}
   $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
-  %DUP $xsl isTyped %NOT $IF \ Constant case {asNow &key}
+  %DUP $xsl isTyConst $IF \ Constant case {asNow &key}
     .A%FT $xsl c_lit #0$L0 %RET
   $END %SWP %DRP %DUP $jmpl assertFn \ {&key}
 

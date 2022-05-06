@@ -133,6 +133,7 @@ def orderFns(dicts):
   fns = []
   for d in dicts.values():
     for f in d.values():
+      if isinstance(f, FnEntry): f = f.d
       if f.meta.is_fn(): fns.append(f)
 
   fns.sort(key=lambda f: f.ref)
@@ -146,6 +147,7 @@ def findFnLesser(fns, addr):
   #   something and bleeds into the next function on return
   #   (this may be intentional fall-through or they expect failure).
   if addr == 0: return None
+  if not fns: return None
   if fns[0].value > addr: return None
   if fns[-1].value < addr: return len(fns) - 1
   i = 0
@@ -220,7 +222,7 @@ def handleDictEvent(env, ev):
   - if the event is a local it updates the current function's local offsets.
   """
   value = ev # the value to add to ev.dicts
-  if not ev.isConst:
+  if not ev.meta.is_const():
     if ev.isLocal and env.currentFn:
       env.currentFn.loffsets[ev.value] = ev
     elif ev.meta.is_fn():
