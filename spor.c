@@ -582,8 +582,7 @@ void zoab_err(U4 err, U1 isCaught) {
       zoab_arr(0, FALSE);
       break;
     case ERR_DATA_INT2:
-      zoab_arr(3, FALSE);
-      zoab_int(env.g->errData.valTy);
+      zoab_arr(2, FALSE);
       zoab_int(env.g->errData.valueA);
       zoab_int(env.g->errData.valueB);
       break;
@@ -641,7 +640,6 @@ inline static void executeInstr(Instr instr) {
   U4 l, r;
   logInstr(instr);
   SzI szI = SzI2;
-  // eprintf("## Instr: %X  line=%u\n", instr, line);
   switch ((U1)instr) {
     // Operation Cases
     case NOP: return;
@@ -847,7 +845,7 @@ LIT: case SzI2 + LIT:
   return offset;
 }
 
-/*fn*/ U2 Dict_set(Dict* d, U2 slen, char* s, U4 value) {
+/*fn*/ U2 Dict_set(Dict* d, U2 slen, char* s, U4 value, U1 meta) {
   // Set a key to a value, returning the offset
   U2 offset = Dict_find(d, slen, s);
   ASM_ASSERT(offset == d->len, E_cKey)
@@ -856,7 +854,7 @@ LIT: case SzI2 + LIT:
 
   ASM_ASSERT(d->len + addedSize <= d->cap, E_cDictOvr);
   key->value = value;
-  key->meta = 0;
+  key->meta = meta;
   key->len = slen;
   memcpy(key->s, s, slen);   // memcpy(dst, src, sz)
   if((LOG_COMPILER & env.g->sysLogLvl)) zoab_dict(d, offset);
@@ -995,9 +993,10 @@ U1 scanInstr() {
 
 /*fn*/ void cDictSet() { // `=`
   scan(); // load name token
+  U1 meta = WS_POP();
   U4 value = WS_POP();
   Dict* d = DEFAULT_DICT;
-  Dict_set(d, tokenLen, tokenBuf, value);
+  Dict_set(d, tokenLen, tokenBuf, value, meta);
 }
 
 /*fn*/ void cDictGet() { // `@`
@@ -1088,7 +1087,8 @@ void deviceOp_dict(Bool isFetch) {
   if(isFetch) {
     WS_PUSH(Dict_get(d, tokenLen, tokenBuf));
   } else {
-    Dict_set(d, tokenLen, tokenBuf, WS_POP());
+    U1 meta = WS_POP();
+    Dict_set(d, tokenLen, tokenBuf, WS_POP(), meta);
   }
 }
 
@@ -1700,7 +1700,7 @@ void compileStr(char* s) {
   assert(0 == Dict_find(d, 3, "foo"));
 
   // set
-  assert(0 == Dict_set(d, 3, "foo", 0xF00));
+  assert(0 == Dict_set(d, 3, "foo", 0xF00, 0));
 
   // get
   U4 result = Dict_get(d, 3, "foo");
@@ -1712,7 +1712,7 @@ void compileStr(char* s) {
   TEST_ENV_BARE;
   zoab_info("## testDict");
 
-  compileStr(".2 #0F00 =foo  .4 #000B_A2AA =bazaa"
+  compileStr(".2 #0F00 #0=foo  .4 #000B_A2AA #0=bazaa"
       " @bazaa @foo .2 @foo");
   assert(0xF00 == WS_POP());   // 2foo
   assert(0xF00 == WS_POP());   // 4foo

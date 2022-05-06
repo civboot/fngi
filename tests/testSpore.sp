@@ -16,18 +16,18 @@ $assertWsEmpty
 #400 #1 ^SHL    #800 $tAssertEq
 
 \ Test dictionary
-#444 $gdictSet foo
+#444 #0 $gdictSet foo
 $gdictGet foo   #444 $tAssertEq
-#123455 $gdictSet foo2
+#123455 #0 $gdictSet foo2
 $gdictGet foo2 #123455 $tAssertEq
 
 
 \ Test loc
-$loc twelve #12 $L0 %RET
+@TY_FN$loc twelve #12 $L0 %RET
 $twelve #12 $tAssertEq
 
 \ Test L0-4
-$loc lits #5 $L0  #12345 $L1  #12345 $L2   #12345 $L4 %RET
+@TY_FN$loc lits #5 $L0  #12345 $L1  #12345 $L2   #12345 $L4 %RET
 $lits
 #12345  $tAssertEq
 #2345   $tAssertEq
@@ -133,7 +133,7 @@ $FN myG1Set  $_SET myG1 %RET
 \ *****
 \ * Testing Locals
 \ test ldict
-#12 =shadowed
+#12 #0=shadowed
 $FN notARealFn %RET \ updates ldict
 @shadowed #12 $tAssertEq
 
@@ -148,7 +148,7 @@ $FN fooLocals
 
 \ test R_LP
 $FN getLp %RGFT @R_LP$h1  %RET
-$getLp ^DUP #FFF0 $tAssertEq  =lsTop
+$getLp ^DUP #FFF0 $tAssertEq  #0=lsTop
 
 $FN getLpWLocal #1$h1 $LARGE  %RGFT @R_LP$h1  %RET
 $getLpWLocal @lsTop #4 ^SUB $tAssertEq

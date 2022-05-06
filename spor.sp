@@ -61,29 +61,29 @@
 \   11SS XXXX: mem
 
 \ # [1.a] Operations: Special
-#00 =NOP   \ { -> }     no operation
-#01 =RETZ  \ Return if zero
-#02 =RET   \ Return
-#03 =SWP   \ {l r -> r l} swap
-#04 =DRP   \ {l -> }    drop
-#05 =OVR   \ {l r -> }  drop 2
-#06 =DUP   \ {l -> l l} duplicate
-#07 =DUPN  \ {l -> l l==0} DUP then NOT
-#08 =DVFT  \ Device Operation Fetch
-#09 =DVSR  \ Device Operation Store
-#0A =RGFT  \ {-> v}  Register Fetch
-#0B =RGSR  \ {v}     Register Store
+#00 #0=NOP   \ { -> }     no operation
+#01 #0=RETZ  \ Return if zero
+#02 #0=RET   \ Return
+#03 #0=SWP   \ {l r -> r l} swap
+#04 #0=DRP   \ {l -> }    drop
+#05 #0=OVR   \ {l r -> }  drop 2
+#06 #0=DUP   \ {l -> l l} duplicate
+#07 #0=DUPN  \ {l -> l l==0} DUP then NOT
+#08 #0=DVFT  \ Device Operation Fetch
+#09 #0=DVSR  \ Device Operation Store
+#0A #0=RGFT  \ {-> v}  Register Fetch
+#0B #0=RGSR  \ {v}     Register Store
 
 \ # [1.b] Operations: One Inp -> One Out
-#10 =INC   \ {l+1}  increment 1
-#11 =INC2  \ {l+2}  increment 2
-#12 =INC4  \ {l+4}  increment 4
-#13 =DEC   \ {l-4}  decrement 1
-#14 =INV   \ {~l}   Bitwise Inversion
-#15 =NEG   \ {-l}   Negate (2's compliment)
-#16 =NOT   \ {l==0} Logical NOT
-#17 =CI1   \ {ISz}  Convert I1 to ISz
-#18 =CI2   \ {ISz}  Convert I2 to ISz
+#10 #0=INC   \ {l+1}  increment 1
+#11 #0=INC2  \ {l+2}  increment 2
+#12 #0=INC4  \ {l+4}  increment 4
+#13 #0=DEC   \ {l-4}  decrement 1
+#14 #0=INV   \ {~l}   Bitwise Inversion
+#15 #0=NEG   \ {-l}   Negate (2's compliment)
+#16 #0=NOT   \ {l==0} Logical NOT
+#17 #0=CI1   \ {ISz}  Convert I1 to ISz
+#18 #0=CI2   \ {ISz}  Convert I2 to ISz
 \ future: leading 0's, trailing 0's, count of 1's
 \ Some single-arg extension commands might be:
 \ (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
@@ -91,36 +91,36 @@
 \ (1) f -> i conversion
 
 \ # [1.c] Operations: Two Inp -> One Out
-#20 =ADD   \ {l +  r } add
-#21 =SUB   \ {l -  r } subtract
-#22 =MOD   \ {l %  r } integer modulo (remainder)
-#23 =SHL   \ {l << r } bit shift left
-#24 =SHR   \ {l >> r } bit shift right
-#25 =MSK  \ {l &  r } bitwise and
-#26 =JN    \ {l |  r } bitwise or
-#27 =XOR   \ {l ^  r } bitwise xor
-#28 =AND  \ {l && r } logical and
-#29 =OR    \ {l || r } logical or
-#2A =EQ    \ {l == r } equal
-#2B =NEQ   \ {l != r } not equal
-#2C =GE_U  \ {l >= r } unsigned greater than or equal
-#2D =LT_U  \ {l <  r } unsigned less than
-#2E =GE_S  \ {l >= r } signed greater than or equal
-#2F =LT_S  \ {l <  r } signed less than
+#20 #0=ADD   \ {l +  r } add
+#21 #0=SUB   \ {l -  r } subtract
+#22 #0=MOD   \ {l %  r } integer modulo (remainder)
+#23 #0=SHL   \ {l << r } bit shift left
+#24 #0=SHR   \ {l >> r } bit shift right
+#25 #0=MSK  \ {l &  r } bitwise and
+#26 #0=JN    \ {l |  r } bitwise or
+#27 #0=XOR   \ {l ^  r } bitwise xor
+#28 #0=AND  \ {l && r } logical and
+#29 #0=OR    \ {l || r } logical or
+#2A #0=EQ    \ {l == r } equal
+#2B #0=NEQ   \ {l != r } not equal
+#2C #0=GE_U  \ {l >= r } unsigned greater than or equal
+#2D #0=LT_U  \ {l <  r } unsigned less than
+#2E #0=GE_S  \ {l >= r } signed greater than or equal
+#2F #0=LT_S  \ {l <  r } signed less than
 
-#30 =MUL   \ {l *  r } multiplication
-#31 =DIV_U \ {l / r  } unsigned division
-#32 =DIV_S \ {l / r  } signed division
+#30 #0=MUL   \ {l *  r } multiplication
+#31 #0=DIV_U \ {l / r  } unsigned division
+#32 #0=DIV_S \ {l / r  } signed division
 \ Double-arg extension commands might be:
 \ floating point: add,sub,mul,div,ge,lt
 
 \ # [1.d] Small Literal [0x40 - 0x80)
-#40 =SLIT
+#40 #0=SLIT
 
 \ # [1.e] Sizes (note: SZA defined after `select`)
-#00 =SZ1
-#10 =SZ2
-#20 =SZ4
+#00 #0=SZ1
+#10 #0=SZ2
+#20 #0=SZ4
 
 \ # [1.f] Jmp
 \
@@ -133,33 +133,33 @@
 \   callstack (which RET uses to shrink the local stack on return).
 
 \   Jmp      Description
-#80 =JMPL  \ Jmp to Literal
-#81 =JMPW  \ Jmp to WS
-#82 =JZL   \ Jmp to Literal if store==0
-#83 =JTBL  \ Jump to Table index using size=Literal
-#84 =XL    \ Execute Literal (mPtr)
-#85 =XW    \ Execute WS (aPtr)
-#86 =XSL   \ Execute Small Literal (no LS update)
-#87 =XSW   \ Execute Small WS (no LS update)
+#80 #0=JMPL  \ Jmp to Literal
+#81 #0=JMPW  \ Jmp to WS
+#82 #0=JZL   \ Jmp to Literal if store==0
+#83 #0=JTBL  \ Jump to Table index using size=Literal
+#84 #0=XL    \ Execute Literal (mPtr)
+#85 #0=XW    \ Execute WS (aPtr)
+#86 #0=XSL   \ Execute Small Literal (no LS update)
+#87 #0=XSW   \ Execute Small WS (no LS update)
 
 \ JZL and JMPL for SZ=1
 \ For SZ=1 they jump to the 1 byte signed offset from the location
 \ of the operation (NOT the location of the literal).
 
 \ # [1.g] Mem|Store              |Description
-#C0 =FT    \ {addr} -> {value}  |FeTch value from addr
-#C1 =FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
-#C2 =FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
-#C3 =FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
-#C4 =SR    \ {value addr} -> {} |Store value at addr
-#C5 =SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
-#C6 =SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
-#C7 =SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
-#C8 =LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
+#C0 #0=FT    \ {addr} -> {value}  |FeTch value from addr
+#C1 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
+#C2 #0=FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
+#C3 #0=FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
+#C4 #0=SR    \ {value addr} -> {} |Store value at addr
+#C5 #0=SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
+#C6 #0=SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
+#C7 #0=SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
+#C8 #0=LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ Common instr+szs
-@SZ2 @XSL  ^JN   =XSL2
-@SZ2 @JMPL ^JN   =JMPL2
+@SZ2 @XSL  ^JN   #0=XSL2
+@SZ2 @JMPL ^JN   #0=JMPL2
 
 \ **********
 \ * [2] Registers and Device Operations: RGXX|DVXX w/ 1 byte literal
@@ -168,86 +168,88 @@
 \ register value + offset, SR will store the value + offset in the register.
 \   1OOO OOOO: (R_LP) local stack pointer with 7bit offset (O)
 \   0XXX XXXR: register. X is currently undefined.
-#80 =R_LP \ local stack pointer
-#00 =R_EP \ execution pointer, SR will panic
-#01 =R_GB \ global base pointer
+#80 #0=R_LP \ local stack pointer
+#00 #0=R_EP \ execution pointer, SR will panic
+#01 #0=R_GB \ global base pointer
 
 \ The DV 1 byte literal select the operation
-#00 =D_read   \ read from src, filling up tokenBuf
-#01 =D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
-#02 =D_dict   \ [(SR-only)value &dict] FT=get SR=set dict key=tokenBuf
-#03 =D_dictK  \ [&dict] FT=get reference to val  SR=forget including key
-#05 =D_comp   \ compile (assemble) the token in tokenBuf
-#06 =D_assert \ error if != 0
-#07 =D_wslen  \ get working stack length (in slots)
-#08 =D_cslen  \ get call stack lengh (in slots)
+#00 #0=D_read   \ read from src, filling up tokenBuf
+#01 #0=D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
+#02 #0=D_dict   \ [(SR-only)value &dict] FT=get SR=set dict key=tokenBuf
+#03 #0=D_dictK  \ [&dict] FT=get reference to val  SR=forget including key
+#05 #0=D_comp   \ compile (assemble) the token in tokenBuf
+#06 #0=D_assert \ error if != 0
+#07 #0=D_wslen  \ get working stack length (in slots)
+#08 #0=D_cslen  \ get call stack lengh (in slots)
 \ {-> err} D_xCatch executes large function from WS but catches a panic.
 \ The errCode is returned (or 0 if no error).
 \ Note: caches and restores ep, call stack and local stack state. Working stack
 \ is cleared besides the returned err.
-#09 =D_xCatch
-#0A =D_memSet  \ {dst v len} "dst = v [len]". FT: memset, SR: memmove
-#0B =D_memCmp  \ {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
-#0C =D_com     \ {&msg len} -> {ioResult}: write to debug stream
-#0D =D_zoa     \ {} -> {} parse zoa to heap
-#0E =D_dictDump\ {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
-#0F =D_comZoab \ FT{U4}  SR{len &data join}
-#10 =D_comDone \ signifies end of one com. On linux this is a flush.
+#09 #0=D_xCatch
+#0A #0=D_memSet  \ {dst v len} "dst = v [len]". FT: memset, SR: memmove
+#0B #0=D_memCmp  \ {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
+#0C #0=D_com     \ {&msg len} -> {ioResult}: write to debug stream
+#0D #0=D_zoa     \ {} -> {} parse zoa to heap
+#0E #0=D_dictDump\ {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
+#0F #0=D_comZoab \ FT{U4}  SR{len &data join}
+#10 #0=D_comDone \ signifies end of one com. On linux this is a flush.
 
 \ **********
 \ * [3] Constants
-#0  =FALSE
-#1  =TRUE
-#4  =ASIZE \ size of an absolute pointer
-@ASIZE ^INC =DICT_OLEN \ dict name len offset
-#30 =SZ_MASK \ size bit mask (for instr and meta)
+#0  #0=FALSE
+#1  #0=TRUE
+#4  #0=ASIZE \ size of an absolute pointer
+@ASIZE ^INC #0=DICT_OLEN \ dict name len offset
+#30 #0=SZ_MASK \ size bit mask (for instr and meta)
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
-#C0 =META_TY_MASK \ upper three bits determine type
-#00 =TY_CONST   \ constant, the value is used directly
-#40 =TY_FN      \ function, can be called and has an fnMeta
-#80 =TY_VAR     \ variable (local, global, struct field, etc). Has varMeta
-#C0 =TY_DICT    \ a "dictionary" type which has dictMeta.
-#FF_FFFF =REF_MASK
-#FF_0000 =MOD_MASK
+#C0 #0=META_TY_MASK \ upper three bits determine type
+#00 #0=TY_CONST   \ constant, the value is used directly
+#40 #0=TY_FN      \ function, can be called and has an fnMeta
+#80 #0=TY_VAR     \ variable (local, global, struct field, etc). Has varMeta
+#C0 #0=TY_DICT    \ a "dictionary" type which has dictMeta.
+#FF_FFFF #0=REF_MASK
+#FF_0000 #0=MOD_MASK
 
 \ FN meta bits [TTPL FF--] L=locals F=fnTy P=pre
-#20 =TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
-#10 =TY_FN_LARGE   \ large, has locals (called with XL or XW)
+#20 #0=TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
+#10 #0=TY_FN_LARGE   \ large, has locals (called with XL or XW)
 
-#0C =TY_FN_TY_MASK \ 4 function types
-#00 =TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
-#04 =TY_FN_NOW     \ Required to be run as NOW (must use $)
-#08 =TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
+#0C #0=TY_FN_TY_MASK \ 4 function types
+#00 #0=TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
+#04 #0=TY_FN_NOW     \ Required to be run as NOW (must use $)
+#08 #0=TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
+
+@TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
 
 \ Local meta bits  [TTTI RRSS] I=input R=ref S=szI
 \ Local meta bits  [TTSS RR-I] I=input R=ref S=szI
 \ Global meta bits [TTSS RR--]         R=ref S=szI
-#01 =TY_VAR_INPUT
-#0C =TY_VAR_REF
+#01 #0=TY_VAR_INPUT
+#0C #0=TY_VAR_REF
 
 \ * [3.b] Zoab
-#C0 =ZOAB_TY   \ bitmask: all types
-#80 =ZOAB_JOIN \ bitmask: join type
-#40 =ZOAB_ARR  \ bitmask: arr type
-#C0 =ZOAB_PTR  \ equality: next 4 bytes are a pointer.
+#C0 #0=ZOAB_TY   \ bitmask: all types
+#80 #0=ZOAB_JOIN \ bitmask: join type
+#40 #0=ZOAB_ARR  \ bitmask: arr type
+#C0 #0=ZOAB_PTR  \ equality: next 4 bytes are a pointer.
 
 \ * [3.c] Log Levels
-#00 =LOG_SILENT
+#00 #0=LOG_SILENT
 
 \ Log Levels
-#10 =LOG_USER
-#1F =LOG_TRACE
-#17 =LOG_DEBUG
-#13 =LOG_INFO
-#11 =LOG_WARN
-#10 =LOG_CRIT
+#10 #0=LOG_USER
+#1F #0=LOG_TRACE
+#17 #0=LOG_DEBUG
+#13 #0=LOG_INFO
+#11 #0=LOG_WARN
+#10 #0=LOG_CRIT
 
 \ Language Level (builtin) Logs
-#27 =LOG_INSTR
-#23 =LOG_EXECUTE
-#21 =LOG_ASM
-#20 =LOG_COMPILER
+#27 #0=LOG_INSTR
+#23 #0=LOG_EXECUTE
+#21 #0=LOG_ASM
+#20 #0=LOG_COMPILER
 
 \ * [3.d] Errors
 \ [E000 - E100): built-in errors.
@@ -256,123 +258,123 @@
 \  E800+: application errors
 \  AXXX_EXXX: test case assertion error.
 
-#0     =E_ok      \ no error
-#E000  =E_general \ general errors [E000-E010)
-#E010  =E_io      \ IO error class
-#E0A0  =E_asm     \ assembly error class (cause in asm).
-#E0C0  =E_comp    \ compiler error class (cause in comp).
-#A000  =E_test    \ [AXXX] (assert) test case error.
+#0     #0=E_ok      \ no error
+#E000  #0=E_general \ general errors [E000-E010)
+#E010  #0=E_io      \ IO error class
+#E0A0  #0=E_asm     \ assembly error class (cause in asm).
+#E0C0  #0=E_comp    \ compiler error class (cause in comp).
+#A000  #0=E_test    \ [AXXX] (assert) test case error.
 
-#E001  =E_intern  \ internal (undefined) error
-#E002  =E_undef   \ undefined error
-#E003  =E_unreach \ unreachable code
-#E004  =E_todo    \ executed incomplete (to do) code
-#E005  =E_wsEmpty \ the WS was expected empty
-#E006  =E_unimpl  \ unimplemented error
+#E001  #0=E_intern  \ internal (undefined) error
+#E002  #0=E_undef   \ undefined error
+#E003  #0=E_unreach \ unreachable code
+#E004  #0=E_todo    \ executed incomplete (to do) code
+#E005  #0=E_wsEmpty \ the WS was expected empty
+#E006  #0=E_unimpl  \ unimplemented error
 
-#E0A1  =E_null    \ null access
-#E0A2  =E_oob     \ out of bounds access
-#E0A3  =E_stkUnd  \ Stack underflow
-#E0A4  =E_stkOvr  \ Stack overflow
-#E0A5  =E_align2  \ access off 2byte allign
-#E0A6  =E_align4  \ access off 4byte align
-#E0A7  =E_divZero \ divide by zero
+#E0A1  #0=E_null    \ null access
+#E0A2  #0=E_oob     \ out of bounds access
+#E0A3  #0=E_stkUnd  \ Stack underflow
+#E0A4  #0=E_stkOvr  \ Stack overflow
+#E0A5  #0=E_align2  \ access off 2byte allign
+#E0A6  #0=E_align4  \ access off 4byte align
+#E0A7  #0=E_divZero \ divide by zero
 
-#E0C1  =E_cInstr  \ invalid instr
-#E0C2  =E_cToken  \ token invalid
-#E0C3  =E_cTLen   \ token invalid
-#E0C4  =E_cKey    \ key already exists
-#E0C5  =E_cNoKey  \ dict key not found
-#E0C6  =E_cHex    \ non-hex number
-#E0C7  =E_cSz     \ invalid Sz selected
-#E0C8  =E_cSzPtr  \ invalid Sz for aptr
-#E0C9  =E_cRet    \ invalid RET
-#E0CA  =E_cDblSr  \ Double store
-#E0CB  =E_cDevOp  \ device op not impl
-#E0CC  =E_DictOvr \ dict overflow
-#E0CD  =E_cXHasL  \ small-execute to fn w/locals
-#E0CE  =E_cXNoL   \ large-execute to fn wo/locals
-#E0CF  =E_cErr    \ D_assert err code invalid
-#E0D0  =E_cKeyLen \ Key len too large
-#E0D1  =E_cReg    \ Register error
-#E0D2  =E_cStr    \ Str invalid
+#E0C1  #0=E_cInstr  \ invalid instr
+#E0C2  #0=E_cToken  \ token invalid
+#E0C3  #0=E_cTLen   \ token invalid
+#E0C4  #0=E_cKey    \ key already exists
+#E0C5  #0=E_cNoKey  \ dict key not found
+#E0C6  #0=E_cHex    \ non-hex number
+#E0C7  #0=E_cSz     \ invalid Sz selected
+#E0C8  #0=E_cSzPtr  \ invalid Sz for aptr
+#E0C9  #0=E_cRet    \ invalid RET
+#E0CA  #0=E_cDblSr  \ Double store
+#E0CB  #0=E_cDevOp  \ device op not impl
+#E0CC  #0=E_DictOvr \ dict overflow
+#E0CD  #0=E_cXHasL  \ small-execute to fn w/locals
+#E0CE  #0=E_cXNoL   \ large-execute to fn wo/locals
+#E0CF  #0=E_cErr    \ D_assert err code invalid
+#E0D0  #0=E_cKeyLen \ Key len too large
+#E0D1  #0=E_cReg    \ Register error
+#E0D2  #0=E_cStr    \ Str invalid
 
-#E0E0  =E_cNotGlobal \ using a non-global as global
-#E0E1  =E_cIsX       \ using an XS for an X
-#E0E2  =E_cIsXS      \ using an X for an XS
-#E0E3  =E_cJmpL1     \ JMP1 over too much space
-#E0E4  =E_cNotFn
-#E0E5  =E_cNotFnLarge
-#E0E6  =E_cMod       \ different modules
-#E0E7  =E_cLSz       \ literal sz
-#E0E9  =E_cNotType
-#E0EA  =E_cNotLocal
-#E0EB  =E_cNotVar
-#E0EC  =E_cNotFnOrConst
-#E0ED  =E_eof
-#E0EE  =E_cUnclosed   \ unclosed paren/brace/etc
-#E0EF  =E_cReqNow     \ fn is NOW but no '$' used
-#E0EF  =E_cNoNow      \ fn is SYN and requires no $ used.
-#E0F0  =E_cUnknownEsc \ unknown character escape
-#E0F1  =E_cZoab       \ Zoab invalid
-#E0F2  =E_cNeedToken  \ token not present
-#E0F3  =E_cNeedNumber \ number not present
-#E0F4  =E_cBadRefs    \ too many de/refs
-#E0F5  =E_cRefEq      \ .&var = not allowed.
+#E0E0  #0=E_cNotGlobal \ using a non-global as global
+#E0E1  #0=E_cIsX       \ using an XS for an X
+#E0E2  #0=E_cIsXS      \ using an X for an XS
+#E0E3  #0=E_cJmpL1     \ JMP1 over too much space
+#E0E4  #0=E_cNotFn
+#E0E5  #0=E_cNotFnLarge
+#E0E6  #0=E_cMod       \ different modules
+#E0E7  #0=E_cLSz       \ literal sz
+#E0E9  #0=E_cNotType
+#E0EA  #0=E_cNotLocal
+#E0EB  #0=E_cNotVar
+#E0EC  #0=E_cNotFnOrConst
+#E0ED  #0=E_eof
+#E0EE  #0=E_cUnclosed   \ unclosed paren/brace/etc
+#E0EF  #0=E_cReqNow     \ fn is NOW but no '$' used
+#E0EF  #0=E_cNoNow      \ fn is SYN and requires no $ used.
+#E0F0  #0=E_cUnknownEsc \ unknown character escape
+#E0F1  #0=E_cZoab       \ Zoab invalid
+#E0F2  #0=E_cNeedToken  \ token not present
+#E0F3  #0=E_cNeedNumber \ number not present
+#E0F4  #0=E_cBadRefs    \ too many de/refs
+#E0F5  #0=E_cRefEq      \ .&var = not allowed.
 
-#E0B0  =E_iBlock      \ invalid block index
-#E0B1  =E_ptrBlk      \ invalid block ptr
-#E0B2  =E_aaPo2       \ invalid po2
+#E0B0  #0=E_iBlock      \ invalid block index
+#E0B1  #0=E_ptrBlk      \ invalid block ptr
+#E0B2  #0=E_aaPo2       \ invalid po2
 
 \ **********
 \ * [4] Globals: many of these must be the same as in spor.c
-#0000_0004 =heap
-#0000_0008 =topHeap
-#0000_000C =topMem
-#0000_0010 =err      \ U2
-#0000_0012 =c_state  \ U2
-\ #0000_0014 =_unimpl1
-\ #0000_0018 =_unimpl2
-#0000_001C =sysLogLvl
-#0000_001E =usrLogLvl
+#0000_0004 #0=heap
+#0000_0008 #0=topHeap
+#0000_000C #0=topMem
+#0000_0010 #0=err      \ U2
+#0000_0012 #0=c_state  \ U2
+\ #0000_0014 #0=_unimpl1
+\ #0000_0018 #0=_unimpl2
+#0000_001C #0=sysLogLvl
+#0000_001E #0=usrLogLvl
 
 \ Dictionary Struct
-#0000_0020 =c_gdictRef   \ U4
-#0000_0024 =c_gdictLen   \ U2
-#0000_0026 =c_gdictCap   \ U2
+#0000_0020 #0=c_gdictRef   \ U4
+#0000_0024 #0=c_gdictLen   \ U2
+#0000_0026 #0=c_gdictCap   \ U2
 
-#0000_0028 =c_ldictRef  \ U4
-#0000_002C =c_ldictLen  \ U2
-#0000_002E =c_ldictCap  \ U2
+#0000_0028 #0=c_ldictRef  \ U4
+#0000_002C #0=c_ldictLen  \ U2
+#0000_002E #0=c_ldictCap  \ U2
 
 \ TokenBuf Struct
-#0000_0030 =c_tokenBuf   \ [APtr] TokenBuf struct
-#0000_0034 =c_tokenLen   \ [U2] length of token
-#0000_0036 =c_tokenSize  \ [U2] characters buffered
-#0000_0038 =c_tokenGroup \ [U1] token group
+#0000_0030 #0=c_tokenBuf   \ [APtr] TokenBuf struct
+#0000_0034 #0=c_tokenLen   \ [U2] length of token
+#0000_0036 #0=c_tokenSize  \ [U2] characters buffered
+#0000_0038 #0=c_tokenGroup \ [U1] token group
 
 \ Global Error Variables
-#0000_003C =c_errValTy     \ [U1] + 3align
-#0000_0040 =c_dataASz      \ [U2]
-#0000_0042 =c_dataBSz      \ [U2]
-#0000_0044 =c_errVal1      \ [U4]
-#0000_0048 =c_errVal2      \ [U4]
-#0000_004C =c_msg          \ [APtr]
+#0000_003C #0=c_errValTy     \ [U1] + 3align
+#0000_0040 #0=c_dataASz      \ [U2]
+#0000_0042 #0=c_dataBSz      \ [U2]
+#0000_0044 #0=c_errVal1      \ [U4]
+#0000_0048 #0=c_errVal2      \ [U4]
+#0000_004C #0=c_msg          \ [APtr]
 
 \ Block allocator (12 bytes, see fngi.fn)
-#0000_0050 =BA_kernel
+#0000_0050 #0=BA_kernel
 
 \ Global Compiler Variables
-#0000_005C =c_gkey         \ [U4] current gdict &key
-#0000_0060 =c_lkey         \ [U4] current ldict &key
-#0000_0064 =c_gheap        \ [U4] global heap
-#0000_0068 =c_localOffset  \ [U2] Local Offset (for local var setup)
+#0000_005C #0=c_gkey         \ [U4] current gdict &key
+#0000_0060 #0=c_lkey         \ [U4] current ldict &key
+#0000_0064 #0=c_gheap        \ [U4] global heap
+#0000_0068 #0=c_localOffset  \ [U2] Local Offset (for local var setup)
 
-#00  =ERR_DATA_NONE
-#01  =ERR_DATA_INT1
-#02  =ERR_DATA_DATA1
-#03  =ERR_DATA_INT2
-#04  =ERR_DATA_DATA2
+#00  #0=ERR_DATA_NONE
+#01  #0=ERR_DATA_INT1
+#02  #0=ERR_DATA_DATA1
+#03  #0=ERR_DATA_INT2
+#04  #0=ERR_DATA_DATA2
 
 \ **********
 \ * [5] Bootstrap Macros
@@ -395,55 +397,55 @@
 \ Test Assertions: these panic with E_test if the cond is not met.
 \   tAssert, tAssertNot, tAssertEq
 
-=_h  .A%FTGL @heap.2,  %RET \ { -> heap} get the heap
+@TY_FN=_h  .A%FTGL @heap.2,  %RET \ { -> heap} get the heap
 
-$_h =select \ {a b s -> a|b} a if s else b
+$_h @_FP=select \ {a b s -> a|b} a if s else b
   .1%JZL #3.1, %DRP %RET \ if(s) ret a
   %SWP %DRP %RET         \ ret b
-@INC2 @INC4  @ASIZE #2 ^EQ  $select =INCA
-@SZ2 @SZ4    @ASIZE #2 ^EQ  $select =SZA
-#1   #2      @ASIZE #2 ^EQ  $select =APO2
+@INC2 @INC4  @ASIZE #2 ^EQ  $select #0=INCA
+@SZ2 @SZ4    @ASIZE #2 ^EQ  $select #0=SZA
+#1   #2      @ASIZE #2 ^EQ  $select #0=APO2
 
-$_h =h1  \ h1: {val:1} push 1bytes from stack to heap
+$_h @_FP=h1  \ h1: {val:1} push 1bytes from stack to heap
   .A%FTGL @heap.2, .1%SR    \ store 1 byte value at heap
   .A%FTGL @heap.2,  %INC  .A%SRGL @heap.2, \ heap=heap+1
   %RET
 
-$_h =L0   \ L0: compile a small literal (unchecked)
+$_h @_FP=L0   \ L0: compile a small literal (unchecked)
   .1%LIT  #3F, %MSK \ truncated to bottom 6 bits
   .1%LIT  @SLIT,
   %JN     .2%JMPL @h1, \ made into SLIT instr and stored.
 
-$_h =srBE2 \ {val addr} store a value at addr encoded BE2 (big-endian 2)
+$_h @_FP=srBE2 \ {val addr} store a value at addr encoded BE2 (big-endian 2)
   %OVR #48.1, %SHR \ {val addr val>>8} note: #48 is SLIT(8)
   %OVR .1%SR       \ store upper byte {val addr}
   %INC .1%SR %RET  \ {} store lower byte
 
-$_h =srBE4 \ {val addr} store a value at addr encoded BE4 (big-endian 4)
+$_h @_FP=srBE4 \ {val addr} store a value at addr encoded BE4 (big-endian 4)
   %OVR #50.1, %SHR \ {val addr val>>16} note: #50 is SLIT(16)
   %OVR .2%XSL @srBE2,   \ handle the large bytes (1 & 2)
   %INC2 .2%JMPL @srBE2, \ small bytes            (3 & 4)
 
-$_h =h2  \ h2: {val:2} push 2bytes from stack to heap
+$_h @_FP=h2  \ h2: {val:2} push 2bytes from stack to heap
   .A%FTGL @heap.2, .2%XSL @srBE2.2, \ store value at heap
   .A%FTGL @heap.2, \ {heap}
   %INC2   .A%SRGL   @heap.2,   \ heap=heap+2
   %RET
 
-$_h =h4  \ h4: {val:4} push 4bytes from stack to heap
+$_h @_FP=h4  \ h4: {val:4} push 4bytes from stack to heap
   .A%FTGL @heap.2, .2%XSL @srBE4.2, \ store value at heap
   .A%FTGL @heap.2,  %INC4     .A%SRGL @heap.2, \ heap=heap+4
   %RET
 
-$_h =gdictArgs \ [ -> &gdict] args for dict.
+$_h @TY_FN=gdictArgs \ [ -> &gdict] args for dict.
   .2%LIT @c_gdictRef$h2 %RET \ TODO: add R_GB to it.
 
-$_h =_dict
+$_h @TY_FN=_dict
   @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
 
 \ TODO: remove
-$_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
-  .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
+$_h @TY_FN=gdictSet \ gdictSet <token> {meta}: Set "global" dictionary to next token.
+  .2%XSL @_dict$h2  @D_dict$L0   %DVSR  \ set dict key
   .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
     %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
   #0$L0 .2%SRGL @c_ldictLen$h2   \ ldictLen = 0
@@ -451,14 +453,14 @@ $_h =gdictSet \ gdictSet: Set "global" dictionary to next token.
     %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = gdictCap - gdictLen
   #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
-$_h =gdictGet \ gdictGet: Get the value of the next token.
+$_h @TY_FN=gdictGet \ gdictGet: Get the value of the next token.
   .2%XSL @_dict$h2   @D_dict$L0   %DVFT  %RET
 
-$_h =gdictGetK \ gdictGetK: Get the &key of the next token.
+$_h @TY_FN=gdictGetK \ gdictGetK: Get the &key of the next token.
   .2%XSL @_dict$h2   @D_dictK$L0   %DVFT  %RET
 
-$_h =loc \ $loc <name>: define location
-  .A%FTGL @heap$h2
+$_h @TY_FN=loc \ {meta} $loc <name>: define location
+  .A%FTGL @heap$h2 %SWP \ {heap meta}
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
   .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
     %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
@@ -469,17 +471,17 @@ $_h =loc \ $loc <name>: define location
 
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
-$loc assertNot \ {failIfTrue errCode}
+@_FP$loc assertNot \ {failIfTrue errCode}
   %SWP %NOT %SWP \ fallthrough
-$loc assert    \ {failIfFalse errCode}
+@_FP$loc assert    \ {failIfFalse errCode}
   @D_assert$L0     %DVFT  %RET
 
-$loc tAssert
+@_FP$loc tAssert
         .2%LIT @E_test $h2
   %JMPL @assert $h2
 
-$loc tAssertNot  %NOT .2%JMPL @tAssert,
-$loc tAssertEq \ {a b}
+@_FP$loc tAssertNot  %NOT .2%JMPL @tAssert,
+@_FP$loc tAssertEq \ {a b}
    @ERR_DATA_INT2$L0  .1%SRGL @c_errValTy$h2
         .A%SRGL @c_errVal2$h2 \ b {a}
    %DUP .A%SRGL @c_errVal1$h2 \ a {a}
@@ -542,148 +544,138 @@ $loc tAssertEq \ {a b}
 \ Note: any SYN function must be prefixed with asNow (typically #0)
 \ since it will not be tagged as SYN until c_makeFn.
 
-$loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
+@_FP$loc _j2 \ {ref instr} compile jmpInstr to 2 byte ref
   .2%XSL @h1 $h2      \ compile instr {ref}
   .2%JMPL @h2 $h2     \ compile addr
 
-$loc _xsl \ $_xsl <token> : compile unchecked xsl
+@TY_FN$loc _xsl \ $_xsl <token> : compile unchecked xsl
   .2%XSL @gdictGet $h2 \ {key}
   .1%LIT @XSL2 $h1  \ push .2%XSL instr
   .2%JMPL @_j2 $h2
 
-$loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
+@TY_FN@TY_FN_NOW^JN$loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
   $_xsl gdictGet             \ {key}
   .1%LIT @JMPL2 $h1 \ push .2%JMPL instr
   .2%JMPL @_j2 $h2
 
-$loc L1 \ {U1} compile 1 byte literal
+@_FP$loc L1 \ {U1} compile 1 byte literal
   .1%LIT  @SZ1 @LIT ^JN   $h1 \ push .1%LIT instr
   $_xsl h1 \ compile it
   $_jmpl h1
 
 \ NOW PRE $c1: {instr:U1}
 \ Compiles code so that when executed the instr will be compiled.
-$loc c1
+@_FP$loc c1
   $_xsl L1    \ compile the instr literal itself
   \ compile xsl to h1
   .2%LIT @h1 $h2
   .2%LIT @XSL2 $h2
   $_jmpl _j2
 
-$loc L2 \ {U2} compile 2 byte literal
+@_FP$loc L2 \ {U2} compile 2 byte literal
   @SZ2 @LIT  ^JN   $c1  \ compile .2%LIT instr
   $_jmpl h2  \ compile the 2 byte literal
 
-$loc L4 \ {U4} compile 4 byte literal
+@_FP$loc L4 \ {U4} compile 4 byte literal
   @SZ4 @LIT  ^JN   $c1 \ compile .4%LIT
   $_jmpl h4  \ compile the 4 byte literal
 
-@L2 @L4    @ASIZE #2 ^EQ  $select =LA \ {UA} comipile ASIZE literal
+@L2 @L4    @ASIZE #2 ^EQ  $select @_FP=LA \ {UA} comipile ASIZE literal
 
-$loc keyMeta \ SYN {&key -> meta}
+@_FP$loc keyMeta \ SYN {&key -> meta}
   .1%JZL #4$h1 %INCA .1%FT %RET \ if(asNow) get it
   @INCA $c1
   @SZ1 @FT ^JN  $c1 %RET
 
 \ These take {&key} and tell information about it
-$loc isTyConst   #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
-$loc isTyFn      #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
-$loc isFnLarge   #0$keyMeta  @TY_FN_LARGE$L1 %MSK %RET
-$loc assertNotNull @E_null$L2 $_jmpl assert
-$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [&key] -> []
+@_FP$loc isTyConst   #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
+@_FP$loc isTyFn      #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
+@_FP$loc isFnLarge   #0$keyMeta  @TY_FN_LARGE$L1 %MSK %RET
+@_FP$loc assertNotNull @E_null$L2 $_jmpl assert
+@_FP$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [&key] -> []
 
-$loc assertFnSmall \ [&key]
+@_FP$loc assertFnSmall \ [&key]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assertNot
 
-$loc assertFnLarge \ [&key]
+@_FP$loc assertFnLarge \ [&key]
   %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
 
-$loc toMod @MOD_MASK $L4 %MSK %RET \ {ref} -> {mod}
-$loc isSameMod \ {ref ref} -> {sameMod}
+@_FP$loc toMod @MOD_MASK $L4 %MSK %RET \ {ref} -> {mod}
+@_FP$loc isSameMod \ {ref ref} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
-$loc curMod   .2%FTGL @c_gkey$h2 .A%FT  $_jmpl toMod \ [] -> [mod]
-$loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
-$loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
+@_FP$loc curMod   .2%FTGL @c_gkey$h2 .A%FT  $_jmpl toMod \ [] -> [mod]
+@_FP$loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
+@_FP$loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
 
-$loc _jSetup \ [&key] -> [ref]: checked jmp setup
+@_FP$loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall
   .A%FT %DUP $_jmpl assertCurMod \ {ref}
 
-$loc  assertNoNow @E_cNoNow$L2 $_jmpl assertNot   \ {asNow} -> {}
+@_FP$loc  assertNoNow @E_cNoNow$L2 $_jmpl assertNot   \ {asNow} -> {}
 
-$loc xsl \ $xsl <token> : compile .2%xsl
+@TY_FN$loc xsl \ $xsl <token> : compile .2%xsl
   $_xsl gdictGetK $_xsl _jSetup \ {ref}
   @XSL2 $L1 $_jmpl _j2
 
-$loc xl \ $xl <token> : compile .2%xl
+@TY_FN$loc xl \ $xl <token> : compile .2%xl
   $_xsl gdictGetK \ {&key}
   %DUP $_xsl assertFnLarge
   .A%FT %DUP $_xsl assertCurMod
   @SZ2 @XL ^JN   $L1  $_jmpl _j2
 
-$loc jmpl  \ $jmpl <token> : compile jmpl2
+@TY_FN$loc jmpl  \ $jmpl <token> : compile jmpl2
   $_xsl gdictGetK $_xsl _jSetup \ {ref}
   @JMPL2$L1  $_jmpl _j2
 
-$loc c_updateGkey \ [] -> [&key] update and return current key
+@TY_FN$loc c_updateGkey \ [] -> [&key] update and return current key
   .A%FTGL @c_gdictRef$h2 \ dict.buf
   .2%FTGL @c_gdictLen$h2 \ dict.heap
   %ADD \ {&newKey}
   %DUP .A%SRGL @c_gkey$h2 \ gkey=newKey
   %RET \ return &key
-$loc locK $_xsl c_updateGkey $_jmpl loc \ { <token> -> &key} def loc, ret &key
+\ FIXME: remove literal 0
+@TY_FN$loc locK $_xsl c_updateGkey %SWP $_jmpl loc \ { <token> meta -> &key} def loc, ret &key
 
-$loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
+@_FP$loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
   %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SYN
   .1%FT %JN    \ {&key newMeta}
   %SWP %INCA .1%SR \ update meta
   %RET
 
-$loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
+@_FP$loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
   %SWP %OVR \ {<dictArgs> &key meta &key}
   %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
-
-$loc _declFn \ [<dictArgs> meta]
-  @TY_FN$L1 %JN  \ {<dictArgs> meta}
-  $_xsl locK  $_jmpl c_dictSetMeta
-
 \ example: $FN <token> $SYN $LARGE: declare a function with attributes.
-$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
-$loc FN      $_xsl assertNoNow $_xsl assertWsEmpty $_xsl gdictArgs #0$L0 $_jmpl _declFn
-$loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmpl c_keyJnMeta
-$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
-$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
+@TY_FN$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
+$assertWsEmpty
+@TY_FN@TY_FN_SYN^JN$loc FN      $_xsl assertNoNow $_xsl assertWsEmpty
+                   @TY_FN$L1 $_xsl locK %DRP %RET
+@TY_FN@TY_FN_SYN^JN$loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmpl c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
 
 \ Backfill the fn meta
-$loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
+@_FP$loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
   $_xsl gdictGetK  $_jmpl c_dictSetMeta
 
 \ {{meta} <token>}: set meta for token to be a small function.
-#0$FN c_makeFn #0$LARGE \ note: asNow=#0 for SYN
+$FN c_makeFn  $LARGE \ note: asNow=#0 for SYN
   #1$h1  \ locals: 0=meta:U1
   .1%SRLL#0$h1  $_xsl gdictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
   @TY_FN$L1 %JN   $_jmpl c_makeTy
 
-$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
-
+@TY_FN@TY_FN_SYN^JN$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
 $assertWsEmpty
-#0 $c_makeFn xsl    #0 $c_makeFn loc   #0 $c_makeFn xl
-@TY_FN_NOW $c_makeFn jmpl  @TY_FN_PRE $c_makeFn select
-@TY_FN_SYN $c_makeFn FN
 #0 $c_makeFn assertWsEmpty
-@TY_FN_SYN $c_makeFn PRE   @TY_FN_SYN $c_makeFn SYN
-@TY_FN_SYN $c_makeFn NOW   @TY_FN_SYN $c_makeFn LARGE
 @TY_FN_PRE $c_makeFn L0    @TY_FN_PRE $c_makeFn L1
 @TY_FN_PRE $c_makeFn L2    @TY_FN_PRE $c_makeFn L4
 @TY_FN_PRE $c_makeFn LA
-@TY_FN_PRE $c_makeFn h1    @TY_FN_PRE $c_makeFn h2
-@TY_FN_PRE $c_makeFn h4
 @TY_FN_PRE @TY_FN_NOW ^JN  $c_makeFn c1
 #0 $c_makeFn gdictSet
 #0 $c_makeFn gdictGet        #0 $c_makeFn gdictGetK
@@ -693,7 +685,7 @@ $assertWsEmpty
 @TY_FN_PRE  $c_makeFn isTyConst  @TY_FN_PRE $c_makeFn isTyFn
 @TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
 @TY_FN_PRE $c_makeFn isFnLarge
-#0 $c_makeFn c_updateGkey           #0 $c_makeFn locK
+#0 $c_makeFn c_updateGkey
 @TY_FN_PRE $c_makeFn c_keyJnMeta
 @TY_FN_PRE $c_makeFn c_dictSetMeta
 #0 $c_makeFn c_makeTy
@@ -735,7 +727,7 @@ $FN ldictArgs \ {} -> dictArgs
 
 $FN _ldict $xsl c_scan $jmpl ldictArgs
 $FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
-$FN ldictSet   $PRE $xsl _ldict @D_dict$L0  %DVSR %RET
+$FN ldictSet   $PRE #0$L0 $xsl _ldict @D_dict$L0  %DVSR %RET
 $FN ldictGetK  $xsl _ldict @D_dictK$L0 %DVFT %RET
 $FN retz  $PRE $SYN $xsl assertNoNow @RETZ$c1 %RET
 $FN reteq $PRE $SYN $xsl assertNoNow @NEQ$c1 @RETZ$c1 %RET
@@ -922,8 +914,7 @@ $FN c_updateLkey \ [] -> [&key] update and return current local key
 \ fn declEnd                    : end locals declaration
 
 $FN declG \ [<token> -> &key isLocal] create global and return it.
-  $xsl locK
-  %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key}
+  @TY_VAR$L1 $xsl locK
   @FALSE$L0 %RET \ {&key isLocal=FALSE}
 
 $FN declL \ [<token> -> &key isLocal] create local and return it.

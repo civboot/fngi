@@ -80,10 +80,8 @@ FN c_alias PRE \ {&key, isLocal, meta}
 
 
 \ TODO: alias?
-$(select(REF sr2, REF sr4, ASIZE == 2) -> gdictSet srA)
-$(select(REF sr2, REF sr4, ASIZE == 2) -> gdictSet ftA)
-$(TY_FN_PRE + TY_FN_SYN -> c_makeFn srA)
-$(TY_FN_PRE + TY_FN_SYN -> c_makeFn ftA)
+$(select(REF sr2, REF sr4, ASIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) gdictSet srA)
+$(select(REF sr2, REF sr4, ASIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) gdictSet ftA)
 
 FN strEq PRE \ {aLen &a bLen &b}
   $declVar(declL bLen, TY_VAR_INPUT+SZA, ASIZE)

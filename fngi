@@ -106,7 +106,7 @@ def isCallstk(instr: Instr):
   return instr.is_xl() or instr.is_xw() or instr.is_xsl() or instr.is_xsw()
 
 SP_REGEX = re.compile(
-  r'^#(?P<value>[\w_]+)\s+=(?P<name>.+)$',
+  r'#(?P<value>[\w_]+)\s+#([\w_]+)=(?P<name>.+)',
   re.MULTILINE)
 
 def findGlobals():
