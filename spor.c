@@ -112,7 +112,9 @@ typedef CSz CPtr;
 #define E_cZoab     0xE0F1 // Zoab invalid
 
 #define TY_FN_LARGE  0x10
+#define TY_FN_MSK    0x0C
 #define TY_FN_SYN    0x08
+#define TY_FN_INLINE 0x0C
 #define TY_FN_LARGE_MREF  (TY_FN_LARGE << 0x18)
 #define TY_FN_SYN_MREF    (TY_FN_SYN << 0x18)
 
@@ -1024,13 +1026,24 @@ U1 scanInstr() {
   executeInstr(instr);
 }
 
+void _memmove(APtr dst, APtr src, APtr len) {
+  // TODO: do bounds checking
+  memmove(mem + dst, mem + src, len);
+}
+
 /*fn*/ void cExecute() { // $
   scan();
   Dict* d = DEFAULT_DICT;
   U2 offset = Dict_find(d, tokenLen, tokenBuf);
   ASM_ASSERT(offset != d->len, E_cKey);
   Key* key = Dict_key(d, offset);
-  if(TY_FN_SYN & key->meta) WS_PUSH(FALSE); // pass asNow=FALSE
+  if(TY_FN_INLINE == (TY_FN_MSK & key->meta)) {
+    U1 len = fetch(mem, key->value, SzI1);
+    _memmove(env.g->heap, key->value + 1, len);
+    env.g->heap += len;
+    return;
+  }
+  if(TY_FN_SYN == (TY_FN_MSK & key->meta)) WS_PUSH(FALSE); // pass asNow=FALSE
   WS_PUSH(key->value);
   if(TY_FN_LARGE & key->meta) execute(SzI4 + XLW);
   else                        execute(SzI4 + XSW);
@@ -1147,7 +1160,7 @@ void deviceOpMemMove(U1 isFetch) {
   APtr v = WS_POP();
   APtr dst = WS_POP();
   if(isFetch) memset(mem + dst, v, len);
-  else memmove(mem + dst, mem + v, len);
+  else _memmove(dst, v, len);
 }
 
 void deviceOpMemCmp() { // {a b len} -> {cmp}

@@ -35,7 +35,7 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$kdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SYN ^JN ^JN $tAssertKeyMeta
+$kdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_INLINE ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
 $FN myXs #22 $L0 %RET

@@ -219,6 +219,7 @@
 #00 #0=TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
 #04 #0=TY_FN_NOW     \ Required to be run as NOW (must use $)
 #08 #0=TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
+#0C #0=TY_FN_INLINE  \ Inline function, copies bytes when compiled.
 
 @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
 
@@ -321,6 +322,7 @@
 #E0F3  #0=E_cNeedNumber \ number not present
 #E0F4  #0=E_cBadRefs    \ too many de/refs
 #E0F5  #0=E_cRefEq      \ .&var = not allowed.
+#E0F6  #0=E_cInlineLarge \ inline fn is large
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr
@@ -473,16 +475,12 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
-@_FP$loc assertNot \ {failIfTrue errCode}
-  %SWP %NOT %SWP \ fallthrough
-@_FP$loc assert    \ {failIfFalse errCode}
-  @D_assert$L0     %DVFT  %RET
-
-@_FP$loc tAssert
-        .2%LIT @E_test $h2
-  %JMPL @assert $h2
-
-@_FP$loc tAssertNot  %NOT .2%JMPL @tAssert,
+@_FP$loc assertNoNow  .2%LIT @E_cNoNow$h2 \ [fallthrough]
+@_FP$loc assertNot    %SWP %NOT %SWP      \ [fallthrough]
+@_FP$loc assert       @D_assert$L0     %DVFT  %RET
+@_FP$loc tAssert      .2%LIT @E_test$h2 %JMPL @assert $h2
+@_FP$loc tAssertNot   %NOT .2%JMPL @tAssert,
+@_FP$loc assertLt128   .1%LIT #80$h1 %LT_U  .2%LIT @E_cJmpL1$h2 .2%JMPL @assert$h2
 @_FP$loc tAssertEq \ {a b}
    @ERR_DATA_INT2$L0  .1%SRGL @c_errValTy$h2
         .A%SRGL @c_errVal2$h2 \ b {a}
@@ -512,7 +510,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 \ fn LARGE                        : make function large (has locals)
 \
 \ fn $c1 [instr]                  : NOW to compile instr when executed
-\ fn keyMeta [&key] -> [meta]     : get meta of key
+\ fn keyMeta [&key] -> [meta]     : INLINE get meta of key
 \ fn isTyConst   [&key] -> [U]    : &key has a type (is not const)
 \ fn isTyFn      [&key] -> [U1]   : &key is a fn
 \ fn isFnLarge   [&key] -> [U1]   : &key is a large fn (has locals)
@@ -566,7 +564,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 
 \ NOW PRE $c1: {instr:U1}
 \ Compiles code so that when executed the instr will be compiled.
-@_FP$loc c1
+@_FP@TY_FN_NOW^JN$loc c1
   $_xsl L1    \ compile the instr literal itself
   \ compile xsl to h1
   .2%LIT @h1 $h2
@@ -583,10 +581,8 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 
 @L2 @L4    @ASIZE #2 ^EQ  $select @_FP=LA \ {UA} comipile ASIZE literal
 
-@_FP@TY_FN_SYN^JN$loc keyMeta \ {&key -> meta}
-  .1%JZL #4$h1 %INCA .1%FT %RET \ if(asNow) get it
-  @INCA $c1
-  @SZ1 @FT ^JN  $c1 %RET
+@_FP@TY_FN_INLINE^JN $loc keyMeta \ {&key -> meta} get key's meta.
+  #2$h1 %INCA .1%FT %RET \ Note: direct inline function. Two bytes
 
 \ These take {&key} and tell information about it
 @_FP$loc isTyConst   $keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
@@ -616,8 +612,6 @@ $assertWsEmpty
 @_FP$loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall
   .A%FT %DUP $_jmpl assertCurMod \ {ref}
-
-@_FP$loc  assertNoNow @E_cNoNow$L2 $_jmpl assertNot   \ {asNow} -> {}
 
 @TY_FN$loc xsl \ $xsl <token> : compile .2%xsl
   $_xsl kdictGetK $_xsl _jSetup \ {ref}
@@ -653,6 +647,12 @@ $assertWsEmpty
   %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
+\ END: used for INLINE, IF/ELSE and BREAK0
+@_FP $loc _END \ {&addr heapDiff} addr is where to store (heap-heapDiff)
+  .A%FTGL @heap$h2             \ {&addr heapDiff heap}
+  %SWP %SUB  %DUP $_xsl assertLt128 \ {heapDiff (heap-heapDiff)}
+  %SWP .1%SR %RET \ store at &addr (1 byte literal)
+@TY_FN@TY_FN_SYN^JN $loc END_INLINE $_xsl assertNoNow %DUP %INC $_jmpl _END
 
 \ example: $FN <token> $SYN $LARGE: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN$loc FN
@@ -661,6 +661,9 @@ $assertWsEmpty
 @TY_FN@TY_FN_SYN^JN$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
 @TY_FN@TY_FN_SYN^JN$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
 @TY_FN@TY_FN_SYN^JN$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc INLINE  %DRP
+  .A%FTGL @heap$h2 #0$L0 $_xsl h1 \ put heap on stack and write 0 to heap
+  .A%FTGL @c_gkey$h2  @TY_FN_INLINE$L1 $_jmpl c_keyJnMeta \ set meta as TY_FN_INLINE
 
 $assertWsEmpty
 
@@ -669,6 +672,7 @@ $FN isVarInput  $PRE $keyMeta  @TY_VAR_INPUT$L1  %MSK %RET
 $FN isFnNormal  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1 %EQ %RET
 $FN isFnNow     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
 $FN isFnSyn     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
+$FN isFnInline  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
 $FN isTyVar     $PRE $keyMeta  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
 $FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
 
@@ -676,7 +680,6 @@ $FN c_scan        @D_scan$L0   %DVFT %RET
 $FN panic   $PRE #0$L0 %SWP  $jmpl assert \ {errCode}: panic with errCode
 $FN unreach      @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
 $FN unimplIfTrue $PRE @E_unimpl$L2 $jmpl assert \ {}: if true raise unimpl
-$FN assertLt128    $PRE #80 $L1 %LT_U  @E_cJmpL1 $L2   $jmpl assert
 $FN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
 
 $FN assertSzI $PRE \ {szI}
@@ -697,9 +700,9 @@ $FN _ldict $xsl c_scan $jmpl ldictArgs
 $FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $FN ldictSet   $PRE #0$L0 $xsl _ldict @D_dict$L0  %DVSR %RET
 $FN ldictGetK  $xsl _ldict @D_dictK$L0 %DVFT %RET
-$FN retz  $PRE $SYN $xsl assertNoNow @RETZ$c1 %RET
-$FN reteq $PRE $SYN $xsl assertNoNow @NEQ$c1 @RETZ$c1 %RET
-$FN retif $PRE $SYN $xsl assertNoNow @NOT$c1 @RETZ$c1 %RET
+$FN retz       $PRE $INLINE      %RETZ $END_INLINE %RET
+$FN reteq      $PRE $INLINE %NEQ %RETZ $END_INLINE %RET
+$FN retif      $PRE $INLINE %NOT %RETZ $END_INLINE %RET
 
 \ **********
 \ * [7] ASM (initial) Flow Control
@@ -708,25 +711,20 @@ $FN retif $PRE $SYN $xsl assertNoNow @NOT$c1 @RETZ$c1 %RET
 \
 \   if/else: $IF ... $ELSE ... $END
 \   loop:    $LOOP <l0> ... $BREAK0 <b0> ... $AGAIN <l0> $BREAK_END <b0>
-$FN IF  $PRE $SYN $xsl assertNoNow \ {} -> {&jmpTo} : start an if block
+
+$FN IF $SYN $PRE $xsl assertNoNow \ {} -> {&jmpTo} : start an if block
   @SZ1 @JZL  ^JN   $c1 \ compile .1%JZL instr
   .A%FTGL @heap$h2 \ {&jmpTo} push &jmpTo location to stack
   #0$L0  $xsl h1 \ compile 0 (jump pad)
   %RET
 
-$FN _END $PRE \ {&jmpTo} end of IF
-  %DUP          \ {&jmpTo &jmpTo}
-  .A%FTGL @heap$h2  \ {&jmpTo &jmpTo heap}
-  %SWP %SUB     \ {&jmpTo (heap-&jmpTo)}
-  %DUP $xsl assertLt128
-  %SWP .1%SR %RET \ store at location after start (1 byte literal)
-$FN END $SYN $xsl assertNoNow $jmpl _END  \ {&jmpTo} -> {} : end of IF or BREAK0
+@TY_FN@TY_FN_SYN^JN $loc END $_xsl assertNoNow %DUP $_jmpl _END
 
 $FN ELSE $SYN $xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1         \ (end IF) compile unconditional jmp to end of ELSE
   .A%FTGL @heap$h2 %SWP \ {&elseBlockJmpTo &ifNotJmpTo}
   #0$L0 $xsl h1     \ compile jmp lit for &elseBlockJmpTo
-  $jmpl _END        \ end of IF block (beginning of ELSE)
+  %DUP $jmpl _END   \ end of IF block (beginning of ELSE)
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
 $FN LOOP   $SYN $xsl assertNoNow .A%FTGL @heap$h2  $jmpl ldictSet
@@ -743,13 +741,7 @@ $FN AGAIN $SYN $xsl assertNoNow
   %NEG          \ make negative for backwards jmp
   $jmpl h1      \ compile as jmp offset
 
-$FN END_BREAK $SYN $xsl assertNoNow $xsl ldictGet $jmpl _END
-
-$FN END_N $PRE $SYN $xsl assertNoNow \ {...(N &jmpTo) numJmpTo}
-  $LOOP l0 %DUP %RETZ
-    %SWP #0$L0 $xsl _END
-    %DEC \ dec numJmpTo
-  $AGAIN l0
+$FN END_BREAK $SYN $xsl assertNoNow $xsl ldictGet %DUP $jmpl _END
 
 \ **********
 \ * [8] Scanning and Alignment Utilities
@@ -1154,12 +1146,22 @@ $FN xSzI $PRE \ {&key} -> {szI}: return the size requirement of the X instr
 
 $FN c_fn $PRE \ {&key}: compile a function
   %DUP $xsl assertFn \ {&key}
+  %DUP $xsl isFnInline $IF \ Inline compilation {&key}
+    %DUP $xsl isFnLarge @E_cInlineLarge$L2 $xsl assertNot
+    .A%FT $GET heap %OVR \ {&inlineFn &heap &inlineFn}
+    %DUP %INC %SWP .1%FT \ {&inlineFn &heap &inlineFn+1 inlineLen}
+    @D_memSet$L0 %DVSR  \ memMove {&inlineFn}
+    .1%FT $GET heap %ADD $_SET heap %RET \ update heap+inlineLen
+  $END
   %DUP $xsl xSzI     \ {&key szLit}
   %OVR $xsl isFnLarge  $IF @XLL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
   %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
   $xl c_instrLitImpl %RET
 
 $FN execute \ {&key} -> {...}: tycheck and execute a dictionary key
+  %DUP $xsl isFnInline $IF \ if inline, assert not large and jmp to addr+1
+    %DUP $xsl isFnLarge @E_cInlineLarge$L2 $xsl assertNot  .A%FT %INC .A%JMPW
+  $END
   %DUP $xsl isFnLarge  $IF .A%FT .A%XLW %RET $END
   .A%FT .A%JMPW
 
@@ -1195,7 +1197,6 @@ $FN c_single $PRE
   $declL key   @SZA @ASIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
   %DUP $_SET asNow $xsl _compConstant %DUP $_SET key %RETZ
-  \ if pre, recursively call fngiSingle (compile next token first)
   $GET key $xsl isFnPre $IF $GET c_compFn .A%XLW $END \ recurse for PRE
   $GET key $xsl isFnSyn $IF $GET asNow $GET key $jmpl execute    $END
   $GET key $xsl isFnNow $IF $GET asNow @E_cReqNow$L2 $xsl assert $END

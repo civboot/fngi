@@ -16,6 +16,11 @@ $tAssertEq(or(0x0, 0x8), TRUE)
 $tAssertEq(jn(0x0, 0x8), 0x8)
 $tAssertEq(0c\t, 0x09)
 
+\ Test both forms of inline keyMeta
+$tAssertEq(keyMeta(kdictGetK loc), TY_FN)
+FN getKeyMeta PRE ret keyMeta(_);
+$tAssertEq(getKeyMeta(kdictGetK loc), 0x40)
+
 $tAssertEq(REF useEq, kdictGet useEq)
 
 FN daAnswer ret 0x42

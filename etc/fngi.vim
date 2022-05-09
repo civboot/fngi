@@ -19,6 +19,7 @@ syn keyword elInstr
       \ NOJ   JMPL  JMPW  JZL   JTBL  XLL   XLW   XSL   XSW
       \ WS    LIT   FTLL  FTGL  FTOL  SRLL  SRGL  SROL
       \ if else loop while break ret reteq
+      \ jn msk xor or and
       \ nextgroup=elSymbol
 
 syn match elSymbol    '[^()%$'._a-zA-Z0-9]' nextgroup=elSpecial
