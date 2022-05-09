@@ -16,10 +16,10 @@ $assertWsEmpty
 #400 #1 ^SHL    #800 $tAssertEq
 
 \ Test dictionary
-#444 #0 $gdictSet foo
-$gdictGet foo   #444 $tAssertEq
-#123455 #0 $gdictSet foo2
-$gdictGet foo2 #123455 $tAssertEq
+#444 #0 $kdictSet foo
+$kdictGet foo   #444 $tAssertEq
+#123455 #0 $kdictSet foo2
+$kdictGet foo2 #123455 $tAssertEq
 
 
 \ Test loc
@@ -35,7 +35,7 @@ $lits
 #5     $tAssertEq
 
 \ Test meta
-$gdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SYN ^JN ^JN $tAssertKeyMeta
+$kdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_SYN ^JN ^JN $tAssertKeyMeta
 
 \ Test xsl
 $FN myXs #22 $L0 %RET
@@ -48,7 +48,7 @@ $c_updateGkey ^DRP
 
 \ assert @gkey == @(&dict.buf + &dict.heap)
   @c_gkey .4^FT
-  @c_gdictRef .4^FT   @c_gdictLen .2^FT   .4^ADD
+  @c_kdictRef .4^FT   @c_kdictLen .2^FT   .4^ADD
   $tAssertEq
 
 
@@ -63,10 +63,10 @@ $FN add   %ADD %RET
 $FN test_xslJmpl $xsl one   $xsl one   $jmpl add
 $test_xslJmpl  #2 $tAssertEq
 
-$gdictGetK FN      $isFnSyn   $tAssert
-$gdictGetK IF      $isTyFn    $tAssert
-$gdictGetK IF      $isFnSyn   $tAssert
-$gdictGetK assert  $isFnNow   $tAssertNot
+$kdictGetK FN      $isFnSyn   $tAssert
+$kdictGetK IF      $isTyFn    $tAssert
+$kdictGetK IF      $isFnSyn   $tAssert
+$kdictGetK assert  $isFnNow   $tAssertNot
 
 \ Test control flow
 $FN testIf \ converts 1->10 else: 42
@@ -225,15 +225,15 @@ $assertWsEmpty   $testFTSROffset
 
 $FN two $declEnd #2$L0 %RET \ {} -> 1
 
-$FN test_c_fn   $gdictGetK one $c_fn %RET
+$FN test_c_fn   $kdictGetK one $c_fn %RET
 $test_c_fn #1 $tAssertEq
 $assertWsEmpty
 
-$FN test_c_fnTwo   $gdictGetK two $c_fn %RET
+$FN test_c_fnTwo   $kdictGetK two $c_fn %RET
 $test_c_fnTwo #2 $tAssertEq
 
-$gdictGetK test_c_fnTwo $execute
-$gdictGetK test_c_fn    $execute
+$kdictGetK test_c_fnTwo $execute
+$kdictGetK test_c_fn    $execute
   ^ADD #3 $tAssertEq
 
 $FN test_c_compFnExists $GET c_compFn %RET

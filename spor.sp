@@ -355,14 +355,13 @@ $_h @_FP=select \ {a b s -> a|b} a if s else b
 #0000_001C @TY_VAR@SZ2^JN=sysLogLvl
 #0000_001E @TY_VAR@SZ2^JN=usrLogLvl
 
-\ Dictionary Struct
-#0000_0020 @TY_VAR@SZA^JN=c_gdictRef   \ U4
-#0000_0024 @TY_VAR@SZ2^JN=c_gdictLen   \ U2
-#0000_0026 @TY_VAR@SZ2^JN=c_gdictCap   \ U2
-
-#0000_0028 @TY_VAR@SZA^JN=c_ldictRef  \ U4
-#0000_002C @TY_VAR@SZ2^JN=c_ldictLen  \ U2
-#0000_002E @TY_VAR@SZ2^JN=c_ldictCap  \ U2
+\ Dictionary (Kernel and Local) Structs
+#0000_0020 @TY_VAR@SZA^JN=c_kdictRef   \ U4
+#0000_0024 @TY_VAR@SZ2^JN=c_kdictLen   \ U2
+#0000_0026 @TY_VAR@SZ2^JN=c_kdictCap   \ U2
+#0000_0028 @TY_VAR@SZA^JN=c_ldictRef   \ U4
+#0000_002C @TY_VAR@SZ2^JN=c_ldictLen   \ U2
+#0000_002E @TY_VAR@SZ2^JN=c_ldictCap   \ U2
 
 \ TokenBuf Struct
 #0000_0030 @TY_VAR@SZA^JN=c_tokenBuf   \ [APtr] TokenBuf struct
@@ -382,7 +381,7 @@ $_h @_FP=select \ {a b s -> a|b} a if s else b
 #0000_0050 #0=BA_kernel
 
 \ Global Compiler Variables
-#0000_005C @TY_VAR@SZA^JN=c_gkey         \ [U4] current gdict &key
+#0000_005C @TY_VAR@SZA^JN=c_gkey         \ [U4] current kdict &key
 #0000_0060 @TY_VAR@SZA^JN=c_lkey         \ [U4] current ldict &key
 #0000_0064 @TY_VAR@SZA^JN=c_gheap        \ [U4] global heap
 #0000_0068 @TY_VAR@SZ2^JN=c_localOffset  \ [U2] Local Offset (for local var setup)
@@ -397,8 +396,8 @@ $_h @_FP=select \ {a b s -> a|b} a if s else b
 \   fn h2 [U2] -> []              : push 2 byte to heap
 \   fn h4 [U4] -> []              : push 4 byte to heap
 \   fn L0 [U1] -> []              : compile a small literal [#0 - #3F]
-\   fn $gdictGet <key>  [-> U4]   : get dictionary key's value
-\   fn $gdictGetK <key> [-> APtr] : get the key's &key
+\   fn $kdictGet <key>  [-> U4]   : get kernel dictionary key's value
+\   fn $kdictGetK <key> [-> APtr] : get kernel dictionary &key (reference)
 \   fn $loc <token> []            : set token to the current heap location
 \
 \ Assertions: these panic with the supplied errCode if cond is not met.
@@ -440,36 +439,36 @@ $_h @_FP=h4  \ h4: {val:4} push 4bytes from stack to heap
   .A%FTGL @heap.2,  %INC4     .A%SRGL @heap.2, \ heap=heap+4
   %RET
 
-$_h @TY_FN=gdictArgs \ [ -> &gdict] args for dict.
-  .2%LIT @c_gdictRef$h2 %RET \ TODO: add R_GB to it.
+$_h @TY_FN=kdictArgs \ [ -> &kdict] args for dict.
+  %RGFT@R_GB$h1 .2%LIT @c_kdictRef$h2 %ADD %RET
 
 $_h @TY_FN=_dict
-  @D_scan$L0  %DVFT .2%JMPL @gdictArgs$h2
+  @D_scan$L0  %DVFT .2%JMPL @kdictArgs$h2
 
 \ TODO: remove
-$_h @TY_FN=gdictSet \ gdictSet <token> {meta}: Set "global" dictionary to next token.
+$_h @TY_FN=kdictSet \ kdictSet <token> {meta}: Set "global" dictionary to next token.
   .2%XSL @_dict$h2  @D_dict$L0   %DVSR  \ set dict key
-  .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
-    %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
+  .A%FTGL @c_kdictRef$h2  .2%FTGL @c_kdictLen$h2
+    %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = kdictRef + kdictLen
   #0$L0 .2%SRGL @c_ldictLen$h2   \ ldictLen = 0
-  .2%FTGL @c_gdictCap$h2  .2%FTGL @c_gdictLen$h2
-    %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = gdictCap - gdictLen
+  .2%FTGL @c_kdictCap$h2  .2%FTGL @c_kdictLen$h2
+    %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = kdictCap - kdictLen
   #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
-$_h @TY_FN=gdictGet \ gdictGet: Get the value of the next token.
+$_h @TY_FN=kdictGet \ kdictGet: Get the value of the next token.
   .2%XSL @_dict$h2   @D_dict$L0   %DVFT  %RET
 
-$_h @TY_FN=gdictGetK \ gdictGetK: Get the &key of the next token.
+$_h @TY_FN=kdictGetK \ kdictGetK: Get the &key of the next token.
   .2%XSL @_dict$h2   @D_dictK$L0   %DVFT  %RET
 
 $_h @TY_FN=loc \ {meta} $loc <name>: define location
   .A%FTGL @heap$h2 %SWP \ {heap meta}
   .2%XSL @_dict $h2  @D_dict$L0   %DVSR  \ set dict key
-  .A%FTGL @c_gdictRef$h2  .2%FTGL @c_gdictLen$h2
-    %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = gdictRef + gdictLen
+  .A%FTGL @c_kdictRef$h2  .2%FTGL @c_kdictLen$h2
+    %ADD  .A%SRGL @c_ldictRef$h2 \ ldictRef = kdictRef + kdictLen
   #0$L0 .2%SRGL @c_ldictLen$h2   \ ldictLen = 0
-  .2%FTGL @c_gdictCap$h2  .2%FTGL @c_gdictLen$h2
-    %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = gdictCap - gdictLen
+  .2%FTGL @c_kdictCap$h2  .2%FTGL @c_kdictLen$h2
+    %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = kdictCap - kdictLen
   #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
 \ Assert checks a condition or panics with an error
@@ -551,12 +550,12 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
   .2%JMPL @h2 $h2     \ compile addr
 
 @TY_FN$loc _xsl \ $_xsl <token> : compile unchecked xsl
-  .2%XSL @gdictGet $h2 \ {key}
+  .2%XSL @kdictGet $h2 \ {key}
   .1%LIT @XSL2 $h1  \ push .2%XSL instr
   .2%JMPL @_j2 $h2
 
 @TY_FN@TY_FN_NOW^JN$loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
-  $_xsl gdictGet             \ {key}
+  $_xsl kdictGet             \ {key}
   .1%LIT @JMPL2 $h1 \ push .2%JMPL instr
   .2%JMPL @_j2 $h2
 
@@ -621,22 +620,22 @@ $assertWsEmpty
 @_FP$loc  assertNoNow @E_cNoNow$L2 $_jmpl assertNot   \ {asNow} -> {}
 
 @TY_FN$loc xsl \ $xsl <token> : compile .2%xsl
-  $_xsl gdictGetK $_xsl _jSetup \ {ref}
+  $_xsl kdictGetK $_xsl _jSetup \ {ref}
   @XSL2 $L1 $_jmpl _j2
 
 @TY_FN$loc xl \ $xl <token> : compile .2%xl
-  $_xsl gdictGetK \ {&key}
+  $_xsl kdictGetK \ {&key}
   %DUP $_xsl assertFnLarge
   .A%FT %DUP $_xsl assertCurMod
   @SZ2 @XL ^JN   $L1  $_jmpl _j2
 
 @TY_FN$loc jmpl  \ $jmpl <token> : compile jmpl2
-  $_xsl gdictGetK $_xsl _jSetup \ {ref}
+  $_xsl kdictGetK $_xsl _jSetup \ {ref}
   @JMPL2$L1  $_jmpl _j2
 
 @TY_FN$loc c_updateGkey \ [] -> [&key] update and return current key
-  .A%FTGL @c_gdictRef$h2 \ dict.buf
-  .2%FTGL @c_gdictLen$h2 \ dict.heap
+  .A%FTGL @c_kdictRef$h2 \ dict.buf
+  .2%FTGL @c_kdictLen$h2 \ dict.heap
   %ADD \ {&newKey}
   %DUP .A%SRGL @c_gkey$h2 \ gkey=newKey
   %RET \ return &key
@@ -688,7 +687,7 @@ $FN ftoN $NOW  \ {offset szI} compile FTO szI w/offset
   %DUP $xsl assertSzI  @FTO$L1 %ADD $xsl h1 $jmpl h1
 
 \ Update the harness with the new dictionary
-$FN c_dictDump       $xsl gdictArgs @D_dictDump$L0 %DVSR %RET \ {}
+$FN c_dictDump       $xsl kdictArgs @D_dictDump$L0 %DVSR %RET \ {}
 $c_dictDump
 
 $FN ldictArgs \ {} -> dictArgs
@@ -858,7 +857,7 @@ $FN dictK \ {} -> {&key isFromLocal}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @TRUE$L1 %RET
   $END %DRP
-  $xsl gdictArgs  @D_dictK$L0 %DVFT %DUP  $IF
+  $xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $xsl panic
 
@@ -949,7 +948,7 @@ $FN _setImpl $PRE \ {&key dotMeta}
   $xl _getSetImpl %RET
 
 $FN gRef $NOW \ [<token> -> &gref] get token's global reference
-  $xsl gdictGetK  $xsl _varSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
+  $xsl kdictGetK  $xsl _varSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
 
 $FN _refImpl \ {}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
@@ -958,13 +957,13 @@ $FN _refImpl \ {}
     @R_LP$L1 %JN  \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
-  $xsl gdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
+  $xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _varSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $xsl panic
 
 $FN REF  $SYN
   $IF \ asNow: we can get &fn or &global
-    $xsl gdictGetK \ next: assert(isTyVar or isTyFn)
+    $xsl kdictGetK \ next: assert(isTyVar or isTyFn)
       %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
       @E_cNotType$L2 $xsl assert
     .A%FT %RET
@@ -972,7 +971,7 @@ $FN REF  $SYN
   $xsl c_scan $jmpl _refImpl
 
 $FN GET  $SYN
-  $IF  $xsl gdictGetK $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
+  $IF  $xsl kdictGetK $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
        %SWP .A%FT %SWP $jmpl ftSzI   $END
   $xsl c_scan $xsl dictK $jmpl _getImpl
 
@@ -1174,7 +1173,7 @@ $FN _compConstant $PRE \ {asNow} -> {&keyFn[nullable]}
     %DUP $xsl isTyConst  @E_cNotFnOrConst$L2 $xsl assert
     .A%FT $xsl c_lit  #0$L0 %RET
   $END %DRP \ {asNow}
-  $xsl gdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
+  $xsl kdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
   %DUP $xsl isTyConst $IF \ Constant case {asNow &key}
     .A%FT $xsl c_lit #0$L0 %RET
   $END %SWP %DRP %DUP $jmpl assertFn \ {&key}

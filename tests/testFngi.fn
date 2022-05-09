@@ -16,7 +16,7 @@ $tAssertEq(or(0x0, 0x8), TRUE)
 $tAssertEq(jn(0x0, 0x8), 0x8)
 $tAssertEq(0c\t, 0x09)
 
-$tAssertEq(REF useEq, gdictGet useEq)
+$tAssertEq(REF useEq, kdictGet useEq)
 
 FN daAnswer ret 0x42
 FN testXsw  ret xsw($lit(REF daAnswer))
