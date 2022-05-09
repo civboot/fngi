@@ -16,7 +16,7 @@ syn keyword elInstr
       \ EQ    NEQ   GE_U  LT_U  GE_S  LT_S
       \ MUL   DIV_U DIV_S
       \ SLIT  SZ1   SZ2   SZ4   SZA
-      \ NOJ   JMPL  JMPW  JZL   JTBL  XL    XW    XSL   XSW
+      \ NOJ   JMPL  JMPW  JZL   JTBL  XLL   XLW   XSL   XSW
       \ WS    LIT   FTLL  FTGL  FTOL  SRLL  SRGL  SROL
       \ nextgroup=elSymbol
 

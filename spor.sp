@@ -125,20 +125,20 @@
 \ # [1.f] Jmp
 \
 \ Jumps can be to either a literal (L) or to an item on the working stack (W).
-\ - X means "execute" and is a call.
+\ - XL means "execute large" and is a call to a function with locals.
 \ - XS is an "execute small" and means that the function has no local stack.
-\ - XL/XW will execute a function that has a local stack. The size of the
-\   local stack is stored in the first 16bits at the function's address, which
-\   are loaded by the execute instr and stored in the highest byte in the
-\   callstack (which RET uses to shrink the local stack on return).
+\ - XLL/XLW will execute a function that has a local stack. The size of the
+\   local stack is stored in the first bye (shifted by APO2) at the function's
+\   address, which  are loaded by the execute instr and stored in the highest
+\   byte in the  callstack (which RET uses to shrink the local stack on return).
 
 \   Jmp      Description
 #80 #0=JMPL  \ Jmp to Literal
 #81 #0=JMPW  \ Jmp to WS
 #82 #0=JZL   \ Jmp to Literal if store==0
 #83 #0=JTBL  \ Jump to Table index using size=Literal
-#84 #0=XL    \ Execute Literal (mPtr)
-#85 #0=XW    \ Execute WS (aPtr)
+#84 #0=XLL   \ Execute Literal (mPtr)
+#85 #0=XLW   \ Execute WS (aPtr)
 #86 #0=XSL   \ Execute Small Literal (no LS update)
 #87 #0=XSW   \ Execute Small WS (no LS update)
 
@@ -213,7 +213,7 @@
 
 \ FN meta bits [TTPL FF--] L=locals F=fnTy P=pre
 #20 #0=TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
-#10 #0=TY_FN_LARGE   \ large, has locals (called with XL or XW)
+#10 #0=TY_FN_LARGE   \ large, has locals (called with XLL or XLW)
 
 #0C #0=TY_FN_TY_MASK \ 4 function types
 #00 #0=TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
@@ -627,7 +627,7 @@ $assertWsEmpty
   $_xsl kdictGetK \ {&key}
   %DUP $_xsl assertFnLarge
   .A%FT %DUP $_xsl assertCurMod
-  @SZ2 @XL ^JN   $L1  $_jmpl _j2
+  @SZ2 @XLL ^JN   $L1  $_jmpl _j2
 
 @TY_FN$loc jmpl  \ $jmpl <token> : compile jmpl2
   $_xsl kdictGetK $_xsl _jSetup \ {ref}
@@ -1155,12 +1155,12 @@ $FN xSzI $PRE \ {&key} -> {szI}: return the size requirement of the X instr
 $FN c_fn $PRE \ {&key}: compile a function
   %DUP $xsl assertFn \ {&key}
   %DUP $xsl xSzI     \ {&key szLit}
-  %OVR $xsl isFnLarge  $IF @XL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
+  %OVR $xsl isFnLarge  $IF @XLL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
   %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
   $xl c_instrLitImpl %RET
 
 $FN execute \ {&key} -> {...}: tycheck and execute a dictionary key
-  %DUP $xsl isFnLarge  $IF .A%FT .A%XW %RET $END
+  %DUP $xsl isFnLarge  $IF .A%FT .A%XLW %RET $END
   .A%FT .A%JMPW
 
 $FN _compConstant $PRE \ {asNow} -> {&keyFn[nullable]}
@@ -1196,13 +1196,13 @@ $FN c_single $PRE
   \ Handle constants, return if it compiled the token.
   %DUP $_SET asNow $xsl _compConstant %DUP $_SET key %RETZ
   \ if pre, recursively call fngiSingle (compile next token first)
-  $GET key $xsl isFnPre $IF $GET c_compFn .A%XW $END \ recurse for PRE
+  $GET key $xsl isFnPre $IF $GET c_compFn .A%XLW $END \ recurse for PRE
   $GET key $xsl isFnSyn $IF $GET asNow $GET key $jmpl execute    $END
   $GET key $xsl isFnNow $IF $GET asNow @E_cReqNow$L2 $xsl assert $END
   $GET key $GET asNow $IF  $jmpl execute  $END  $jmpl c_fn
 
 $FN fngiSingle \ base c_compFn for fngi tokens.
-  #0$h1 $LARGE \ not really any locals (but called with XW)
+  #0$h1 $LARGE \ not really any locals (but called with XLW)
   $xsl c_scan $GET c_tokenLen %RETZ
   @FALSE$L0 $xl c_single %RET
 
@@ -1214,7 +1214,7 @@ $FN (  $SYN%DRP  \ parens ()
   $xsl c_assertToken
   $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END \ return if we hit ")"
   $LOOP l0
-    $GET c_compFn .A%XW
+    $GET c_compFn .A%XLW
     $xsl c_assertToken
     $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END \ return if we hit ")"
   $AGAIN l0
@@ -1272,7 +1272,7 @@ $FN -> $SYN%DRP %RET
 $FN c_fngi \ fngi compile loop
   $LOOP l0
     $GET c_tokenSize %RETZ \ exit on EOF
-    $GET c_compFn .A%XW
+    $GET c_compFn .A%XLW
   $AGAIN l0
 
 $c_dictDump

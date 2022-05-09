@@ -139,7 +139,7 @@ typedef enum {
 
   // Jmp
   JMPL = 0x80, JMPW = 0x81, JZL  = 0x82, JTBL = 0x83,
-  XL   = 0x84, XW   = 0x85, XSL  = 0x86, XSW  = 0x87,
+  XLL  = 0x84, XLW  = 0x85, XSL  = 0x86, XSW  = 0x87,
 
   // Mem
   FT   = 0xC0, FTO  = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
@@ -749,14 +749,14 @@ JMPW: case SzI2 + JMPW:
 JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
     GOTO_SZ(JTBL, SzI1)
     GOTO_SZ(JTBL, SzI4)
-XL: case SzI2 + XL:
+XLL: case SzI2 + XLL:
       return xImpl(toAptr(popLit(szI), szI));
-    GOTO_SZ(XL, SzI1)
-    GOTO_SZ(XL, SzI4)
-XW: case SzI2 + XW:
+    GOTO_SZ(XLL, SzI1)
+    GOTO_SZ(XLL, SzI4)
+XLW: case SzI2 + XLW:
       return xImpl(toAptr(WS_POP(), szI));
-    GOTO_SZ(XW, SzI1)
-    GOTO_SZ(XW, SzI4)
+    GOTO_SZ(XLW, SzI1)
+    GOTO_SZ(XLW, SzI4)
 XSL: case SzI2 + XSL:
       return xsImpl(toAptr(popLit(szI), szI));
     GOTO_SZ(XSL, SzI1)
@@ -1032,7 +1032,7 @@ U1 scanInstr() {
   Key* key = Dict_key(d, offset);
   if(TY_FN_SYN & key->meta) WS_PUSH(FALSE); // pass asNow=FALSE
   WS_PUSH(key->value);
-  if(TY_FN_LARGE & key->meta) execute(SzI4 + XW);
+  if(TY_FN_LARGE & key->meta) execute(SzI4 + XLW);
   else                        execute(SzI4 + XSW);
 }
 
@@ -1117,7 +1117,7 @@ void deviceOpCatch() {
   if(setjmp(local_err_jmp)) {
     // got error, handled below
   } else {
-    execute(SzI4 + XW);
+    execute(SzI4 + XLW);
   }
 
   // ALWAYS Reset ep, call, and local stack and clear WS.
@@ -1519,13 +1519,13 @@ void dbgJmp(Instr instr) {
   switch (INSTR_NO_SZ(instr)) {
     case JMPL:
     case JZL:
-    case XL:
+    case XLL:
     case XSL:
       if(_dbgMemInvalid(szI, env.ep)) break;
       jloc = toAptr(fetchBE(mem, env.ep, szI), SzI2);
       break;
     case JMPW:
-    case XW:
+    case XLW:
     case XSW:
       if (!WS_LEN) return;
       jloc = fetch(env.ws.mem, env.ws.sp, SzIA); break;
@@ -1580,8 +1580,8 @@ static inline Bool isExecute(Instr instr) {
   switch ((~SZ_MASK) & instr) {
     case JMPL: return (SZ_MASK & instr) != SzI1;
     case JMPW:
-    case XL:
-    case XW:
+    case XLL:
+    case XLW:
     case XSL:
     case XSW: return TRUE;
     default: return instr == RET;

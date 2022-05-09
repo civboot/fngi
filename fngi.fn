@@ -46,7 +46,7 @@ FN *    PRE SYN IF() spor%MUL    ELSE $c1(MUL )   END ret;
 FN /    PRE SYN IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
 
 FN xsw  PRE SYN assertNoNow(_) $c1(SZA+XSW) ret;
-FN xw   PRE SYN assertNoNow(_) $c1(SZA+XW)  ret;
+FN xw   PRE SYN assertNoNow(_) $c1(SZA+XLW)  ret;
 
 
 \ memSet: {dst v len}   "dst = v"

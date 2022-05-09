@@ -243,7 +243,7 @@ $test_c_compFnExists  @fngiSingle $tAssertEq
 
 $c_peekChr $one  #1 $tAssertEq  #24 $tAssertEq \ 0x24 = '$'
 
-$FN comp1 .4%XW %RET
+$FN comp1 .4%XLW %RET
 
 $FN testFngiSingleNum @fngiSingle $comp1 12 %RET
 $testFngiSingleNum #C $tAssertEq   $assertWsEmpty
