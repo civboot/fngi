@@ -77,7 +77,30 @@ to be evolved.
 ./fngi --compile --test --syslog=LOG_COMPILER --log=LOG_INFO
 ```
 
-You can also add `--valgrind` for detecting memory and other issues.
+> You can also add `--valgrind` for detecting memory and other issues.
+
+Quick code walkthrough:
+
+- `fngi`: a python file which acts as the "harness" for compiling and running
+  spor with the right flags, as well as interpreting the zoab bytes and printing
+  them to stdout. See `harness/README.md` for more details.
+- `spor.c`: the vm and spor assembly interpreter. A single C file with no
+  dependencies. `./fngi` compiles it, see `def compileSpore():` Note that
+  command line args are passed by `fngi` and are not intended for direct human
+  use (they are raw hex).
+  - `int main(...)` function is the main function of spor/fngi.
+  - `void tests()` runs the tests.
+- `spor.sp` a file written in spor assembly. `spor.c` compiles it before
+  compiling fngi. It bootstraps the fngi compiler (`$FN c_fngi`), along with
+  other "essential" functions like comments, parens, and an inline-spor
+  function. Contains a Table of Contents at the top to point you to different
+  sections and inline documentation.
+- `fngi.fn` (under development) a file written in an early-version of fngi which
+  boostraps from `spor.sp` into a more full-featured language.
+- `tests/` contains a test file for both spor and fngi. These are run by
+  `spor.c` after compiling `spor.sp` and `fngi.fn`. Any new or experimental code
+  could be added here, and eventually be added to a library (once we've built
+  modules...)
 
 ## Contributing
 
