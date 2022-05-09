@@ -326,55 +326,66 @@
 #E0B1  #0=E_ptrBlk      \ invalid block ptr
 #E0B2  #0=E_aaPo2       \ invalid po2
 
-\ **********
-\ * [4] Globals: many of these must be the same as in spor.c
-#0000_0004 #0=heap
-#0000_0008 #0=topHeap
-#0000_000C #0=topMem
-#0000_0010 #0=err      \ U2
-#0000_0012 #0=c_state  \ U2
-\ #0000_0014 #0=_unimpl1
-\ #0000_0018 #0=_unimpl2
-#0000_001C #0=sysLogLvl
-#0000_001E #0=usrLogLvl
-
-\ Dictionary Struct
-#0000_0020 #0=c_gdictRef   \ U4
-#0000_0024 #0=c_gdictLen   \ U2
-#0000_0026 #0=c_gdictCap   \ U2
-
-#0000_0028 #0=c_ldictRef  \ U4
-#0000_002C #0=c_ldictLen  \ U2
-#0000_002E #0=c_ldictCap  \ U2
-
-\ TokenBuf Struct
-#0000_0030 #0=c_tokenBuf   \ [APtr] TokenBuf struct
-#0000_0034 #0=c_tokenLen   \ [U2] length of token
-#0000_0036 #0=c_tokenSize  \ [U2] characters buffered
-#0000_0038 #0=c_tokenGroup \ [U1] token group
-
-\ Global Error Variables
-#0000_003C #0=c_errValTy     \ [U1] + 3align
-#0000_0040 #0=c_dataASz      \ [U2]
-#0000_0042 #0=c_dataBSz      \ [U2]
-#0000_0044 #0=c_errVal1      \ [U4]
-#0000_0048 #0=c_errVal2      \ [U4]
-#0000_004C #0=c_msg          \ [APtr]
-
-\ Block allocator (12 bytes, see fngi.fn)
-#0000_0050 #0=BA_kernel
-
-\ Global Compiler Variables
-#0000_005C #0=c_gkey         \ [U4] current gdict &key
-#0000_0060 #0=c_lkey         \ [U4] current ldict &key
-#0000_0064 #0=c_gheap        \ [U4] global heap
-#0000_0068 #0=c_localOffset  \ [U2] Local Offset (for local var setup)
 
 #00  #0=ERR_DATA_NONE
 #01  #0=ERR_DATA_INT1
 #02  #0=ERR_DATA_DATA1
 #03  #0=ERR_DATA_INT2
 #04  #0=ERR_DATA_DATA2
+
+\ **********
+\ * [4] Globals: many of these must be the same as in spor.c
+
+@TY_FN=_h  .A%FTGL #4.2,  %RET \ { -> heap} get the heap
+
+$_h @_FP=select \ {a b s -> a|b} a if s else b
+  .1%JZL #3.1, %DRP %RET \ if(s) ret a
+  %SWP %DRP %RET         \ ret b
+@INC2 @INC4  @ASIZE #2 ^EQ  $select #0=INCA
+@SZ2 @SZ4    @ASIZE #2 ^EQ  $select #0=SZA
+#1   #2      @ASIZE #2 ^EQ  $select #0=APO2
+
+#0000_0004 @TY_VAR@SZA^JN=heap
+#0000_0008 @TY_VAR@SZA^JN=topHeap
+#0000_000C @TY_VAR@SZA^JN=topMem
+#0000_0010 @TY_VAR@SZ2^JN=err
+#0000_0012 @TY_VAR@SZ2^JN=c_state  \ U2
+\ #0000_0014 #0=_unimpl1
+\ #0000_0018 #0=_unimpl2
+#0000_001C @TY_VAR@SZ2^JN=sysLogLvl
+#0000_001E @TY_VAR@SZ2^JN=usrLogLvl
+
+\ Dictionary Struct
+#0000_0020 @TY_VAR@SZA^JN=c_gdictRef   \ U4
+#0000_0024 @TY_VAR@SZ2^JN=c_gdictLen   \ U2
+#0000_0026 @TY_VAR@SZ2^JN=c_gdictCap   \ U2
+
+#0000_0028 @TY_VAR@SZA^JN=c_ldictRef  \ U4
+#0000_002C @TY_VAR@SZ2^JN=c_ldictLen  \ U2
+#0000_002E @TY_VAR@SZ2^JN=c_ldictCap  \ U2
+
+\ TokenBuf Struct
+#0000_0030 @TY_VAR@SZA^JN=c_tokenBuf   \ [APtr] TokenBuf struct
+#0000_0034 @TY_VAR@SZ2^JN=c_tokenLen   \ [U2] length of token
+#0000_0036 @TY_VAR@SZ2^JN=c_tokenSize  \ [U2] characters buffered
+#0000_0038 @TY_VAR@SZ1^JN=c_tokenGroup \ [U1] token group
+
+\ Global Error Variables
+#0000_003C @TY_VAR@SZ1^JN=c_errValTy     \ [U1] + 3align
+#0000_0040 @TY_VAR@SZ2^JN=c_dataASz      \ [U2]
+#0000_0042 @TY_VAR@SZ2^JN=c_dataBSz      \ [U2]
+#0000_0044 @TY_VAR@SZA^JN=c_errVal1      \ [U4]
+#0000_0048 @TY_VAR@SZA^JN=c_errVal2      \ [U4]
+#0000_004C @TY_VAR@SZA^JN=c_msg          \ [APtr]
+
+\ Block allocator (12 bytes, see fngi.fn)
+#0000_0050 #0=BA_kernel
+
+\ Global Compiler Variables
+#0000_005C @TY_VAR@SZA^JN=c_gkey         \ [U4] current gdict &key
+#0000_0060 @TY_VAR@SZA^JN=c_lkey         \ [U4] current ldict &key
+#0000_0064 @TY_VAR@SZA^JN=c_gheap        \ [U4] global heap
+#0000_0068 @TY_VAR@SZ2^JN=c_localOffset  \ [U2] Local Offset (for local var setup)
 
 \ **********
 \ * [5] Bootstrap Macros
@@ -397,14 +408,6 @@
 \ Test Assertions: these panic with E_test if the cond is not met.
 \   tAssert, tAssertNot, tAssertEq
 
-@TY_FN=_h  .A%FTGL @heap.2,  %RET \ { -> heap} get the heap
-
-$_h @_FP=select \ {a b s -> a|b} a if s else b
-  .1%JZL #3.1, %DRP %RET \ if(s) ret a
-  %SWP %DRP %RET         \ ret b
-@INC2 @INC4  @ASIZE #2 ^EQ  $select #0=INCA
-@SZ2 @SZ4    @ASIZE #2 ^EQ  $select #0=SZA
-#1   #2      @ASIZE #2 ^EQ  $select #0=APO2
 
 $_h @_FP=h1  \ h1: {val:1} push 1bytes from stack to heap
   .A%FTGL @heap.2, .1%SR    \ store 1 byte value at heap
@@ -538,7 +541,6 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 \ fn c_updateGkey [ -> &key]      : update gkey=dictLen and return it
 \ fn ldictRef / ldictArgs / ldictLen  : interface directly with local dict
 \ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
-\ fn c_makeTy <token> [<dictArgs> meta]      : make token be typed meta
 \ fn c_dictSetMeta [<dictArgs> meta:U1 &key] : update dict key meta
 \
 \ Note: any SYN function must be prefixed with asNow (typically #0)
@@ -582,17 +584,19 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 
 @L2 @L4    @ASIZE #2 ^EQ  $select @_FP=LA \ {UA} comipile ASIZE literal
 
-@_FP$loc keyMeta \ SYN {&key -> meta}
+@_FP@TY_FN_SYN^JN$loc keyMeta \ {&key -> meta}
   .1%JZL #4$h1 %INCA .1%FT %RET \ if(asNow) get it
   @INCA $c1
   @SZ1 @FT ^JN  $c1 %RET
 
 \ These take {&key} and tell information about it
-@_FP$loc isTyConst   #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
-@_FP$loc isTyFn      #0$keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
-@_FP$loc isFnLarge   #0$keyMeta  @TY_FN_LARGE$L1 %MSK %RET
+@_FP$loc isTyConst   $keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
+@_FP$loc isTyFn      $keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
+@_FP$loc isFnLarge   $keyMeta  @TY_FN_LARGE$L1 %MSK %RET
 @_FP$loc assertNotNull @E_null$L2 $_jmpl assert
 @_FP$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [&key] -> []
+@TY_FN$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
+$assertWsEmpty
 
 @_FP$loc assertFnSmall \ [&key]
   %DUP $_xsl assertFn
@@ -650,51 +654,16 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
   %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
   @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
+
 \ example: $FN <token> $SYN $LARGE: declare a function with attributes.
-@TY_FN$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
-$assertWsEmpty
-@TY_FN@TY_FN_SYN^JN$loc FN      $_xsl assertNoNow $_xsl assertWsEmpty
-                   @TY_FN$L1 $_xsl locK %DRP %RET
+@TY_FN@TY_FN_SYN^JN$loc FN
+  $_xsl assertNoNow $_xsl assertWsEmpty @TY_FN$L1 $_xsl locK %DRP %RET
 @TY_FN@TY_FN_SYN^JN$loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmpl c_keyJnMeta
 @TY_FN@TY_FN_SYN^JN$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
 @TY_FN@TY_FN_SYN^JN$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
-
-\ Backfill the fn meta
-@_FP$loc c_makeTy \ {<dictArgs> meta} make an existing symbol a type.
-  $_xsl gdictGetK  $_jmpl c_dictSetMeta
-
-\ {{meta} <token>}: set meta for token to be a small function.
-$FN c_makeFn  $LARGE \ note: asNow=#0 for SYN
-  #1$h1  \ locals: 0=meta:U1
-  .1%SRLL#0$h1  $_xsl gdictArgs .1%FTLL#0$h1 \ {<dictArgs> meta}
-  @TY_FN$L1 %JN   $_jmpl c_makeTy
-
 @TY_FN@TY_FN_SYN^JN$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
 
 $assertWsEmpty
-#0 $c_makeFn assertWsEmpty
-@TY_FN_PRE $c_makeFn L0    @TY_FN_PRE $c_makeFn L1
-@TY_FN_PRE $c_makeFn L2    @TY_FN_PRE $c_makeFn L4
-@TY_FN_PRE $c_makeFn LA
-@TY_FN_PRE @TY_FN_NOW ^JN  $c_makeFn c1
-#0 $c_makeFn gdictSet
-#0 $c_makeFn gdictGet        #0 $c_makeFn gdictGetK
-#0 $c_makeFn gdictArgs
-@TY_FN_PRE $c_makeFn toMod  #0 $c_makeFn curMod
-@TY_FN_PRE @TY_FN_SYN ^ADD $c_makeFn keyMeta
-@TY_FN_PRE  $c_makeFn isTyConst  @TY_FN_PRE $c_makeFn isTyFn
-@TY_FN_PRE $c_makeFn isSameMod   @TY_FN_PRE $c_makeFn isCurMod
-@TY_FN_PRE $c_makeFn isFnLarge
-#0 $c_makeFn c_updateGkey
-@TY_FN_PRE $c_makeFn c_keyJnMeta
-@TY_FN_PRE $c_makeFn c_dictSetMeta
-#0 $c_makeFn c_makeTy
-@TY_FN_PRE $c_makeFn assert         @TY_FN_PRE $c_makeFn assertNot
-@TY_FN_PRE $c_makeFn assertNotNull  @TY_FN_PRE $c_makeFn tAssert
-@TY_FN_PRE $c_makeFn tAssertNot     @TY_FN_PRE $c_makeFn tAssertEq
-@TY_FN_PRE $c_makeFn assertFn       @TY_FN_PRE $c_makeFn assertFnSmall
-@TY_FN_PRE $c_makeFn assertFnLarge  @TY_FN_PRE $c_makeFn assertCurMod
-@TY_FN_PRE $c_makeFn assertNoNow
 
 $FN isFnPre     $PRE $keyMeta  @TY_FN_PRE$L1     %MSK %RET
 $FN isVarInput  $PRE $keyMeta  @TY_VAR_INPUT$L1  %MSK %RET
@@ -1009,30 +978,6 @@ $FN GET  $SYN
 
 $FN _SET $SYN
   $xsl assertNoNow $xsl c_scan $xsl dictK $jmpl _setImpl
-
-$FN c_makeGlobal $PRE \ {szI} <token>: set meta for token to be a global.
-  $LARGE #1$h1 \ locals 0=szI:u1
-  .1%SRLL#0$h1  $xsl gdictArgs .1%FTLL#0$h1 \ {<dictArgs> szI}
-  @TY_VAR$L1  %JN   $_jmpl c_makeTy
-
-@SZA $c_makeGlobal heap        @SZA $c_makeGlobal topHeap
-@SZA $c_makeGlobal topMem      @SZ2 $c_makeGlobal err
-@SZ2 $c_makeGlobal c_state
-@SZ2 $c_makeGlobal sysLogLvl   @SZ2 $c_makeGlobal usrLogLvl
-@SZA $c_makeGlobal c_gdictRef   @SZ2 $c_makeGlobal c_gdictLen
-@SZ2 $c_makeGlobal c_gdictCap
-@SZA $c_makeGlobal c_ldictRef   @SZ2 $c_makeGlobal c_ldictLen
-@SZ2 $c_makeGlobal c_ldictCap
-@SZA $c_makeGlobal c_tokenBuf  @SZ2 $c_makeGlobal c_tokenLen
-@SZ2 $c_makeGlobal c_tokenSize @SZ1 $c_makeGlobal c_tokenGroup
-@SZ1 $c_makeGlobal c_errValTy
-@SZ2 $c_makeGlobal c_dataASz   @SZ2 $c_makeGlobal c_dataBSz
-@SZA $c_makeGlobal c_errVal1   @SZA $c_makeGlobal c_errVal2
-@SZA $c_makeGlobal c_msg
-@SZA $c_makeGlobal BA_kernel
-
-@SZA $c_makeGlobal c_gkey      @SZA $c_makeGlobal c_lkey
-@SZA $c_makeGlobal c_gheap     @SZ2 $c_makeGlobal c_localOffset
 
 \ **********
 \ * Local Variables
