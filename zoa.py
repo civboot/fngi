@@ -18,7 +18,7 @@ def isbytes(v): return isinstance(v, (bytes, bytearray))
 @dataclass
 class ZoaRaw(object):
   data: bytearray
-  arr: list["ZoaRaw"]
+  arr: List["ZoaRaw"]
 
   @classmethod
   def from_bytes(cls, value):
@@ -84,7 +84,7 @@ def write_data(bw: io.BytesIO, data: bytes):
   write_byte(bw, len(data) - i) # note: not joined
   bw.write(data[i:])
 
-def write_arr(bw: io.BytesIO, arr: list[ZoaRaw]):
+def write_arr(bw: io.BytesIO, arr: List[ZoaRaw]):
   i = 0
   while True:
     remaining = len(arr) - i

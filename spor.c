@@ -647,9 +647,9 @@ inline static void executeInstr(Instr instr) {
       if(WS_POP()) return;
       // intentional fallthrough
     case RET:
-      U4 cont = Stk_pop(&env.cs);
+      r = Stk_pop(&env.cs);
       Stk_shrink(&env.ls, Stk_popU1(&env.lsSz) << APO2);
-      env.ep = cont;
+      env.ep = r;
       return;
     case SWP:
       r = WS_POP();
