@@ -473,14 +473,15 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
     %SUB  .2%SRGL @c_ldictCap$h2 \ ldictCap = kdictCap - kdictLen
   #0$L0 .2%SRGL @c_localOffset$h2 %RET
 
+
 \ Assert checks a condition or panics with an error
 \ ex: <some check> @E_myError assert
+@_FP@TY_FN_INLINE^JN $loc assert #2$h1 @D_assert$L0 %DVFT %RET  \ note: inline function
 @_FP$loc assertNoNow  .2%LIT @E_cNoNow$h2 \ [fallthrough]
-@_FP$loc assertNot    %SWP %NOT %SWP      \ [fallthrough]
-@_FP$loc assert       @D_assert$L0     %DVFT  %RET
-@_FP$loc tAssert      .2%LIT @E_test$h2 %JMPL @assert $h2
+@_FP$loc assertNot    %SWP %NOT %SWP  @D_assert$L0 %DVFT %RET
+@_FP$loc tAssert      .2%LIT @E_test$h2 @D_assert$L0 %DVFT %RET
 @_FP$loc tAssertNot   %NOT .2%JMPL @tAssert,
-@_FP$loc assertLt128   .1%LIT #80$h1 %LT_U  .2%LIT @E_cJmpL1$h2 .2%JMPL @assert$h2
+@_FP$loc assertLt128   .1%LIT #80$h1 %LT_U  .2%LIT @E_cJmpL1$h2 @D_assert$L0 %DVFT %RET
 @_FP$loc tAssertEq \ {a b}
    @ERR_DATA_INT2$L0  .1%SRGL @c_errValTy$h2
         .A%SRGL @c_errVal2$h2 \ b {a}
@@ -588,8 +589,8 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 @_FP$loc isTyConst   $keyMeta  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
 @_FP$loc isTyFn      $keyMeta  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
 @_FP$loc isFnLarge   $keyMeta  @TY_FN_LARGE$L1 %MSK %RET
-@_FP$loc assertNotNull @E_null$L2 $_jmpl assert
-@_FP$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $_jmpl assert \ [&key] -> []
+@_FP$loc assertNotNull @E_null$L2 $assert %RET
+@_FP$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $assert %RET \ [&key] -> []
 @TY_FN$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
 $assertWsEmpty
 
@@ -599,7 +600,7 @@ $assertWsEmpty
 
 @_FP$loc assertFnLarge \ [&key]
   %DUP $_xsl assertFn
-  $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assert
+  $_xsl isFnLarge  @E_cIsX $L2  $assert %RET
 
 @_FP$loc toMod @MOD_MASK $L4 %MSK %RET \ {ref} -> {mod}
 @_FP$loc isSameMod \ {ref ref} -> {sameMod}
@@ -607,7 +608,7 @@ $assertWsEmpty
 
 @_FP$loc curMod   .2%FTGL @c_gkey$h2 .A%FT  $_jmpl toMod \ [] -> [mod]
 @_FP$loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
-@_FP$loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $_jmpl assert
+@_FP$loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $assert %RET
 
 @_FP$loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall
@@ -674,17 +675,16 @@ $FN isFnNow     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
 $FN isFnSyn     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
 $FN isFnInline  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
 $FN isTyVar     $PRE $keyMeta  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
-$FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $jmpl assert
+$FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $assert %RET
 
-$FN c_scan        @D_scan$L0   %DVFT %RET
-$FN panic   $PRE #0$L0 %SWP  $jmpl assert \ {errCode}: panic with errCode
-$FN unreach      @E_unreach$L2 $jmpl panic \ {}: assert unreachable code
-$FN unimplIfTrue $PRE @E_unimpl$L2 $jmpl assert \ {}: if true raise unimpl
+$FN c_scan       $INLINE @D_scan$L0 %DVFT $END_INLINE %RET
+$FN panic   $PRE $INLINE #0$L0 %SWP  $assert $END_INLINE \ {errCode}: panic with errCode
+$FN unreach      @E_unreach$L2 $panic \ {}: assert unreachable code
+$FN unimplIfTrue $PRE @E_unimpl$L2 $assert %RET \ {}: if true raise unimpl
 $FN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
-
 $FN assertSzI $PRE \ {szI}
   %DUP #CF$L1 %MSK @E_cSz$L2 $xsl assertNot \ non-sz bits empty
-  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $jmpl assert \ sz bits < 3
+  #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $assert %RET \ sz bits < 3
 
 $FN ftoN $NOW  \ {offset szI} compile FTO szI w/offset
   %DUP $xsl assertSzI  @FTO$L1 %ADD $xsl h1 $jmpl h1
@@ -696,7 +696,7 @@ $c_dictDump
 $FN ldictArgs \ {} -> dictArgs
   @c_ldictRef$L2 %RET \ TODO: add R_GB to it.
 
-$FN _ldict $xsl c_scan $jmpl ldictArgs
+$FN _ldict $c_scan $jmpl ldictArgs
 $FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
 $FN ldictSet   $PRE #0$L0 $xsl _ldict @D_dict$L0  %DVSR %RET
 $FN ldictGetK  $xsl _ldict @D_dictK$L0 %DVFT %RET
@@ -772,19 +772,19 @@ $FN szIToSz $PRE \ {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
   %DUP @SZ2$L1 %EQ $IF  %DRP #2$L0 %RET  $END
        @SZ4$L1 %EQ $IF       #4$L0 %RET  $END
-  @E_cSz$L2 $xsl panic
+  @E_cSz$L2 $panic
 
 $FN hN $PRE \ {value szI} write a value of szI to heap
   %DUP @SZ1$L1 %EQ $IF  %DRP $jmpl h1  $END
   %DUP @SZ2$L1 %EQ $IF  %DRP $jmpl h2  $END
   %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
-  @E_cSz$L2 $xsl panic
+  @E_cSz$L2 $panic
 
 $FN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
   %DUP #2$L0 %EQ $IF  %DRP @SZ2 $L1 %RET  $END
        #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
-  @E_cSz$L2 $xsl panic
+  @E_cSz$L2 $panic
 
 $FN reqAlign $PRE \ {sz -> sz}: get required alignment
   %DUP @ASIZE$L0 %DEC %LT_U $retif  %DRP @ASIZE$L0 %RET
@@ -800,44 +800,42 @@ $FN align $LARGE $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
   $END
   %DRP %RET
 
-$FN alignA $PRE $xsl reqAlign $xl align %RET \ {aptr sz -> aptr}: align to SZA
-$FN align4 $PRE #4$L0 $xl align %RET \ {addr -> aligned4Addr}
+$FN alignA   $PRE $xsl reqAlign $xl align %RET  \ {aptr sz -> aptr}: align to SZA
+$FN align4   $PRE #4$L0 $xl align %RET          \ {addr -> aligned4Addr}
 $FN alignSzI $PRE $xsl szIToSz  $xl align  %RET \ {addr szI -> addrAlignedSzI}
 
 $FN ftSzI \ {&addr szI}
   %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
   %DUP @SZ2$L1 %EQ $IF %DRP .2%FT %RET $END
        @SZ4$L1 %EQ $IF      .4%FT %RET $END
-  @E_cSz$L2 $jmpl panic
+  @E_cSz$L2 $panic
 
 $FN srSzI \ {value &addr szI}
   %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
   %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
        @SZ4$L1 %EQ $IF      .4%SR %RET $END
-  @E_cSz$L2 $jmpl panic
+  @E_cSz$L2 $panic
 
 $FN c_isEof .2%FTGL@c_tokenLen$h2 %NOT %RET
-$FN c_assertToken .2%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $jmpl assert
-$FN c_assertNoEof $PRE @E_eof$L2 $jmpl assert \ {numRead}
+$FN c_assertToken .2%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $assert %RET
+$FN c_assertNoEof $PRE @E_eof$L2 $assert %RET \ {numRead}
 
 $FN c_scanNoEof
-  $xsl c_scan
+  $c_scan
   $xsl c_isEof
   @E_eof$L2 $jmpl assertNot
 
 $FN c_peekChr \ {} -> {c} peek at a character
-  $xsl c_scan
+  $c_scan
   $xsl c_isEof $IF  #0$L0 %RET  $END
   .A%FTGL@c_tokenBuf$h2 .1%FT \ {c}
   #0$L0 .2%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
 
-$FN c_read \ { -> numRead} attempt to read bytes
-  #1$L0 @D_read$L0 %DVFT %RET
-
+$FN c_read $INLINE #1$L0 @D_read$L0 %DVFT $END_INLINE %RET \ { -> numRead}
 $FN c_readNew \ { -> numRead} clear token buf and read bytes
   #0$L0 .2%SRGL@c_tokenLen$h2
   #0$L0 .2%SRGL@c_tokenSize$h2
-  #1$L0 @D_read$L0 %DVFT %RET
+  $c_read %RET
 
 $FN c_clearToken \ shift buffer to clear current token
   .A%FTGL@c_tokenBuf$h2                 \ {&tokenBuf}
@@ -851,7 +849,7 @@ $FN dictK \ {} -> {&key isFromLocal}
   $END %DRP
   $xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @FALSE$L0 %RET
-  $END @E_cNotType$L2 $xsl panic
+  $END @E_cNotType$L2 $panic
 
 $FN c_updateLkey \ [] -> [&key] update and return current local key
   .A%FTGL @c_ldictRef$h2 \ dict.buf
@@ -945,30 +943,30 @@ $FN gRef $NOW \ [<token> -> &gref] get token's global reference
 $FN _refImpl \ {}
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _varSetup \ {&key}
-    .A%FT %DUP #40$L1 %LT_U @E_cReg$L2 $xsl assert \ {offset}
+    .A%FT %DUP #40$L1 %LT_U @E_cReg$L2 $assert \ {offset}
     @R_LP$L1 %JN  \ {LpOffset}: offset is lower 7 bits
     @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
   $xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
     $xsl _varSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
-  $END @E_cNotType$L2 $xsl panic
+  $END @E_cNotType$L2 $panic
 
 $FN REF  $SYN
   $IF \ asNow: we can get &fn or &global
     $xsl kdictGetK \ next: assert(isTyVar or isTyFn)
       %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
-      @E_cNotType$L2 $xsl assert
+      @E_cNotType$L2 $assert
     .A%FT %RET
   $END \ else: we can get &local or &global
-  $xsl c_scan $jmpl _refImpl
+  $c_scan $jmpl _refImpl
 
 $FN GET  $SYN
   $IF  $xsl kdictGetK $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
        %SWP .A%FT %SWP $jmpl ftSzI   $END
-  $xsl c_scan $xsl dictK $jmpl _getImpl
+  $c_scan $xsl dictK $jmpl _getImpl
 
 $FN _SET $SYN
-  $xsl assertNoNow $xsl c_scan $xsl dictK $jmpl _setImpl
+  $xsl assertNoNow $c_scan $xsl dictK $jmpl _setImpl
 
 \ **********
 \ * Local Variables
@@ -1172,7 +1170,7 @@ $FN _compConstant $PRE \ {asNow} -> {&keyFn[nullable]}
 
   \ Handle local dictionary. Only constants allowed here.
   $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {asNow &key}
-    %DUP $xsl isTyConst  @E_cNotFnOrConst$L2 $xsl assert
+    %DUP $xsl isTyConst  @E_cNotFnOrConst$L2 $assert
     .A%FT $xsl c_lit  #0$L0 %RET
   $END %DRP \ {asNow}
   $xsl kdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
@@ -1199,25 +1197,25 @@ $FN c_single $PRE
   %DUP $_SET asNow $xsl _compConstant %DUP $_SET key %RETZ
   $GET key $xsl isFnPre $IF $GET c_compFn .A%XLW $END \ recurse for PRE
   $GET key $xsl isFnSyn $IF $GET asNow $GET key $jmpl execute    $END
-  $GET key $xsl isFnNow $IF $GET asNow @E_cReqNow$L2 $xsl assert $END
+  $GET key $xsl isFnNow $IF $GET asNow @E_cReqNow$L2 $assert $END
   $GET key $GET asNow $IF  $jmpl execute  $END  $jmpl c_fn
 
 $FN fngiSingle \ base c_compFn for fngi tokens.
   #0$h1 $LARGE \ not really any locals (but called with XLW)
-  $xsl c_scan $GET c_tokenLen %RETZ
+  $c_scan $GET c_tokenLen %RETZ
   @FALSE$L0 $xl c_single %RET
 
 @fngiSingle $c_updateCompFn ^DRP
 
-$FN c_number $xsl c_scan $xl c_parseNumber %RET \ compile next token as number.
+$FN c_number $c_scan $xl c_parseNumber %RET \ compile next token as number.
 
 $FN (  $SYN%DRP  \ parens ()
   $xsl c_assertToken
-  $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END \ return if we hit ")"
+  $xsl c_peekChr #29$L0 %EQ $IF  $c_scan %RET  $END \ return if we hit ")"
   $LOOP l0
     $GET c_compFn .A%XLW
     $xsl c_assertToken
-    $xsl c_peekChr #29$L0 %EQ $IF  $jmpl c_scan  $END \ return if we hit ")"
+    $xsl c_peekChr #29$L0 %EQ $IF  $c_scan %RET  $END \ return if we hit ")"
   $AGAIN l0
 
 $FN _spor
@@ -1249,7 +1247,7 @@ $FN _comment \ used in \ to make next token ignored (comment)
 \ {-> c} peek at the char after current token.
 $FN c_peekNoScan
   $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
-    $xsl c_read $xsl c_assertNoEof \ ensure a char exists
+    $c_read $xsl c_assertNoEof \ ensure a char exists
   $END
   $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT %RET
 
