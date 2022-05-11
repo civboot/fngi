@@ -1,12 +1,13 @@
 # Code Dump: where code goes to die
 
-## fetch/store local offset
+## Fetch/Store Local Offset
 
 This was replaced by FTO and SRO
 
 
 In C:
-```
+
+```c
 FTLO: case SzI2 + FTLO:
     l = fetch(mem, LS_SP + popLit(SzI1), SzIA); // &local
     return WS_PUSH(fetch(mem, l + popLit(SzI1), szI)); // fetch offset
@@ -20,7 +21,8 @@ SRLO: case SzI2 + SRLO:
 ```
 
 In spor test:
-```
+
+```spor
 \ Test FTLO
 
 #1234 @SZ4 $GLOBAL gStruct
@@ -47,8 +49,9 @@ $testFTSRLocalOffset
 
 ```
 
-# Dot
-```
+## Dot
+
+```spor
 \ # Dot Compiler (.compiler)
 \ The below is the initial compiler for below cases:
 \   .var               \ variable fetch
@@ -92,8 +95,9 @@ $c_dotRefs @@       #2 @DOT_DEREF ^ADD $tAssertEq
 $c_dotRefs          #0                 $tAssertEq
 ```
 
-# Zoa in spor
-```
+## Zoa in spor
+
+```spor
 \ **********
 \ * [10] Zoa strings and logging zoab
 \ See ./harness.md for design reasoning.
@@ -163,8 +167,9 @@ $FN _printz  $PRE \ {&z}: print zoab bytes to user. (single segment)
   @D_comDone$L0 %DVFT %RET
 ```
 
-# Block Allocator
-```
+## Block Allocator
+
+```spor
 \ **********
 \ * Block Allocator (BA)
 \ The Block Allocator (BA) is used to allocate and free 4KiB blocks. It can
@@ -222,8 +227,7 @@ LFN BA_ptrToI PRE \ {&blk &ba -> bi}
   ret((GET blk - ft4(GET ba + BA_blocksOfs)) >> BA_blockPo2);
 ```
 
-
-```
+```spor
 SFN BA_iGet  PRE ret ft1(_ + ft4(_)) \ {bi &ba -> bi}
 SFN BA_iSet  PRE  \ {value bi &ba}  set ba@bi = value
   _ + ft4(_) \ {value &index}
@@ -304,7 +308,7 @@ SFN SLL_push PRE \ {&a &root}: Push a node onto the SLL
   ret sr4(\a, \root); \ root->a
 ```
 
-```
+```spor
 \ **********
 \ * Arena Allocator (AA)
 \ The arena budy allocator is built on top of the BA. It allows allocations of
@@ -414,7 +418,7 @@ LFN AA_allocPo2 PRE \ {po2 &aa -> &free} allocate memory of size po2
 $c_dictDump
 ```
 
-```
+```spor
 \ **********
 \ ** Test Block Allocator
 $tAssertEq(0xFF, BA_iNull)
@@ -565,7 +569,7 @@ $tAssertEq(GET AA_blk0 + (1<<10), AA_allocExactPo2(10, REF AA_fake))
 $tAssertEq(NULL                 , AA_allocExactPo2(11, REF AA_fake))
 ```
 
-```
+```spor
 \ All roots are now null
 $tAssertEq(NULL, ft4(REF AA_fake + (2<<2)))
 $tAssertEq(NULL, ft4(REF AA_fake + (3<<2)))

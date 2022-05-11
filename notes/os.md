@@ -1,4 +1,5 @@
 # Civboot OS
+
 The purpose of fngi (and spore) is to bootstrap into a Civboot OS. It also wants
 to be a general-purpose programming language outside of Civboot, but that is
 it's primary purpose.
@@ -14,6 +15,7 @@ behind a permissions model/etc. Interestingly, almost everything here makes it
 a better (more secure) general purpose language as well.
 
 The first point is that there needs to be some concept of the following:
+
 - ring: there is only ring0 and ring-other. ring0 can access and write to any
   memory and do anything. ring-other is a number between 1-127 which can only
   write to memory within it's ring.
@@ -23,6 +25,7 @@ The first point is that there needs to be some concept of the following:
 - permissions: a U32 containing permissions bits regarding what the proc can do.
 
 The basic architecture:
+
 - The interpreter keeps a bytearray where each byte represents a 4k block in
   system memory. This is called the memring. Each byte is a ring number where
   the highest bit represents whether the 4k block is globally readable.
@@ -33,6 +36,7 @@ The basic architecture:
 In the final Civboot, the above (or some version that is better which I haven't
 thought of yet) will be powered by the hardware. The advantages to the above
 are:
+
 - Low runtime cost w/out hardware, zero runtime cost with hardware. Register
   memory or a separate small (10-12 bit) bus could be used for the ring array
   to enable zero-cost checking of memory access. Possibly the memory itself
@@ -46,6 +50,7 @@ are:
   processes).
 
 ## Proc Model
+
 The core data type throughout the OS is the 4k block and the Arena allocator.
 Processes communicate by passing bvalues and arenas between eachother,
 where bvalue is the primary "root" value being communicated. Both can be null.
@@ -62,6 +67,7 @@ of entire blocks and arenas, reducing the glue that commonly exists between
 processes serializing and deserializing simple data.
 
 ## Device Registration
+
 Not all device operations need to be implemented by the native backend. Most
 will be "registered" and the native backend will simply execute them. Before
 executing them it will:
@@ -79,6 +85,7 @@ job to do appropriate permissions checking.
 DeviceId=0 is reserved for compiler-internal operations and will be protected
 by a permissions bit. DeviceId=1 will be used for "os" operations and uses
 various permissions bits. The operations include:
+
 - log for writing bvalue logs. Caller must drop bvalue.
 - env for fetching environment values.
 - block for de/allocing from the block allocator
@@ -98,5 +105,5 @@ various permissions bits. The operations include:
 > access things ergonomically.
 
 ## Permissions Bits
-TODO: need to define.
 
+TODO: need to define.

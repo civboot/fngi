@@ -5,6 +5,7 @@
 
 Spor is a stack-based assembler which borrows design princples from FORTH. It
 is designed for the following principles:
+
 - Self-bootstrapping in as little native code as possible, while still meeting
   the other goals.
 - Support the self-bootstrapping of fngi with shared utilities like a scanner,
@@ -25,7 +26,7 @@ values and a register to store the current instr "sz bits" of `SZ1`, `SZ2` or
 
 The syntax looks like
 
-```
+```spor
 \ (sfn means "small function" aka no locals)
 $SFN add1   \ [U4] -> [U4]: add one
   #1$L0       \ compile literal of 0x1
@@ -40,6 +41,7 @@ The assembler syntax is obsenely simple and fngi builds on top of it. It
 supports the following tokens.
 
 Pushing and setting stack values:
+
 - `\` starts a line comment which ends at the newline.
 - `.N` sets the sz bits (size) to N bytes, i.e. `.4` set's the global
   instruction size to 4 bytes (`SZ4`).
@@ -47,13 +49,14 @@ Pushing and setting stack values:
   `#1_2345` pushes 0x12345.
 - `=<token>` set's the dictionary entry for `<token>` to the value on the stack.
   i.e. `#42 =foo` would set `foo` to 0x42.
-- `@<token>` get's the dictionary entry for <token>`. I.e. `@foo` would put 0x42
+- `@<token>` get's the dictionary entry for `<token>`. I.e. `@foo` would put 0x42
   on the stack (assuming it had been set like above).
 - `,` pops a value from stack and writes it to heap and increments heap. The
   size is controlled by `.` (note: this is rarely used, pretty much just for
   bootstrapping h1, h2, etc).
 
 Compiling and executing instructions:
+
 - `%` compile the next token's dictionary value as an instruction. Does not
   clear sz bits (set by `.`).
 - `^` run the next token's dictionary value as an instruction. This is useful
@@ -64,7 +67,8 @@ Compiling and executing instructions:
   heap at the location in asm.
 
 From the above we can now break down this code:
-```
+
+```spor
 $SFN add1
   #1$L0
   %ADD %RET
@@ -81,4 +85,3 @@ execute as a literal. "Small" means the function has no locals stack.
 
 Read the full documentation in [spor.sp](./spor.sp). There is vim syntax
 highlighting in `etc/spor.vim`
-

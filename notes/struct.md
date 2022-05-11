@@ -2,7 +2,7 @@
 
 STRUCT's are defined with the following syntax:
 
-```
+```fngi
 STRUCT 0x40 Name [ // 64=size of TY_DICT dictionary for this struct.
   field1: U4
   field2: U4
@@ -16,14 +16,13 @@ STRUCT 0x40 Name [ // 64=size of TY_DICT dictionary for this struct.
 - field1-3 are keys in this other dictionary. They are `TY_FIELD`
   and have a pointer to their type and offset, among other things.
 
-
 Before `TY_DICT` can be implemented I must implement both block and buddy-arena
 alloctors.
 
 In the long-term (with the dot compiler) structs can be created using something
 like the following:
 
-```
+```fngi
 .foo = {
   field1 = 4;
   field2 = 5;
@@ -36,7 +35,7 @@ implement `VAR`, an untyped pre-cursor to the `.` compiler. This automatically
 handles recursive lookups. It does NOT handle assigning structs to a struct
 constructor, type checking, or many other things.
 
-```
+```fngi
 // foo (concrete local struct)
 VAR foo.field;
 VAR foo.field = 7;

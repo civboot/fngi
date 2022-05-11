@@ -1,3 +1,5 @@
+# Misc. notes
+
 ## Endianness
 
 Little/Big endian do NOT refer to which "end" is the "big" (aka most
@@ -17,11 +19,11 @@ number at the head.
 
 These are super critical
 
-- baseball: ba5eba11 
+- baseball: ba5eba11
 - foosball: f005ba11
 - bedablle
 - a caboose: aCab005e
-- deadbeat: DeadBea7 
+- deadbeat: DeadBea7
 - eat beef: 0Ea7Beef
 - defecate: 00Defec8
 - defect: 00Defec7

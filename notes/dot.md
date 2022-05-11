@@ -3,7 +3,7 @@
 The dot compiler is probably the most syntax-heavy component of fngi.
 The initial dot compiler supports all of the below syntaxes:
 
-```
+```fngi
 \   .var            \ variable fetch
 \   .var = <token>  \ variable store
 \   .&var           \ variable reference (also function)

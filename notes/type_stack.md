@@ -10,28 +10,30 @@ Fngi has a compile-time "ty stack" (type stack), which is just an array of
 pointers who's length is the system stack size (typically 12 - 32). There are
 two recognized types in fngi:
 
-  - **concrete** type: native (i.e. U4), Struct, Enum, and Role instance.
-  - **executable** type: the type _itself_ is a role instance of ExecTy. The
-    type checker calls it's methods depending on context.
-
+- **concrete** type: native (i.e. U4), Struct, Enum, and Role instance.
+- **executable** type: the type _itself_ is a role instance of ExecTy. The
+  type checker calls it's methods depending on context.
 
 ## Quick Example
+
 A quick example (using only native concrete types), say you had the following
 definitions:
 
-```
+```fngi
 fn add3[\a:U4, b:U4 -> out:U4] do (
   \a + 3 + .b
 )
 ```
 
 A few important points:
+
 - `\a` in the type name causes it to _remain on the stack_.
 - `b` is a local variable, it gets pushed to the locals stack.
 - In the code block, `\a` before the `+` is purely for documentation, it has no
   effect on the ty stack.
 
 Type stack changes:
+
 - At the function start, the ty stack contains `[U4]`, which is `\a`
 - `+` is a `PRE` function, so encountering it the syntax does not (yet) change
   the ty stack. _It is only when a function is executed that the ty stack is
@@ -49,6 +51,7 @@ Type stack changes:
   signature. It checks out!
 
 ## If Statements
+
 Conditionals look like below. Note a few things:
 
 - Who knows for sure why this code was written, don't focus on that.
@@ -56,7 +59,7 @@ Conditionals look like below. Note a few things:
 - Note that every conditional leaves a U4 on the stack _or_ it returns from the
   function (and it's return value matches the function)
 
-```
+```fngi
 fn doSomething[x: U4, y:U4 -> a:U4, b:Bool] do (
   if (.x) do (.y + 1)  \ [ -> U4]
   elif (.x - 1) do (.y + 2)
@@ -66,6 +69,7 @@ fn doSomething[x: U4, y:U4 -> a:U4, b:Bool] do (
 ```
 
 How does the type stack do this?
+
 - Before the `if` statement executes anything (including it's conditional check)
   it clones the type stack. Call this `ifBefore`
 - After it's conditional check, it makes sure that the type stack is identical
@@ -87,6 +91,7 @@ How does the type stack do this?
 > Note: panics also avoid a type check obviously.
 
 ## While Loop / Switch
+
 All `loop` statements must have the same type at their beginning as their end.
 All of their `break` statements must have the same type as well. However, values
 can be returned from the `break` statements, the logic is similar to `if`.
@@ -94,6 +99,7 @@ can be returned from the `break` statements, the logic is similar to `if`.
 Switch statements are the same.
 
 ## Native Types
+
 Native types are stored in the native dictionary. This contains only enough
 information to write untyped fngi code, it does _not_ support type checking
 beyond the most primitive aspects (i.e. de-reference count, calling an large
@@ -118,6 +124,7 @@ There are 5 `TY_*` bitmaps stored in the dictionary meta. They are:
     sz and reference count (of the embedded type).
 
 ## Concrete Types
+
 Concrete types are stored in a BTree with [key=&dictKey value=type]. This allows
 you to look up a type if you know the dictionary pointer.
 
@@ -127,15 +134,15 @@ you to look up a type if you know the dictionary pointer.
 - RoleImpl's are just a Role struct constant which has the function methods
   filled in.
 
-
 ## Executable Types
+
 > Cancel all of this: "executable types" are just SYN. The SYN function can
 > check if it is being called during a type block and act accordingly.
 
 Executable types do not have a dictionary entry. Instead, they are a role
 instance of the following form:
 
-```
+```fngi
 role ExecTy [
   register: &fn [e:#ExecTy -> &CompTy];
 ]
@@ -146,11 +153,12 @@ to determine what the sub-types are. By convention this would look like below.
 `List` in this example is an ExecTy, and it will compile `[U4]` to determine
 what it's supposed to be "generic" over.
 
-```
+```fngi
 fn foo [a:List[U4]] do ( ... )
 ```
 
 Some important points:
+
 - `register` is supposed to create a globally-unique instance (i.e. a struct) of
   the types it consumes, so that if it is called again with the same types it
   will return the same pointer. This allows you to compare the types!
