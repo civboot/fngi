@@ -891,8 +891,8 @@ $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
 $FN _xxPre $LARGE
   #1$h1 $_xsl assertNoNow \ locals 0=&key
   $_xsl colon $_xsl kdictGetK %DUP .A%SRLL #0$h1 \ {&key}
-  \ if fn is PRE and a compFn exists, compile next token.
-  $_xsl isFnPre .A%FTGL @c_compFn$h2 %AND $IF
+  \ if fn is (PRE or SYN) and a compFn exists, compile next token.
+  %DUP $_xsl isFnPre %SWP $_xsl isFnSyn %OR .A%FTGL @c_compFn$h2 %AND $IF
     .A%FTGL @c_compFn$h2 .4%XLW
   $END .A%FTLL #0$h1 %RET
 
@@ -1092,8 +1092,7 @@ $FN c_readCharEsc
   %DUP #5C$L1 %EQ $IF             @FALSE$L0 %RET $END \ \\: escape
   %DUP #74$L1 %EQ $IF %DRP #09$L0 @FALSE$L0 %RET $END \ \t: tab
   %DUP #6E$L1 %EQ $IF %DRP #0A$L0 @FALSE$L0 %RET $END \ \n: newline
-  %DUP #20$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END \ \ : space (raw)
-  %DUP #73$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END \ \s: space (explicit)
+  %DUP #20$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END \ \ : space
   %DUP #78$L1 %EQ $IF \ \xHH
     \ charToInt(c_charNext) << 8 + charToInt(c_charNext)
     %DRP $xx:c_charNext  $xx:charToInt #8$L0  %SHL
@@ -1104,36 +1103,21 @@ $FN c_readCharEsc
   $END
   @TRUE$L0 %RET \ just return the character as-is but unknownEscape=true
 
-$FN c_parseNumber \ {} -> {value isNumber}
-  $declL value  @SZA  @ASIZE $declVar
-  $declL i      @SZ1  #1     $declVar
-  $declL base   @SZ1  #1     $declVar
+$FN numBase $PRE \ {c -> base} get number base from char
+  %DUP #63$L1 %EQ $IF %DRP #FE$L1 %RET $END \ c -> character
+  %DUP #62$L1 %EQ $IF %DRP #02$L0 %RET $END \ b -> binary
+       #78$L1 %EQ $IF      #10$L0 %RET $END \ x -> hex
+  #0$L0 %RET \ unknown/use default
+
+$FN c_parseBase \ {i base -> value isNumber}
+  $declL i      @SZ1@TY_VAR_INPUT^JN  #1     $declVar
+  $declL base   @SZ1@TY_VAR_INPUT^JN  #1     $declVar
+  $declL value  @SZA                  @ASIZE $declVar
   $declEnd
-  #A$L0 $SET base
-  #0$L0 $SET value
-  #0$L0 $SET i
-
-  \ Get correct base
-  $GET c_tokenBuf .1%FT #30$L0 %EQ $IF \ if c0 == '0' {}
-    $GET c_tokenBuf %INC .1%FT %DUP \ {c1 c1} if there was a char
-
-    \ First handle 0c: character literal
-    #63$L1 %EQ  $IF \ if .tokenBuf@1=='c' {c1}
-      \ set tokenLen=2 to treat anything after 0c as next character.
-      %DRP #2$L0 $SET c_tokenLen
-      $xx:c_readCharEsc  @E_cUnknownEsc$L2 $xx:assertNot
-      @TRUE$L0 %RET
-    $END
-
-    %DUP \ {c1 c1}
-    #62$L1 %EQ  $IF \ if .tokenBuf@1=='b' {c1}
-      #2$L0  $SET base  #2$L0 $SET i
-    $END \ {c1}
-    #78$L1 %EQ  $IF \ if .tokenBuf@1=='x' {}
-      #10$L0 $SET base  #2$L0 $SET i
-    $END
-  $END
-
+  $GET base #FE$L1 %EQ $IF \ if special 'character' base
+      $GET i $SET c_tokenLen \ readCharEsc is off END of tokenLen
+      $xx:c_readCharEsc  @E_cUnknownEsc$L2 $xx:assertNot  @TRUE$L0 %RET
+  $END #0$L0 $SET value
   $LOOP l0
     $GET i  $GET c_tokenLen $BREAK_EQ b0
     $GET c_tokenBuf $GET i %ADD .1%FT \ {c}
@@ -1148,6 +1132,15 @@ $FN c_parseNumber \ {} -> {value isNumber}
 
   $GET i %NOT $IF  #0$L0 @FALSE$L0 %RET  $END \ no token
   $GET value @TRUE$L0 %RET
+
+$FN c_parseNumber \ {} -> {value isNumber}
+  #0$L0 #A$L0 \ {i=0 base=0xA}. Next: if (token len>=2 and starts with '0')
+  $GET c_tokenLen #2$L0 %GE_U $GET c_tokenBuf .1%FT #30$L0 %EQ %AND $IF
+    %DRP $GET c_tokenBuf %INC .1%FT $xx:numBase %DUPN $IF \ {i base}
+      %DRP #A$L0 \ base was = 0, just set back to 10
+    $ELSE %SWP %INC2 %SWP $END \ else i+=2
+  $END
+  $xx:c_parseBase %RET
 
 $FN lit  $PRE \ {U4} compile literal
   %DUP #40$L1 %LT_U        $IF  $jmp:L0  $END

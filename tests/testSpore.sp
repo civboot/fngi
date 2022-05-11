@@ -202,7 +202,6 @@ $c_number 0c\t  $tAssert   #09 $tAssertEq
 $c_number 0c\n  $tAssert   #0A $tAssertEq
 $c_number 0c    $tAssert   #20 $tAssertEq
 $c_number 0c\   $tAssert   #20 $tAssertEq
-$c_number 0c\s  $tAssert   #20 $tAssertEq
 
 \ Test FTO and SRO
 $declG gStruct  @SZ4 #4 $declVar
