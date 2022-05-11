@@ -41,7 +41,7 @@ $kdictGetK keyMeta @TY_FN @TY_FN_PRE @TY_FN_INLINE ^JN ^JN $tAssertKeyMeta
 $FN myXs #22 $L0 %RET
 $myXs #22 $tAssertEq
 
-$FN callMyXs $xsl myXs %RET
+$FN callMyXs $_xsl myXs %RET
 $callMyXs #22 $tAssertEq
 
 $c_updateGkey ^DRP
@@ -60,7 +60,7 @@ $assertWsEmpty
 $FN one   #1 $L0 %RET
 $FN add   %ADD %RET
 
-$FN test_xslJmpl $xsl one   $xsl one   $jmpl add
+$FN test_xslJmpl $_xsl one   $_xsl one   $_jmp add
 $test_xslJmpl  #2 $tAssertEq
 
 $kdictGetK FN      $isFnSyn   $tAssert
@@ -127,7 +127,7 @@ $myG1Ref  @myG1 #FF_FFFF ^MSK  $tAssertEq
 $FN myG1Get  $GET myG1 %RET
 $myG1Get  #12345 $tAssertEq
 
-$FN myG1Set  $_SET myG1 %RET
+$FN myG1Set  $SET myG1 %RET
 #6789F $myG1Set   $myG1Get  #6789F $tAssertEq
 
 \ *****
@@ -157,7 +157,7 @@ $getLpWLocal @lsTop #4 ^SUB $tAssertEq
 $FN useLocal
   $declL a  @SZ2  #2 $declVar $declEnd
 
-  #12345$L4 $_SET a
+  #12345$L4 $SET a
   $GET a
   %RET
 
@@ -175,7 +175,7 @@ $FN badMultiply \ {a b -- a*b} uses loop to implement multiply
     \ out = out + a
     $GET a  %ADD
     \ b = b - 1
-    $GET b  %DEC  $_SET b
+    $GET b  %DEC  $SET b
   $AGAIN l0  $END_BREAK b0
   %RET
 
@@ -212,10 +212,10 @@ $declG gStruct1 @SZ1 #1 $declVar
 
 $FN testFTSROffset
   $declL r  @SZ4  #4 $declVar $declEnd
-  $REF gStruct $_SET r
-  $GET r  .4%FTO #0$h1    #1234$L2 $xsl tAssertEq
-  $GET r  #0 @SZ4 $ftoN   #1234$L2 $xsl tAssertEq
-  $GET r  #4 @SZ1 $ftoN   #67$L2 $xsl tAssertEq
+  $REF gStruct $SET r
+  $GET r  .4%FTO #0$h1    #1234$L2 $_xsl tAssertEq
+  $GET r  #0 @SZ4 $ftoN   #1234$L2 $_xsl tAssertEq
+  $GET r  #4 @SZ1 $ftoN   #67$L2 $_xsl tAssertEq
   %RET
 $assertWsEmpty   $testFTSROffset
 
@@ -283,19 +283,19 @@ $three  #3 $tAssertEq
 $FN failRecursively2 \ {n} -> {n-1}
   %DUP %NOT $IF
     %DRP
-    #1$L0 #7$L0  $xsl tAssertEq
+    #1$L0 #7$L0  $_xsl tAssertEq
     %RET
   $END
-  %DEC $xsl failRecursively2
+  %DEC $_xsl failRecursively2
 
 $FN failRecursively \ {n} -> {n-1}
   $declL n  @SZ4@TY_VAR_INPUT^JN  #4 $declVar
   $declEnd
   $GET n %NOT $IF
-    #5$L0 $xsl failRecursively2
+    #5$L0 $_xsl failRecursively2
     %RET
   $END
-  $GET n %DEC $xl failRecursively
+  $GET n %DEC .2%XLL @failRecursively$h2
 
 $assertWsEmpty
 $c_dictDump

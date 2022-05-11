@@ -30,7 +30,7 @@
 \ [5] Bootstrap Macros: necessary functionality for the rest of the language.
 \ [6] Core functions and macros: bread and butter of spor assembly
 \ [7] ASM Flow Control (IF, LOOP, etc)
-\ [8] Scanning and Alignment Utilities: reading, peeking and szI alignment
+\ [8] xx, jmpl, Scanning and Alignment
 \ [9] globals and locals
 \ [10] Zoa strings and logging zoab
 \ [11] Fngi compile loop
@@ -323,6 +323,8 @@
 #E0F4  #0=E_cBadRefs    \ too many de/refs
 #E0F5  #0=E_cRefEq      \ .&var = not allowed.
 #E0F6  #0=E_cInlineLarge \ inline fn is large
+#E0F7  #0=E_cColon      \ Expect : after function
+#E0F8  #0=E_cFnSyn      \ Invalid use of SYN function
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr
@@ -387,6 +389,7 @@ $_h @_FP=select \ {a b s -> a|b} a if s else b
 #0000_0060 @TY_VAR@SZA^JN=c_lkey         \ [U4] current ldict &key
 #0000_0064 @TY_VAR@SZA^JN=c_gheap        \ [U4] global heap
 #0000_0068 @TY_VAR@SZ2^JN=c_localOffset  \ [U2] Local Offset (for local var setup)
+#0000_006C @TY_VAR@SZA^JN=c_compFn       \ [UA] current compiler function
 
 \ **********
 \ * [5] Bootstrap Macros
@@ -495,9 +498,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 \ They define and call functions, check the type of dictionary entries,
 \ provide local dictionary support, etc.
 \
-\ fn $xsl  <token>                : compile execute small function
-\ fn $xl   <token>                : compile execute large function
-\ fn $jmpl <token>                : compile jump to small function
+\ fn $_xsl <token> / $_jmp <token>: compile an XSL or JMPL to key
 \ fn L1 / L2 / L4 / LA  [U] -> [] : compile 1 / 2 / 4 / ASIZE byte literal.
 \ fn xCatch [... &fn]             : execute a large function and catch error.
 \ fn retz  [a]                    : return immediately if not a  (     %RETZ)
@@ -553,7 +554,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
   .1%LIT @XSL2 $h1  \ push .2%XSL instr
   .2%JMPL @_j2 $h2
 
-@TY_FN@TY_FN_NOW^JN$loc _jmpl \ $_jmpl <token>: compile unchecked jmpl
+@TY_FN$loc _jmp \ $_jmp <token>: compile unchecked jmpl
   $_xsl kdictGet             \ {key}
   .1%LIT @JMPL2 $h1 \ push .2%JMPL instr
   .2%JMPL @_j2 $h2
@@ -561,7 +562,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 @_FP$loc L1 \ {U1} compile 1 byte literal
   .1%LIT  @SZ1 @LIT ^JN   $h1 \ push .1%LIT instr
   $_xsl h1 \ compile it
-  $_jmpl h1
+  $_jmp h1
 
 \ NOW PRE $c1: {instr:U1}
 \ Compiles code so that when executed the instr will be compiled.
@@ -570,15 +571,15 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
   \ compile xsl to h1
   .2%LIT @h1 $h2
   .2%LIT @XSL2 $h2
-  $_jmpl _j2
+  $_jmp _j2
 
 @_FP$loc L2 \ {U2} compile 2 byte literal
   @SZ2 @LIT  ^JN   $c1  \ compile .2%LIT instr
-  $_jmpl h2  \ compile the 2 byte literal
+  $_jmp h2  \ compile the 2 byte literal
 
 @_FP$loc L4 \ {U4} compile 4 byte literal
   @SZ4 @LIT  ^JN   $c1 \ compile .4%LIT
-  $_jmpl h4  \ compile the 4 byte literal
+  $_jmp h4  \ compile the 4 byte literal
 
 @L2 @L4    @ASIZE #2 ^EQ  $select @_FP=LA \ {UA} comipile ASIZE literal
 
@@ -591,12 +592,12 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 @_FP$loc isFnLarge   $keyMeta  @TY_FN_LARGE$L1 %MSK %RET
 @_FP$loc assertNotNull @E_null$L2 $assert %RET
 @_FP$loc assertFn   $_xsl isTyFn  @E_cNotFn $L2  $assert %RET \ [&key] -> []
-@TY_FN$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmpl assertNot
+@TY_FN$loc assertWsEmpty   @D_wslen$L0 %DVFT  @E_wsEmpty $L2  $_jmp assertNot
 $assertWsEmpty
 
 @_FP$loc assertFnSmall \ [&key]
   %DUP $_xsl assertFn
-  $_xsl isFnLarge  @E_cIsX $L2  $_jmpl assertNot
+  $_xsl isFnLarge  @E_cIsX $L2  $_jmp assertNot
 
 @_FP$loc assertFnLarge \ [&key]
   %DUP $_xsl assertFn
@@ -606,27 +607,13 @@ $assertWsEmpty
 @_FP$loc isSameMod \ {ref ref} -> {sameMod}
   $_xsl toMod  %SWP  $_xsl toMod  %EQ %RET
 
-@_FP$loc curMod   .2%FTGL @c_gkey$h2 .A%FT  $_jmpl toMod \ [] -> [mod]
+@_FP$loc curMod   .2%FTGL @c_gkey$h2 .A%FT  $_jmp toMod \ [] -> [mod]
 @_FP$loc isCurMod $_xsl toMod  $_xsl curMod %EQ %RET     \ [ref] -> [isCurMod]
 @_FP$loc assertCurMod  $_xsl isCurMod  @E_cMod$L2  $assert %RET
 
 @_FP$loc _jSetup \ [&key] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall
-  .A%FT %DUP $_jmpl assertCurMod \ {ref}
-
-@TY_FN$loc xsl \ $xsl <token> : compile .2%xsl
-  $_xsl kdictGetK $_xsl _jSetup \ {ref}
-  @XSL2 $L1 $_jmpl _j2
-
-@TY_FN$loc xl \ $xl <token> : compile .2%xl
-  $_xsl kdictGetK \ {&key}
-  %DUP $_xsl assertFnLarge
-  .A%FT %DUP $_xsl assertCurMod
-  @SZ2 @XLL ^JN   $L1  $_jmpl _j2
-
-@TY_FN$loc jmpl  \ $jmpl <token> : compile jmpl2
-  $_xsl kdictGetK $_xsl _jSetup \ {ref}
-  @JMPL2$L1  $_jmpl _j2
+  .A%FT %DUP $_jmp assertCurMod \ {ref}
 
 @TY_FN$loc c_updateGkey \ [] -> [&key] update and return current key
   .A%FTGL @c_kdictRef$h2 \ dict.buf
@@ -635,7 +622,7 @@ $assertWsEmpty
   %DUP .A%SRGL @c_gkey$h2 \ gkey=newKey
   %RET \ return &key
 \ FIXME: remove literal 0
-@TY_FN$loc locK $_xsl c_updateGkey %SWP $_jmpl loc \ { <token> meta -> &key} def loc, ret &key
+@TY_FN$loc locK $_xsl c_updateGkey %SWP $_jmp loc \ { <token> meta -> &key} def loc, ret &key
 
 @_FP$loc c_keyJnMeta \ {&key meta:U1} -> U4 : apply meta to &key
   %OVR %INCA \ {... &key newmeta &meta} note: #0 for unregistered SYN
@@ -653,18 +640,18 @@ $assertWsEmpty
   .A%FTGL @heap$h2             \ {&addr heapDiff heap}
   %SWP %SUB  %DUP $_xsl assertLt128 \ {heapDiff (heap-heapDiff)}
   %SWP .1%SR %RET \ store at &addr (1 byte literal)
-@TY_FN@TY_FN_SYN^JN $loc END_INLINE $_xsl assertNoNow %DUP %INC $_jmpl _END
+@TY_FN@TY_FN_SYN^JN $loc END_INLINE $_xsl assertNoNow %DUP %INC $_jmp _END
 
 \ example: $FN <token> $SYN $LARGE: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN$loc FN
   $_xsl assertNoNow $_xsl assertWsEmpty @TY_FN$L1 $_xsl locK %DRP %RET
-@TY_FN@TY_FN_SYN^JN$loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmpl c_keyJnMeta
-@TY_FN@TY_FN_SYN^JN$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmpl c_keyJnMeta
-@TY_FN@TY_FN_SYN^JN$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmpl c_keyJnMeta
-@TY_FN@TY_FN_SYN^JN$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmpl c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc SYN     %DRP .A%FTGL @c_gkey$h2  @TY_FN_SYN$L1   $_jmp c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc NOW     %DRP .A%FTGL @c_gkey$h2  @TY_FN_NOW$L1   $_jmp c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc LARGE   %DRP .A%FTGL @c_gkey$h2  @TY_FN_LARGE$L1 $_jmp c_keyJnMeta
+@TY_FN@TY_FN_SYN^JN$loc PRE %DRP .A%FTGL @c_gkey$h2  @TY_FN_PRE$L1   $_jmp c_keyJnMeta
 @TY_FN@TY_FN_SYN^JN$loc INLINE  %DRP
   .A%FTGL @heap$h2 #0$L0 $_xsl h1 \ put heap on stack and write 0 to heap
-  .A%FTGL @c_gkey$h2  @TY_FN_INLINE$L1 $_jmpl c_keyJnMeta \ set meta as TY_FN_INLINE
+  .A%FTGL @c_gkey$h2  @TY_FN_INLINE$L1 $_jmp c_keyJnMeta \ set meta as TY_FN_INLINE
 
 $assertWsEmpty
 
@@ -675,31 +662,31 @@ $FN isFnNow     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
 $FN isFnSyn     $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
 $FN isFnInline  $PRE $keyMeta  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
 $FN isTyVar     $PRE $keyMeta  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
-$FN assertTyVar $PRE $xsl isTyVar  @E_cNotLocal$L2 $assert %RET
+$FN assertTyVar $PRE $_xsl isTyVar  @E_cNotLocal$L2 $assert %RET
 
 $FN c_scan       $INLINE @D_scan$L0 %DVFT $END_INLINE %RET
 $FN panic   $PRE $INLINE #0$L0 %SWP  $assert $END_INLINE \ {errCode}: panic with errCode
 $FN unreach      @E_unreach$L2 $panic \ {}: assert unreachable code
 $FN unimplIfTrue $PRE @E_unimpl$L2 $assert %RET \ {}: if true raise unimpl
-$FN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmpl tAssertEq \ {&key meta}
+$FN tAssertKeyMeta $PRE %SWP $keyMeta %SWP $_jmp tAssertEq \ {&key meta}
 $FN assertSzI $PRE \ {szI}
-  %DUP #CF$L1 %MSK @E_cSz$L2 $xsl assertNot \ non-sz bits empty
+  %DUP #CF$L1 %MSK @E_cSz$L2 $_xsl assertNot \ non-sz bits empty
   #4$L0 %SHR #3$L1 %LT_U @E_cSz$L2 $assert %RET \ sz bits < 3
 
 $FN ftoN $NOW  \ {offset szI} compile FTO szI w/offset
-  %DUP $xsl assertSzI  @FTO$L1 %ADD $xsl h1 $jmpl h1
+  %DUP $_xsl assertSzI  @FTO$L1 %ADD $_xsl h1 $_jmp h1
 
 \ Update the harness with the new dictionary
-$FN c_dictDump       $xsl kdictArgs @D_dictDump$L0 %DVSR %RET \ {}
+$FN c_dictDump       $_xsl kdictArgs @D_dictDump$L0 %DVSR %RET \ {}
 $c_dictDump
 
 $FN ldictArgs \ {} -> dictArgs
   @c_ldictRef$L2 %RET \ TODO: add R_GB to it.
 
-$FN _ldict $c_scan $jmpl ldictArgs
-$FN ldictGet   $xsl _ldict @D_dict$L0  %DVFT %RET
-$FN ldictSet   $PRE #0$L0 $xsl _ldict @D_dict$L0  %DVSR %RET
-$FN ldictGetK  $xsl _ldict @D_dictK$L0 %DVFT %RET
+$FN _ldict $c_scan $_jmp ldictArgs
+$FN ldictGet   $_xsl _ldict @D_dict$L0  %DVFT %RET
+$FN ldictSet   $PRE #0$L0 $_xsl _ldict @D_dict$L0  %DVSR %RET
+$FN ldictGetK  $_xsl _ldict @D_dictK$L0 %DVFT %RET
 $FN retz       $PRE $INLINE      %RETZ $END_INLINE %RET
 $FN reteq      $PRE $INLINE %NEQ %RETZ $END_INLINE %RET
 $FN retif      $PRE $INLINE %NOT %RETZ $END_INLINE %RET
@@ -712,41 +699,43 @@ $FN retif      $PRE $INLINE %NOT %RETZ $END_INLINE %RET
 \   if/else: $IF ... $ELSE ... $END
 \   loop:    $LOOP <l0> ... $BREAK0 <b0> ... $AGAIN <l0> $BREAK_END <b0>
 
-$FN IF $SYN $PRE $xsl assertNoNow \ {} -> {&jmpTo} : start an if block
+$FN IF $SYN $PRE $_xsl assertNoNow \ {} -> {&jmpTo} : start an if block
   @SZ1 @JZL  ^JN   $c1 \ compile .1%JZL instr
   .A%FTGL @heap$h2 \ {&jmpTo} push &jmpTo location to stack
-  #0$L0  $xsl h1 \ compile 0 (jump pad)
+  #0$L0  $_xsl h1 \ compile 0 (jump pad)
   %RET
 
-@TY_FN@TY_FN_SYN^JN $loc END $_xsl assertNoNow %DUP $_jmpl _END
+@TY_FN@TY_FN_SYN^JN $loc END $_xsl assertNoNow %DUP $_jmp _END
 
-$FN ELSE $SYN $xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
+$FN ELSE $SYN $_xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1         \ (end IF) compile unconditional jmp to end of ELSE
   .A%FTGL @heap$h2 %SWP \ {&elseBlockJmpTo &ifNotJmpTo}
-  #0$L0 $xsl h1     \ compile jmp lit for &elseBlockJmpTo
-  %DUP $jmpl _END   \ end of IF block (beginning of ELSE)
+  #0$L0 $_xsl h1     \ compile jmp lit for &elseBlockJmpTo
+  %DUP $_jmp _END   \ end of IF block (beginning of ELSE)
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
-$FN LOOP   $SYN $xsl assertNoNow .A%FTGL @heap$h2  $jmpl ldictSet
-$FN BREAK0 $PRE $SYN   $xsl IF $jmpl ldictSet
-$FN BREAK_IF  $PRE $SYN @NOT$c1  $jmpl BREAK0 \ break if true
-$FN BREAK_EQ  $PRE $SYN @NEQ$c1  $jmpl BREAK0 \ break if equal
-$FN BREAK_NEQ $PRE $SYN @EQ$c1  $jmpl BREAK0 \ break if equal
-$FN AGAIN $SYN $xsl assertNoNow
+$FN LOOP   $SYN $_xsl assertNoNow .A%FTGL @heap$h2  $_jmp ldictSet
+$FN BREAK0 $PRE $SYN   $_xsl IF $_jmp ldictSet
+$FN BREAK_IF  $PRE $SYN @NOT$c1  $_jmp BREAK0 \ break if true
+$FN BREAK_EQ  $PRE $SYN @NEQ$c1  $_jmp BREAK0 \ break if equal
+$FN BREAK_NEQ $PRE $SYN @EQ$c1  $_jmp BREAK0 \ break if equal
+$FN AGAIN $SYN $_xsl assertNoNow
   @JMPL $c1  \ compile jmp
   .A%FTGL @heap$h2  \ {heap}
-  $xsl ldictGet \ {heap &loopTo}
+  $_xsl ldictGet \ {heap &loopTo}
   %SUB     \ {heap-&loopTo}
-  %DUP $xsl assertLt128
+  %DUP $_xsl assertLt128
   %NEG          \ make negative for backwards jmp
-  $jmpl h1      \ compile as jmp offset
+  $_jmp h1      \ compile as jmp offset
 
-$FN END_BREAK $SYN $xsl assertNoNow $xsl ldictGet %DUP $jmpl _END
+$FN END_BREAK $SYN $_xsl assertNoNow $_xsl ldictGet %DUP $_jmp _END
 
 \ **********
-\ * [8] Scanning and Alignment Utilities
+\ * [8] xx, jmpl, Scanning and Alignment Utilities
 \ Reading, peeking and szI alignment
 \
+\ fn xx:<token> [...]             : compile an execute to a token
+\ fn jmp:<token> [...]            : compile an jmp to a token
 \ fn align [aptr sz -> aptr]      : align aptr with sz bytes
 \ fn align4 [aptr -> aptr]        : align aptr with 4 bytes
 \ fn alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
@@ -775,9 +764,9 @@ $FN szIToSz $PRE \ {szI} -> {sz}
   @E_cSz$L2 $panic
 
 $FN hN $PRE \ {value szI} write a value of szI to heap
-  %DUP @SZ1$L1 %EQ $IF  %DRP $jmpl h1  $END
-  %DUP @SZ2$L1 %EQ $IF  %DRP $jmpl h2  $END
-  %DUP @SZ4$L1 %EQ $IF  %DRP $jmpl h4  $END
+  %DUP @SZ1$L1 %EQ $IF  %DRP $_jmp h1  $END
+  %DUP @SZ2$L1 %EQ $IF  %DRP $_jmp h2  $END
+  %DUP @SZ4$L1 %EQ $IF  %DRP $_jmp h4  $END
   @E_cSz$L2 $panic
 
 $FN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
@@ -800,9 +789,9 @@ $FN align $LARGE $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
   $END
   %DRP %RET
 
-$FN alignA   $PRE $xsl reqAlign $xl align %RET  \ {aptr sz -> aptr}: align to SZA
-$FN align4   $PRE #4$L0 $xl align %RET          \ {addr -> aligned4Addr}
-$FN alignSzI $PRE $xsl szIToSz  $xl align  %RET \ {addr szI -> addrAlignedSzI}
+$FN alignA   $PRE $_xsl reqAlign .2%XLL @align$h2 %RET  \ {aptr sz -> aptr}: align to SZA
+$FN align4   $PRE #4$L0 .2%XLL @align$h2 %RET          \ {addr -> aligned4Addr}
+$FN alignSzI $PRE $_xsl szIToSz  .2%XLL @align$h2 %RET \ {addr szI -> addrAlignedSzI}
 
 $FN ftSzI \ {&addr szI}
   %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
@@ -816,18 +805,19 @@ $FN srSzI \ {value &addr szI}
        @SZ4$L1 %EQ $IF      .4%SR %RET $END
   @E_cSz$L2 $panic
 
+\ TODO: need to make isNotEof INLINE function. Possibly get rid of all isEof uses?
 $FN c_isEof .2%FTGL@c_tokenLen$h2 %NOT %RET
 $FN c_assertToken .2%FTGL@c_tokenLen$h2 @E_cNeedToken$L2 $assert %RET
 $FN c_assertNoEof $PRE @E_eof$L2 $assert %RET \ {numRead}
 
 $FN c_scanNoEof
   $c_scan
-  $xsl c_isEof
-  @E_eof$L2 $jmpl assertNot
+  $_xsl c_isEof
+  @E_eof$L2 $_jmp assertNot
 
 $FN c_peekChr \ {} -> {c} peek at a character
   $c_scan
-  $xsl c_isEof $IF  #0$L0 %RET  $END
+  $_xsl c_isEof $IF  #0$L0 %RET  $END
   .A%FTGL@c_tokenBuf$h2 .1%FT \ {c}
   #0$L0 .2%SRGL@c_tokenLen$h2 %RET \ reset scanner for next scan
 
@@ -844,10 +834,10 @@ $FN c_clearToken \ shift buffer to clear current token
   @D_memSet$L0 %DVSR %RET  \ memMove
 
 $FN dictK \ {} -> {&key isFromLocal}
-  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
+  $_xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @TRUE$L1 %RET
   $END %DRP
-  $xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF
+  $_xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF
     @FALSE$L0 %RET
   $END @E_cNotType$L2 $panic
 
@@ -858,42 +848,8 @@ $FN c_updateLkey \ [] -> [&key] update and return current local key
   %DUP .A%SRGL @c_lkey$h2 \ gkey=newKey
   %RET \ return &key
 
-\ **********
-\ * [9] Globals and Locals
-\ We need a way to define global and local variables, as well as GET, SET and
-\ obtain a REF to them.
-\
-\ fn GET <token>            SYN : compile a FT of token (local or global)
-\ fn _SET <token>           SYN : compile a SR of token (local or global)
-\ fn REF <token>            SYN : compile a "get ref" of token
-\ fn LOCAL <token> [SzI]    SYN : define a local variable of szI
-\ fn INPUT <token> [SzI]    SYN : define a local input variable of szI
-\ fn declVar                    : declare a local/gloabl variable
-\ fn declEnd                    : end locals declaration
-
-$FN declG \ [<token> -> &key isLocal] create global and return it.
-  @TY_VAR$L1 $xsl locK
-  @FALSE$L0 %RET \ {&key isLocal=FALSE}
-
-$FN declL \ [<token> -> &key isLocal] create local and return it.
-  $xsl c_updateLkey \ {&key}
-  #0$L0 $xsl ldictSet \ initialize lDict token (to heap for now)
-  %DUP @TY_VAR$L1 $xsl c_keyJnMeta \ {&key} update meta as local
-  @TRUE$L0 %RET \ {&key isLocal=TRUE}
-
-$FN declVar $LARGE $PRE \ {&key isLocal meta szBytes} declare a variable (global or local)
-  #1$h1 .1%SRLL #0$h1  .1%SRLL #1$h1   .1%SRLL #2$h1 \ Locals 0=szBytes 1=meta 2=isLocal
-  %DUP .1%FTLL #1$h1 $xsl c_keyJnMeta \ update key meta {&key}
-  .1%FTLL #2$h1 $IF \ if(isLocal) {&key}
-    .2%FTGL @c_localOffset$h2  .1%FTLL #0$h1  $xsl alignA \ {&key offsetAligned}
-    %DUP .1%FTLL #0$h1 %ADD .2%SRGL @c_localOffset$h2 \ update c_localOffset {...}
-  $ELSE
-    .A%FTGL @c_gheap$h2        .1%FTLL #0$h1  $xsl alignA \ {&key gheapAligned}
-    %DUP .1%FTLL #0$h1 %ADD .A%SRGL @c_gheap$h2       \ update gheap {...}
-  $END %SWP .A%SR %RET \ update key's value
-
-$FN _varSetup $PRE \ {&key} -> {&key} : checked local setup
-  %DUP $_jmpl assertTyVar
+$FN xSzI $PRE \ {&key} -> {szI}: return the size requirement of the X instr
+   .A%FT $_xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZA$L1 %RET
 
 \ {&key szInstr szLit instr} compile a literal memory instr.
 \   szLit the size of the literal to compile for the instr.
@@ -902,9 +858,80 @@ $FN c_instrLitImpl $PRE $LARGE
   #1 $h1 \ 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
   .1%SRLL #0$h1 \ var szLit          {&key szInstr}
-  .1%FTLL #1$h1 %JN  $xsl h1 \ compile (szInstr | instr) {&key}
+  .1%FTLL #1$h1 %JN  $_xsl h1 \ compile (szInstr | instr) {&key}
   .A%FT \ {oRef} offset or reference
-  .1%FTLL #0$h1  $jmpl hN \ compile literal of proper instrSz
+  .1%FTLL #0$h1  $_jmp hN \ compile literal of proper instrSz
+
+$FN c_fn $PRE \ {&key}: compile a function of any type
+  %DUP $_xsl assertFn \ {&key}
+  %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
+    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
+    .A%FT .A%FTGL @heap$h2 %OVR \ {&inlineFn &heap &inlineFn}
+    %DUP %INC %SWP .1%FT \ {&inlineFn &heap &inlineFn+1 inlineLen}
+    @D_memSet$L0 %DVSR  \ memMove {&inlineFn}
+    .1%FT .A%FTGL @heap$h2 %ADD .A%SRGL @heap$h2 %RET \ update heap+inlineLen
+  $END
+  %DUP $_xsl xSzI     \ {&key szLit}
+  %OVR $_xsl isFnLarge  $IF @XLL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
+  %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
+  .2%XLL @c_instrLitImpl$h2 %RET
+
+$FN execute \ {&key} -> {...}: execute a dictionary key
+  %DUP $_xsl isFnInline $IF \ if inline, assert not large and jmp to addr+1
+    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot  .A%FT %INC .A%JMPW
+  $END
+  %DUP $_xsl isFnLarge  $IF .A%FT .A%XLW %RET $END
+  .A%FT .A%JMPW
+
+$FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
+  $c_scan .2%FTGL@c_tokenLen$h2 #1$L0 %EQ @E_cColon$L2 $assert \ assert len=1
+  .A%FTGL@c_tokenBuf$h2 .1%FT  #3A$L0 %EQ @E_cColon$L2 $assert \ assert ":"
+  %RET
+
+$FN _xxPre $LARGE
+  #1$h1 $_xsl assertNoNow \ locals 0=&key
+  $_xsl colon $_xsl kdictGetK %DUP .A%SRLL #0$h1 \ {&key}
+  \ if fn is PRE and a compFn exists, compile next token.
+  $_xsl isFnPre .A%FTGL @c_compFn$h2 %AND $IF
+    .A%FTGL @c_compFn$h2 .4%XLW
+  $END .A%FTLL #0$h1 %RET
+
+$FN xx $SYN .2%XLL @_xxPre$h2 $_jmp c_fn
+$FN jmp $SYN
+  $xx:_xxPre %DUP $xx:isFnLarge @E_cXHasL$L2 $xx:assertNot
+  .A%FT @JMPL2$L1 $_jmp _j2
+
+\ **********
+\ * [9] Globals and Locals
+\ We need a way to define global and local variables, as well as GET, SET and
+\ obtain a REF to them.
+\
+\ fn GET <token>            SYN : compile a FT of token (local or global)
+\ fn SET <token>            SYN : compile a SR of token (local or global)
+\ fn REF <token>            SYN : compile a "get ref" of token
+\ fn declVar                    : declare a local/gloabl variable
+\ fn declEnd                    : end locals declaration
+
+$FN declG \ [<token> -> &key isLocal] create global and return it.
+  @TY_VAR$L1 $xx:locK
+  @FALSE$L0 %RET \ {&key isLocal=FALSE}
+
+$FN declL \ [<token> -> &key isLocal] create local and return it.
+  $xx:c_updateLkey \ {&key}
+  #0$L0 $xx:ldictSet \ initialize lDict token (to heap for now)
+  %DUP @TY_VAR$L1 $xx:c_keyJnMeta \ {&key} update meta as local
+  @TRUE$L0 %RET \ {&key isLocal=TRUE}
+
+$FN declVar $LARGE $PRE \ {&key isLocal meta szBytes} declare a variable (global or local)
+  #1$h1 .1%SRLL #0$h1  .1%SRLL #1$h1   .1%SRLL #2$h1 \ Locals 0=szBytes 1=meta 2=isLocal
+  %DUP .1%FTLL #1$h1 $xx:c_keyJnMeta \ update key meta {&key}
+  .1%FTLL #2$h1 $IF \ if(isLocal) {&key}
+    .2%FTGL @c_localOffset$h2  .1%FTLL #0$h1  $xx:alignA \ {&key offsetAligned}
+    %DUP .1%FTLL #0$h1 %ADD .2%SRGL @c_localOffset$h2 \ update c_localOffset {...}
+  $ELSE
+    .A%FTGL @c_gheap$h2        .1%FTLL #0$h1  $xx:alignA \ {&key gheapAligned}
+    %DUP .1%FTLL #0$h1 %ADD .A%SRGL @c_gheap$h2       \ update gheap {...}
+  $END %SWP .A%SR %RET \ update key's value
 
 \ Compile a get or set instruction.
 \ Args:
@@ -917,65 +944,60 @@ $FN _getSetImpl $PRE $LARGE
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
   \ {&key dotMeta}
-  $IF
-    $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
-    .1%FTLL#0$h1 .1%FTLL#1$h1
-  $ELSE
-    $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
-    .1%FTLL#2$h1 .1%FTLL#3$h1
-  $END
-  $xl c_instrLitImpl %RET
+  %OVR $xx:assertTyVar $IF \ {&key}
+        %DUP $xx:keySzI .1%FTLL#0$h1 .1%FTLL#1$h1
+  $ELSE %DUP $xx:keySzI .1%FTLL#2$h1 .1%FTLL#3$h1 $END
+  $xx:c_instrLitImpl %RET
 
 \ (create _xxxImpl for fngi to use)
 $FN _getImpl $PRE \ {&key dotMeta}
   @SZ1$L1  @FTLL$L1  \ local sz + instr
   @SZ2$L1  @FTGL$L1  \ global sz + instr
-  $xl _getSetImpl %RET
+  $xx:_getSetImpl %RET
 
 $FN _setImpl $PRE \ {&key dotMeta}
   @SZ1$L1  @SRLL$L1  \ local sz + instr
   @SZ2$L1  @SRGL$L1  \ global sz + instr
-  $xl _getSetImpl %RET
+  $xx:_getSetImpl %RET
 
 $FN gRef $NOW \ [<token> -> &gref] get token's global reference
-  $xsl kdictGetK  $xsl _varSetup .A%FT %RGFT @R_GB$h1 %ADD %RET
+  $xx:kdictGetK  %DUP $xx:assertTyVar .A%FT %RGFT @R_GB$h1 %ADD %RET
 
 $FN _refImpl \ {}
-  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
-    $xsl _varSetup \ {&key}
+  $xx:ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
+    %DUP $xx:assertTyVar \ {&key}
     .A%FT %DUP #40$L1 %LT_U @E_cReg$L2 $assert \ {offset}
     @R_LP$L1 %JN  \ {LpOffset}: offset is lower 7 bits
-    @RGFT$c1 $jmpl h1  \ compile: %RGFT (@R_LP + offset)$h1
+    @RGFT$c1 $jmp:h1  \ compile: %RGFT (@R_LP + offset)$h1
   $END %DRP
-  $xsl kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
-    $xsl _varSetup  .A%FT $jmpl LA \ write literal directly TODO: use c_lit
+  $xx:kdictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {&key}
+    %DUP $xx:assertTyVar  .A%FT $jmp:LA \ write literal directly TODO: use c_lit
   $END @E_cNotType$L2 $panic
 
 $FN REF  $SYN
   $IF \ asNow: we can get &fn or &global
-    $xsl kdictGetK \ next: assert(isTyVar or isTyFn)
-      %DUP $xsl isTyVar %OVR $xsl isTyFn %OR
+    $xx:kdictGetK \ next: assert(isTyVar or isTyFn)
+      %DUP $xx:isTyVar %OVR $xx:isTyFn %OR
       @E_cNotType$L2 $assert
     .A%FT %RET
   $END \ else: we can get &local or &global
-  $c_scan $jmpl _refImpl
+  $c_scan $jmp:_refImpl
 
 $FN GET  $SYN
-  $IF  $xsl kdictGetK $xsl _varSetup %DUP $xsl keySzI \ {&key szInstr}
-       %SWP .A%FT %SWP $jmpl ftSzI   $END
-  $c_scan $xsl dictK $jmpl _getImpl
+  $IF  $xx:kdictGetK %DUP $xx:assertTyVar %DUP $xx:keySzI \ {&key szInstr}
+       %SWP .A%FT %SWP $jmp:ftSzI   $END
+  $c_scan $xx:dictK $jmp:_getImpl
 
-$FN _SET $SYN
-  $xsl assertNoNow $c_scan $xsl dictK $jmpl _setImpl
+$FN SET $SYN
+  $xx:assertNoNow $c_scan $xx:dictK $jmp:_setImpl
 
 \ **********
 \ * Local Variables
-\ implement LOCAL or INPUT. Mostly just updating ldict key and globals.
 
 \ All of these take &key and output len (U1 len), sz (total key size), nextKey (&key)
 $FN Dict_keyLen  $PRE @DICT_OLEN$L0 %ADD .1%FT #3F$L1 %MSK %RET
-$FN Dict_keySz   $PRE $xsl Dict_keyLen @DICT_OLEN^INC$L0 %ADD $jmpl align4
-$FN Dict_nextKey $PRE %DUP $xsl Dict_keySz %ADD %RET
+$FN Dict_keySz   $PRE $xx:Dict_keyLen @DICT_OLEN^INC$L0 %ADD $jmp:align4
+$FN Dict_nextKey $PRE %DUP $xx:Dict_keySz %ADD %RET
 
 \ {&key} -> {} recursive function to compile INPUTs
 \ Inputs are "compiled" (i.e. a SRLL is compiled) in reverse order.
@@ -985,21 +1007,21 @@ $FN _compileInputs $PRE $LARGE
   %DUP  .A%SRLL#0$h1 \ {&key} var key
   .A%FTGL @c_ldictRef$h2 .2%FTGL @c_ldictLen$h2 %ADD \ {&key &ldictEnd}
     $reteq \ return if key=ldictEnd
-  .A%FTLL#0$h1  $xsl Dict_nextKey  $xl _compileInputs \ get the next key and recurse {}
-  .A%FTLL#0$h1  %DUP $xsl isTyVar %SWP \ {isTyVar &key}
-  $xsl isVarInput %AND %RETZ \ {} all of (isTyVar isVarInput)
-  .A%FTLL#0$h1  %DUP $xsl keySzI \ {&key szInstr}
-  @SZ1$L1 @SRLL$L1 $xl c_instrLitImpl %RET
+  .A%FTLL#0$h1  $xx:Dict_nextKey  $xx:_compileInputs \ get the next key and recurse {}
+  .A%FTLL#0$h1  %DUP $xx:isTyVar %SWP \ {isTyVar &key}
+  $xx:isVarInput %AND %RETZ \ {} all of (isTyVar isVarInput)
+  .A%FTLL#0$h1  %DUP $xx:keySzI \ {&key szInstr}
+  @SZ1$L1 @SRLL$L1 $xx:c_instrLitImpl %RET
 
 \ End locals declaration. Update FN slots and LARGE.
 \ Compiles SRLL for each TY_VAR_INPUT, in reverse order.
 $FN declEnd
   $GET c_localOffset $IF \ if localOffset: update fn to large
-    $GET c_gkey @TY_FN_LARGE$L0 $xsl c_keyJnMeta
+    $GET c_gkey @TY_FN_LARGE$L0 $xx:c_keyJnMeta
   $END
-  $GET c_localOffset #4$L0 $xl align
-  @APO2$L0 %SHR $xsl h1 \ update number of slots
-  $GET c_ldictRef  $xl _compileInputs
+  $GET c_localOffset #4$L0 $xx:align
+  @APO2$L0 %SHR $xx:h1 \ update number of slots
+  $GET c_ldictRef  $xx:_compileInputs
   %RET
 
 \ **********
@@ -1045,28 +1067,28 @@ $FN betweenIncl $PRE \ {value a b} -> a <= value <= b
 
 $FN charToInt $PRE \ {c} -> {U8}
   \ '0' - '9'
-  %DUP #30$L0 #39$L0 $xl betweenIncl $IF #30$L0 %SUB %RET $END
+  %DUP #30$L0 #39$L0 $xx:betweenIncl $IF #30$L0 %SUB %RET $END
   \ 'A' - 'Z'
-  %DUP #41$L1 #5A$L1 $xl betweenIncl $IF #41$L1 %SUB #A$L0 %ADD %RET $END
+  %DUP #41$L1 #5A$L1 $xx:betweenIncl $IF #41$L1 %SUB #A$L0 %ADD %RET $END
   \ 'a' - 'z'
-  %DUP #61$L1 #7A$L1 $xl betweenIncl $IF #61$L1 %SUB #A$L0 %ADD %RET $END
+  %DUP #61$L1 #7A$L1 $xx:betweenIncl $IF #61$L1 %SUB #A$L0 %ADD %RET $END
   %DRP #FF$L1 %RET
 
 \ {} -> {c}: read next character from AFTER tokenLen.
 \ Increments tokenLen. This is destructive to token, use with care.
 $FN c_charNext
   $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
-    $xsl c_readNew  $xsl c_assertNoEof
+    $xx:c_readNew  $xx:c_assertNoEof
   $END
   $GET c_tokenBuf  $GET c_tokenLen  %ADD .1%FT
-  $GET c_tokenLen %INC  $_SET c_tokenLen %RET
+  $GET c_tokenLen %INC  $SET c_tokenLen %RET
 
 \ {} -> {char unknownEscape} read a character that can be escaped.
 $FN c_readCharEsc
-  $xsl c_charNext \ {char}
+  $xx:c_charNext \ {char}
   %DUP #5C$L1 %NEQ $IF @FALSE$L0 %RET $END \ if(c != '\\') ret;
   \ c is an escape character: \
-  %DRP $xsl c_charNext
+  %DRP $xx:c_charNext
   %DUP #5C$L1 %EQ $IF             @FALSE$L0 %RET $END \ \\: escape
   %DUP #74$L1 %EQ $IF %DRP #09$L0 @FALSE$L0 %RET $END \ \t: tab
   %DUP #6E$L1 %EQ $IF %DRP #0A$L0 @FALSE$L0 %RET $END \ \n: newline
@@ -1074,10 +1096,10 @@ $FN c_readCharEsc
   %DUP #73$L1 %EQ $IF %DRP #20$L0 @FALSE$L0 %RET $END \ \s: space (explicit)
   %DUP #78$L1 %EQ $IF \ \xHH
     \ charToInt(c_charNext) << 8 + charToInt(c_charNext)
-    %DRP $xsl c_charNext  $xsl charToInt #8$L0  %SHL
-    $xsl c_charNext       $xsl charToInt %ADD
+    %DRP $xx:c_charNext  $xx:charToInt #8$L0  %SHL
+    $xx:c_charNext       $xx:charToInt %ADD
     \ assertNot(dup < inc(0xFF), E_cStr)
-    %DUP #FF$L1 %INC %LT_U  @E_cStr$L2  $xsl assertNot
+    %DUP #FF$L1 %INC %LT_U  @E_cStr$L2  $xx:assertNot
     @FALSE$L0 %RET
   $END
   @TRUE$L0 %RET \ just return the character as-is but unknownEscape=true
@@ -1087,9 +1109,9 @@ $FN c_parseNumber \ {} -> {value isNumber}
   $declL i      @SZ1  #1     $declVar
   $declL base   @SZ1  #1     $declVar
   $declEnd
-  #A$L0 $_SET base
-  #0$L0 $_SET value
-  #0$L0 $_SET i
+  #A$L0 $SET base
+  #0$L0 $SET value
+  #0$L0 $SET i
 
   \ Get correct base
   $GET c_tokenBuf .1%FT #30$L0 %EQ $IF \ if c0 == '0' {}
@@ -1098,94 +1120,70 @@ $FN c_parseNumber \ {} -> {value isNumber}
     \ First handle 0c: character literal
     #63$L1 %EQ  $IF \ if .tokenBuf@1=='c' {c1}
       \ set tokenLen=2 to treat anything after 0c as next character.
-      %DRP #2$L0 $_SET c_tokenLen
-      $xsl c_readCharEsc  @E_cUnknownEsc$L2 $xsl assertNot
+      %DRP #2$L0 $SET c_tokenLen
+      $xx:c_readCharEsc  @E_cUnknownEsc$L2 $xx:assertNot
       @TRUE$L0 %RET
     $END
 
     %DUP \ {c1 c1}
     #62$L1 %EQ  $IF \ if .tokenBuf@1=='b' {c1}
-      #2$L0  $_SET base  #2$L0 $_SET i
+      #2$L0  $SET base  #2$L0 $SET i
     $END \ {c1}
     #78$L1 %EQ  $IF \ if .tokenBuf@1=='x' {}
-      #10$L0 $_SET base  #2$L0 $_SET i
+      #10$L0 $SET base  #2$L0 $SET i
     $END
   $END
 
   $LOOP l0
     $GET i  $GET c_tokenLen $BREAK_EQ b0
     $GET c_tokenBuf $GET i %ADD .1%FT \ {c}
-    $xsl charToInt \ {v}
+    $xx:charToInt \ {v}
     \ return {0 0} if not integer character
     %DUP $GET base %GE_U $IF  @FALSE$L0 %RET  $END
 
     $GET base  $GET value %MUL \ {base * value}
-    %ADD $_SET value \ value = v + value*10
-    $GET i %INC $_SET i \ i += 1
+    %ADD $SET value \ value = v + value*10
+    $GET i %INC $SET i \ i += 1
   $AGAIN l0  $END_BREAK b0
 
   $GET i %NOT $IF  #0$L0 @FALSE$L0 %RET  $END \ no token
   $GET value @TRUE$L0 %RET
 
 $FN lit  $PRE \ {U4} compile literal
-  %DUP #40$L1 %LT_U        $IF  $jmpl L0  $END
-  %DUP #FF$L1 %INC %LT_U   $IF  $jmpl L1  $END
-  %DUP #FFFF$L2 %INC %LT_U $IF  $jmpl L2  $END
-  $jmpl L4
+  %DUP #40$L1 %LT_U        $IF  $jmp:L0  $END
+  %DUP #FF$L1 %INC %LT_U   $IF  $jmp:L1  $END
+  %DUP #FFFF$L2 %INC %LT_U $IF  $jmp:L2  $END
+  $jmp:L4
 
 \ {asNow value:U4} -> {?nowVal}: compile proper sized literal
 \ if asNow=true the value is left on the stack.
 $FN c_lit
   %SWP %NOT %RETZ \ if now, leave on stack
-  $jmpl lit
+  $jmp:lit
 
-$FN xSzI $PRE \ {&key} -> {szI}: return the size requirement of the X instr
-   .A%FT $xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZA$L1 %RET
-
-$FN c_fn $PRE \ {&key}: compile a function
-  %DUP $xsl assertFn \ {&key}
-  %DUP $xsl isFnInline $IF \ Inline compilation {&key}
-    %DUP $xsl isFnLarge @E_cInlineLarge$L2 $xsl assertNot
-    .A%FT $GET heap %OVR \ {&inlineFn &heap &inlineFn}
-    %DUP %INC %SWP .1%FT \ {&inlineFn &heap &inlineFn+1 inlineLen}
-    @D_memSet$L0 %DVSR  \ memMove {&inlineFn}
-    .1%FT $GET heap %ADD $_SET heap %RET \ update heap+inlineLen
-  $END
-  %DUP $xsl xSzI     \ {&key szLit}
-  %OVR $xsl isFnLarge  $IF @XLL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
-  %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
-  $xl c_instrLitImpl %RET
-
-$FN execute \ {&key} -> {...}: tycheck and execute a dictionary key
-  %DUP $xsl isFnInline $IF \ if inline, assert not large and jmp to addr+1
-    %DUP $xsl isFnLarge @E_cInlineLarge$L2 $xsl assertNot  .A%FT %INC .A%JMPW
-  $END
-  %DUP $xsl isFnLarge  $IF .A%FT .A%XLW %RET $END
-  .A%FT .A%JMPW
 
 $FN _compConstant $PRE \ {asNow} -> {&keyFn[nullable]}
-  $xl c_parseNumber \ {asNow value isNumber}
-  $IF  $xsl c_lit #0$L0 %RET  $END %DRP \ {asNow}
-  $xsl c_isEof $IF  %DRP #0$L0 %RET  $END \ {asNow}
+  $xx:c_parseNumber \ {asNow value isNumber}
+  $IF  $xx:c_lit #0$L0 %RET  $END %DRP \ {asNow}
+  $xx:c_isEof $IF  %DRP #0$L0 %RET  $END \ {asNow}
 
   \ Handle local dictionary. Only constants allowed here.
-  $xsl ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {asNow &key}
-    %DUP $xsl isTyConst  @E_cNotFnOrConst$L2 $assert
-    .A%FT $xsl c_lit  #0$L0 %RET
+  $xx:ldictArgs  @D_dictK$L0 %DVFT %DUP  $IF \ {asNow &key}
+    %DUP $xx:isTyConst  @E_cNotFnOrConst$L2 $assert
+    .A%FT $xx:c_lit  #0$L0 %RET
   $END %DRP \ {asNow}
-  $xsl kdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
-  %DUP $xsl isTyConst $IF \ Constant case {asNow &key}
-    .A%FT $xsl c_lit #0$L0 %RET
-  $END %SWP %DRP %DUP $jmpl assertFn \ {&key}
+  $xx:kdictArgs  @D_dictK$L0 %DVFT \ {asNow &key}
+  %DUP $xx:isTyConst $IF \ Constant case {asNow &key}
+    .A%FT $xx:c_lit #0$L0 %RET
+  $END %SWP %DRP %DUP $jmp:assertFn \ {&key}
 
 $assertWsEmpty
 
 \ declare c_compFn = 0
-$declG c_compFn  @SZA @ASIZE $declVar
-  #0  $gRef c_compFn  .4^SR
+#0  $gRef c_compFn  .4^SR
 
 $FN c_updateCompFn $PRE \ {&newCompFn -> &prevCompFn}
-  $GET c_compFn %SWP $_SET c_compFn %RET
+  $GET c_compFn %SWP $SET c_compFn %RET
 
 \ {asNow} -> {}: compile a single token.
 \ This is the primary function that all compilation steps (besides spor
@@ -1194,60 +1192,53 @@ $FN c_single $PRE
   $declL asNow @SZ1 #1     $declVar
   $declL key   @SZA @ASIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
-  %DUP $_SET asNow $xsl _compConstant %DUP $_SET key %RETZ
-  $GET key $xsl isFnPre $IF $GET c_compFn .A%XLW $END \ recurse for PRE
-  $GET key $xsl isFnSyn $IF $GET asNow $GET key $jmpl execute    $END
-  $GET key $xsl isFnNow $IF $GET asNow @E_cReqNow$L2 $assert $END
-  $GET key $GET asNow $IF  $jmpl execute  $END  $jmpl c_fn
+  %DUP $SET asNow $xx:_compConstant %DUP $SET key %RETZ
+  $GET key $xx:isFnPre $IF $GET c_compFn .A%XLW $END \ recurse for PRE
+  $GET key $xx:isFnSyn $IF $GET asNow $GET key $jmp:execute    $END
+  $GET key $xx:isFnNow $IF $GET asNow @E_cReqNow$L2 $assert $END
+  $GET key $GET asNow $IF  $jmp:execute  $END  $jmp:c_fn
 
-$FN fngiSingle \ base c_compFn for fngi tokens.
-  #0$h1 $LARGE \ not really any locals (but called with XLW)
-  $c_scan $GET c_tokenLen %RETZ
-  @FALSE$L0 $xl c_single %RET
-
-@fngiSingle $c_updateCompFn ^DRP
-
-$FN c_number $c_scan $xl c_parseNumber %RET \ compile next token as number.
+$FN c_number $c_scan $xx:c_parseNumber %RET \ compile next token as number.
 
 $FN (  $SYN%DRP  \ parens ()
-  $xsl c_assertToken
-  $xsl c_peekChr #29$L0 %EQ $IF  $c_scan %RET  $END \ return if we hit ")"
+  $xx:c_assertToken
+  $xx:c_peekChr #29$L0 %EQ $IF  $c_scan %RET  $END \ return if we hit ")"
   $LOOP l0
     $GET c_compFn .A%XLW
-    $xsl c_assertToken
-    $xsl c_peekChr #29$L0 %EQ $IF  $c_scan %RET  $END \ return if we hit ")"
+    $xx:c_assertToken
+    $xx:c_peekChr #29$L0 %EQ $IF  $c_scan %RET  $END \ return if we hit ")"
   $AGAIN l0
 
 $FN _spor
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
-  @_spor$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
-  $xsl c_scanNoEof
+  @_spor$L2  $xx:c_updateCompFn $SET compFn \ update c_compFn and cache
+  $xx:c_scanNoEof
   @D_comp$L0  %DVFT \ compile next token as spor asm
-  $GET compFn $_SET c_compFn %RET
+  $GET compFn $SET c_compFn %RET
 
-$FN spor $SYN $xsl assertNoNow $xl _spor %RET \ compile as assembly
+$FN spor $SYN $xx:assertNoNow $xx:_spor %RET \ compile as assembly
 
 $FN c_now \ used in $ to make next token/s run NOW.
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
-  @c_now$L2  $xsl c_updateCompFn $_SET compFn \ update c_compFn and cache
-  $xsl c_scanNoEof
-  @TRUE$L0 $xl c_single  \ compile next token as NOW
-  $GET compFn $_SET c_compFn %RET
+  @c_now$L2  $xx:c_updateCompFn $SET compFn \ update c_compFn and cache
+  $xx:c_scanNoEof
+  @TRUE$L0 $xx:c_single  \ compile next token as NOW
+  $GET compFn $SET c_compFn %RET
 
-$FN $ $SYN $xsl assertNoNow $xl c_now %RET \ make NOW
+$FN $ $SYN $xx:assertNoNow $xx:c_now %RET \ make NOW
 
 $FN _comment \ used in \ to make next token ignored (comment)
   $declL compFn  @SZA  @ASIZE $declVar $declEnd
-  @_comment$L2  $xsl c_updateCompFn $_SET compFn
-  $xsl c_scanNoEof
+  @_comment$L2  $xx:c_updateCompFn $SET compFn
+  $xx:c_scanNoEof
   \ Execute an open paren, else ignore
-  $GET c_tokenBuf .1%FT #28$L0 %EQ $IF @TRUE$L0 $xl c_single $END
-  $GET compFn $_SET c_compFn %RET
+  $GET c_tokenBuf .1%FT #28$L0 %EQ $IF @TRUE$L0 $xx:c_single $END
+  $GET compFn $SET c_compFn %RET
 
 \ {-> c} peek at the char after current token.
 $FN c_peekNoScan
   $GET c_tokenLen  $GET c_tokenSize %GE_U $IF
-    $c_read $xsl c_assertNoEof \ ensure a char exists
+    $c_read $xx:c_assertNoEof \ ensure a char exists
   $END
   $GET c_tokenBuf $GET c_tokenLen %ADD .1%FT %RET
 
@@ -1258,11 +1249,11 @@ $FN c_peekNoScan
 $FN \
   $SYN %NOP %DRP
   \ Line comment if '\' is followed by space or newline
-  $xsl c_peekNoScan #20$L0 %EQ
+  $xx:c_peekNoScan #20$L0 %EQ
   $IF @D_scan$L0 %DVSR %RET $END \ scanEol
-  $xl _comment %RET \ else token comment
+  $xx:_comment %RET \ else token comment
 
-$FN ret $PRE $SYN $xsl assertNoNow @RET $c1 %RET \ ret 4, or just ret;
+$FN ret $PRE $SYN $xx:assertNoNow @RET $c1 %RET \ ret 4, or just ret;
 
 \ These do nothing and are used for more readable code.
 $FN _ $SYN%DRP %RET  $FN , $SYN%DRP %RET  $FN ; $SYN%DRP %RET
@@ -1273,5 +1264,12 @@ $FN c_fngi \ fngi compile loop
     $GET c_tokenSize %RETZ \ exit on EOF
     $GET c_compFn .A%XLW
   $AGAIN l0
+
+$FN fngiSingle \ base c_compFn for fngi tokens.
+  #0$h1 $LARGE \ not really any locals (but called with XLW)
+  $c_scan $GET c_tokenLen %RETZ
+  @FALSE$L0 $xx:c_single %RET
+
+@fngiSingle $c_updateCompFn ^DRP
 
 $c_dictDump

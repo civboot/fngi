@@ -70,8 +70,8 @@ FN sr4    PRE INLINE spor$(.4%SR) END_INLINE ret;
 
 FN = SYN panic(E_cToken)    \ prevent hanging =
 FN ) SYN panic(E_cUnclosed) \ prevent hanging )
-FN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
-FN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
+FN setSysLogLvl PRE SET sysLogLvl ret; \ {logLvl}
+FN setUsrLogLvl PRE SET usrLogLvl ret; \ {logLvl}
 
 \ TODO: alias?
 $(select(REF sr2, REF sr4, ASIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) kdictSet srA)
@@ -143,13 +143,13 @@ FN zEq PRE \ {&aZ &bZ} compare two zoab strings
 \ $
 \ declVar(declL h, SZA, ASIZE) $declEnd
 \   c_single(c_scan; FALSE) \ compile token after if
-\   0 -> $xsl IF -> _SET h
+\   0 -> $xsl IF -> SET h
 \   assertToken(c_scan; TOKEN_DO) c_single(c_scan; FALSE) \ do <token>
 \   c_scan;
-\   IF(eqToken(TOKEN_ELIF))       GET h, 0 -> $xsl ELSE -> _SET h;  _if;
+\   IF(eqToken(TOKEN_ELIF))       GET h, 0 -> $xsl ELSE -> SET h;  _if;
 \   ELSE IF(eqToken(TOKEN_ELSE))
-\     GET h, 0 -> $xsl ELSE -> _SET h;  c_single(c_scan; FALSE)
-\   ELSE  0 -> _SET c_tokenLen \ else: only peek
+\     GET h, 0 -> $xsl ELSE -> SET h;  c_single(c_scan; FALSE)
+\   ELSE  0 -> SET c_tokenLen \ else: only peek
 \   END END  ret _END(GET h)
 \ 
 \ \ if <token> do <token>  elif <token> do <token>  else <token>

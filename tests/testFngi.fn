@@ -30,8 +30,8 @@ $tAssertEq(0x42, testXsw)
 FN testSET PRE
   $declVar(declL a, SZ4, 4) $declEnd
   $assertWsEmpty;
-  4          -> _SET a
-  inc(GET a) -> _SET a
+  4          -> SET a
+  inc(GET a) -> SET a
   ret(GET a)
 $tAssertEq(testSET, 5)
 
@@ -39,5 +39,9 @@ $declVar(declG glblAnswer, SZ1, 1)
   $sr1(42, gRef glblAnswer)
 
 $tAssertEq(42, GET glblAnswer)
+
+
+FN testXX1 ret(1 xx:and 2) $tAssertEq(testXX1, 1) \ handles pre
+FN testXX2 ret(1 xx:drp 2) $tAssertEq(testXX2, 2) \ and non-pre
 
 $assertWsEmpty

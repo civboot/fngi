@@ -230,6 +230,7 @@ typedef struct {
   APtr lkey;
   APtr gheap;
   U2 localOffset;
+  APtr compFn;
 } Globals;
 
 // Environment
