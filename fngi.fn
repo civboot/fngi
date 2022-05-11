@@ -9,75 +9,69 @@
 $c_fngi
 
 \ Stack operators. These are /not/ PRE since they directly modify the stack.
-FN swp      SYN IF() spor%SWP    ELSE $c1(SWP )   END ret;
-FN drp      SYN IF() spor%DRP    ELSE $c1(DRP )   END ret;
-FN ovr      SYN IF() spor%OVR    ELSE $c1(OVR )   END ret;
-FN dup      SYN IF() spor%DUP    ELSE $c1(DUP )   END ret;
-FN dupn     SYN IF() spor%DUPN   ELSE $c1(DUPN)   END ret;
+FN swp  INLINE spor%SWP  END_INLINE ret;
+FN drp  INLINE spor%DRP  END_INLINE ret;
+FN ovr  INLINE spor%OVR  END_INLINE ret;
+FN dup  INLINE spor%DUP  END_INLINE ret;
+FN dupn INLINE spor%DUPN END_INLINE ret;
 
-\ Standard operators that use PRE syntax
-FN dvft PRE SYN IF() spor%DVFT   ELSE $c1(DVFT)   END ret;
-FN dvsr PRE SYN IF() spor%DVSR   ELSE $c1(DVSR)   END ret;
-FN inc  PRE SYN IF() spor%INC    ELSE $c1(INC )   END ret;
-FN inc2 PRE SYN IF() spor%INC2   ELSE $c1(INC2)   END ret;
-FN inc4 PRE SYN IF() spor%INC4   ELSE $c1(INC4)   END ret;
-FN dec  PRE SYN IF() spor%DEC    ELSE $c1(DEC )   END ret;
-FN inv  PRE SYN IF() spor%INV    ELSE $c1(INV )   END ret;
-FN neg  PRE SYN IF() spor%NEG    ELSE $c1(NEG )   END ret;
-FN not  PRE SYN IF() spor%NOT    ELSE $c1(NOT )   END ret;
-FN i1to4 PRE SYN IF() spor%CI1    ELSE $c1(CI1 )  END ret;
-FN i2to4 PRE SYN IF() spor%CI2    ELSE $c1(CI2 )  END ret;
-
-FN +    PRE SYN IF() spor%ADD    ELSE $c1(ADD )   END ret;
-FN -    PRE SYN IF() spor%SUB    ELSE $c1(SUB )   END ret;
-FN %    PRE SYN IF() spor%MOD    ELSE $c1(MOD )   END ret;
-FN <<   PRE SYN IF() spor%SHL    ELSE $c1(SHL )   END ret;
-FN >>   PRE SYN IF() spor%SHR    ELSE $c1(SHR )   END ret;
-FN msk  PRE SYN IF() spor%MSK    ELSE $c1(MSK)    END ret;
-FN jn   PRE SYN IF() spor%JN     ELSE $c1(JN  )   END ret;
-FN xor  PRE SYN IF() spor%XOR    ELSE $c1(XOR )   END ret;
-FN and  PRE SYN IF() spor%AND    ELSE $c1(AND)    END ret;
-FN or   PRE SYN IF() spor%OR     ELSE $c1(OR  )   END ret;
-FN ==   PRE SYN IF() spor%EQ     ELSE $c1(EQ  )   END ret;
-FN !=   PRE SYN IF() spor%NEQ    ELSE $c1(NEQ )   END ret;
-FN >=   PRE SYN IF() spor%GE_U   ELSE $c1(GE_U)   END ret;
-FN <    PRE SYN IF() spor%LT_U   ELSE $c1(LT_U)   END ret;
-FN *    PRE SYN IF() spor%MUL    ELSE $c1(MUL )   END ret;
-FN /    PRE SYN IF() spor%DIV_U  ELSE $c1(DIV_U ) END ret;
+\ Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
+FN dvft  PRE INLINE spor%DVFT   END_INLINE ret;
+FN dvsr  PRE INLINE spor%DVSR   END_INLINE ret;
+FN inc   PRE INLINE spor%INC    END_INLINE ret;
+FN inc2  PRE INLINE spor%INC2   END_INLINE ret;
+FN inc4  PRE INLINE spor%INC4   END_INLINE ret;
+FN dec   PRE INLINE spor%DEC    END_INLINE ret;
+FN inv   PRE INLINE spor%INV    END_INLINE ret;
+FN neg   PRE INLINE spor%NEG    END_INLINE ret;
+FN not   PRE INLINE spor%NOT    END_INLINE ret;
+FN i1to4 PRE INLINE spor%CI1    END_INLINE ret;
+FN i2to4 PRE INLINE spor%CI2    END_INLINE ret;
+FN +     PRE INLINE spor%ADD    END_INLINE ret;
+FN -     PRE INLINE spor%SUB    END_INLINE ret;
+FN %     PRE INLINE spor%MOD    END_INLINE ret;
+FN <<    PRE INLINE spor%SHL    END_INLINE ret;
+FN >>    PRE INLINE spor%SHR    END_INLINE ret;
+FN msk   PRE INLINE spor%MSK    END_INLINE ret;
+FN jn    PRE INLINE spor%JN     END_INLINE ret;
+FN xor   PRE INLINE spor%XOR    END_INLINE ret;
+FN and   PRE INLINE spor%AND    END_INLINE ret;
+FN or    PRE INLINE spor%OR     END_INLINE ret;
+FN ==    PRE INLINE spor%EQ     END_INLINE ret;
+FN !=    PRE INLINE spor%NEQ    END_INLINE ret;
+FN >=    PRE INLINE spor%GE_U   END_INLINE ret;
+FN <     PRE INLINE spor%LT_U   END_INLINE ret;
+FN *     PRE INLINE spor%MUL    END_INLINE ret;
+FN /     PRE INLINE spor%DIV_U  END_INLINE ret;
 
 FN xsw  PRE SYN assertNoNow(_) $c1(SZA+XSW) ret;
 FN xw   PRE SYN assertNoNow(_) $c1(SZA+XLW)  ret;
 
-
 \ memSet: {dst v len}   "dst = v"
 \ memMove {dst src len} "dst = src"
 \ memCmp: {&a &b len -> cmp}
-FN memSet  PRE SYN IF() dvft(D_memSet) ELSE lit(D_memSet) $c1(DVFT) END ret;
-FN memMove PRE SYN IF() dvsr(D_memSet) ELSE lit(D_memSet) $c1(DVSR) END ret;
-FN memCmp  PRE SYN IF() dvft(D_memCmp) ELSE lit(D_memCmp) $c1(DVFT) END ret;
+FN memSet  PRE INLINE dvft(D_memSet) END_INLINE ret;
+FN memMove PRE INLINE dvsr(D_memSet) END_INLINE ret;
+FN memCmp  PRE INLINE dvft(D_memCmp) END_INLINE ret;
 FN memClear PRE  0 swp; ret memSet(_, _) \ {addr len} clear memory
 
 \ {a b} return if a < b
-FN retlt PRE SYN assertNoNow(_) $c1(GE_U) $c1(RETZ) ret;
+FN retlt PRE INLINE retz(\a >= \b) END_INLINE ret;
 
 \ ftN(addr): fetch a value of sz N from address.
-FN ft1    PRE SYN IF() spor$(.1%FT) ELSE $c1(SZ1+FT) END ret;
-FN ft2    PRE SYN IF() spor$(.2%FT) ELSE $c1(SZ2+FT) END ret;
-FN ft4    PRE SYN IF() spor$(.4%FT) ELSE $c1(SZ4+FT) END ret;
+FN ft1    PRE INLINE spor$(.1%FT) END_INLINE ret;
+FN ft2    PRE INLINE spor$(.2%FT) END_INLINE ret;
+FN ft4    PRE INLINE spor$(.4%FT) END_INLINE ret;
 
 \ srN(value, addr): store a value of sz N to address.
-FN sr1    PRE SYN IF() spor$(.1%SR) ELSE $c1(SZ1+SR) END ret;
-FN sr2    PRE SYN IF() spor$(.2%SR) ELSE $c1(SZ2+SR) END ret;
-FN sr4    PRE SYN IF() spor$(.4%SR) ELSE $c1(SZ4+SR) END ret;
+FN sr1    PRE INLINE spor$(.1%SR) END_INLINE ret;
+FN sr2    PRE INLINE spor$(.2%SR) END_INLINE ret;
+FN sr4    PRE INLINE spor$(.4%SR) END_INLINE ret;
 
-FN = SYN drp panic(E_cToken)    \ prevent hanging =
-FN ) SYN drp panic(E_cUnclosed) \ prevent hanging )
+FN = SYN panic(E_cToken)    \ prevent hanging =
+FN ) SYN panic(E_cUnclosed) \ prevent hanging )
 FN setSysLogLvl PRE _SET sysLogLvl ret; \ {logLvl}
 FN setUsrLogLvl PRE _SET usrLogLvl ret; \ {logLvl}
-
-
-FN c_alias PRE \ {&key, isLocal, meta}
-
 
 \ TODO: alias?
 $(select(REF sr2, REF sr4, ASIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) kdictSet srA)
