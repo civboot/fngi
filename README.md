@@ -19,6 +19,7 @@ syntax. Spor itself is self-bootstrapped from an extremely lean native
 implementation, which is ~1-2 thousand lines of C.
 
 Fngi itself has the following space targets:
+
 - >=32KiB microcontroller/processor: can bootstrap a text-based OS providing
   human-editable source and assembly that can be recompiled on the
   microcontroller (aka self-bootstrapping). The processor does _not_ need to
@@ -28,15 +29,17 @@ Fngi itself has the following space targets:
   be self-bootstrapping.
 
 Read more:
-* [spor.md](./spor.md)
-* [fngi.md](./fngi.md)
-* [harness and zoab](./harness.md)
-* [Unstructured Notes](./notes/)
+
+- [spor.md](./spor.md)
+- [fngi.md](./fngi.md)
+- [harness and zoab](./harness.md)
+- [Unstructured Notes](./notes/)
 
 > Fngi and civboot should be considred an
 > [Obsolete Technology](http://xkcd.com/1891)
 
-# Goals
+## Goals
+
 fngi's goal is to evolve into nothing less than the primary programming language
 and operating system for [Civboot](http://civboot.org). There are many steps
 along the way, some of them complete.
@@ -68,12 +71,12 @@ along the way, some of them complete.
 
 [zoa]: http://github.com/vitiral/zoa
 
-# Helping / Hacking
+## Helping / Hacking
 
 The command to compile and run fngi and all tests is below. This will continue
 to be evolved.
 
-```
+```sh
 ./fngi --compile --test --syslog=LOG_COMPILER --log=LOG_INFO
 ```
 
@@ -107,13 +110,13 @@ Quick code walkthrough:
 When opening a PR to submit code to this repository you must include the
 following disclaimer in your first commit message:
 
-```
+```text
 I <author> assent to license this and all future contributions to this project
 under the dual licenses of the UNLICENSE or MIT license listed in the
 `UNLICENSE` and `README.md` files of this repository.
 ```
 
-# LICENSING
+## LICENSING
 
 This work is part of the Civboot project and therefore primarily exists for
 educational purposes. Attribution to the authors and project is appreciated but
@@ -126,7 +129,7 @@ If for any reason the UNLICENSE is not valid in your jurisdiction or project,
 this work can be singly or dual licensed at your discression with the MIT
 license below.
 
-```
+```text
 Copyright 2021 Garrett Berg
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of

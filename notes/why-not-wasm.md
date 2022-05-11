@@ -1,2 +1,3 @@
-Moved to https://github.com/civboot/civboot/blob/main/thoughts/why-not-wasm.md
+# Why not WASM?
 
+Moved to <https://github.com/civboot/civboot/blob/main/thoughts/why-not-wasm.md>

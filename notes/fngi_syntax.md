@@ -1,6 +1,8 @@
+# fngi syntax
 
-Function syntax
-```
+## Function syntax
+
+```fngi
 fn foo [?a:U4 ?b:U2 c:u4] -> [U4] do (
   // ...
 )

@@ -21,7 +21,7 @@ a different way of handling movement.
 > type-checked way without much complexity in fngi, see the botom of this
 > document.
 
-```
+```c
 typedef struct {
   size_t lastSaidIndex;
   Meat favoriteMeat;
@@ -35,7 +35,7 @@ typedef struct {
 
 Let's also say there were a set of methods you wanted to pass around with these:
 
-```
+```c
 typedef struct {
   char* (*talk)(void* animal);               // "talk" function pointer
   char* (*move)(void* animal, int x, int y); // "move to x,y" function pointer
@@ -46,7 +46,7 @@ One way you could make Dog or Goat a virtual type is to essentially mimic
 Rust/C++ "fat pointers" and pass around a pointer to the (global) method
 implementation along with a pointer to the data.
 
-```
+```c
 char* goatTalk(Goat* goat) {
   print(goatWords[goat->lastSaidIndex]);
   goat->lastSaidIndex += 1;
@@ -108,7 +108,7 @@ This allows you to do `.animal.walk(5, 6)`, etc.
 
 For roles, you can simply do:
 
-```
+```fngi
 \ Define animal role
 role Animal [
   fn talk [#Animal];
@@ -143,9 +143,9 @@ supported by the syntax. That really should be rarely necessary, and you could
 (of course) pass the same data twice for the rare cases it is needed.
 
 ## What about that favorite food?
+
 These have all been concrete types, aka non-generic. What about if you wanted to
 have a `fn feed [Food]` method, where `Food` is generic over `Grass` and `Meat`?
 
 Haha, gotcha! There is no way in Hel fngi will support generics.  However,
 `Food` could be an Enum... or even an role type itself!
-

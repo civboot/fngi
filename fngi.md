@@ -9,6 +9,7 @@ syntax". It is defined as a syntax where the compiler only reads a token stream
 and never creates an abstract syntax tree of any kind.
 
 ## Fngi basics
+
 Fngi is a stack based language. Most stack based languages (i.e. FORTH) use
 postfix notation, also called reverse polish notation. However, most "modern"
 (and more readable) languages use prefix notation, also called standard polish
@@ -25,13 +26,14 @@ postfix notation (they don't need `()` or `;`). However, by convention they
 are followed with `;`
 
 Fngi has a few tokens defined for documentation/syntactic surgar:
-* `,` does nothing and is intended as syntactic surgar (documentation) to
+
+- `,` does nothing and is intended as syntactic surgar (documentation) to
   separate arguments in functions.
-* `;` does nothing and is intended to be consumed when no arguments are being
+- `;` does nothing and is intended to be consumed when no arguments are being
   passed to a PRE function, i.e. `ret;`
-* `_` does nothing and is intended to be consumed (and document) when a value is
+- `_` does nothing and is intended to be consumed (and document) when a value is
   from the stack, i.e. `add(_, 2)`
-* `\` is a swiss-army knife comment, described below. It can also be consumed
+- `\` is a swiss-army knife comment, described below. It can also be consumed
   and document values from the stack, i.e. `add(\a, 2)` or `\a + \b`
 
 Unlike C (or most languages) that have an abstract syntax tree, fngi goes about
@@ -46,7 +48,7 @@ For example: `myFn 1`
 
 Gets compiled as (spor assembly, see spor.md):
 
-```
+```spor
 #1$L0     \ compile literal 0x1
 $xsl myFn \ compile a call to myFn
 ```
@@ -57,7 +59,8 @@ So how do we pass more than one argument? It's easy, we use parenthesis!
 So we can do: `myFn2(1, 2 + 3)`
 
 Which is compiled as
-```
+
+```spor
 #1$L0      \ literal 0x1
 #2$L0      \ literal 0x2
 #3$L0      \ literal 0x3. Note + was PRE so this is before %ADD
@@ -66,23 +69,26 @@ $xsl myFn2 \ call to myFn2, which will have a stack of {1 5}
 ```
 
 ### Comments
+
 The ultimate "do nothing" token is the swiss-army knife comment: `\`
 
 Comments have three forms:
-* `\token` comments out a single token.
-* `\ line comment` is a line comment
-* `\(block comment)` is a block comment
+
+- `\token` comments out a single token.
+- `\ line comment` is a line comment
+- `\(block comment)` is a block comment
 
 So you might write one of the below:
-* `myFn(_, 2 + 2)  \ "a" from the stack`
-* `myFn(\a, 2 + 3)`
-* `myFn(\(&a), 2 + 3)`
+
+- `myFn(_, 2 + 2)  \ "a" from the stack`
+- `myFn(\a, 2 + 3)`
+- `myFn(\(&a), 2 + 3)`
 
 ## Example
 
 Below is an example fngi function to calculate fibronacci recursively.
 
-```
+```fngi
 fn fib [n:U4] -> U4 do (
   if(.n <= 1) do ret 1;
   ret(fib(dec .n) + fib(.n - 2));
@@ -108,25 +114,29 @@ Let's explain a few details on how the parser/compiler stays extremely minimal:
   treated as a constant or function (which might be SYN/NOW).
 
 ## Fngi syntax
+
 Fngi has the following rules for token groups.
 
 "Single tokens": these tokens are never grouped together
 
-* `( ... )`: groups an execution.
-* `   $   `: run next token/s NOW (compile time). Can be `$( ... )`
-* `   .   `: enter name compiler `.foo = myFn(3)`
+- `( ... )`: groups an execution.
+- `$`: run next token/s NOW (compile time). Can be `$( ... )`
+- `.`: enter name compiler `.foo = myFn(3)`
 
 Otherwise a token is a group of:
-* alphanumeric characters (including `_`), i.e. `foo_bar123`
-* symbol characters not in the above "single" tokens, i.e. `+-*&` is a single
+
+- alphanumeric characters (including `_`), i.e. `foo_bar123`
+- symbol characters not in the above "single" tokens, i.e. `+-*&` is a single
   token
 
 Functions can be defined for any token that is not purely numeric
-* Numerics: `0x123 (hex)  12345 (decimal)  0b110101 (binary)  0cA 0c\n
+
+- Numerics: `0x123 (hex)  12345 (decimal)  0b110101 (binary)  0cA 0c\n
   (ascii character)`
-* Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
+- Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
 
 ## Fngi "macros": SYN and NOW
+
 Fngi allows any function to be run "NOW" at compile time. In spor this is
 done using `$token` and it is very similar in fngi.
 
@@ -153,7 +163,8 @@ For example `$(1 + 3)` will put `4` on the stack at compile time. However,
 `1 + 3` will compile both the literals and the `%ADD` instruction into the
 function.
 
-# Similarities to FORTH
+## Similarities to FORTH
+
 Like FORTH, fngi allows you to define functions that are either compiled or
 run NOW (affecting compilation, often called "macros" in other
 languages). Also like FORTH, fngi's functions operate by push/poping from a
@@ -165,6 +176,7 @@ or any other bells or whistles. They practically bootstraps themselves from
 nothing.
 
 Spore diverges from FORTH in the following ways:
+
 - Does not follow FORTH naming standards in any way. Typically closer to
   C naming.
 - Although it is stack-based, all functions (except those with no stack inputs
@@ -177,19 +189,23 @@ Spore diverges from FORTH in the following ways:
   executed and deallocate when returned.
 - Has less dependence on the working stack (data stack in FORTH).
 
-```
+```c
 // C Syntax
 uint32_t fib(uint32_t n) {
     if (n <= 1) return 1;
     return fib(n-1) + fib(n-2);
 }
+```
 
+```forth
 ( FORTH Syntax)
 :FIB ( n -> fibN)
   DUP 1 <= IF DROP 1 EXIT THEN
   DUP -1 FIB        ( n fib(n-1) }
   SWP 2 - FIB + ;
+```
 
+```fngi
 \ Fngi Syntax
 fn fib [n:U4] -> U4 do (
   if(.n <= 1) do ret 1;
@@ -204,17 +220,15 @@ the above is basically no more complicated than FORTH's.
 There are definitely a few areas of complexity in fngi that are not in forth
 though:
 
-* The virtual machine model definitely adds a bit of complexity, and the range
+- The virtual machine model definitely adds a bit of complexity, and the range
   of operations supported by the virtual machine (locals, global offset,
   security, etc) adds some complexity. However, it (in theory) reduces the
   binary size and allows easier portability. Really one just needs to port spor
   and fngi comes along for the ride!
-* Support of the locals stack requres an extra stack, but also reduces the
+- Support of the locals stack requres an extra stack, but also reduces the
   needed size of the working (data) stack.
-* Support of a range of dictionary types, like constant, syn, pre, etc has a
+- Support of a range of dictionary types, like constant, syn, pre, etc has a
   little more complexity. However, FORTH already had to handle NOW functions, so
   the complexity is largely in the forth compiler too.  Add to this that fngi
   provides basic type checking from the beginning (you can't execute a constant
   for instance) makes things well worth it.
-
-
