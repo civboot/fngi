@@ -6,7 +6,7 @@
 > `Goals` section for a complete list of items remaining.
 
 If we want to build an entirely understandable tech stack (as part of
-[civboot.org](http://civboot.org) or [bootstrappable.org](bootstrappable.org))
+[civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
 we need a language which can be implemented easily, has excellent expressiveness
 and readability, can modify itself, and has a simple but effective security
 model built in. The language has to be able to unroll from simple beginnings
