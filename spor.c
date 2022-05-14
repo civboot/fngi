@@ -5,37 +5,20 @@
 // see ./harness.md and ./fngi for details.
 
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
 #include <setjmp.h>
 #include <errno.h>
+#include "linux/constants.h"
+#include "linux/kernel.h"
+
+typedef U1 Instr;
 
 // print to stderr
 #define eprint(str)   fprintf (stderr, str)
 #define eprintf(format, args...)   fprintf (stderr, format, args)
-
-#define LOG_USER      0x10
-#define LOG_SYS       0x20
-
-typedef enum {
-  LOG_SILENT  = 0x00,
-
-  // User: 0b0001 XXXX
-  LOG_TRACE     = 0x1F,
-  LOG_DEBUG     = 0x17,
-  LOG_INFO      = 0x13,
-  LOG_WARN      = 0x11,
-  LOG_CRIT      = 0x10,
-
-  // Sys: 0b0010 XXXX
-  LOG_INSTR     = 0x27,
-  LOG_EXECUTE   = 0x23,
-  LOG_ASM       = 0x21,
-  LOG_COMPILER  = 0x20,
-} Lvl;
 
 typedef enum {
   Ev_log = 0, Ev_file = 1, Ev_dict = 2, Ev_err = 3, Ev_jmp = 4, Ev_ret = 5,
@@ -44,26 +27,10 @@ typedef enum {
 // ********************************************
 // ** Core Types
 
-typedef uint8_t Bool;
-typedef uint8_t U1;
-typedef uint16_t U2;
-typedef uint32_t U4;
-typedef uint32_t UA;
-typedef int8_t I1;
-typedef int16_t I2;
-typedef int32_t I4;
-typedef uint32_t ASz;
-typedef ASz APtr;
-
-typedef U2 CSz;
-typedef CSz CPtr;
-
 // 256 64k module blocks
 /*get module*/ #define MOD_HIGH_MASK 0xFF0000
 
 #define APO2  2
-#define ASIZE sizeof(ASz)
-#define CSIZE sizeof(CSz)
 
 #ifndef FALSE
 #define TRUE 1
@@ -78,90 +45,11 @@ typedef CSz CPtr;
 #define ASSERT_NO_ERR()    assert(!env.g->err)
 #define ASM_ASSERT(C, E)   if(!(C)) { SET_ERR(E); }
 
-// Error classes
-#define E_io      0xE010 // IO error class
-#define E_wsEmpty 0xE005 // the WS was expected empty
-
-#define E_null    0xE0A1 // null access
-#define E_oob     0xE0A2 // out of bounds access
-#define E_stkUnd  0xE0A3 // Stack underflow
-#define E_stkOvr  0xE0A4 // Stack overflow
-#define E_align2  0xE0A5 // access off 2byte allign
-#define E_align4  0xE0A6 // access off 4byte align
-#define E_divZero 0xE0A7 // divide by zero
-
-// Compiler (i.e. syntax) errors
-#define E_cInstr    0xE0C1 // invalid instr
-#define E_cToken    0xE0C2 // token invalid
-#define E_cTLen     0xE0C3 // token invalid
-#define E_cKey      0xE0C4 // key already exists
-#define E_cNoKey    0xE0C5 // key not found
-#define E_cHex      0xE0C6 // non-hex number
-#define E_cSz       0xE0C7 // invalid Sz selected
-#define E_cSzPtr    0xE0C8 // invalid Sz for a pointer
-#define E_cRet      0xE0C9 // invalid RET
-#define E_cDevOp    0xE0CB // device op not impl
-#define E_cDictOvr  0xE0CC // dict overflow
-#define E_cXHasL    0xE0CD // xs/jmp to non-small
-#define E_cXNoL     0xE0CE // x to non-locals
-#define E_cErr      0xE0CF // D_assert err code invalid
-#define E_cKeyLen   0xE0D0 // Key len too large
-#define E_cReg      0xE0D1 // Register error
-#define E_cStr      0xE0D2 // Str invalid
-
-#define E_cZoab     0xE0F1 // Zoab invalid
-
-#define TY_FN_LARGE  0x10
-#define TY_FN_MSK    0x0C
-#define TY_FN_SYN    0x08
-#define TY_FN_INLINE 0x0C
-#define TY_FN_LARGE_MREF  (TY_FN_LARGE << 0x18)
-#define TY_FN_SYN_MREF    (TY_FN_SYN << 0x18)
-
 typedef enum {
   C_OP   = 0x00, C_SLIT = 0x40, C_JMP =  0x80, C_MEM =  0xC0,
 } InstrClass;
 
-typedef enum {
-  // Op
-  NOP  = 0x00, RETZ = 0x01, RET  = 0x02, SWP  = 0x03,
-  DRP  = 0x04, OVR  = 0x05, DUP  = 0x06, DUPN = 0x07,
-  DVFT = 0x08, DVSR = 0x09, RGFT = 0x0A, RGSR = 0x0B,
-
-  INC  = 0x10, INC2 = 0x11, INC4 = 0x12, DEC  = 0x13,
-  INV  = 0x14, NEG  = 0x15, NOT  = 0x16, CI1  = 0x17,
-  CI2  = 0x18,
-
-  ADD  = 0x20, SUB  = 0x21, MOD  = 0x22, SHL  = 0x23,
-  SHR  = 0x24, MSK  = 0x25, JN   = 0x26, XOR  = 0x27,
-  LAND = 0x28, OR   = 0x29, EQ   = 0x2A, NEQ  = 0x2B,
-  GE_U = 0x2C, LT_U = 0x2D, GE_S = 0x2E, LT_S = 0x2F,
-
-  MUL  = 0x30, DIV_U= 0x31, DIV_S= 0x32,
-
-  // Jmp
-  JMPL = 0x80, JMPW = 0x81, JZL  = 0x82, JTBL = 0x83,
-  XLL  = 0x84, XLW  = 0x85, XSL  = 0x86, XSW  = 0x87,
-
-  // Mem
-  FT   = 0xC0, FTO  = 0xC1, FTLL = 0xC2, FTGL = 0xC3,
-  SR   = 0xC4, SRO  = 0xC5, SRLL = 0xC6, SRGL = 0xC7,
-  LIT  = 0xC8,
-} Instr;
-
-#define R_LP 0x80  // lower 7 bits are offset
-#define R_EP 0x00
-#define R_GB 0x01
-
 typedef enum { SzI1 = 0x00, SzI2 = 0x10, SzI4 = 0x20, } SzI;
-
-typedef enum {
-  D_read    = 0x00, D_scan    = 0x01, D_dict    = 0x02, D_dictK   = 0x03,
-                    D_comp    = 0x05, D_assert  = 0x06, D_wslen   = 0x07,
-  D_cslen   = 0x08, D_xCatch  = 0x09, D_memSet  = 0x0A, D_memCmp  = 0x0B,
-  D_com     = 0x0C, D_zoa     = 0x0D, D_dictDump= 0x0E, D_comZoab = 0x0F,
-  D_comDone = 0x10,
-} Device;
 
 #define SZ_MASK        0x30
 #define INSTR_CLASS(INSTR) (InstrClass)(0xC0 & INSTR)
@@ -169,84 +57,6 @@ typedef enum {
 #define INSTR_SZI(INSTR) ((SzI) (INSTR & SZ_MASK))
 
 #define SzIA SzI4
-
-// Generic stack.
-typedef struct { U2 sp; U2 size; U1* mem; } Stk;
-
-typedef enum {
-  ERR_DATA_NONE  = 0x00,
-  ERR_DATA_INT1  = 0x01,
-  ERR_DATA_DATA1 = 0x02,
-  ERR_DATA_INT2  = 0x03,
-  ERR_DATA_DATA2 = 0x04,
-} ErrValTy;
-
-typedef struct {
-  APtr ref; // Dictionary data
-  U2 len;   // Bytes used.
-  U2 cap;   // Bytes available.
-} Dict;
-
-typedef struct {
-  APtr buf; // buffer.
-  U2 len;   // length of token
-  U2 size;  // total characters buffered
-  U1 group;     U1 _align; U2 _align2;
-} TokenState;
-
-typedef struct {
-  U1 valTy;     U1 _align;  U2 _align2;
-  U2 valueASz;
-  U2 valueBSz;
-  U4 valueA;
-  U4 valueB;
-  APtr msg;
-} ErrData;
-
-typedef struct {
-  APtr indexes;
-  APtr blocks;
-  U1 len;
-  U1 root;
-} BlockAllocator;
-
-typedef struct {
-  APtr _null;
-  APtr heap;
-  APtr topHeap;
-  APtr topMem;
-  U2 err;
-  U2 state;
-  U4 _unimpl1;
-  U4 _unimpl2;
-  U2 sysLogLvl;
-  U2 usrLogLvl;
-  Dict dict;
-  Dict ldict;
-  TokenState ts;
-  ErrData errData;
-  BlockAllocator ba;
-  APtr gkey;
-  APtr lkey;
-  APtr gheap;
-  U2 localOffset;
-  APtr compFn;
-} Globals;
-
-// Environment
-typedef struct {
-  Globals* g;
-  APtr ep;  // execution pointer
-  APtr gb;  // Global Base
-  Stk ls;
-
-  // Working and Call Stack. Note: separate from mem
-  Stk ws;
-  Stk cs;
-  Stk lsSz;
-
-  U1 szI; // global instr sz
-} Env;
 
 #define LS_SP           (env.ls.mem - mem + env.ls.sp)
 #define CS_SP           (env.cs.mem - mem + env.cs.sp)
@@ -303,6 +113,27 @@ U1 (*readAtLeast)(U1 num) = NULL; // Read num bytes into tokenBuf
 U4 line = 1;
 jmp_buf* err_jmp;
 long long unsigned int dbgCount = 0;
+
+// ********************************************
+// ** Block Allocator Glue
+void S_BA_update(S_BlockAllocator* sba, BlockAllocator* ba)
+  /* do */ { sba->cap = ba->cap; sba->rooti = ba->rooti; }
+
+void S_BBA_update(S_BlockBumpArena* sbba, BlockBumpArena* bba)
+  /* do */ { sbba->rooti = bba->rooti; sbba->len = bba->len;
+             sbba->cap = bba->cap; }
+
+BBAReturn S_BBA_alloc(S_BlockBumpArena* s_bba, U1 aligned, U2 size) {
+  // TODO: check validity of BBA memory regions
+  BlockAllocator ba = BA_fromS((S_BlockAllocator*) (mem + s_bba->ba));
+  BlockBumpArena bba = BBA_fromS(*s_bba, &ba);
+  BBAReturn ret;
+  if (aligned)  ret = BBA_alloc(&bba, size);
+  else          ret = BBA_allocUnaligned(&bba, size);
+  S_BA_update((S_BlockAllocator*) (mem + s_bba->ba), &ba);
+  S_BBA_update(s_bba, &bba);
+  return ret;
+}
 
 // ********************************************
 // ** Zoab: See https://github.com/civboot/zoa
@@ -637,10 +468,11 @@ U4 popLit(SzI szI) {
     CASE_16(V) \
     CASE_16(V+16) \
 
-#define GOTO_SZ(I, SZ) case SZ + I: szI = SZ; goto I;
+#define GOTO_SZ(J, I, SZ) case SZ + I: szI = SZ; goto J;
 
 inline static void executeInstr(Instr instr) {
   U4 l, r;
+  eprintf("??? Instr: %X\n", instr);
   logInstr(instr);
   SzI szI = SzI2;
   switch ((U1)instr) {
@@ -707,7 +539,7 @@ inline static void executeInstr(Instr instr) {
     case MSK : r = WS_POP(); WS_PUSH(WS_POP() & r); return;
     case JN  : r = WS_POP(); WS_PUSH(WS_POP() | r); return;
     case XOR : r = WS_POP(); WS_PUSH(WS_POP() ^ r); return;
-    case LAND: r = WS_POP(); WS_PUSH(WS_POP() && r); return;
+    case AND : r = WS_POP(); WS_PUSH(WS_POP() && r); return;
     case OR  : r = WS_POP(); WS_PUSH(WS_POP() || r); return;
     case EQ  : r = WS_POP(); WS_PUSH(WS_POP() == r); return;
     case NEQ : r = WS_POP(); WS_PUSH(WS_POP() != r); return;
@@ -731,11 +563,11 @@ inline static void executeInstr(Instr instr) {
     case SzI1 + JMPL: r = env.ep; env.ep = toAptr(r + (I1)popLit(SzI1), SzI4); return;
     case SzI2 + JMPL: env.ep = toAptr(popLit(SzI2), SzI2); return;
     case SzI4 + JMPL: env.ep = toAptr(popLit(SzI4), SzI4); return;
-JMPW: case SzI2 + JMPW:
+_JMPW: case SzI2 + JMPW:
       env.ep = toAptr(WS_POP(), szI);
       return;
-    GOTO_SZ(JMPW, SzI1)
-    GOTO_SZ(JMPW, SzI4)
+    GOTO_SZ(_JMPW, JMPW, SzI1)
+    GOTO_SZ(_JMPW, JMPW, SzI4)
     case SzI1 + JZL:
       l = env.ep;
       r = popLit(SzI1);
@@ -749,66 +581,67 @@ JMPW: case SzI2 + JMPW:
       r = popLit(SzI4);
       if(!WS_POP()) { env.ep = toAptr(r, SzI4); }
       return;
-JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
-    GOTO_SZ(JTBL, SzI1)
-    GOTO_SZ(JTBL, SzI4)
-XLL: case SzI2 + XLL:
+_JTBL: case SzI2 + JTBL: assert(FALSE); // TODO: not impl
+    GOTO_SZ(_JTBL, JTBL, SzI1)
+    GOTO_SZ(_JTBL, JTBL, SzI4)
+_XLL: case SzI2 + XLL:
       return xImpl(toAptr(popLit(szI), szI));
-    GOTO_SZ(XLL, SzI1)
-    GOTO_SZ(XLL, SzI4)
-XLW: case SzI2 + XLW:
+    GOTO_SZ(_XLL, XLL, SzI1)
+    GOTO_SZ(_XLL, XLL, SzI4)
+_XLW: case SzI2 + XLW:
       return xImpl(toAptr(WS_POP(), szI));
-    GOTO_SZ(XLW, SzI1)
-    GOTO_SZ(XLW, SzI4)
-XSL: case SzI2 + XSL:
+    GOTO_SZ(_XLW, XLW, SzI1)
+    GOTO_SZ(_XLW, XLW, SzI4)
+_XSL: case SzI2 + XSL:
       return xsImpl(toAptr(popLit(szI), szI));
-    GOTO_SZ(XSL, SzI1)
-    GOTO_SZ(XSL, SzI4)
-XSW: case SzI2 + XSW:
+    GOTO_SZ(_XSL, XSL, SzI1)
+    GOTO_SZ(_XSL, XSL, SzI4)
+_XSW: case SzI2 + XSW:
       return xsImpl(toAptr(WS_POP(), szI));
-    GOTO_SZ(XSW, SzI1)
-    GOTO_SZ(XSW, SzI4)
+    GOTO_SZ(_XSW, XSW, SzI1)
+    GOTO_SZ(_XSW, XSW, SzI4)
 
     // Mem Cases
-FT: case SzI2 + FT:
+_FT: case SzI2 + FT:
       return WS_PUSH(fetch(mem, WS_POP(), szI));
-    GOTO_SZ(FT, SzI1)
-    GOTO_SZ(FT, SzI4)
-FTO: case SzI2 + FTO:
+    GOTO_SZ(_FT, FT, SzI1)
+    GOTO_SZ(_FT, FT, SzI4)
+_FTO: case SzI2 + FTO:
       return WS_PUSH(fetch(mem, WS_POP() + popLit(SzI1), szI));
-    GOTO_SZ(FTO, SzI1)
-    GOTO_SZ(FTO, SzI4)
-FTLL: case SzI2 + FTLL:
+    GOTO_SZ(_FTO, FTO, SzI1)
+    GOTO_SZ(_FTO, FTO, SzI4)
+_FTLL: case SzI2 + FTLL:
       return WS_PUSH(fetch(mem, LS_SP + popLit(SzI1), szI));
-    GOTO_SZ(FTLL, SzI1)
-    GOTO_SZ(FTLL, SzI4)
-FTGL: case SzI2 + FTGL:
+    GOTO_SZ(_FTLL, FTLL, SzI1)
+    GOTO_SZ(_FTLL, FTLL, SzI4)
+_FTGL: case SzI2 + FTGL:
       return WS_PUSH(fetch(mem, env.gb + popLit(SzI2), szI));
-    GOTO_SZ(FTGL, SzI1)
-    GOTO_SZ(FTGL, SzI4)
-SR: case SzI2 + SR:
+    GOTO_SZ(_FTGL, FTGL, SzI1)
+    GOTO_SZ(_FTGL, FTGL, SzI4)
+_SR: case SzI2 + SR:
       r = WS_POP(); return store(mem, r, WS_POP(), szI);
-    GOTO_SZ(SR, SzI1)
-    GOTO_SZ(SR, SzI4)
-SRO: case SzI2 + SRO:
+    GOTO_SZ(_SR, SR, SzI1)
+    GOTO_SZ(_SR, SR, SzI4)
+_SRO: case SzI2 + SRO:
       r = WS_POP(); return store(mem, r + popLit(SzI1), WS_POP(), szI);
-    GOTO_SZ(SRO, SzI1)
-    GOTO_SZ(SRO, SzI4)
-SRLL: case SzI2 + SRLL:
+    GOTO_SZ(_SRO, SRO, SzI1)
+    GOTO_SZ(_SRO, SRO, SzI4)
+_SRLL: case SzI2 + SRLL:
       return store(mem, LS_SP + popLit(SzI1), WS_POP(), szI);
-    GOTO_SZ(SRLL, SzI1)
-    GOTO_SZ(SRLL, SzI4)
-SRGL: case SzI2 + SRGL:
+    GOTO_SZ(_SRLL, SRLL, SzI1)
+    GOTO_SZ(_SRLL, SRLL, SzI4)
+_SRGL: case SzI2 + SRGL:
       l = WS_POP();
       r = env.gb + popLit(SzI2);
       return store(mem, r, l, szI);
-    GOTO_SZ(SRGL, SzI1)
-    GOTO_SZ(SRGL, SzI4)
-    default: SET_ERR(E_cInstr);
-LIT: case SzI2 + LIT:
+    GOTO_SZ(_SRGL, SRGL, SzI1)
+    GOTO_SZ(_SRGL, SRGL, SzI4)
+_LIT: case SzI2 + LIT:
       return WS_PUSH(popLit(szI));
-    GOTO_SZ(LIT, SzI1)
-    GOTO_SZ(LIT, SzI4)
+    GOTO_SZ(_LIT, LIT, SzI1)
+    GOTO_SZ(_LIT, LIT, SzI4)
+
+    default: SET_ERR(E_cInstr);
   }
 }
 
@@ -855,7 +688,7 @@ LIT: case SzI2 + LIT:
   Key* key = Dict_key(d, offset);
   U2 addedSize = alignAPtr(keySizeWLen(slen), 4);
 
-  ASM_ASSERT(d->len + addedSize <= d->cap, E_cDictOvr);
+  ASM_ASSERT(d->len + addedSize <= d->cap, E_DictOvr);
   key->value = value;
   key->meta = meta;
   key->len = slen;
@@ -998,6 +831,7 @@ U1 scanInstr() {
   scan(); // load name token
   U1 meta = WS_POP();
   U4 value = WS_POP();
+  eprintf("??? cDictSet %.*s meta=%X value=%X\n", tokenLen, tokenBuf, meta, value);
   Dict* d = DEFAULT_DICT;
   Dict_set(d, tokenLen, tokenBuf, value, meta);
 }
@@ -1009,16 +843,22 @@ U1 scanInstr() {
   WS_PUSH(value);
 }
 
+void bumpStoreBE(U4 value, SzI szI) {
+  BBAReturn ret = S_BBA_alloc(&env.g->bba, /*aligned=*/false, szIToSz(szI));
+  ASM_ASSERT(!ret.leftoverSize, E_newBlock);
+  ASM_ASSERT(ret.data, E_OOM);
+  eprintf("??? bumpStoreBE: allocated for: 0x%X, got mem: 0x%X\n", value, (U1*) ret.data - mem);
+  storeBE(mem, (U1*) ret.data - mem, value, szI);
+}
+
 /*fn*/ void cWriteHeap() { // `,`
   U4 value = WS_POP();
-  storeBE(mem, env.g->heap, value, env.szI);
-  env.g->heap += szIToSz(env.szI);
+  bumpStoreBE(value, env.szI);
 }
 
 /*fn*/ void cWriteInstr() { // `%`
   U1 instr = scanInstr();
-  store(mem, env.g->heap, (U1)instr, SzI1);
-  env.g->heap += 1;
+  bumpStoreBE(instr, SzI1);
 }
 
 /*fn*/ void cExecuteInstr() { // ^
@@ -1038,13 +878,14 @@ void _memmove(APtr dst, APtr src, APtr len) {
   U2 offset = Dict_find(d, tokenLen, tokenBuf);
   ASM_ASSERT(offset != d->len, E_cKey);
   Key* key = Dict_key(d, offset);
-  if(TY_FN_INLINE == (TY_FN_MSK & key->meta)) {
+  eprintf("??? cExecute: %.*s @%X\n", tokenLen, tokenBuf, key->value);
+  if(TY_FN_INLINE == (TY_FN_TY_MASK & key->meta)) {
     U1 len = fetch(mem, key->value, SzI1);
     _memmove(env.g->heap, key->value + 1, len);
     env.g->heap += len;
     return;
   }
-  if(TY_FN_SYN == (TY_FN_MSK & key->meta)) WS_PUSH(FALSE); // pass asNow=FALSE
+  if(TY_FN_SYN == (TY_FN_TY_MASK & key->meta)) WS_PUSH(FALSE); // pass asNow=FALSE
   WS_PUSH(key->value);
   if(TY_FN_LARGE & key->meta) execute(SzI4 + XLW);
   else                        execute(SzI4 + XSW);
@@ -1337,6 +1178,29 @@ void deviceOpComZoab(U1 isFetch) {
   }
 }
 
+void deviceOpBlock(U1 isFetch) {
+  // TODO: check validity of BA memory regions
+  BlockAllocator* ba = (BlockAllocator*) (mem + WS_POP());
+  U1* clientRooti = mem + WS_POP();
+  block_t* b;
+  if (isFetch) { // alloc
+    b = BA_alloc(ba, clientRooti);
+    if(b == NULL) WS_PUSH(0);
+    else WS_PUSH((U1*) b - mem);
+  } else {
+    b = (block_t*) (mem + WS_POP());
+    BA_free(ba, clientRooti, b);
+  }
+}
+
+void deviceOpBump(U1 isFetch) {
+  S_BlockBumpArena* s_bba = (S_BlockBumpArena*) (mem + WS_POP());
+  BBAReturn ret = S_BBA_alloc(s_bba, isFetch, WS_POP());
+  WS_PUSH(ret.leftoverSize);
+  if(ret.leftover) WS_PUSH((U1*) ret.leftover - mem); else WS_PUSH(0);
+  if(ret.data) WS_PUSH((U1*) ret.data - mem);         else WS_PUSH(0);
+}
+
 // Device Operations
 // Note: this must be declared last since it ties into the compiler infra.
 void deviceOp(Bool isFetch, SzI szI, U1 sz) {
@@ -1369,6 +1233,8 @@ void deviceOp(Bool isFetch, SzI szI, U1 sz) {
     case D_dictDump: deviceOpDictDump(isFetch); break;
     case D_comZoab: deviceOpComZoab(isFetch); break;
     case D_comDone: deviceOpComDone(); break;
+    case D_block: deviceOpBlock(isFetch); break;
+    case D_bump: deviceOpBump(isFetch); break;
     default: SET_ERR(E_cDevOp);
   }
 }
@@ -1429,6 +1295,7 @@ U1 readSrcAtLeast(U1 num) {
   memset(callStkMem, 0, RS);              \
   env = (Env) {                           \
     .g = (Globals*) mem,                  \
+    .k = (Kern*) (mem + sizeof(Globals)), \
     .ep = 1, .gb = 0,                     \
     .ls = { .size = LS, .sp = LS },       \
     .ws = { .size = WS, .sp = WS, .mem = wsMem },  \
@@ -1438,35 +1305,41 @@ U1 readSrcAtLeast(U1 num) {
       { .size = RS / 4, .sp = RS / 4, .mem = lsSzMem }, \
     .szI = SzI4, \
   };                                      \
-  memset(env.g, 0, sizeof(Globals));      \
+  APtr glbls = 0; /* location of globals*/ \
+  memset(env.g, glbls, sizeof(Globals));  \
   env.g->gheap = sizeof(Globals);         \
   env.g->usrLogLvl = startingUsrLogLvl;   \
   env.g->sysLogLvl = startingSysLogLvl;   \
   env.g->heap = GS; /*bottom is globals*/ \
   env.g->dict.cap = DS; /*heap=0*/        \
-\
-  env.g->topMem = MS;                       \
-  env.g->topHeap =            \
-    MS                      \
-    - (BLKS << BLOCK_PO2)   \
-    - BLKS;                 \
-  /* Block Allocator (see fngi.fn) */     \
-  env.g->ba.indexes = env.g->topHeap;         \
-  env.g->ba.blocks = env.g->topHeap + BLKS;   \
-  env.g->ba.len = BLKS;                     \
+                                          \
+  env.g->topMem = MS;                     \
+  env.g->topHeap =                        \
+    MS                                    \
+    - (BLKS << BLOCK_PO2)                 \
+    - (BLKS * 2);                         \
+  /* Allocators */                        \
+  env.g->ba.cap = BLKS;                   \
+  env.g->ba.nodes = env.g->topHeap;       \
+  env.g->ba.blocks = env.g->ba.nodes + (BLKS * 2); \
+  BlockAllocator __ba = BA_fromS(&env.g->ba); \
+  BA_init(&__ba);                         \
+  S_BA_update(&env.g->ba, &__ba);         \
+  env.g->bba.ba = ((U1*) &env.g->ba) - mem; \
+  env.g->bba.rooti = BLOCK_END;           \
   /* Reserve space for local stack*/      \
-  env.g->topHeap -= LS;                     \
-  env.ls.mem = mem + env.g->topHeap;        \
+  env.g->topHeap -= LS;                   \
+  env.ls.mem = mem + env.g->topHeap;      \
   /* Then dictionary */                   \
-  env.g->topHeap -= DS;                     \
-  env.g->dict.ref = env.g->topHeap;               \
+  env.g->topHeap -= DS;                   \
+  env.g->dict.ref = env.g->topHeap;       \
   /* Then Token Buf*/                     \
-  env.g->topHeap -= TOKEN_BUF;              \
+  env.g->topHeap -= TOKEN_BUF;            \
   env.g->ts.buf = env.g->topHeap;
 
 #define SMALL_ENV_BARE \
   /*           MS       WS     RS     LS     DICT    GS    BLKS */    \
-  NEW_ENV_BARE(0x10000, 0x40, 0x100, 0x200, 0x3000, 0x100, 0x4)
+  NEW_ENV_BARE(0x100000, 0x40, 0x100, 0x200, 0x3000, 0x100, 0x10)
 
 void setCompileFile(char* s) {
   zoab_file(strlen(s), s);
@@ -1483,12 +1356,16 @@ void compileFile(char* s) {
 
 #define NEW_ENV(MS, WS, RS, LS, DS, GS, BLKS) \
   NEW_ENV_BARE(MS, WS, RS, LS, DS, GS, BLKS); \
+  eprintf("??? heap: %X\n", env.g->heap); \
   WS_PUSH(env.g->heap); \
-  compileFile("spor.sp");
+  WS_PUSH(ASIZE); \
+  WS_PUSH(SzIA); \
+  compileFile("kernel/kernel_c.sp");
+  // compileFile("spor.sp");
 
 #define SMALL_ENV \
   /*      MS      WS     RS     LS     DICT    GS     BLKS*/    \
-  NEW_ENV(0x20000, 0x40, 0x100, 0x200, 0x3000, 0x1000, 0x10)
+  NEW_ENV(0x200000, 0x40, 0x100, 0x200, 0x3000, 0x1000, 0x20)
 
 // ********************************************
 // ** Main
@@ -1671,7 +1548,7 @@ void compileStr(char* s) {
   assert(0x42 == (size_t) &env.g->errData.valueBSz - (size_t) env.g);
   assert(0x44 == (size_t) &env.g->errData.valueA - (size_t) env.g);
   assert(0x48 == (size_t) &env.g->errData.valueB - (size_t) env.g);
-  assert(0x50 == (size_t) &env.g->ba      - (size_t) env.g);
+  // assert(0x50 == (size_t) &env.g->ba      - (size_t) env.g);
   assert(0x5C == (size_t) &env.g->gkey    - (size_t) env.g);
   assert(0x60 == (size_t) &env.g->lkey    - (size_t) env.g);
   assert(0x64 == (size_t) &env.g->gheap   - (size_t) env.g);
@@ -1726,22 +1603,25 @@ void compileStr(char* s) {
   TEST_ENV_BARE;
   zoab_info("## testDict");
 
-  compileStr(".2 #0F00 #0=foo  .4 #000B_A2AA #0=bazaa"
-      " @bazaa @foo .2 @foo");
+  compileStr("#0F00 #0=foo  #000B_A2AA #0=bazaa @bazaa @foo");
   assert(0xF00 == WS_POP());   // 2foo
-  assert(0xF00 == WS_POP());   // 4foo
-  assert(0xBA2AA == WS_POP()); // 4bazaa
+  assert(0xBA2AA == WS_POP()); // bazaa
   ENV_CLEANUP();
 }
 
 /*test*/ void testWriteHeap() { // test , and ;
   TEST_ENV_BARE;
+  eprint("## testWriteHeap\n");
   zoab_info("## testWriteHeap");
+  heapStart = env.g->ba.blocks + (env.g->bba.rooti << BLOCK_PO2) + env.g->bba.len;
+  eprintf("??? heapStart=%X\n", heapStart);
   // Note: comma stores as big-endian
-  compileStr(".4 #77770101, .2 #0F00, .1 #0,");
+  compileStr("#77770101 .4, #0F00 .2, #0 .1,");
   assert(0x01017777 == fetch(mem, heapStart, SzI4));
   assert(0x000F == fetch(mem, heapStart+4, SzI2));
   assert(0 == fetch(mem, heapStart+6, SzI1));
+  assert(FALSE);
+  ENV_CLEANUP();
 }
 
 void assertNoWs() {
@@ -1763,39 +1643,39 @@ void assertNoWs() {
   // deviceOpCom();
   // assert(!WS_POP());
 
-  // Test h1
-  heapStart = env.g->heap;
-  compileStr(".1 #42 ,  #43 $h1");
-  assert(heapStart+2 == env.g->heap);
-  assert(0x42 == fetch(mem, heapStart, SzI1));
-  assert(0x43 == fetch(mem, heapStart + 1, SzI1));
+  // // Test h1
+  // heapStart = env.g->heap;
+  // compileStr(".1 #42 ,  #43 $h1");
+  // assert(heapStart+2 == env.g->heap);
+  // assert(0x42 == fetch(mem, heapStart, SzI1));
+  // assert(0x43 == fetch(mem, heapStart + 1, SzI1));
 
-  // Test L0
-  heapStart = env.g->heap;
-  compileStr("#7 $L0");
-  assert(heapStart+1 == env.g->heap);
-  U4 v1 = fetch(mem, heapStart, SzI1);
-  assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
+  // // Test L0
+  // heapStart = env.g->heap;
+  // compileStr("#7 $L0");
+  // assert(heapStart+1 == env.g->heap);
+  // U4 v1 = fetch(mem, heapStart, SzI1);
+  // assert(C_SLIT | 0x7 == fetch(mem, heapStart, SzI1));
 
-  // Test h2
-  env.g->heap = alignAPtr(env.g->heap, 2);
-  heapStart = env.g->heap;
-  compileStr("#1234 $h2");
-  assert(heapStart+2 == env.g->heap);
-  assert(0x3412 == fetch(mem, heapStart, SzI2));
+  // // Test h2
+  // env.g->heap = alignAPtr(env.g->heap, 2);
+  // heapStart = env.g->heap;
+  // compileStr("#1234 $h2");
+  // assert(heapStart+2 == env.g->heap);
+  // assert(0x3412 == fetch(mem, heapStart, SzI2));
 
-  // Test h4
-  env.g->heap = alignAPtr(env.g->heap, 4);
-  heapStart = env.g->heap;
-  compileStr("#987654 $h4");
-  assert(heapStart+4 == env.g->heap);
-  assert(0x54769800 == fetch(mem, heapStart, SzI4));
+  // // Test h4
+  // env.g->heap = alignAPtr(env.g->heap, 4);
+  // heapStart = env.g->heap;
+  // compileStr("#987654 $h4");
+  // assert(heapStart+4 == env.g->heap);
+  // assert(0x54769800 == fetch(mem, heapStart, SzI4));
 
-  // Test various
-  compileStr("$_h");
-  assert(env.g->heap == WS_POP());
+  // // Test various
+  // compileStr("$_h");
+  // assert(env.g->heap == WS_POP());
 
-  compileFile("tests/testSpore.sp");
+  // compileFile("tests/testSpore.sp");
   compileLoop(); ASSERT_NO_ERR();
   ENV_CLEANUP();
 }
@@ -1826,7 +1706,7 @@ void assertNoWs() {
   testDict();
   testWriteHeap();
   testSpore();
-  testFngi();
+  // testFngi();
 
   assert(0 == WS_LEN);
   if (LOG_INFO & startingUsrLogLvl) zoab_infoStart("++ Tests Complete ++", 0);

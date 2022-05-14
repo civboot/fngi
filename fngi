@@ -294,7 +294,7 @@ def _harness(env, io):
 
 def compileSpore():
   print("Recompiling spore")
-  subprocess.run(["gcc", "spor.c", "-o", "spor"], check=True)
+  subprocess.run(["gcc", "spor.c", "linux/spor_alloc.c", "-o", "spor"], check=True)
   time.sleep(0.3) # For gcc error logging
 
 def readPassLoop(inp, toOut):
