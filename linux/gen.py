@@ -51,7 +51,7 @@ def gen_file(filename, brief, include, content):
 
 def gen():
   constants = '\n'.join(
-    f'#define {name.split()[0]:<20} {hex(value)}' for name, value
+    f'#define {name.split()[0]:<20} 0x{value:X}' for name, value
     in find_constants('kernel/kernel_c.sp')
   )
 

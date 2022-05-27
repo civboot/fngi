@@ -26,14 +26,16 @@ typedef uint32_t             Ref;
 
 typedef U1 Instr;
 
+typedef struct { Ref ref; U2 len; }                         Slc;
 typedef struct { Ref ref; U2 len; U2 cap; }                 Buf;
 typedef struct { Ref ref; U2 len; U2 size; U1 group; }      TokenState;
 typedef struct { Ref ref; U2 sp; U2 cap; }                  Stk;
-typedef struct { Ref ref; U2 len; U2 cap; }                 Dict;
 typedef struct { U1 previ; U1 nexti; }                      BANode;
 typedef struct { Ref nodes; Ref blocks; U1 rooti; U1 cap; } BA;
 typedef struct { Ref data; Ref leftover; U2 leftoverSize; } BBAReturn;
 typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
+typedef struct { Ref root; Ref free; }                      Dict;
+typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;
 
 typedef struct {
   U1 valTy;     U1 _align;  U2 _align2;
@@ -45,9 +47,10 @@ typedef struct {
 } ErrData;
 
 typedef struct {
+  Ref memTop;
   BA ba;
   BBA bba;
-  BBA bbaTemp;
+  BBA bbaTmp;
 } Kern;
 
 typedef struct {
@@ -56,52 +59,11 @@ typedef struct {
   Stk ws;   // working stack
   Stk cs;   // call stack
   Stk csSz; // call stack size bytes
-  Buf gbuf;  // global data buffer
+  Buf gbuf;   // global data buffer
+  Ref modBBA; // current module's bba
+  Ref tmpBBA; // current temporary bba
   TokenState t;
   U1 buf0[TOKEN_SIZE];
 } Globals;
-
-// typedef struct {
-//   Ref _null;
-//   Ref heap;
-//   Ref topHeap;
-//   Ref topMem;
-//   U2 err;
-//   U2 state;
-//   U4 _unimpl1;
-//   U4 _unimpl2;
-//   U2 sysLogLvl;
-//   U2 usrLogLvl;
-//   Dict dict;
-//   Dict ldict;
-//   TokenState ts;
-//   ErrData errData;
-//   Ref gkey;
-//   Ref lkey;
-//   Ref gheap;
-//   U2 localOffset;
-//   Ref compFn;
-//   S_BlockAllocator ba;
-// } Globals;
-// 
-// typedef struct {
-// } Kern;
-// 
-// // Environment
-// typedef struct {
-//   Globals* g;
-//   Kern* k;
-//   Ref ep;  // execution pointer
-//   Ref gb;  // Global Base
-//   Stk ls;
-// 
-//   // Working and Call Stack. Note: separate from mem
-//   Stk ws;
-//   Stk cs;
-//   Stk lsSz;
-// 
-//   U1 szI; // global instr sz
-// } Env;
-
 
 #endif // __FNGI_TY_H
