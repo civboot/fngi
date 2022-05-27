@@ -49,6 +49,8 @@
 \   01SS XXXX: mem
 \   10SS XXXX: jmp
 \   11XX XXXX: small literal value [0x00 - 0x3F]
+#40 #0=I_MEM
+#80 #0=I_JMP
 
 \ Values put on stack by kernel-compiler
     #0=SZA   \ SZ2 or SZ4 depending on arch
@@ -168,36 +170,31 @@
 #01 #0=R_GB \ global base pointer
 
 \ The DV 1 byte literal select the operation
-#00 #0=D_read   \ read from src, filling up tokenBuf
-#01 #0=D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
-#02 #0=D_dict   \ [(SR-only)value &dict] FT=get SR=set dict key=tokenBuf
-#03 #0=D_dictK  \ [&dict] FT=get reference to val  SR=forget including key
-#05 #0=D_comp   \ compile (assemble) the token in tokenBuf
-#06 #0=D_assert \ error if != 0
-#07 #0=D_wslen  \ get working stack length (in slots)
-#08 #0=D_cslen  \ get call stack lengh (in slots)
-\ {-> err} D_xCatch executes large function from WS but catches a panic.
-\ The errCode is returned (or 0 if no error).
-\ Note: caches and restores ep, call stack and local stack state. Working stack
-\ is cleared besides the returned err.
-#09 #0=D_xCatch
-#0A #0=D_memSet   \ {dst v len} "dst = v [len]". FT: memset, SR: memmove
-#0B #0=D_memCmp   \ {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
-#0C #0=D_com      \ {&msg len} -> {ioResult}: write to debug stream
-#0D #0=D_zoa      \ {} -> {} parse zoa to heap
-#0E #0=D_dictDump \ {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
-#0F #0=D_comZoab  \ FT{U4}  SR{len &data join}
-#10 #0=D_comDone  \ signifies end of one com. On linux this is a flush.
-#11 #0=D_block     \ {... &rooti &ba} block allocator. FT=alloc, SR=free
-#12 #0=D_bump      \ {size &bba} bump allocator. FT=alloc, SR=allocUnaligned
+#00 #0=D_bump   \ FT={size aligned &bba} bumpAlloc SR={&bba} newBlock
+\ #00 #0=D_read   \ read from src, filling up tokenBuf
+\ #01 #0=D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
+\ #02 #0=D_dict   \ [(SR-only)value &dict] FT=get SR=set dict key=tokenBuf
+\ #03 #0=D_dictK  \ [&dict] FT=get reference to val  SR=forget including key
+\ #05 #0=D_comp   \ compile (assemble) the token in tokenBuf
+\ #06 #0=D_assert \ error if != 0
+\ #07 #0=D_wslen  \ get working stack length (in slots)
+\ #08 #0=D_cslen  \ get call stack lengh (in slots)
+\ \ {-> err} D_xCatch executes large function from WS but catches a panic.
+\ \ The errCode is returned (or 0 if no error).
+\ \ Note: caches and restores ep, call stack and local stack state. Working stack
+\ \ is cleared besides the returned err.
+\ #09 #0=D_xCatch
+\ #0A #0=D_memSet   \ {dst v len} "dst = v [len]". FT: memset, SR: memmove
+\ #0B #0=D_memCmp   \ {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
+\ #0C #0=D_com      \ {&msg len} -> {ioResult}: write to debug stream
+\ #0D #0=D_zoa      \ {} -> {} parse zoa to heap
+\ #0E #0=D_dictDump \ {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
+\ #0F #0=D_comZoab  \ FT{U4}  SR{len &data join}
+\ #10 #0=D_comDone  \ signifies end of one com. On linux this is a flush.
+\ #11 #0=D_block     \ {... &rooti &ba} block allocator. FT=alloc, SR=free
 
 \ **********
 \ * [3] Constants
-#0  #0=FALSE
-#1  #0=TRUE
-@ASIZE ^INC #0=DICT_OLEN \ dict name len offset
-
-
 \ Token Groups
 #0  #0=T_NUM
 #1  #0=T_HEX
@@ -235,177 +232,25 @@
 #01 #0=TY_VAR_INPUT
 #0C #0=TY_VAR_REF
 
-\ * [3.b] Zoab
-#C0 #0=ZOAB_TY   \ bitmask: all types
-#80 #0=ZOAB_JOIN \ bitmask: join type
-#40 #0=ZOAB_ARR  \ bitmask: arr type
-#C0 #0=ZOAB_PTR  \ equality: next 4 bytes are a pointer.
-
-\ * [3.c] Log Levels
-#00 #0=LOG_SILENT
-
-\ Log Levels
-#10 #0=LOG_USER
-#1F #0=LOG_TRACE
-#17 #0=LOG_DEBUG
-#13 #0=LOG_INFO
-#11 #0=LOG_WARN
-#10 #0=LOG_CRIT
-
-\ Language Level (builtin) Logs
-#27 #0=LOG_INSTR
-#23 #0=LOG_EXECUTE
-#21 #0=LOG_ASM
-#20 #0=LOG_COMPILER
-
-\ * [3.d] Errors
-\ [E000 - E100): built-in errors.
-\  E100: device-specific hardware errors
-\ [E200-E800): reserved
-\  E800+: application errors
-\  AXXX_EXXX: test case assertion error.
-
-#0     #0=E_ok      \ no error
-#E000  #0=E_general \ general errors [E000-E010)
-#E010  #0=E_io      \ IO error class
-#E0A0  #0=E_asm     \ assembly error class (cause in asm).
-#E0C0  #0=E_comp    \ compiler error class (cause in comp).
-#A000  #0=E_test    \ [AXXX] (assert) test case error.
-
-#E001  #0=E_intern  \ internal (undefined) error
-#E002  #0=E_undef   \ undefined error
-#E003  #0=E_unreach \ unreachable code
-#E004  #0=E_todo    \ executed incomplete (to do) code
-#E005  #0=E_wsEmpty \ the WS was expected empty
-#E006  #0=E_unimpl  \ unimplemented error
-
-#E0A1  #0=E_null    \ null access
-#E0A2  #0=E_oob     \ out of bounds access
-#E0A3  #0=E_stkUnd  \ Stack underflow
-#E0A4  #0=E_stkOvr  \ Stack overflow
-#E0A5  #0=E_align2  \ access off 2byte allign
-#E0A6  #0=E_align4  \ access off 4byte align
-#E0A7  #0=E_divZero \ divide by zero
-
-#E0C1  #0=E_cInstr  \ invalid instr
-#E0C2  #0=E_cToken  \ token invalid
-#E0C3  #0=E_cTLen   \ token invalid
-#E0C4  #0=E_cKey    \ key already exists
-#E0C5  #0=E_cNoKey  \ dict key not found
-#E0C6  #0=E_cHex    \ non-hex number
-#E0C7  #0=E_sz      \ invalid Sz selected
-#E0C8  #0=E_cSzPtr  \ invalid Sz for aptr
-#E0C9  #0=E_cRet    \ invalid RET
-#E0CA  #0=E_cDblSr  \ Double store
-#E0CB  #0=E_cDevOp  \ device op not impl
-#E0CC  #0=E_DictOvr \ dict overflow
-#E0CD  #0=E_cXHasL  \ small-execute to fn w/locals
-#E0CE  #0=E_cXNoL   \ large-execute to fn wo/locals
-#E0CF  #0=E_cErr    \ D_assert err code invalid
-#E0D0  #0=E_cKeyLen \ Key len too large
-#E0D1  #0=E_cReg    \ Register error
-#E0D2  #0=E_cStr    \ Str invalid
-
-#E0E0  #0=E_cNotGlobal \ using a non-global as global
-#E0E1  #0=E_cIsX       \ using an XS for an X
-#E0E2  #0=E_cIsXS      \ using an X for an XS
-#E0E3  #0=E_cJmpL1     \ JMP1 over too much space
-#E0E4  #0=E_cNotFn
-#E0E5  #0=E_cNotFnLarge
-#E0E6  #0=E_cMod       \ different modules
-#E0E7  #0=E_cLSz       \ literal sz
-#E0E9  #0=E_cNotType
-#E0EA  #0=E_cNotLocal
-#E0EB  #0=E_cNotVar
-#E0EC  #0=E_cNotFnOrConst
-#E0ED  #0=E_eof
-#E0EE  #0=E_cUnclosed   \ unclosed paren/brace/etc
-#E0EF  #0=E_cReqNow     \ fn is NOW but no '$' used
-#E0EF  #0=E_cNoNow      \ fn is SYN and requires no $ used.
-#E0F0  #0=E_cUnknownEsc \ unknown character escape
-#E0F1  #0=E_cZoab       \ Zoab invalid
-#E0F2  #0=E_cNeedToken  \ token not present
-#E0F3  #0=E_cNeedNumber \ number not present
-#E0F4  #0=E_cBadRefs    \ too many de/refs
-#E0F5  #0=E_cRefEq      \ .&var = not allowed.
-#E0F6  #0=E_cInlineLarge \ inline fn is large
-#E0F7  #0=E_cColon      \ Expect : after function
-#E0F8  #0=E_cFnSyn      \ Invalid use of SYN function
-#E0F9  #0=E_newBlock    \ Require a NEW_BLOCK for code.
-#E0FA  #0=E_OOM         \ Out Of Memory
-
-#E0B0  #0=E_iBlock      \ invalid block index
-#E0B1  #0=E_ptrBlk      \ invalid block ptr
-#E0B2  #0=E_aaPo2       \ invalid po2
-
-#00  #0=ERR_DATA_NONE
-#01  #0=ERR_DATA_INT1
-#02  #0=ERR_DATA_DATA1
-#03  #0=ERR_DATA_INT2
-#04  #0=ERR_DATA_DATA2
-
-
-\ **********
-\ * [4] Globals: many of these must be the same as in spor.c
-
-
-#0000_0004 @TY_VAR@SZA^JN=heap
-#0000_0008 @TY_VAR@SZA^JN=topHeap
-#0000_000C @TY_VAR@SZA^JN=topMem
-#0000_0010 @TY_VAR@SZ2^JN=err
-#0000_0012 @TY_VAR@SZ2^JN=c_state  \ U2
-#0000_001C @TY_VAR@SZ2^JN=sysLogLvl
-#0000_001E @TY_VAR@SZ2^JN=usrLogLvl
-
-\ Dictionary (Kernel and Local) Structs
-#0000_0020 @TY_VAR@SZA^JN=c_kdictRef   \ U4
-#0000_0024 @TY_VAR@SZ2^JN=c_kdictLen   \ U2
-#0000_0026 @TY_VAR@SZ2^JN=c_kdictCap   \ U2
-#0000_0028 @TY_VAR@SZA^JN=c_ldictRef   \ U4
-#0000_002C @TY_VAR@SZ2^JN=c_ldictLen   \ U2
-#0000_002E @TY_VAR@SZ2^JN=c_ldictCap   \ U2
-
-\ TokenBuf Struct
-#0000_0030 @TY_VAR@SZA^JN=c_tokenBuf   \ [APtr] TokenBuf struct
-#0000_0034 @TY_VAR@SZ2^JN=c_tokenLen   \ [U2] length of token
-#0000_0036 @TY_VAR@SZ2^JN=c_tokenSize  \ [U2] characters buffered
-#0000_0038 @TY_VAR@SZ1^JN=c_tokenGroup \ [U1] token group
-
-\ Global Error Variables
-#0000_003C @TY_VAR@SZ1^JN=c_errValTy     \ [U1] + 3align
-#0000_0040 @TY_VAR@SZ2^JN=c_dataASz      \ [U2]
-#0000_0042 @TY_VAR@SZ2^JN=c_dataBSz      \ [U2]
-#0000_0044 @TY_VAR@SZA^JN=c_errVal1      \ [U4]
-#0000_0048 @TY_VAR@SZA^JN=c_errVal2      \ [U4]
-#0000_004C @TY_VAR@SZA^JN=c_msg          \ [APtr]
-
-\ Block Bump Arena
-#0000_0050 @TY_VAR@SZA^JN=kBBA        \ also kBBA.ba
-#0000_0054 @TY_VAR@SZ1^JN=kBBA_rooti
-#0000_0056 @TY_VAR@SZ2^JN=kBBA_len
-#0000_0058 @TY_VAR@SZ2^JN=kBBA_cap
-
-\ Global Compiler Variables
-#0000_005C @TY_VAR@SZA^JN=c_gkey         \ [U4] current kdict &key
-#0000_0060 @TY_VAR@SZA^JN=c_lkey         \ [U4] current ldict &key
-#0000_0064 @TY_VAR@SZA^JN=c_gheap        \ [U4] global heap
-#0000_0068 @TY_VAR@SZ2^JN=c_localOffset  \ [U2] Local Offset (for local var setup)
-#0000_006C @TY_VAR@SZA^JN=c_compFn       \ [UA] current compiler function
-
-@CODE_HEAP_START @TY_FN=_h  \ { -> heap} get the code heap
-  .1%FTGL@kBBA_rooti.2,         \ {rooti} get index block in use
-  @SLIT#0B^JN.1,  %SHL          \ {rooti<<12} convert to &block
-  .2%FTGL@kBBA_len, %ADD %RET   \ {&block+len} return the current "heap"
-
-$_h @_FP@TY_FN_INLINE^JN =assert #2.1, \ {cond errCode} assert cond or panic
-  @SLIT@D_assert^JN.1 %DVFT %RET
-
-$_h @_FP=kbump \ {size -> &data} bump some memory from kernel BBA
-  .2%LIT @kBBA, \ {size &bba}
-  @D_bump@SLIT^JN.1, %DVSR  \ call D_bumpUnaligned {leftoverSize &leftover &data}
-  %SWP %DRP %SWP %NOT \ {&data (not leftoverSize)} next: assert no leftover and data
-  .2%LIT@E_newBlock, $assert  %DUP .2%LIT@E_OOM, $assert %RET
-
-$_betterh @_FP=h1   #1@SLIT^JN.1,  .2%XSL @kbump,  .1%SR %RET
-\ $_betterh @_FP=kh2   #2 @SLIT ^JN .1,  .2%XSL @kbump,  .2%SRBE %RET
-\ $_betterh @_FP=kh4   #4 @SLIT ^JN .1,  .2%XSL @kbump,  .4%SRBE %RET
+\ \ * [3.b] Zoab
+\ #C0 #0=ZOAB_TY   \ bitmask: all types
+\ #80 #0=ZOAB_JOIN \ bitmask: join type
+\ #40 #0=ZOAB_ARR  \ bitmask: arr type
+\ #C0 #0=ZOAB_PTR  \ equality: next 4 bytes are a pointer.
+\ 
+\ \ * [3.c] Log Levels
+\ #00 #0=LOG_SILENT
+\ 
+\ \ Log Levels
+\ #10 #0=LOG_USER
+\ #1F #0=LOG_TRACE
+\ #17 #0=LOG_DEBUG
+\ #13 #0=LOG_INFO
+\ #11 #0=LOG_WARN
+\ #10 #0=LOG_CRIT
+\ 
+\ \ Language Level (builtin) Logs
+\ #27 #0=LOG_INSTR
+\ #23 #0=LOG_EXECUTE
+\ #21 #0=LOG_ASM
+\ #20 #0=LOG_COMPILER

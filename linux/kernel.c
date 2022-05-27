@@ -5,29 +5,41 @@
 // Search for these headings to find information
 //
 // * 1: Environment and Test Setup
-// * 1.a: Panic Handling
-// * 1.b: Environment Setup
+//   * 1.a: Panic Handling
+//   * 1.b: Environment Setup
 //
 // * 2: Memory Managers and Data Structures
-// * 2.a: Stacks
-// * 2.b: BlockAllocator (BA)
-// * 2.c: BlockBumpArena (BBA)
-// * 2.d: Slc (slice) Data Structure
-// * 2.e: Dict Binary Search Tree
+//   * 2.a: Stacks
+//   * 2.b: BlockAllocator (BA)
+//   * 2.c: BlockBumpArena (BBA)
+//   * 2.d: Slc (slice) Data Structure
+//   * 2.e: Dict Binary Search Tree
 //
 // * 3: Executing Instructions
-// * 3.a: Utilities
-// * 3.b: Functions
-// * 3.c: Giant Switch Statement
+//   * 3.a: Utilities
+//   * 3.b: Functions
+//   * 3.c: Giant Switch Statement
 //
-// * 4: Scanner
+// * 4: Source Code
+//   * 4.a: Reading and Mocking
+//   * 4.b: Scan
+//
+// * 5: Compiler
+//   * 5.a: Utilities
+//   * 5.b: Spor Token Functions
+//   * 5.c: Spor Compiler
+//   * 5.d: Compile Constants
+//
+// * 6: Device Operations (DV)
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <assert.h>
 #include <string.h>
 #include <setjmp.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #include "constants.h"
 #include "kernel.h"
@@ -46,8 +58,8 @@
 // This sets up the environment and tests.
 
 
-// *********
-// * 1.a: Panic Handling
+//   *******
+//   * 1.a: Panic Handling
 // In normal fngi code, errors should be returned. However, for critical
 // failures code can and will "panic". In C, a panic causes a longjmp to the
 // error handler. Panics should be considered extraordinary events, and although
@@ -55,12 +67,15 @@
 // any but the most low-level code or for testing purposes.
 
 jmp_buf* err_jmp = NULL;
-#define SET_ERR(E)  if(TRUE) { assert(E); g->err = E; longjmp(*err_jmp, 1); }
+bool expectingErr = false;
+#define SET_ERR(E)  if(true) { assert(E); g->err = E; \
+  if(!expectingErr) { eprintf("!! Hit Error, fn=%s [cline=%u]\n", __func__, __LINE__); } \
+  longjmp(*err_jmp, 1); }
 #define ASSERT_NO_ERR()    assert(!g->err)
 #define ASM_ASSERT(C, E)   if(!(C)) { SET_ERR(E); }
 
-// *********
-// * 1.b: Environment Setup
+//   *******
+//   * 1.b: Environment Setup
 // This provides helpful functions and macros for setting up the environment.
 //
 // The initial environment has a somewhat complicated memory layout. The basics
@@ -72,6 +87,7 @@ U1        *mem, *memEnd;  // start/end of spor memory
 Ref       memSize;
 Kern*     k;    // kernel owned data structures
 Globals*  g;    // global data structures (global base can move)
+U4 line;
 
 void* boundsCheck(U4 size, Ref r) {
   ASM_ASSERT(r, E_null); ASM_ASSERT(r + size <= memSize, E_oob);
@@ -94,18 +110,18 @@ void initEnv(U4 blocks) {
   k = (Kern*) mem;
   g = asPtr(Globals,
             sizeof(Kern)
-            + (WS_DEPTH + CS_DEPTH) * RSIZE + CS_DEPTH
-            + (2 * blocks));
+            + (WS_DEPTH + CS_DEPTH) * RSIZE + CS_DEPTH // stacks
+            + (2 * blocks)); // nodes
   *k = (Kern)    {0};
   *g = (Globals) {0};
 
+  LS  = Stk_init(BLOCK_SIZE      , BLOCK_SIZE);
   WS  = Stk_init(WS_DEPTH * RSIZE, sizeof(Kern));
-  WS  = Stk_init(BLOCK_SIZE, BLOCK_SIZE);
   CS  = Stk_init(CS_DEPTH * RSIZE, WS.ref + WS.cap);
   CSZ = Stk_init(CS_DEPTH        , CS.ref + CS.cap);
   k->ba = (BA) {
-    .nodes = CSZ.ref + CSZ.cap, .blocks = BLOCK_SIZE * 2,
-    .rooti = BLOCK_END,         .cap = blocks - 2,
+    .blocks = BLOCK_SIZE * 2, .nodes = CSZ.ref + CSZ.cap,
+    .rooti = BLOCK_END,       .cap = blocks - 2,
   };
   k->bba    = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
   k->bbaTmp = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
@@ -113,8 +129,7 @@ void initEnv(U4 blocks) {
   g->gbuf = (Buf) {
     .ref = asRef(g), .len = sizeof(Globals), .cap = BLOCK_SIZE };
   g->t = (TokenState) { .ref = asRef(&g->buf0), .size = TOKEN_SIZE };
-  g->modBBA = asRef(&k->bba);
-  g->tmpBBA = asRef(&k->bbaTmp);
+  g->curBBA = asRef(&k->bba);
 }
 
 #define NEW_ENV_BARE(BLOCKS) \
@@ -131,15 +146,16 @@ void initEnv(U4 blocks) {
   eprintf("## %s\n", #NAME); \
   NEW_ENV_BARE(BLOCKS); \
   if(setjmp(local_err_jmp)) { \
-    eprintf("!! Error: %X\n", g->err); exit(1); } \
+    eprintf("!! Error #%X (line %u)\n", g->err, line); exit(1); } \
   else { /*Test code here */
 
 #define TEST_END   } ENV_CLEANUP(); }
 
 #define EXPECT_ERR(E, CALL) \
-  err_jmp = &test_err_jmp; if(setjmp(test_err_jmp)) \
-  { ASSERT_EQ(E, g->err); err_jmp = &local_err_jmp; } \
+  err_jmp = &test_err_jmp; expectingErr = true; if(setjmp(test_err_jmp)) \
+  { expectingErr = false; ASSERT_EQ(E, g->err); err_jmp = &local_err_jmp; } \
   else { CALL; UNREACH; }
+
 BARE_TEST(testSetErr, 2)
   EXPECT_ERR(E_intern, SET_ERR(E_intern));
   EXPECT_ERR(E_intern, ASM_ASSERT(false, E_intern));
@@ -151,13 +167,14 @@ TEST_END
 // of these work successfully on low-level systems such as microcontrollers with
 // zero overhead and no hardware support.
 
-// *********
-// * 2.a: Stacks
+//   *******
+//   * 2.a: Stacks
 // Stacks are the core memory manager for operations (via the working stack
 // (WS)) and for executing functions (via the call stack (CS)).
-#define Stk_len(S)       (((S).size - (S).sp) >> RPO2)
+#define Stk_len(S)       (((S).cap - (S).sp) / RSIZE)
 #define WS_POP()         Stk_pop(&WS)
 #define WS_PUSH(V)       Stk_push(&WS, V)
+#define WS_PUSH2(A, B)   if(1) { Stk_push(&WS, A); Stk_push(&WS, B); }
 #define CS_PUSH(V)       Stk_push(&CS, V)
 
 #define ASSERT_WS(E)     ASSERT_EQ(E, WS_POP())
@@ -194,8 +211,8 @@ BARE_TEST(testStk, 2)
   ASSERT_EQ(0xFF, charToHex('R'));
 TEST_END
 
-// *********
-// * 2.b: BlockAllocator (BA)
+//   *******
+//   * 2.b: BlockAllocator (BA)
 // fngi utilizes 4KiB blocks of memory for many things including storing both
 // the code and dictionary of it's module system. The kernel allocators are
 // extremely lightweight but support dropable modules (and their code) without
@@ -208,28 +225,26 @@ TEST_END
 #define BBA_ba(bba) asPtr(BA, (bba).ba)
 
 void BA_init(BA* ba) {
-  if(ba->cap == 0) return;
-  ASM_ASSERT(ba->cap < BLOCK_END, E_intern);
+  if(ba->cap == 0) return; ASM_ASSERT(ba->cap < BLOCK_END, E_intern);
   BANode* nodes = asPtr(BANode, ba->nodes);
   ba->rooti = 0;
-  uint8_t i;
-  uint8_t previ = BLOCK_END;
+  U1 i, previ = BLOCK_END;
   for (i = 0; i < ba->cap; i += 1) {
-    nodes[i].previ = previ;
-    nodes[i].nexti = i + 1;
+    nodes[i].previ = previ; nodes[i].nexti = i + 1;
     previ = i;
   }
   nodes[i - 1].nexti = BLOCK_END;
 }
 
+
 // Allocate a block, updating BlockAllocator and client's root indexes.
 //
 // Go from:
-//   clientRoot -> c -> b -> a
 //   baRoot     -> d -> e -> f
+//   clientRoot -> c -> b -> a
 // To (returning block 'd'):
-//   clientRoot -> d -> c -> b -> a
 //   baRoot     -> e -> f
+//   clientRoot -> d -> c -> b -> a
 Ref BA_alloc(BA* ba, U1* clientRooti) {
   uint8_t di = ba->rooti; // index of "d"
   if(di == BLOCK_END) return 0;
@@ -237,9 +252,7 @@ Ref BA_alloc(BA* ba, U1* clientRooti) {
   BANode* nodes = asPtr(BANode, ba->nodes);
   BANode* d = &nodes[di]; // node "d"
   ba->rooti = d->nexti;  // baRoot -> e
-  if (d->nexti != BLOCK_END) {
-    nodes[d->nexti].previ = BLOCK_END; // baRoot <- e
-  }
+  if (d->nexti != BLOCK_END) nodes[d->nexti].previ = BLOCK_END; // baRoot <- e
 
   ASM_ASSERT(d->previ == BLOCK_END, E_intern); // "d" is already root node
   d->nexti = *clientRooti; // d -> c
@@ -359,8 +372,8 @@ BARE_TEST(testAlloc2FreeFirst, 6)
 TEST_END
 
 
-// *********
-// * 2.c: BlockBumpArena (BBA)
+//   *******
+//   * 2.c: BlockBumpArena (BBA)
 // For storing code and dictionary entries which reference code, fngi uses a
 // block bump arena. This "bumps" memory from the top (for aligned) or bottom of
 // a 4k block, but does not allow freeing it. However, the entire arena can be
@@ -382,7 +395,8 @@ bool _BBA_reserveIfSmall(BBA* bba, U2 size) {
 Ref BBA_alloc(BBA* bba, U2 size) {
   if(!_BBA_reserveIfSmall(bba, size)) return 0;
   bba->cap -= size;
-  return BA_block(*BBA_ba(*bba), bba->rooti) + bba->cap;
+  Ref out = BA_block(*BBA_ba(*bba), bba->rooti) + bba->cap;
+  return out;
 }
 
 // Allocate "unaligned" data from the bottom of the block.
@@ -404,8 +418,8 @@ BARE_TEST(testBBA, 6)
   ASSERT_EQ(0                               , BBA_alloc(&k->bba, BLOCK_SIZE));
 TEST_END
 
-// *********
-// * 2.d: Slc (slice) Data Structure
+//   *******
+//   * 2.d: Slc (slice) Data Structure
 // One of the core types in fngi is the Slc (slice) and it's child the Buf
 // (buffer). A Slc is simply a reference and a U2 len (length). A Buf adds on a
 // capacity, allowing for the data to grow. Note that a reference to a Buf is
@@ -414,10 +428,17 @@ TEST_END
 // The other core type is cdata, often just represented as "c". This is counted
 // data where the first byte has the count (length).
 #define cAsSlc(CDATA)  asSlc(CDATA + 1, *asPtr(U1, CDATA))
+#define sAsTmpSlc(S)   mvAndSlc(S, strlen(S))
 
 Slc asSlc(Ref ref, U2 len) {
   ASM_ASSERT(ref, E_null); ASM_ASSERT(ref + len < memSize, E_oob);
   return (Slc) {.ref = ref, .len = len};
+}
+
+Slc mvAndSlc(U1* buf, U2 len) {
+  U1* gbuf = asPtr(U1, g->gbuf.ref + g->gbuf.len);
+  memmove(gbuf, buf, len);
+  return (Slc) { .ref = asRef(gbuf), .len = len };
 }
 
 I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
@@ -437,30 +458,31 @@ I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
   Ref c_a = BLOCK_SIZE; \
   Ref c_b = c_a + 4; \
   Ref c_c = c_b + 5; \
-  memmove(asPtr(U1, c_a), "\x04" "aaa", 4); \
-  memmove(asPtr(U1, c_b), "\x05" "abbd", 5); \
-  memmove(asPtr(U1, c_c), "\x04" "abc", 4); \
+  memmove(asPtr(U1, c_a), "\x03" "aaa", 4); \
+  memmove(asPtr(U1, c_b), "\x04" "abbd", 5); \
+  memmove(asPtr(U1, c_c), "\x03" "abc", 4); \
   Slc a = cAsSlc(c_a); \
   Slc b = cAsSlc(c_b); \
   Slc c = cAsSlc(c_c);
 
 BARE_TEST(testSlc, 5)
   TEST_SLICES
+  ASSERT_EQ(3, c.len); assert(c_c + 1 == c.ref);
+  ASSERT_EQ('a', *asPtr(U1, c.ref));  ASSERT_EQ('c', *asPtr(U1, c.ref + 2));
 
-  ASSERT_EQ(4, a.len);
-  ASSERT_EQ(5, b.len);
-  assert(c_a + 1 == a.ref);
 
   ASSERT_EQ(0,  Slc_cmp(a, a));
   ASSERT_EQ(-1, Slc_cmp(a, b));
   ASSERT_EQ(-1, Slc_cmp(a, c));
   ASSERT_EQ(1,  Slc_cmp(b, a));
   ASSERT_EQ(1,  Slc_cmp(c, b));
+
+  Slc z = sAsTmpSlc("abc");  ASSERT_EQ(0, Slc_cmp(c, z));
 TEST_END
 
 
-// *********
-// * 2.e: Dict Binary Search Tree
+//   *******
+//   * 2.e: Dict Binary Search Tree
 // The dictionary is a basic unbalanced binary search tree with keys of cdata.
 // It contains a U4 value and some metadata necessary for distinguishing between
 // the kinds of values (see kernel/constants.sp).
@@ -481,6 +503,11 @@ I4 Dict_find(DNode** node, Slc slc) {
       else            return cmp; // not found
     }
   }
+}
+
+DNode* Dict_get(DNode* root, Slc slc) {
+  ASM_ASSERT(!Dict_find(&root, slc), E_cNoKey);
+  return root;
 }
 
 // Add a node to the tree. WARNING: modifies *node.
@@ -540,8 +567,8 @@ TEST_END
 #define sectorRef(R)  (/*join with ep's sector*/ (0xFFFF0000 & vm.ep) | r)
 VM vm;
 
-// *********
-// * 3.a: Utilities
+//   *******
+//   * 3.a: Utilities
 // There are a few utility functions necessary for executing instructions.
 
 U4 ftBE(Ref ref, U2 size) { // fetch Big Endian
@@ -566,6 +593,7 @@ void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
 
 U4 popLit(U1 size) { U4 out = ftBE(vm.ep, size); vm.ep += size; return out; }
 U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
+U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
 
 BARE_TEST(testUtilities, 2)
   srBE(BLOCK_SIZE,      1, 0x01);
@@ -579,8 +607,8 @@ BARE_TEST(testUtilities, 2)
   ASSERT_EQ(0x2345,       popLit(2));
 TEST_END
 
-// *********
-// * 3.b: Functions
+//   *******
+//   * 3.b: Functions
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
@@ -598,8 +626,8 @@ void xlImpl(Ref fn) { // impl for XL*
   xImpl(growSz, fn + 1);
 }
 
-// *********
-// * 3.c: Giant Switch Statement
+//   *******
+//   * 3.c: Giant Switch Statement
 //
 // Instructions (which are really just a single byte) are executed inside a
 // giant switch statement. Most instructions modify the working stack and read
@@ -738,7 +766,7 @@ inline static void executeInstr(Instr instr) {
 
     case SZ1 + JTBL:
     case SZ2 + JTBL:
-    case SZ4 + JTBL: assert(FALSE); // TODO: not impl
+    case SZ4 + JTBL: assert(false); // TODO: not impl
 
     case SZ1 + XLL: xlImpl(vm.ep + (I1)popLit(1)); R;
     case SZ2 + XLL: xlImpl(sectorRef(popLit(2))); R;
@@ -761,8 +789,18 @@ inline static void executeInstr(Instr instr) {
   }
 }
 
+void execute(U1 instr) {
+  U2 startingLen = Stk_len(g->cs);
+  while(true) {
+    executeInstr(instr);
+    if(Stk_len(g->cs) == startingLen) return;
+    instr = popLit(1);
+  }
+}
+
+
 // ***********************
-// * 4: Scanner
+// * 4: Source Code
 // The fngi scanner is used for both spor and fngi syntax. The entire compiler
 // works by:
 //   (1) scanning a single tokens.
@@ -783,24 +821,364 @@ inline static void executeInstr(Instr instr) {
 // of shifting bytes left after ever token, but that cost is small compared to
 // serial IO.
 
-#define TBUF  (mem + g->t.buf)
-#define TLEN  (g->t.len)
-#define TSIZE (g->t.size)
+FILE* srcFile;
+char* testSrcStr = NULL;
+U2    testSrcStr_i = 0;
 
-/*fn*/ U1 toTokenGroup(U1 c) {
-  if(c <= ' ') return T_WHITE;
+//   *******
+//   * 4.a: Reading and Mocking
+// We read using a function pointer so that tests can mock it out.
+
+#define Tbuf  (mem + g->t.ref)
+#define Tlen  (g->t.len)
+#define Tsize (g->t.size)
+#define Tslc  ((Slc) {.ref = g->t.ref, .len = Tlen})
+
+U1 (*readAtLeast)(U1 num) = NULL; // Read num bytes into Tbuf
+
+// Read at least num bytes from source file into Tbuf.
+// If EOF is reached return the number of bytes read.
+// If this would overflow Tbuf, return the number of bytes actually read.
+U1 readSrcAtLeast(U1 num) {
+  U4 out = 0;
+  num = min(TOKEN_SIZE, num);
+  assert(num);
+  while (true) {
+    ssize_t numRead = read(
+      fileno(srcFile),                // filedes
+      Tbuf + Tsize,                   // buf
+      max(num, TOKEN_SIZE - Tsize));  // nbyte
+    assert(!errno);
+    assert(numRead >= 0);
+    Tsize += numRead;
+    out += numRead;
+    if(!numRead) break; // EOF
+    if(TOKEN_SIZE - Tsize == 0) break;
+    if(numRead >= num) break;
+  }
+  assert(out <= 0xFF);
+  // eprintf("??? readSrcAtLeast numRead=%u: ", out);
+  // fwrite(Tbuf + Tsize - out, 1, out, stderr);
+  // eprintf("\n ??? Token len=%u: %.*s", tokenLen, tokenLen, Tbuf);
+  return out;
+}
+
+void readNewAtLeast(U1 num) {
+  Tlen = 0;
+  Tsize = 0;
+  readAtLeast(num);
+}
+
+void shiftBuf() {
+  // Shift buffer left from end of token
+  if(Tlen == 0) return;
+  U2 newStart = Tlen; U1 i = 0;
+  while(Tlen < Tsize) {
+    Tbuf[i] = Tbuf[Tlen];
+    i += 1, Tlen += 1;
+  }
+  Tlen = 0, Tsize = Tsize - newStart;
+}
+
+// Function for "reading" from a string.
+U1 testSrcStrReadAtLeast(U1 n) {
+  U1 numRead = 0;
+  while (Tsize < TOKEN_SIZE) {
+    U1 c = testSrcStr[testSrcStr_i];
+    if(c == 0) return numRead;
+    Tbuf[Tsize] = c;
+    Tsize += 1;
+    testSrcStr_i += 1;
+    numRead += 1;
+  }
+  return numRead;
+}
+
+// Function for reading from a file.
+void setCompileFile(char* s) {
+  // zoab_file(strlen(s), s);
+  line = 1, readAtLeast = &readSrcAtLeast, srcFile = fopen(s, "rb");
+  assert(srcFile > 0);
+}
+
+void setCompileStr(char* s) {
+  // zoab_file(7, "RAW_STR");
+  testSrcStr = s, testSrcStr_i = 0, line = 1;
+  readAtLeast = &testSrcStrReadAtLeast;
+}
+
+//   *******
+//   * 4.b: Scan
+// The scanner reads the next token, storing at the beginning of Tbuf with
+// length Tlen.
+
+#define ASSERT_TOKEN(S)  if(1) { scan(); if(!Teq(S)) { \
+  eprintf("! Token: %s == %.*s\n", S, Tlen, Tbuf); assert(false); } }
+U1 Teq(U1* s) { U2 len = strlen(s);  if(len != Tlen) return false;
+                return 0 == memcmp(s, Tbuf, len); }
+
+U1 toTokenGroup(U1 c) {
+  if(c <= ' ')             return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
   if('a' <= c && c <= 'f') return T_HEX;
   if('A' <= c && c <= 'F') return T_HEX;
+  if(c == '_')             return T_HEX;
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
-  if(c == '_') return T_ALPHA;
   if(c == '%' || c == '\\' || c == '$' || c == '|' ||
      c == '.' || c ==  '(' || c == ')') {
     return T_SINGLE;
   }
   return T_SYMBOL;
 }
+
+void _scan() {
+  // Skip whitespace
+  while(true) {
+    if(Tlen >= Tsize) { readNewAtLeast(1); }
+    if(Tsize == 0) return;
+    if(toTokenGroup(Tbuf[Tlen]) != T_WHITE) break;
+    if(Tbuf[Tlen] == '\n') line += 1;
+    Tlen += 1;
+  }
+  shiftBuf(); // Moves buffer to the left (Tlen=0)
+  if(!Tsize) { readAtLeast(1); }
+  assert(Tsize);
+
+  U1 c = Tbuf[Tlen];
+  g->t.group = toTokenGroup(c);
+  if(g->t.group == T_SINGLE) {
+    Tlen += 1; // SINGLE: always single-char token
+    return;
+  }
+
+  // Parse token until the group changes.
+  while (true) {
+    if (Tlen >= Tsize) readAtLeast(1);
+    if (Tlen >= Tsize) break;
+
+    ASM_ASSERT(Tlen < TOKEN_SIZE, E_cTLen);
+    c = Tbuf[Tlen];
+
+    U1 tg = toTokenGroup(c);
+    if (tg == g->t.group) {}
+    else if ((g->t.group <= T_ALPHA) && (tg <= T_ALPHA)) {}
+    else break;
+    Tlen += 1;
+  }
+}
+
+// void scan() { _scan(); }
+void scan() { _scan(); }
+
+BARE_TEST(testScan, 3)
+  setCompileStr("hi there$==");
+  ASSERT_TOKEN("hi"); ASSERT_TOKEN("there"); ASSERT_TOKEN("$"); ASSERT_TOKEN("==");
+
+  setCompileStr("         lots     \n\n\n\n    of \n\n  empty            ");
+  ASSERT_TOKEN("lots"); ASSERT_TOKEN("of"); ASSERT_TOKEN("empty");
+
+  setCompileFile("kernel/constants.sp");
+  ASSERT_TOKEN("\\"); ASSERT_TOKEN("Kernel"); ASSERT_TOKEN("Constants");
+  ASSERT_TOKEN("\\");
+  ASSERT_TOKEN("\\"); ASSERT_TOKEN("Note"); ASSERT_TOKEN(":"); ASSERT_TOKEN("this");
+TEST_END
+
+// ***********************
+// * 5: Compiler
+// We can finally begin writing the compiler. There are only a few characters
+// that the native spor assembler can handle (see `compile()` function).
+//
+// We must first implement how to handle each case and then we can start
+// compiling!
+
+typedef struct { U1 sz; U1 instr; } Compiler;
+Compiler compiler;
+
+//   *******
+//   * 5.a: Utilities
+
+U1 charToSz(U1 c) {
+  switch (c) { case '1': return 1; case '2': return 2; case '4': return 4;
+               case 'R': return RSIZE; default: SET_ERR(E_sz); } }
+
+Ref bump(U1 aligned, U4 size) {
+  Ref ref;  BBA* bba = asPtr(BBA, g->curBBA);  U1 starti = bba->rooti;
+  if(aligned) ref = BBA_alloc(bba, size);
+  else        ref = BBA_allocUnaligned(bba, size);
+  ASM_ASSERT(starti == bba->rooti, E_newBlock); ASM_ASSERT(ref, E_oom);
+  return ref;
+}
+
+U1 scanInstr() { // scan a single instruction, combine with sz
+  scan(); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+  U1 instr = node->v;
+  if((0xC0 & instr == I_MEM) || (0xC0 & instr == I_JMP)) {
+    switch (compiler.sz) {
+      case 1: instr |= SZ1; break; case 2: instr |= SZ2; break;
+      case 4: instr |= SZ4; break; default: SET_ERR(E_intern);
+    }
+  }
+  return instr;
+}
+
+//   *******
+//   * 5.b: Spor Token Functions
+// Each of these handle a single "token" (really single character) case in the
+// spore compiler.
+
+#define SPOR_TEST(NAME, BLOCKS) \
+  BARE_TEST(NAME, BLOCKS) \
+  initSpor();
+
+void initSpor() {
+  vm = (VM) { .ep = 1 };
+  compiler = (Compiler) { .sz = RSIZE, .instr = NOP };
+  BA_init(&k->ba);
+}
+
+Ref newBlock() { // start a new block
+  BBA* bba = asPtr(BBA, g->curBBA);
+  Ref r = BA_alloc(asPtr(BA, bba->ba), &bba->rooti);
+  ASM_ASSERT(r, E_oom); bba->len = 0; bba->cap = BLOCK_SIZE;
+  return r;
+}
+
+void cDot() { // `.`, aka "set size"
+  if(Tlen >= Tsize) readAtLeast(1);
+  compiler.sz = charToSz(Tbuf[Tlen]);
+  Tlen += 1;
+}
+
+void cForwardSlash() { // `\`, aka line comment
+  while(true) {
+    if (Tlen >= Tsize) readNewAtLeast(1);
+    if (Tsize == 0 || Tbuf[Tlen] == '\n') break;
+    Tlen += 1;
+  }
+}
+
+void cHash() { // `#`, aka hex literal
+   U4 v = 0; scan();
+  for(U1 i = 0; i < Tlen; i += 1) {
+    U1 c = Tbuf[i];
+    if (c == '_') continue;
+    ASM_ASSERT(toTokenGroup(c) <= T_HEX, E_cHex);
+    v = (v << 4) + charToHex(c);
+  }
+  WS_PUSH(v); shiftBuf();
+}
+
+void cEqual() { // `=`, aka dict set
+  U1 meta = WS_POP(); U4 value = WS_POP(); scan();
+  Ref ckey = bump(false, Tlen + 1);
+  *(mem + ckey) = Tlen;
+  memmove(mem + ckey + 1, Tbuf, Tlen);
+
+  DNode* add = (DNode*) (mem + bump(true, sizeof(DNode)));
+  *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
+
+  DNode* root = NULL; if(k->dict) root = asPtr(DNode, k->dict);
+  Dict_add(&root, add);
+  if(!k->dict) k->dict = asRef(root);
+}
+
+void cAt() { // `@`, aka dict get
+  scan();
+  DNode* root = asPtr(DNode, k->dict);
+  Slc t = Tslc;
+
+  DNode* node = Dict_get(root, t);
+  // DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+  WS_PUSH(node->v);
+}
+
+void cComma() { // `,`, aka write heap
+  U4 value = WS_POP();
+  srBE(bump(/*aligned=*/ false, compiler.sz), compiler.sz, value);
+}
+
+void cPercent() { // `%`, aka compile instr
+  srBE(bump(/*aligned=*/ false, 1), 1, scanInstr());
+}
+
+void cCarrot() { // `^`, aka execute instr
+  U1 instr = scanInstr();
+  vm.ep += 1;
+  executeInstr(instr);
+}
+
+void cDollar() { // `$`, aka execute token
+  scan(); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
+
+  if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
+    U1 len = *asPtr(U1, n->v);
+    memmove(asPtr(U1, bump(false, len)), asPtr(U1, n->v + 1), len);
+    return;
+  }
+  if(TY_FN_SYN == (TY_FN_TY_MASK & n->m1)) WS_PUSH(false); // pass asNow=false
+  WS_PUSH(n->v);
+  if(TY_FN_LARGE & n->m1) execute(SZ4 + XLW);
+  else                    execute(SZ4 + XSW);
+}
+
+#define ASSERT_VALUE(K, V) ASSERT_EQ( \
+  V, Dict_get(asPtr(DNode, k->dict), sAsTmpSlc(K))->v)
+
+SPOR_TEST(testSporBasics, 4)  newBlock();
+  setCompileStr(" 12 ");  cHash();   ASSERT_EQ(0x12, WS_POP());
+  WS_PUSH2(0x42, 0); setCompileStr("mid");  cEqual(); ASSERT_VALUE("mid", 0x42);
+  WS_PUSH2(0x44, 0); setCompileStr("aLeft"); cEqual(); ASSERT_VALUE("aLeft", 0x44);
+  WS_PUSH2(0x88, 0); setCompileStr("zRight"); cEqual(); ASSERT_VALUE("zRight", 0x88);
+TEST_END
+
+//   *******
+//   * 5.c: Spor Compiler
+
+bool compile() {
+  if(Tlen == 0) return true; Tlen = 1; // spor compiler only uses first character
+  switch (Tbuf[0]) {
+    case '.': cDot(); break;        case '\\': cForwardSlash(); break;
+    case '#': cHash(); break;       case '=': cEqual(); break;
+    case '@': cAt(); break;         case ',': cComma(); break;
+    case '%': cPercent(); break;    case '^': cCarrot(); break;
+    case '$': cDollar(); break;
+    default: eprintf("!! Invalid ASM token: %.*s\n", Tlen, Tbuf);
+             SET_ERR(E_cToken);
+  }
+  return false;
+}
+
+void compileLoop() { while(true) { scan(); if(compile()) break; } }
+
+
+//   *******
+//   * 5.d: Compile Constants
+
+void compileFile(char* s) { setCompileFile(s); compileLoop(); ASSERT_NO_ERR(); }
+
+void compileConstants() {
+  WS_PUSH(newBlock());
+  WS_PUSH(RSIZE); WS_PUSH(SZR);
+  compileFile("kernel/constants.sp");
+  newBlock(); compileFile("kernel/errors.sp");
+}
+
+SPOR_TEST(testConstants, 4)
+  compileConstants();
+  ASSERT_VALUE("JMPL", 0x80);    ASSERT_VALUE("XLW", 0x85);
+  ASSERT_VALUE("E_io", 0xE010);  ASSERT_VALUE("E_unreach", 0xE003);
+TEST_END
+
+// ***********************
+// * 6: Device Operations (DV)
+// Besides instructions for the most basic actions, Device Operations (DV) are
+// the primary mechanism that spor code communicates with hardware. The kernel
+// defines some extremely basic device operations which are sufficient to both:
+//   (1) bootstrap fngi on running spor assembly
+//   (2) enable a usable computer system
+
+void executeDV(U1 dv, bool isFetch) { assert(false); }
 
 int main() {
   eprint("# main\n");
@@ -813,6 +1191,9 @@ int main() {
   testSlc();
   testDict();
   testUtilities();
+  testScan();
+  testSporBasics();
+  testConstants();
 
   return 0;
 }

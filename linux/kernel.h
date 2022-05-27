@@ -50,6 +50,7 @@ typedef struct {
   BA ba;
   BBA bba;
   BBA bbaTmp;
+  Ref dict;
 } Kern;
 
 typedef struct {
@@ -60,8 +61,7 @@ typedef struct {
   Stk cs;   // call stack
   Stk csSz; // call stack size bytes
   Buf gbuf;   // global data buffer (for tracking growing globals)
-  Ref modBBA; // current module's bba
-  Ref tmpBBA; // current temporary bba
+  Ref curBBA; // current bba to use for storing code/dictionary
   TokenState t;
   U1 buf0[TOKEN_SIZE];
 } Globals;

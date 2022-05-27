@@ -8,6 +8,8 @@
 #define __CONSTANTS_H
 
 
+#define I_MEM                0x40
+#define I_JMP                0x80
 #define NOP                  0x0
 #define RETZ                 0x1
 #define RET                  0x2
@@ -72,6 +74,7 @@
 #define R_LP                 0x80
 #define R_EP                 0x0
 #define R_GB                 0x1
+#define D_bump               0x0
 #define D_read               0x0
 #define D_scan               0x1
 #define D_dict               0x2
@@ -89,9 +92,6 @@
 #define D_comZoab            0xF
 #define D_comDone            0x10
 #define D_block              0x11
-#define D_bump               0x12
-#define FALSE                0x0
-#define TRUE                 0x1
 #define T_NUM                0x0
 #define T_HEX                0x1
 #define T_ALPHA              0x2
@@ -149,6 +149,7 @@
 #define E_align2             0xE0A5
 #define E_align4             0xE0A6
 #define E_divZero            0xE0A7
+#define E_oom                0xE0A8
 #define E_cInstr             0xE0C1
 #define E_cToken             0xE0C2
 #define E_cTLen              0xE0C3
@@ -193,7 +194,6 @@
 #define E_cColon             0xE0F7
 #define E_cFnSyn             0xE0F8
 #define E_newBlock           0xE0F9
-#define E_OOM                0xE0FA
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2
