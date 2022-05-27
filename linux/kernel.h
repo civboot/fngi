@@ -32,7 +32,6 @@ typedef struct { Ref ref; U2 len; U2 size; U1 group; }      TokenState;
 typedef struct { Ref ref; U2 sp; U2 cap; }                  Stk;
 typedef struct { U1 previ; U1 nexti; }                      BANode;
 typedef struct { Ref nodes; Ref blocks; U1 rooti; U1 cap; } BA;
-typedef struct { Ref data; Ref leftover; U2 leftoverSize; } BBAReturn;
 typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
 typedef struct { Ref root; Ref free; }                      Dict;
 typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;
@@ -57,13 +56,16 @@ typedef struct {
   U2 _null;
   U2 err;
   Stk ws;   // working stack
+  Stk ls;   // locals stack
   Stk cs;   // call stack
   Stk csSz; // call stack size bytes
-  Buf gbuf;   // global data buffer
+  Buf gbuf;   // global data buffer (for tracking growing globals)
   Ref modBBA; // current module's bba
   Ref tmpBBA; // current temporary bba
   TokenState t;
   U1 buf0[TOKEN_SIZE];
 } Globals;
+
+typedef struct { Ref ep; } VM;
 
 #endif // __FNGI_TY_H

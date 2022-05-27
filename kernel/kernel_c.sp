@@ -13,10 +13,10 @@
 \    [1.a] Operations: Special
 \    [1.b] Operations: One Inp -> One Out
 \    [1.c] Operations: Two Inp -> One Out
-\    [1.d] Small Literal [0x40 - 0x80)
-\    [1.e] Sizes: SZ1, SZ2, SZ4, SZA
+\    [1.d] Sizes: SZ1, SZ2, SZ4, SZA
+\    [1.e] Mem: fetch, store, locals, globals
 \    [1.f] Jmp: jumping, execution, tables
-\    [1.g] Mem: fetch, store, locals, globals
+\    [1.g] Small Literal [0x40 - 0x80)
 \ [2] Registers and Device Operations (RGFT, RGSR, DVFT, DVSR)
 \ [3] Constants
 \    [3.a] Dict Ty Bits
@@ -46,9 +46,9 @@
 \ * [1] Instructions: these are constants that can be used directly by: % ^
 \ Spor uses 8 bit instructions with the following bit layout (S=size bit):
 \   00XX XXXX: operation
-\   01XX XXXX: small literal [0x00 - 0x3F]
+\   01SS XXXX: mem
 \   10SS XXXX: jmp
-\   11SS XXXX: mem
+\   11XX XXXX: small literal value [0x00 - 0x3F]
 
 \ Values put on stack by kernel-compiler
     #0=SZA   \ SZ2 or SZ4 depending on arch
@@ -59,11 +59,11 @@
 #00 #0=NOP   \ { -> }     no operation
 #01 #0=RETZ  \ Return if zero
 #02 #0=RET   \ Return
-#03 #0=SWP   \ {l r -> r l} swap
-#04 #0=DRP   \ {l -> }    drop
-#05 #0=OVR   \ {l r -> }  drop 2
-#06 #0=DUP   \ {l -> l l} duplicate
-#07 #0=DUPN  \ {l -> l l==0} DUP then NOT
+#03 #0=SWP   \ {l r -> r l}    swap
+#04 #0=DRP   \ {l   -> }       drop
+#05 #0=OVR   \ {l r -> l r l}  over
+#06 #0=DUP   \ {l   -> l l}    duplicate
+#07 #0=DUPN  \ {l   -> l l==0} DUP then NOT
 #08 #0=DVFT  \ Device Operation Fetch
 #09 #0=DVSR  \ Device Operation Store
 #0A #0=RGFT  \ {-> v}  Register Fetch
@@ -109,13 +109,21 @@
 \ Double-arg extension commands might be:
 \ floating point: add,sub,mul,div,ge,lt
 
-\ # [1.d] Small Literal [0x40 - 0x80)
-#40 #0=SLIT
-
-\ # [1.e] Sizes
+\ # [1.d] Sizes
 #00 #0=SZ1
 #10 #0=SZ2
 #20 #0=SZ4
+
+\ # [1.e] Mem|Store              |Description
+#40 #0=FT    \ {addr} -> {value}  |FeTch value from addr
+#41 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
+#42 #0=FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
+#43 #0=FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
+#44 #0=SR    \ {value addr} -> {} |Store value at addr
+#45 #0=SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
+#46 #0=SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
+#47 #0=SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
+#48 #0=LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ # [1.f] Jmp
 \
@@ -137,24 +145,16 @@
 #86 #0=XSL   \ Execute Small Literal (no LS update)
 #87 #0=XSW   \ Execute Small WS (no LS update)
 
-\ JZL and JMPL for SZ=1
-\ For SZ=1 they jump to the 1 byte signed offset from the location
-\ of the operation (NOT the location of the literal).
-
-\ # [1.g] Mem|Store              |Description
-#C0 #0=FT    \ {addr} -> {value}  |FeTch value from addr
-#C1 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
-#C2 #0=FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
-#C3 #0=FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
-#C4 #0=SR    \ {value addr} -> {} |Store value at addr
-#C5 #0=SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
-#C6 #0=SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
-#C7 #0=SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
-#C8 #0=LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
-
 \ Common instr+szs
 @SZ2 @XSL  ^JN   #0=XSL2
 @SZ2 @JMPL ^JN   #0=JMPL2
+
+\ # [1.g] Small Literal [0xC0 - 0xFF]
+#C0 #0=SLIT
+
+\ JZL and JMPL for SZ=1
+\ For SZ=1 they jump to the 1 byte signed offset from the location
+\ of the operation (NOT the location of the literal).
 
 \ **********
 \ * [2] Registers and Device Operations: RGXX|DVXX w/ 1 byte literal
@@ -196,6 +196,16 @@
 #0  #0=FALSE
 #1  #0=TRUE
 @ASIZE ^INC #0=DICT_OLEN \ dict name len offset
+
+
+\ Token Groups
+#0  #0=T_NUM
+#1  #0=T_HEX
+#2  #0=T_ALPHA
+#3  #0=T_SINGLE
+#4  #0=T_SYMBOL
+#5  #0=T_WHITE
+
 #30 #0=SZ_MASK \ size bit mask (for instr and meta)
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
@@ -283,7 +293,7 @@
 #E0C4  #0=E_cKey    \ key already exists
 #E0C5  #0=E_cNoKey  \ dict key not found
 #E0C6  #0=E_cHex    \ non-hex number
-#E0C7  #0=E_cSz     \ invalid Sz selected
+#E0C7  #0=E_sz      \ invalid Sz selected
 #E0C8  #0=E_cSzPtr  \ invalid Sz for aptr
 #E0C9  #0=E_cRet    \ invalid RET
 #E0CA  #0=E_cDblSr  \ Double store
