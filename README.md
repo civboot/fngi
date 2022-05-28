@@ -1,9 +1,8 @@
 # fngi: a readable language that grows from the silicone
 
-> **UPDATE:** initial fngi syntax is working well enough for me to start
-> writing a 4KiB block and arena-buddy-allocator. After that, bootstrapping
-> better syntax (`STRUCT`, `fn`, `if`, `while`) shouldn't be far behind. See the
-> `Goals` section for a complete list of items remaining.
+> **UPDATE:** After making significant progress, I am currently in the process
+> of rewriting the kernel to allow for modules and temporary code. I am taking a
+> month break. Many things are currently broken. See "Helping / Hacking" for details on how to run.
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -44,6 +43,7 @@ fngi's goal is to evolve into nothing less than the primary programming language
 and operating system for [Civboot](http://civboot.org). There are many steps
 along the way, some of them complete.
 
+- [ ] rewrite the kernel to allow for modules/etc
 - [X] create an assembly. Done, see [spor.c](./spor.c)
 - [X] bootstrap the assembly into fngi. Mostly done, see [spor.sp](./spor.sp)
 - [x] Write zoab in fngi (see [zoa][zoa] project).
@@ -73,37 +73,15 @@ along the way, some of them complete.
 
 ## Helping / Hacking
 
-The command to compile and run fngi and all tests is below. This will continue
-to be evolved.
+Many things are currently broken and disorganized. I need to write a
+`tools/make.py` to improve things, but haven't started yet.
 
-```sh
-./fngi --compile --test --syslog=LOG_COMPILER --log=LOG_INFO
+ active work is in `linux/kernel.c`. The current command I use to run/test is:
+
 ```
-
-> You can also add `--valgrind` for detecting memory and other issues.
-
-Quick code walkthrough:
-
-- `fngi`: a python file which acts as the "harness" for compiling and running
-  spor with the right flags, as well as interpreting the zoab bytes and printing
-  them to stdout. See `harness/README.md` for more details.
-- `spor.c`: the vm and spor assembly interpreter. A single C file with no
-  dependencies. `./fngi` compiles it, see `def compileSpore():` Note that
-  command line args are passed by `fngi` and are not intended for direct human
-  use (they are raw hex).
-  - `int main(...)` function is the main function of spor/fngi.
-  - `void tests()` runs the tests.
-- `spor.sp` a file written in spor assembly. `spor.c` compiles it before
-  compiling fngi. It bootstraps the fngi compiler (`$FN c_fngi`), along with
-  other "essential" functions like comments, parens, and an inline-spor
-  function. Contains a Table of Contents at the top to point you to different
-  sections and inline documentation.
-- `fngi.fn` (under development) a file written in an early-version of fngi which
-  boostraps from `spor.sp` into a more full-featured language.
-- `tests/` contains a test file for both spor and fngi. These are run by
-  `spor.c` after compiling `spor.sp` and `fngi.fn`. Any new or experimental code
-  could be added here, and eventually be added to a library (once we've built
-  modules...)
+$ python3 linux/gen.py  # regen constants (if needed)
+$ gcc linux/kernel.c && ./a.out  # build and test
+```
 
 ## Contributing
 
