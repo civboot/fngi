@@ -18,6 +18,7 @@
 #E004  #0=E_todo    \ executed incomplete (to do) code
 #E005  #0=E_wsEmpty \ the WS was expected empty
 #E006  #0=E_unimpl  \ unimplemented error
+#E007  #0=E_dv      \ unknown device op
 
 #E0A1  #0=E_null    \ null access
 #E0A2  #0=E_oob     \ out of bounds access

@@ -66,10 +66,8 @@
 #05 #0=OVR   \ {l r -> l r l}  over
 #06 #0=DUP   \ {l   -> l l}    duplicate
 #07 #0=DUPN  \ {l   -> l l==0} DUP then NOT
-#08 #0=DVFT  \ Device Operation Fetch
-#09 #0=DVSR  \ Device Operation Store
-#0A #0=RGFT  \ {-> v}  Register Fetch
-#0B #0=RGSR  \ {v}     Register Store
+#08 #0=DV    \ Device Operation
+#09 #0=RG    \ {-> v}  Register
 
 \ # [1.b] Operations: One Inp -> One Out
 #10 #0=INC   \ {l+1}  increment 1
@@ -161,6 +159,34 @@
 \ **********
 \ * [2] Registers and Device Operations: RGXX|DVXX w/ 1 byte literal
 
+\ Device Operations, single byte literal consumed by DV instr
+\
+\ DV is the primary mechanism to communicate complex logic with the kernel.
+\ Many of these consume a pointer to a role of {&methods &data}. If the
+\ "methods" pointer in that role is null, then the kernel uses a native
+\ implementation. For instance, for &FRole (file role) the data will be
+\ an index into the kernel's file manager.
+\
+\ D_scan is a toolbox of compiler functionality which has to be implemented in
+\ the kernel anyway, so it might as well be used by spor and fngi. Ops are:
+\   0 => read (at least) single byte. May or may not affect b.len.
+\   1 => read until EOL (for comments). May or may not affect b.len
+\   2 => read token into start of buffer. Sets b.len.
+
+#01 #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
+#02 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
+#03 #0=D_memset   \ {&dst v:U1 len} set dst to v
+#04 #0=D_memcmp   \ {&a &b len -> cmp} compare a and b
+#05 #0=D_memmove  \ {&dst &src len} dst = src [of len]
+#06 #0=D_bump     \ {size aligned &bba -> &mem} bump allocate size
+#07 #0=D_log      \ { ... len lvl} log len integers to com
+#08 #0=D_open     \ {path:Slc f:FRole -> err}
+#09 #0=D_read     \ {b:Buf f:&FRole -> err} non-blocking read
+#0A #0=D_write    \ {s:Slc f:&FRole -> err} non-blocking write
+#0B #0=D_close    \ {f:&FRole -> err}
+#0C #0=D_scan     \ {b:&Buf, op, f:&FRole} perform a scan operation. See D_scan
+#0D #0=D_dictFind
+
 \ The RG 1 byte literal has the following byte format. Note: FT will return the
 \ register value + offset, SR will store the value + offset in the register.
 \   1OOO OOOO: (R_LP) local stack pointer with 7bit offset (O)
@@ -169,29 +195,6 @@
 #00 #0=R_EP \ execution pointer, SR will panic
 #01 #0=R_GB \ global base pointer
 
-\ The DV 1 byte literal select the operation
-#00 #0=D_bump   \ FT={size aligned &bba} bumpAlloc SR={&bba} newBlock
-\ #00 #0=D_read   \ read from src, filling up tokenBuf
-\ #01 #0=D_scan   \ FT: scan next word (tokenBuf)  SR: line comment
-\ #02 #0=D_dict   \ [(SR-only)value &dict] FT=get SR=set dict key=tokenBuf
-\ #03 #0=D_dictK  \ [&dict] FT=get reference to val  SR=forget including key
-\ #05 #0=D_comp   \ compile (assemble) the token in tokenBuf
-\ #06 #0=D_assert \ error if != 0
-\ #07 #0=D_wslen  \ get working stack length (in slots)
-\ #08 #0=D_cslen  \ get call stack lengh (in slots)
-\ \ {-> err} D_xCatch executes large function from WS but catches a panic.
-\ \ The errCode is returned (or 0 if no error).
-\ \ Note: caches and restores ep, call stack and local stack state. Working stack
-\ \ is cleared besides the returned err.
-\ #09 #0=D_xCatch
-\ #0A #0=D_memSet   \ {dst v len} "dst = v [len]". FT: memset, SR: memmove
-\ #0B #0=D_memCmp   \ {&a &b len} -> I32: <0 if a<b; >0 if a>b; 0 if a==b
-\ #0C #0=D_com      \ {&msg len} -> {ioResult}: write to debug stream
-\ #0D #0=D_zoa      \ {} -> {} parse zoa to heap
-\ #0E #0=D_dictDump \ {<dict-args> [&entry]} dump a dictionary FT=entry SR=full
-\ #0F #0=D_comZoab  \ FT{U4}  SR{len &data join}
-\ #10 #0=D_comDone  \ signifies end of one com. On linux this is a flush.
-\ #11 #0=D_block     \ {... &rooti &ba} block allocator. FT=alloc, SR=free
 
 \ **********
 \ * [3] Constants

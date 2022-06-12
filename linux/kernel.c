@@ -407,8 +407,7 @@ Ref BBA_allocUnaligned(BBA* bba, uint16_t size) {
   return out;
 }
 
-BARE_TEST(testBBA, 6)
-  BA_init(&k->ba);
+BARE_TEST(testBBA, 6)   BA_init(&k->ba);
   BANode* nodes = asPtr(BANode, k->ba.nodes);
   ASSERT_EQ(k->ba.blocks + BLOCK_SIZE - 12  , BBA_alloc(&k->bba, 12));
   ASSERT_EQ(BA_block(k->ba, 1)              , BBA_alloc(&k->bba, BLOCK_SIZE));
@@ -595,6 +594,11 @@ U4 popLit(U1 size) { U4 out = ftBE(vm.ep, size); vm.ep += size; return out; }
 U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
 U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
 
+static inline void _memmove(Ref dst, Ref src, U2 len) {
+  void* d = boundsCheck(len, dst); void* s = boundsCheck(len, src);
+  memmove(d, s, len);
+}
+
 BARE_TEST(testUtilities, 2)
   srBE(BLOCK_SIZE,      1, 0x01);
   srBE(BLOCK_SIZE + 1,  2, 0x2345);
@@ -634,7 +638,7 @@ void xlImpl(Ref fn) { // impl for XL*
 // literal values from the execution pointer. Some can also affect the execution
 // pointerand the call stack.
 
-void executeDV(U1 dv, bool isFetch); // Device execute, will be defined later.
+static inline void executeDV(U1 dv);
 
 inline static void executeInstr(Instr instr) {
   U4 l, r;
@@ -655,9 +659,8 @@ inline static void executeInstr(Instr instr) {
     case OVR : r = WS_POP(); l = WS_POP(); WS_PUSH(l); WS_PUSH(r); WS_PUSH(l); R
     case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      R
     case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); R
-    case DVFT: executeDV(popLit(1), true); R
-    case DVSR: executeDV(popLit(1), false); R
-    case RGFT:
+    case DV: executeDV(popLit(1)); R
+    case RG:
       r = popLit(1);
       if (R_LP & r) {
         return WS_PUSH(LS_SP + (0x7F & r)); // local stack pointer + offset
@@ -668,18 +671,7 @@ inline static void executeInstr(Instr instr) {
           default: SET_ERR(E_cReg);
         }
       }
-    case RGSR:
-      r = popLit(1);
-      if (R_LP & r) {
-        g->ls.sp = WS_POP() + (0x7F & r) - g->ls.ref;
-        return;
-      } else {
-        switch (0xC0 & r) {
-          case R_EP: SET_ERR(E_cReg); // SR to EP not allowed
-          case R_GB: g->gbuf.ref = WS_POP(); R
-          default: SET_ERR(E_cReg);
-        }
-      }
+
     case INC : WS_PUSH(WS_POP() + 1); return;
     case INC2: WS_PUSH(WS_POP() + 2); return;
     case INC4: WS_PUSH(WS_POP() + 4); return;
@@ -820,6 +812,94 @@ void execute(U1 instr) {
 // The advantage to this is simplicity. We do pay some cost for the performance
 // of shifting bytes left after ever token, but that cost is small compared to
 // serial IO.
+//
+// https://my.eng.utah.edu/~cs4400/file-descriptor.pdf
+
+#include <fcntl.h>
+#include <signal.h>
+
+int F_handleErr(File* f, int res) {
+  if(errno == EWOULDBLOCK) return res;
+  if(res < 0) {
+    f->code = F_Eio; g->syserr = errno; errno = 0;
+  }
+  return res;
+}
+
+void F_open(File* f) {
+  U1 pathname[256];
+  ASM_ASSERT(f->b.len < 255, E_io);
+  memcpy(pathname, boundsCheck(f->b.len, f->b.ref), f->b.len);
+  pathname[f->b.len] = 0;
+  int fd = F_handleErr(f, open(pathname, O_NONBLOCK, O_RDWR));
+  if(fd < 0) f->fid = -1;
+  else { f->pos = 0; f->fid = fd; f->code = F_done; f->plc = 0; }
+}
+
+void F_read(File* f) {
+  ASM_ASSERT(f->code == F_reading || f->code >= F_done, E_io);
+  int len;
+  if(!(F_INDEX & f->fid)) { // mocked file. TODO: add some randomness
+    PlcBuf* p = asPtr(PlcBuf, f->fid);
+    len = min(p->len - p->plc, f->b.cap - f->b.len);
+    _memmove(f->b.ref, p->ref + p->plc, len); p->plc += len;
+  } else {
+    f->code = F_reading;
+    len = F_handleErr(f, read(F_FD(*f), asPtr(U1, f->b.ref), f->b.cap - f->b.len));
+    assert(len >= 0);
+  }
+  f->b.len += len; f->pos += len;
+  if(f->b.len == f->b.cap) f->code = F_done;
+  else if (0 == len) f->code = F_eof;
+}
+
+File* mockFile(U1* contents, U2 bufCap) {
+  File* f = asPtr(File, BBA_alloc(&k->bba, sizeof(File)));
+  f->b = (Buf) { .ref = BBA_allocUnaligned(&k->bba, bufCap), .cap = bufCap };
+
+  PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bba, sizeof(PlcBuf)));
+  U2 len = strlen(contents);
+  U1* s = asPtr(U1, BBA_allocUnaligned(&k->bba, len));
+  memmove(s, contents, len);
+  *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
+
+  f->fid = asRef(p); f->code = F_done;
+  return f;
+}
+
+void fileAssertions(File* f) {
+  F_read(f); ASSERT_EQ(F_done, f->code);
+  ASSERT_EQ(5, f->b.len);
+  ASSERT_EQ(0, memcmp("Hi th", asPtr(U1, f->b.ref), 5));
+  f->b.len = 0; F_read(f); assert(!memcmp("ere B", asPtr(U1, f->b.ref), 5));
+  f->b.len = 0; F_read(f); assert(!memcmp("ob\nTh", asPtr(U1, f->b.ref), 5));
+  f->b.len = 0; F_read(f); assert(!memcmp("is is", asPtr(U1, f->b.ref), 5));
+  f->b.len = 0; F_read(f); assert(!memcmp(" Jane", asPtr(U1, f->b.ref), 5));
+  f->b.len = 0; F_read(f); assert(!memcmp(".", asPtr(U1, f->b.ref), 1));
+  ASSERT_EQ(F_done, f->code); F_read(f); ASSERT_EQ(F_eof, f->code);
+}
+
+BARE_TEST(testRead, 4)  BA_init(&k->ba);
+  U1* s = "Hi there Bob\nThis is Jane."; 
+  File* f = mockFile(s, 5); ASSERT_EQ(5, f->b.cap);
+  fileAssertions(f);
+TEST_END
+
+
+// Read file blocking. Any errors result in a panic.
+void readBlocking(File* f, U2 atLeast) {
+  ASM_ASSERT(f->b.cap - f->b.len >= atLeast, E_intern);
+  fd_set fdset; FD_ZERO(&fdset); FD_SET(f->fid, &fdset);
+  U2 startLen = f->b.len;
+  while(1) { F_read(f);
+    if(f->code == F_eof || f->b.len - startLen >= atLeast) break;
+    ASM_ASSERT(f->code < F_error, E_io);
+    if(F_INDEX & f->fid) {
+      assert(select(f->fid, &fdset, NULL, NULL, NULL));
+      assert(FD_ISSET(f->fid, &fdset));
+    }
+  }
+}
 
 FILE* srcFile;
 char* testSrcStr = NULL;
@@ -1176,9 +1256,43 @@ TEST_END
 // the primary mechanism that spor code communicates with hardware. The kernel
 // defines some extremely basic device operations which are sufficient to both:
 //   (1) bootstrap fngi on running spor assembly
-//   (2) enable a usable computer system
+//   (2) enable a usable computer operating system or general purpose
+//       programming language.
 
-void executeDV(U1 dv, bool isFetch) { assert(false); }
+static inline void executeDV(U1 dv) {
+  switch (dv) {
+    case D_assert: { U4 chk = WS_POP(); ASM_ASSERT(chk, WS_POP()); R }
+    case D_catch: {
+      U4 ep = vm.ep, cs_sp = CS.sp, ls_sp = LS.sp;
+      jmp_buf* prev_err_jmp = err_jmp; // cache prev jmp location
+      jmp_buf local_err_jmp; err_jmp = &local_err_jmp;
+      if(setjmp(local_err_jmp)) { /* got error, handled below */ }
+      else execute(SZ4 + XLW);
+      // ALWAYS Reset ep, call, and local stack
+      vm.ep = ep, CS.sp = cs_sp, CSZ.sp = cs_sp / 4, LS.sp = ls_sp;
+      WS.sp = WS.cap;              // clear WS
+      err_jmp = prev_err_jmp;      // restore prev jmp location
+      WS_PUSH(g->err); g->err = 0; // push and clear error
+      return;
+    }
+    case D_memset: {
+        U2 len = WS_POP(); U1 value = WS_POP(); void* dst = boundsCheck(len, WS_POP());
+        memset(dst, value, len);
+        return;
+    }
+    case D_memcmp: {
+        U2 len = WS_POP();
+        void* r = boundsCheck(len, WS_POP()); void* l = boundsCheck(len, WS_POP());
+        return WS_PUSH(memcmp(l, r, len));
+    }
+    case D_memmove: {
+        U2 len = WS_POP(); Ref src = WS_POP(); return _memmove(WS_POP(), src, len);
+    }
+    case D_bump: {
+    }
+    default: SET_ERR(E_dv);
+  }
+}
 
 int main() {
   eprint("# main\n");
@@ -1191,6 +1305,7 @@ int main() {
   testSlc();
   testDict();
   testUtilities();
+  testRead();
   testScan();
   testSporBasics();
   testConstants();

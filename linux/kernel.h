@@ -1,33 +1,53 @@
-#ifndef __FNGI_TY_H
-#define __FNGI_TY_H
+#ifndef __KERNEL_H
+#define __KERNEL_H
 #include <stdint.h>
 #include "constants.h"
+#include "types.h"
 
-#define RSIZE       4
-#define SZR         SZ4
-#define WS_DEPTH    16
-#define CS_DEPTH    128
-#define TOKEN_SIZE  128
+typedef U2 FErr;
+
+// If F_INDEX is set, fid is a file descriptor.
+// Else it is a "mock" BufPlc
+#define F_INDEX    (1 << (RSIZE * 4 - 1))
+#define F_FD(F)    ((~F_INDEX) & (F).fid)
+const U2 F_seeking  = 0x00;
+const U2 F_reading  = 0x01;
+const U2 F_writing  = 0x02;
+const U2 F_stopping = 0x03;
+const U2 F_done     = 0x04;
+const U2 F_stopped  = 0x05;
+const U2 F_eof      = 0x06;
+
+const U2 F_error    = 0xE0;
+const U2 F_Eperm    = 0xE1;
+const U2 F_Eio      = 0xE2;
+
+// Very similar to <aio.h>, which I didn't see till after I designed this.
+typedef struct {
+  U4 pos;   // current position in file. If seek: desired position.
+  Ref fid;  // file id or reference
+  Buf b;    // buffer for reading or writing data
+  U2 plc;   // place, makes buf a PlcBuf. write: write pos.
+  U2 code;  // status or error (F_*)
+} File;
+
+typedef struct {
+  void (*close)(File* f);   // immediately close the file
+  void (*stop)(File* f);    // stop current operation
+  void (*seek)(File* f);    // seek to pos
+  void (*clear)(File* f);   // clear all data after pos
+  void (*read)(File* f);    // read data from pos
+  void (*insert)(File* f);  // insert data at pos
+} FileMethods;
+
+typedef struct { FileMethods* m; File* f; } FileRole;
 
 #define BLOCK_END  0xFF
 #define BLOCK_PO2  12
 #define BLOCK_SIZE (1<<BLOCK_PO2)
 
-typedef uint8_t              Bool;
-typedef uint8_t              U1;
-typedef uint16_t             U2;
-typedef uint32_t             U4;
-typedef uint32_t             UA;
-typedef int8_t               I1;
-typedef int16_t              I2;
-typedef int32_t              I4;
-typedef uint32_t             APtr;
-typedef uint32_t             Ref;
-
 typedef U1 Instr;
 
-typedef struct { Ref ref; U2 len; }                         Slc;
-typedef struct { Ref ref; U2 len; U2 cap; }                 Buf;
 typedef struct { Ref ref; U2 len; U2 size; U1 group; }      TokenState;
 typedef struct { Ref ref; U2 sp; U2 cap; }                  Stk;
 typedef struct { U1 previ; U1 nexti; }                      BANode;
@@ -64,8 +84,10 @@ typedef struct {
   Ref curBBA; // current bba to use for storing code/dictionary
   TokenState t;
   U1 buf0[TOKEN_SIZE];
+
+  int syserr;
 } Globals;
 
 typedef struct { Ref ep; } VM;
 
-#endif // __FNGI_TY_H
+#endif // __KERNEL_H
