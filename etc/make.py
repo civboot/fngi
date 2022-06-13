@@ -95,7 +95,7 @@ def gen_c(): gcc_run(["etc/gen.c"])
 # Building and Testing Fngi
 
 def build():
-  subprocess.run(["gcc", "-o", "bin/kernel", "linux/kernel.c"])
+  subprocess.run(["gcc", "-o", "bin/kernel", "linux/kernel.c"], check=True)
   time.sleep(0.3) # For gcc error logging
 
 def test():

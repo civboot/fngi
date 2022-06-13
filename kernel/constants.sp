@@ -180,11 +180,8 @@
 #05 #0=D_memmove  \ {&dst &src len} dst = src [of len]
 #06 #0=D_bump     \ {size aligned &bba -> &mem} bump allocate size
 #07 #0=D_log      \ { ... len lvl} log len integers to com
-#08 #0=D_open     \ {path:Slc f:FRole -> err}
-#09 #0=D_read     \ {b:Buf f:&FRole -> err} non-blocking read
-#0A #0=D_write    \ {s:Slc f:&FRole -> err} non-blocking write
-#0B #0=D_close    \ {f:&FRole -> err}
-#0C #0=D_scan     \ {b:&Buf, op, f:&FRole} perform a scan operation. See D_scan
+#08 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
+#09 #0=D_scan     \ {method:U1 f:FRole} run a scan method
 #0D #0=D_dictFind
 
 \ The RG 1 byte literal has the following byte format. Note: FT will return the

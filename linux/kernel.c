@@ -102,6 +102,7 @@ void* boundsCheck(U4 size, Ref r) {
 #define CSZ             (g->csz)
 #define LS_SP           (g->ls.ref + g->ls.sp)
 #define CS_SP           (g->cs.ref + g->cs.sp)
+#define SRC             (&g->src)
 
 #define Stk_init(CAP, REF) (Stk) {.ref = REF, .sp = CAP, .cap = CAP}
 void initEnv(U4 blocks) {
@@ -128,7 +129,9 @@ void initEnv(U4 blocks) {
 
   g->gbuf = (Buf) {
     .ref = asRef(g), .len = sizeof(Globals), .cap = BLOCK_SIZE };
-  g->t = (TokenState) { .ref = asRef(&g->buf0), .size = TOKEN_SIZE };
+  g->src = (File) {
+    .b = (Buf) { .ref = asRef(&g->buf0), .cap = TOKEN_SIZE },
+    .code = F_error };
   g->curBBA = asRef(&k->bba);
 }
 
@@ -428,6 +431,7 @@ TEST_END
 // data where the first byte has the count (length).
 #define cAsSlc(CDATA)  asSlc(CDATA + 1, *asU1(CDATA))
 #define sAsTmpSlc(S)   mvAndSlc(S, strlen(S))
+#define bAsSlc(BUF)    (Slc) {.ref = (BUF).ref, .len = (BUF).len }
 
 Slc asSlc(Ref ref, U2 len) {
   ASM_ASSERT(ref, E_null); ASM_ASSERT(ref + len < memSize, E_oob);
@@ -599,6 +603,12 @@ static inline void _memmove(Ref dst, Ref src, U2 len) {
   memmove(d, s, len);
 }
 
+// "Clear" the place buffer by moving existing data after plc to the beginning.
+void clearPlcBuf(PlcBuf* p) {
+  U1* ref = mem + p->ref;   p->len -= p->plc; // the new length
+  memmove(ref, ref + p->plc, p->len); p->plc = 0;
+}
+
 BARE_TEST(testUtilities, 2)
   srBE(BLOCK_SIZE,      1, 0x01);
   srBE(BLOCK_SIZE + 1,  2, 0x2345);
@@ -609,6 +619,11 @@ BARE_TEST(testUtilities, 2)
   vm.ep = BLOCK_SIZE;
   ASSERT_EQ(0x01,         popLit(1));
   ASSERT_EQ(0x2345,       popLit(2));
+
+  memmove(asU1(SRC->b.ref), "Hi there?!", 10);
+  Tplc = 4; Tlen = 10; clearPlcBuf(F_plcBuf(*SRC));
+  ASSERT_EQ(0, Tplc); ASSERT_EQ(6, Tlen);
+  assert(!memcmp("here?!", asU1(SRC->b.ref), 6));
 TEST_END
 
 //   *******
@@ -790,9 +805,11 @@ void execute(U1 instr) {
   }
 }
 
-
 // ***********************
 // * 4: Files and Source Code
+
+//   *******
+//   * 4.a: Files
 // Fngi uses a File object for all file operations, including scanning tokens.
 // The design differs from linux in several ways:
 //
@@ -811,26 +828,7 @@ void execute(U1 instr) {
 //
 // > Note: After mostly flushing out the design of fngi's File API I came across
 // > the more modern `aio.h`, which shares many similarities.
-//
-// ******
-// * Scanner
-// The fngi scanner is used for both spor and fngi syntax. The entire compiler
-// works by:
-//  1. scanning a single tokens.
-//  2. executing or compiling the current token.
-//     2.a. peek at the next token
-//     2.b. reading raw characters
-//
-// The basic architecture is to use a small buffer to buffer input from the
-// operating system or hardware. We keep track of the currently scanned token.
-// When it is not used, we shift bytes to the left to delete the current token.
-//
-// The advantage to this is simplicity. We do pay some cost for the performance
-// of shifting bytes left after every token, but that cost is small compared to
-// serial IO.
-
 #include <fcntl.h>
-#include <signal.h>
 
 int F_handleErr(File* f, int res) {
   if(errno == EWOULDBLOCK) return res;
@@ -856,6 +854,7 @@ void F_open(File* f) {
   int fd = F_handleErr(f, open(pathname, O_NONBLOCK, O_RDWR));
   if(fd < 0) { f->code = F_error; g->syserr = errno; errno = 0; }
   else { f->pos = 0; f->fid = F_INDEX | fd; f->code = F_done; f->plc = 0; }
+  f->plc = 0; f->b.len = 0; f->code = F_done;
 }
 
 void F_read(File* f) {
@@ -867,7 +866,7 @@ void F_read(File* f) {
     _memmove(f->b.ref, p->ref + p->plc, len); p->plc += len;
   } else {
     f->code = F_reading;
-    len = F_handleErr(f, read(F_FD(*f), asU1(f->b.ref), f->b.cap - f->b.len));
+    len = F_handleErr(f, read(F_FD(*f), asU1(f->b.ref + f->b.len), f->b.cap - f->b.len));
     assert(len >= 0);
   }
   f->b.len += len; f->pos += len;
@@ -876,7 +875,7 @@ void F_read(File* f) {
 }
 
 // Read file blocking. Any errors result in a panic.
-void readAtLeast2(File* f, U2 atLeast) {
+void readAtLeast(File* f, U2 atLeast) {
   ASM_ASSERT(f->b.cap - f->b.len >= atLeast, E_intern);
   U2 startLen = f->b.len;
   while(1) {
@@ -892,7 +891,8 @@ void openMock(File* f, U1* contents) { // Used for tests
   U1* s = asU1(BBA_allocUnaligned(&k->bba, len));
   memmove(s, contents, len);
   *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
-  f->fid = asRef(p);
+  f->fid = asRef(p); f->pos = 0;
+  f->plc = 0; f->b.len = 0; f->code = F_done;
 }
 
 void openUnix(File* f, U1* path) { // Used for tests
@@ -916,108 +916,29 @@ TEST_END
 BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
   File* f = F_new(128); ASSERT_EQ(128, f->b.cap);
   openUnix(f, "./tests/testData.txt"); f->b.len = 0;
-  readAtLeast2(f, 128); ASSERT_EQ(F_eof, f->code);
+  readAtLeast(f, 128); ASSERT_EQ(F_eof, f->code);
   ASSERT_EQ(strlen(TEST_expectedTxt), f->b.len);
   assert(!memcmp(TEST_expectedTxt, asU1(f->b.ref), f->b.len));
 TEST_END
 
-// FIXME TODO next item is to replace all of this with the new File API
-
-FILE* srcFile;
-char* testSrcStr = NULL;
-U2    testSrcStr_i = 0;
-
-//   *******
-//   * 4.a: Reading and Mocking
-// We read using a function pointer so that tests can mock it out.
-
-#define Tbuf  (mem + g->t.ref)
-#define Tlen  (g->t.len)
-#define Tsize (g->t.size)
-#define Tslc  ((Slc) {.ref = g->t.ref, .len = Tlen})
-
-U1 (*readAtLeast)(U1 num) = NULL; // Read num bytes into Tbuf
-
-// Read at least num bytes from source file into Tbuf.
-// If EOF is reached return the number of bytes read.
-// If this would overflow Tbuf, return the number of bytes actually read.
-U1 readSrcAtLeast(U1 num) {
-  U4 out = 0;
-  num = min(TOKEN_SIZE, num);
-  assert(num);
-  while (true) {
-    ssize_t numRead = read(
-      fileno(srcFile),                // filedes
-      Tbuf + Tsize,                   // buf
-      max(num, TOKEN_SIZE - Tsize));  // nbyte
-    assert(!errno);
-    assert(numRead >= 0);
-    Tsize += numRead;
-    out += numRead;
-    if(!numRead) break; // EOF
-    if(TOKEN_SIZE - Tsize == 0) break;
-    if(numRead >= num) break;
-  }
-  assert(out <= 0xFF);
-  // eprintf("??? readSrcAtLeast numRead=%u: ", out);
-  // fwrite(Tbuf + Tsize - out, 1, out, stderr);
-  // eprintf("\n ??? Token len=%u: %.*s", tokenLen, tokenLen, Tbuf);
-  return out;
-}
-
-void readNewAtLeast(U1 num) {
-  Tlen = 0;
-  Tsize = 0;
-  readAtLeast(num);
-}
-
-void shiftBuf() {
-  // Shift buffer left from end of token
-  if(Tlen == 0) return;
-  U2 newStart = Tlen; U1 i = 0;
-  while(Tlen < Tsize) {
-    Tbuf[i] = Tbuf[Tlen];
-    i += 1, Tlen += 1;
-  }
-  Tlen = 0, Tsize = Tsize - newStart;
-}
-
-// Function for "reading" from a string.
-U1 testSrcStrReadAtLeast(U1 n) {
-  U1 numRead = 0;
-  while (Tsize < TOKEN_SIZE) {
-    U1 c = testSrcStr[testSrcStr_i];
-    if(c == 0) return numRead;
-    Tbuf[Tsize] = c;
-    Tsize += 1;
-    testSrcStr_i += 1;
-    numRead += 1;
-  }
-  return numRead;
-}
-
-// Function for reading from a file.
-void setCompileFile(char* s) {
-  // zoab_file(strlen(s), s);
-  line = 1, readAtLeast = &readSrcAtLeast, srcFile = fopen(s, "rb");
-  assert(srcFile > 0);
-}
-
-void setCompileStr(char* s) {
-  // zoab_file(7, "RAW_STR");
-  testSrcStr = s, testSrcStr_i = 0, line = 1;
-  readAtLeast = &testSrcStrReadAtLeast;
-}
-
 //   *******
 //   * 4.b: Scan
+// The fngi scanner is used for both spor and fngi syntax. The entire compiler
+// works by:
+//  1. scanning a single tokens.
+//  2. executing or compiling the current token.
+//     2.a. peek at the next token
+//     2.b. reading raw characters
+//
+// The basic architecture is to use a small buffer to buffer input from the
+// operating system or hardware. We keep track of the currently scanned token.
+// When it is not used, we shift bytes to the left to delete the current token.
+//
+// The advantage to this is simplicity. We do pay some cost for the performance
+// of shifting bytes left after every token, but that cost is small compared to
+// serial IO.
 // The scanner reads the next token, storing at the beginning of Tbuf with
-// length Tlen.
-
-#define ASSERT_TOKEN(S)  if(1) { scan(); if(!Teq(S)) { \
-  eprintf("! Token: %s == %.*s\n", S, Tlen, Tbuf); assert(false); } }
-U1 Teq(U1* s) { U2 len = strlen(s);  if(len != Tlen) return false;
-                return 0 == memcmp(s, Tbuf, len); }
+// length Tplc.
 
 U1 toTokenGroup(U1 c) {
   if(c <= ' ')             return T_WHITE;
@@ -1034,56 +955,61 @@ U1 toTokenGroup(U1 c) {
   return T_SYMBOL;
 }
 
-void _scan() {
-  // Skip whitespace
-  while(true) {
-    if(Tlen >= Tsize) { readNewAtLeast(1); }
-    if(Tsize == 0) return;
-    if(toTokenGroup(Tbuf[Tlen]) != T_WHITE) break;
-    if(Tbuf[Tlen] == '\n') line += 1;
-    Tlen += 1;
-  }
-  shiftBuf(); // Moves buffer to the left (Tlen=0)
-  if(!Tsize) { readAtLeast(1); }
-  assert(Tsize);
+void readNewAtLeast(File* f, U2 num) {
+  f->plc = 0; f->b.len = 0; readAtLeast(f, num);
+}
 
-  U1 c = Tbuf[Tlen];
-  g->t.group = toTokenGroup(c);
-  if(g->t.group == T_SINGLE) {
-    Tlen += 1; // SINGLE: always single-char token
-    return;
+void _scan(File* f) {
+  U1 firstTg; PlcBuf* p = F_plcBuf(*f); U1* dat = boundsCheck(p->cap, p->ref);
+  while(true) { // Skip whitespace
+    if(p->plc >= p->len) { readNewAtLeast(f, 1); } // buffer full of white, get new
+    if(p->len == 0) return; // TODO: eof check
+    firstTg = toTokenGroup(dat[p->plc]); if(firstTg != T_WHITE) break;
+    if(dat[p->plc] == '\n') line += 1;
+    p->plc += 1;
   }
-
+  clearPlcBuf(F_plcBuf(*f));
+  if(!p->len) { readAtLeast(f, 1); }
+  assert(p->len); U1 c = dat[p->plc];
+  if(firstTg == T_SINGLE) { p->plc += 1; R }
   // Parse token until the group changes.
   while (true) {
-    if (Tlen >= Tsize) readAtLeast(1);
-    if (Tlen >= Tsize) break;
-
-    ASM_ASSERT(Tlen < TOKEN_SIZE, E_cTLen);
-    c = Tbuf[Tlen];
-
+    if (p->plc >= p->len) readAtLeast(f, 1);
+    if (p->plc >= p->len) break;
+    ASM_ASSERT(p->plc < p->cap, E_cTLen);
+    c = dat[p->plc];
     U1 tg = toTokenGroup(c);
-    if (tg == g->t.group) {}
-    else if ((g->t.group <= T_ALPHA) && (tg <= T_ALPHA)) {}
+    if (tg == firstTg) {}
+    else if ((tg <= T_ALPHA) && (firstTg <= T_ALPHA)) {}
     else break;
-    Tlen += 1;
+    p->plc += 1;
   }
 }
 
-// void scan() { _scan(); }
-void scan() { _scan(); }
+void scan(File* f) { _scan(f); }
 
-BARE_TEST(testScan, 3)
-  setCompileStr("hi there$==");
+#define ASSERT_TOKEN(S)  if(1) { scan(SRC); if(!Teq(S)) { \
+  eprintf("! Token: %s == %.*s\n", S, Tplc, asU1(Tref)); \
+  assert(false); } }
+U1 Teq(U1* s) { U2 len = strlen(s);  if(len != Tplc) return false;
+                return 0 == memcmp(s, asU1(Tref), len); }
+
+BARE_TEST(testScan, 3)  BA_init(&k->ba);
+  openMock(SRC, "hi there$==");
   ASSERT_TOKEN("hi"); ASSERT_TOKEN("there"); ASSERT_TOKEN("$"); ASSERT_TOKEN("==");
 
-  setCompileStr("         lots     \n\n\n\n    of \n\n  empty            ");
-  ASSERT_TOKEN("lots"); ASSERT_TOKEN("of"); ASSERT_TOKEN("empty");
+  openMock(SRC, "\\         lots     \n\n\n\n    of \n\n  empty            ");
+  ASSERT_TOKEN("\\"); ASSERT_TOKEN("lots"); ASSERT_TOKEN("of"); ASSERT_TOKEN("empty");
 
-  setCompileFile("kernel/constants.sp");
+  openMock(SRC, "\\ comment\n#00 #0=bob");
+  ASSERT_TOKEN("\\"); ASSERT_TOKEN("comment"); ASSERT_TOKEN("#"); ASSERT_TOKEN("00");
+  ASSERT_TOKEN("#");  ASSERT_TOKEN("0"); ASSERT_TOKEN("="); ASSERT_TOKEN("bob");
+
+  openUnix(SRC, "kernel/constants.sp");
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("Kernel"); ASSERT_TOKEN("Constants");
   ASSERT_TOKEN("\\");
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("Note"); ASSERT_TOKEN(":"); ASSERT_TOKEN("this");
+  assert(!close(F_FD(g->src)));
 TEST_END
 
 // ***********************
@@ -1112,8 +1038,8 @@ Ref bump(U1 aligned, U4 size) {
   return ref;
 }
 
-U1 scanInstr() { // scan a single instruction, combine with sz
-  scan(); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+U1 scanInstr(File* f) { // scan a single instruction, combine with sz
+  scan(f); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
   U1 instr = node->v;
   if((0xC0 & instr == I_MEM) || (0xC0 & instr == I_JMP)) {
     switch (compiler.sz) {
@@ -1147,35 +1073,38 @@ Ref newBlock() { // start a new block
 }
 
 void cDot() { // `.`, aka "set size"
-  if(Tlen >= Tsize) readAtLeast(1);
-  compiler.sz = charToSz(Tbuf[Tlen]);
-  Tlen += 1;
+  if(Tplc >= Tlen) readAtLeast(SRC, 1);
+  ASM_ASSERT(Tlen, E_eof);
+  compiler.sz = charToSz(*asU1(Tref + Tplc));
+  Tplc += 1;
 }
 
 void cForwardSlash() { // `\`, aka line comment
+  U1* dat = Tdat;
   while(true) {
-    if (Tlen >= Tsize) readNewAtLeast(1);
-    if (Tsize == 0 || Tbuf[Tlen] == '\n') break;
-    Tlen += 1;
+    if (Tplc >= Tlen) readNewAtLeast(SRC, 1);
+    if (Tlen == 0) break;
+    if (dat[Tplc] == '\n') break;
+    Tplc += 1;
   }
 }
 
 void cHash() { // `#`, aka hex literal
-   U4 v = 0; scan();
-  for(U1 i = 0; i < Tlen; i += 1) {
-    U1 c = Tbuf[i];
+  U1* dat = Tdat; U4 v = 0; scan(SRC);
+  for(U1 i = 0; i < Tplc; i += 1) {
+    U1 c = dat[i];
     if (c == '_') continue;
     ASM_ASSERT(toTokenGroup(c) <= T_HEX, E_cHex);
     v = (v << 4) + charToHex(c);
   }
-  WS_PUSH(v); shiftBuf();
+  WS_PUSH(v); clearPlcBuf(F_plcBuf(*SRC));
 }
 
 void cEqual() { // `=`, aka dict set
-  U1 meta = WS_POP(); U4 value = WS_POP(); scan();
-  Ref ckey = bump(false, Tlen + 1);
-  *(mem + ckey) = Tlen;
-  memmove(mem + ckey + 1, Tbuf, Tlen);
+  U1 meta = WS_POP(); U4 value = WS_POP(); scan(SRC);
+  Ref ckey = bump(false, Tplc + 1);
+  *(mem + ckey) = Tplc; // Note: unsafe write, memory already checked.
+  _memmove(ckey + 1, Tref, Tplc);
 
   DNode* add = (DNode*) (mem + bump(true, sizeof(DNode)));
   *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
@@ -1186,12 +1115,8 @@ void cEqual() { // `=`, aka dict set
 }
 
 void cAt() { // `@`, aka dict get
-  scan();
-  DNode* root = asPtr(DNode, k->dict);
-  Slc t = Tslc;
-
-  DNode* node = Dict_get(root, t);
-  // DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+  scan(SRC);
+  DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
   WS_PUSH(node->v);
 }
 
@@ -1201,17 +1126,17 @@ void cComma() { // `,`, aka write heap
 }
 
 void cPercent() { // `%`, aka compile instr
-  srBE(bump(/*aligned=*/ false, 1), 1, scanInstr());
+  srBE(bump(/*aligned=*/ false, 1), 1, scanInstr(SRC));
 }
 
 void cCarrot() { // `^`, aka execute instr
-  U1 instr = scanInstr();
+  U1 instr = scanInstr(SRC);
   vm.ep += 1;
   executeInstr(instr);
 }
 
 void cDollar() { // `$`, aka execute token
-  scan(); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
+  scan(SRC); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
 
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
     U1 len = *asU1(n->v);
@@ -1228,36 +1153,41 @@ void cDollar() { // `$`, aka execute token
   V, Dict_get(asPtr(DNode, k->dict), sAsTmpSlc(K))->v)
 
 SPOR_TEST(testSporBasics, 4)  newBlock();
-  setCompileStr(" 12 ");  cHash();   ASSERT_EQ(0x12, WS_POP());
-  WS_PUSH2(0x42, 0); setCompileStr("mid");  cEqual(); ASSERT_VALUE("mid", 0x42);
-  WS_PUSH2(0x44, 0); setCompileStr("aLeft"); cEqual(); ASSERT_VALUE("aLeft", 0x44);
-  WS_PUSH2(0x88, 0); setCompileStr("zRight"); cEqual(); ASSERT_VALUE("zRight", 0x88);
+  openMock(SRC, " 12 ");  cHash();   ASSERT_EQ(0x12, WS_POP());
+  WS_PUSH2(0x42, 0); openMock(SRC, "mid");    cEqual(); ASSERT_VALUE("mid", 0x42);
+  WS_PUSH2(0x44, 0); openMock(SRC, "aLeft");  cEqual(); ASSERT_VALUE("aLeft", 0x44);
+  WS_PUSH2(0x88, 0); openMock(SRC, "zRight"); cEqual(); ASSERT_VALUE("zRight", 0x88);
 TEST_END
 
 //   *******
 //   * 5.c: Spor Compiler
 
-bool compile() {
-  if(Tlen == 0) return true; Tlen = 1; // spor compiler only uses first character
-  switch (Tbuf[0]) {
-    case '.': cDot(); break;        case '\\': cForwardSlash(); break;
-    case '#': cHash(); break;       case '=': cEqual(); break;
-    case '@': cAt(); break;         case ',': cComma(); break;
-    case '%': cPercent(); break;    case '^': cCarrot(); break;
-    case '$': cDollar(); break;
-    default: eprintf("!! Invalid ASM token: %.*s\n", Tlen, Tbuf);
+void compile() {
+  Tplc = 1; U1 c = *asU1(Tref); // spor compiler only uses first character
+  switch (c) {
+    case '.': cDot(); R             case '\\': cForwardSlash(); R
+    case '#': cHash(); R            case '=': cEqual(); R
+    case '@': cAt(); R              case ',': cComma(); R
+    case '%': cPercent(); R         case '^': cCarrot(); R
+    case '$': cDollar(); R
+    default: eprintf("!! Invalid ASM token: %.*s\n", Tplc, asU1(Tref));
              SET_ERR(E_cToken);
   }
-  return false;
 }
 
-void compileLoop() { while(true) { scan(); if(compile()) break; } }
-
+void compileLoop() {
+  while(true) {
+    scan(SRC); if(Tplc == 0) return; else compile();
+  }
+}
 
 //   *******
 //   * 5.d: Compile Constants
 
-void compileFile(char* s) { setCompileFile(s); compileLoop(); ASSERT_NO_ERR(); }
+void compileFile(char* s) {
+  line = 1;
+  openUnix(SRC, s); compileLoop(); ASSERT_NO_ERR();
+}
 
 void compileConstants() {
   WS_PUSH(newBlock());

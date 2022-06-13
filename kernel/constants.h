@@ -75,11 +75,8 @@
 #define D_memmove            0x5
 #define D_bump               0x6
 #define D_log                0x7
-#define D_open               0x8
-#define D_read               0x9
-#define D_write              0xA
-#define D_close              0xB
-#define D_scan               0xC
+#define D_file               0x8
+#define D_scan               0x9
 #define D_dictFind           0xD
 #define R_LP                 0x80
 #define R_EP                 0x0

@@ -23,7 +23,7 @@ const U2 F_error    = 0xE0;
 const U2 F_Eperm    = 0xE1;
 const U2 F_Eio      = 0xE2;
 
-// Very similar to <aio.h>, which I didn't see till after I designed this.
+#define F_plcBuf(F)  ((PlcBuf*) &(F).b)
 typedef struct {
   U4 pos;   // current position in file. If seek: desired position.
   Ref fid;  // file id or reference
@@ -49,7 +49,6 @@ typedef struct { FileMethods* m; File* f; } FileRole;
 
 typedef U1 Instr;
 
-typedef struct { Ref ref; U2 len; U2 size; U1 group; }      TokenState;
 typedef struct { Ref ref; U2 sp; U2 cap; }                  Stk;
 typedef struct { U1 previ; U1 nexti; }                      BANode;
 typedef struct { Ref nodes; Ref blocks; U1 rooti; U1 cap; } BA;
@@ -75,6 +74,12 @@ typedef struct {
   Ref dict;
 } Kern;
 
+#define Tplc    (g->src.plc)
+#define Tlen    (g->src.b.len)
+#define Tref    (g->src.b.ref)
+#define Tdat    boundsCheck(g->src.b.cap, Tref)
+#define Tslc    (Slc) {g->src.b.ref, g->src.plc}
+
 typedef struct {
   U2 _null;
   U2 err;
@@ -85,7 +90,6 @@ typedef struct {
   Buf gbuf;   // global data buffer (for tracking growing globals)
   Ref curBBA; // current bba to use for storing code/dictionary
   File src;
-  TokenState t;
   U1 buf0[TOKEN_SIZE];
 
   int syserr;
