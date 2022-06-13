@@ -41,8 +41,7 @@
 #include <stdbool.h>
 #include <errno.h>
 
-#include "constants.h"
-#include "kernel.h"
+#include "../kernel/kernel.h"
 
 #define eprint(str)                fprintf (stderr, str)
 #define eprintf(format, args...)   fprintf (stderr, format, args)
@@ -82,7 +81,7 @@ bool expectingErr = false;
 // are (1) everything is in 4k blocks, (2) everything except for the local stack
 // data is in the first block. The layout of "everything" is below:
 //
-//   Kern | ws data | cs data | csSz data | bba.nodes | Globals ... room to grow
+//   Kern | ws data | cs data | csz data | bba.nodes | Globals ... room to grow
 U1        *mem, *memEnd;  // start/end of spor memory
 Ref       memSize;
 Kern*     k;    // kernel owned data structures
@@ -99,7 +98,7 @@ void* boundsCheck(U4 size, Ref r) {
 #define WS              (g->ws)
 #define LS              (g->ls)
 #define CS              (g->cs)
-#define CSZ             (g->csSz)
+#define CSZ             (g->csz)
 #define LS_SP           (g->ls.ref + g->ls.sp)
 #define CS_SP           (g->cs.ref + g->cs.sp)
 
@@ -617,7 +616,7 @@ TEST_END
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
   CS_PUSH(vm.ep);
-  g->csSz.sp -= 1; *(mem + g->csSz.ref + g->csSz.sp) = growSz; // push growSz onto csSz
+  g->csz.sp -= 1; *(mem + g->csz.ref + g->csz.sp) = growSz; // push growSz onto csz
   vm.ep = fn;
 }
 
@@ -648,8 +647,8 @@ inline static void executeInstr(Instr instr) {
     case RETZ: if(WS_POP()) return; // intentional fallthrough
     case RET:
       r = Stk_pop(&CS);
-      l = *(mem + g->csSz.ref + g->csSz.sp); // size to shrink locals
-      g->csSz.sp += 1;
+      l = *(mem + g->csz.ref + g->csz.sp); // size to shrink locals
+      g->csz.sp += 1;
       ASM_ASSERT(g->ls.sp + l <= g->ls.cap, E_stkUnd);
       g->ls.sp += l;
       vm.ep = r;
@@ -826,14 +825,22 @@ int F_handleErr(File* f, int res) {
   return res;
 }
 
+File* F_new(U2 bufCap) {
+  File* f = asPtr(File, BBA_alloc(&k->bba, sizeof(File)));
+  *f = (File) {
+    .b = (Buf) { .ref = BBA_allocUnaligned(&k->bba, bufCap), .cap = bufCap },
+    .code = F_done,
+  }; return f;
+}
+
 void F_open(File* f) {
   U1 pathname[256];
   ASM_ASSERT(f->b.len < 255, E_io);
   memcpy(pathname, boundsCheck(f->b.len, f->b.ref), f->b.len);
   pathname[f->b.len] = 0;
   int fd = F_handleErr(f, open(pathname, O_NONBLOCK, O_RDWR));
-  if(fd < 0) f->fid = -1;
-  else { f->pos = 0; f->fid = fd; f->code = F_done; f->plc = 0; }
+  if(fd < 0) { f->code = F_error; g->syserr = errno; errno = 0; }
+  else { f->pos = 0; f->fid = F_INDEX | fd; f->code = F_done; f->plc = 0; }
 }
 
 void F_read(File* f) {
@@ -853,21 +860,36 @@ void F_read(File* f) {
   else if (0 == len) f->code = F_eof;
 }
 
-File* mockFile(U1* contents, U2 bufCap) {
-  File* f = asPtr(File, BBA_alloc(&k->bba, sizeof(File)));
-  f->b = (Buf) { .ref = BBA_allocUnaligned(&k->bba, bufCap), .cap = bufCap };
+// Read file blocking. Any errors result in a panic.
+void readAtLeast2(File* f, U2 atLeast) {
+  ASM_ASSERT(f->b.cap - f->b.len >= atLeast, E_intern);
+  U2 startLen = f->b.len;
+  while(1) {
+    F_read(f);
+    if(f->code == F_eof || f->b.len - startLen >= atLeast) break;
+    ASM_ASSERT(f->code < F_error, E_io);
+  }
+}
 
+void openMock(File* f, U1* contents) { // Used for tests
   PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bba, sizeof(PlcBuf)));
   U2 len = strlen(contents);
   U1* s = asPtr(U1, BBA_allocUnaligned(&k->bba, len));
   memmove(s, contents, len);
   *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
-
-  f->fid = asRef(p); f->code = F_done;
-  return f;
+  f->fid = asRef(p);
 }
 
-void fileAssertions(File* f) {
+void openUnix(File* f, U1* path) { // Used for tests
+  f->b.len = strlen(path); assert(f->b.cap >= f->b.len);
+  memcpy(boundsCheck(f->b.len, f->b.ref), path, f->b.len);
+  F_open(f); ASSERT_EQ(F_done, f->code);
+}
+
+U1* TEST_expectedTxt = "Hi there Bob\nThis is Jane.\n";
+BARE_TEST(testReadMock, 4)  BA_init(&k->ba);
+  File* f = F_new(5); ASSERT_EQ(5, f->b.cap);
+  openMock(f, TEST_expectedTxt);
   F_read(f); ASSERT_EQ(F_done, f->code);
   ASSERT_EQ(5, f->b.len);
   ASSERT_EQ(0, memcmp("Hi th", asPtr(U1, f->b.ref), 5));
@@ -875,31 +897,19 @@ void fileAssertions(File* f) {
   f->b.len = 0; F_read(f); assert(!memcmp("ob\nTh", asPtr(U1, f->b.ref), 5));
   f->b.len = 0; F_read(f); assert(!memcmp("is is", asPtr(U1, f->b.ref), 5));
   f->b.len = 0; F_read(f); assert(!memcmp(" Jane", asPtr(U1, f->b.ref), 5));
-  f->b.len = 0; F_read(f); assert(!memcmp(".", asPtr(U1, f->b.ref), 1));
+  f->b.len = 0; F_read(f); assert(!memcmp(".\n", asPtr(U1, f->b.ref), 1));
   ASSERT_EQ(F_done, f->code); F_read(f); ASSERT_EQ(F_eof, f->code);
-}
-
-BARE_TEST(testRead, 4)  BA_init(&k->ba);
-  U1* s = "Hi there Bob\nThis is Jane."; 
-  File* f = mockFile(s, 5); ASSERT_EQ(5, f->b.cap);
-  fileAssertions(f);
 TEST_END
 
+BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
+  File* f = F_new(128); ASSERT_EQ(128, f->b.cap);
+  openUnix(f, "./tests/testData.txt"); f->b.len = 0;
+  readAtLeast2(f, 128); ASSERT_EQ(F_eof, f->code);
+  ASSERT_EQ(strlen(TEST_expectedTxt), f->b.len);
+  assert(!memcmp(TEST_expectedTxt, asPtr(U1, f->b.ref), f->b.len));
+TEST_END
 
-// Read file blocking. Any errors result in a panic.
-void readBlocking(File* f, U2 atLeast) {
-  ASM_ASSERT(f->b.cap - f->b.len >= atLeast, E_intern);
-  fd_set fdset; FD_ZERO(&fdset); FD_SET(f->fid, &fdset);
-  U2 startLen = f->b.len;
-  while(1) { F_read(f);
-    if(f->code == F_eof || f->b.len - startLen >= atLeast) break;
-    ASM_ASSERT(f->code < F_error, E_io);
-    if(F_INDEX & f->fid) {
-      assert(select(f->fid, &fdset, NULL, NULL, NULL));
-      assert(FD_ISSET(f->fid, &fdset));
-    }
-  }
-}
+// FIXME TODO next item is to replace all of this with the new File API
 
 FILE* srcFile;
 char* testSrcStr = NULL;
@@ -1305,7 +1315,8 @@ int main() {
   testSlc();
   testDict();
   testUtilities();
-  testRead();
+  testReadMock();
+  testReadUnix();
   testScan();
   testSporBasics();
   testConstants();

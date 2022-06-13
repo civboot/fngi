@@ -2,7 +2,7 @@
 #define __KERNEL_H
 #include <stdint.h>
 #include "constants.h"
-#include "types.h"
+#include "../linux/types.h" // TODO: support more than just linux
 
 typedef U2 FErr;
 
@@ -14,9 +14,10 @@ const U2 F_seeking  = 0x00;
 const U2 F_reading  = 0x01;
 const U2 F_writing  = 0x02;
 const U2 F_stopping = 0x03;
-const U2 F_done     = 0x04;
-const U2 F_stopped  = 0x05;
-const U2 F_eof      = 0x06;
+
+const U2 F_done     = 0xD0;
+const U2 F_stopped  = 0xD1;
+const U2 F_eof      = 0xD2;
 
 const U2 F_error    = 0xE0;
 const U2 F_Eperm    = 0xE1;
@@ -66,6 +67,7 @@ typedef struct {
 } ErrData;
 
 typedef struct {
+  U4 _null;
   Ref memTop;
   BA ba;
   BBA bba;
@@ -79,9 +81,10 @@ typedef struct {
   Stk ws;   // working stack
   Stk ls;   // locals stack
   Stk cs;   // call stack
-  Stk csSz; // call stack size bytes
+  Stk csz;  // call stack size bytes
   Buf gbuf;   // global data buffer (for tracking growing globals)
   Ref curBBA; // current bba to use for storing code/dictionary
+  File src;
   TokenState t;
   U1 buf0[TOKEN_SIZE];
 

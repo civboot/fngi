@@ -73,14 +73,15 @@ along the way, some of them complete.
 
 ## Helping / Hacking
 
-Many things are currently broken and disorganized. I need to write a
-`tools/make.py` to improve things, but haven't started yet.
+Previously, fngi was a working language. I am currently rewriting the kernel to
+enable bootstrapping modules and remove boilerplate code (auto-generate things
+like offsets, only specify constants once, etc), as well as prepare for 16bit
+fngi.
 
- active work is in `linux/kernel.c`. The current command I use to run/test is:
+The current command I use to run/test is:
 
 ```
-$ python3 linux/gen.py  # regen constants (if needed)
-$ gcc linux/kernel.c && ./a.out  # build and test
+$ python3 etc/make.py
 ```
 
 ## Contributing

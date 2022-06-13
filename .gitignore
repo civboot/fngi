@@ -1,5 +1,6 @@
 zoa/
 venv/
+bin/
 out/
 spore/*.gch
 spor
