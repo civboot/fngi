@@ -77,7 +77,7 @@
 #define D_log                0x7
 #define D_file               0x8
 #define D_scan               0x9
-#define D_dictFind           0xD
+#define D_dictFind           0xA
 #define R_LP                 0x80
 #define R_EP                 0x0
 #define R_GB                 0x1
@@ -108,7 +108,6 @@
 #define ZOAB_JOIN            0x80
 #define ZOAB_ARR             0x40
 #define ZOAB_PTR             0xC0
-#define LOG_SILENT           0x0
 #define LOG_USER             0x10
 #define LOG_TRACE            0x1F
 #define LOG_DEBUG            0x17

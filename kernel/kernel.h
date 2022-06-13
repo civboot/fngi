@@ -32,13 +32,16 @@ typedef struct {
   U2 code;  // status or error (F_*)
 } File;
 
+typedef void (*fileMethod)(File* f);
+
 typedef struct {
-  void (*close)(File* f);   // immediately close the file
-  void (*stop)(File* f);    // stop current operation
-  void (*seek)(File* f);    // seek to pos
-  void (*clear)(File* f);   // clear all data after pos
-  void (*read)(File* f);    // read data from pos
-  void (*insert)(File* f);  // insert data at pos
+  fileMethod open;    // open the file
+  fileMethod close;   // immediately close the file
+  fileMethod stop;    // stop current operation
+  fileMethod seek;    // seek to pos
+  fileMethod clear;   // clear all data after pos
+  fileMethod read;    // read data from pos
+  fileMethod insert;  // insert data at pos
 } FileMethods;
 
 typedef struct { FileMethods* m; File* f; } FileRole;
@@ -74,11 +77,6 @@ typedef struct {
   Ref dict;
 } Kern;
 
-#define Tplc    (g->src.plc)
-#define Tlen    (g->src.b.len)
-#define Tref    (g->src.b.ref)
-#define Tdat    boundsCheck(g->src.b.cap, Tref)
-#define Tslc    (Slc) {g->src.b.ref, g->src.plc}
 
 typedef struct {
   U2 _null;
@@ -91,6 +89,9 @@ typedef struct {
   Ref curBBA; // current bba to use for storing code/dictionary
   File src;
   U1 buf0[TOKEN_SIZE];
+  U1 logLvlSys;
+  U1 logLvlUsr;
+  U2 _unused;
 
   int syserr;
 } Globals;

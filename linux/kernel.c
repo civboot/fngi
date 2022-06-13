@@ -43,8 +43,12 @@
 
 #include "../kernel/kernel.h"
 
+#define memberSize(type, member) sizeof(((type *)0)->member)
 #define eprint(str)                fprintf (stderr, str)
 #define eprintf(format, args...)   fprintf (stderr, format, args)
+#define usrLog(lvl, format, args...) if(g->logLvlUsr & lvl) { fprintf (stderr, format, args); }
+
+
 #define R  return;
 #define UNREACH   if(1) { eprint("!!! unreachable\n"); assert(false); }
 #define ASSERT_EQ(E, CODE) if(1) { \
@@ -88,13 +92,18 @@ Kern*     k;    // kernel owned data structures
 Globals*  g;    // global data structures (global base can move)
 U4 line;
 
-void* boundsCheck(U4 size, Ref r) {
+static inline void* bndsChk(U4 size, Ref r) {
   ASM_ASSERT(r, E_null); ASM_ASSERT(r + size <= memSize, E_oob);
   return (void*) ((ssize_t)mem + r);
 }
 
-#define asRef(PTR)      ((U1*)(PTR)  - mem)
-#define asPtr(TY, REF)  ((TY*)boundsCheck(sizeof(TY), REF))
+static inline void* bndsChkNull(U4 size, Ref r) {
+  if(!r) return NULL; return bndsChk(size, r); }
+
+
+#define asRef(PTR)          ((U1*)(PTR)  - mem)
+#define asPtr(TY, REF)      ((TY*)bndsChk(sizeof(TY), REF))
+#define asPtrNull(TY, REF)  ((TY*)bndsChkNull(sizeof(TY), REF))
 #define asU1(REF)       asPtr(U1, REF)
 #define WS              (g->ws)
 #define LS              (g->ls)
@@ -103,6 +112,11 @@ void* boundsCheck(U4 size, Ref r) {
 #define LS_SP           (g->ls.ref + g->ls.sp)
 #define CS_SP           (g->cs.ref + g->cs.sp)
 #define SRC             (&g->src)
+#define Tplc    (g->src.plc)
+#define Tlen    (g->src.b.len)
+#define Tref    (g->src.b.ref)
+#define Tslc    (Slc) {g->src.b.ref, g->src.plc}
+#define Tdat    bndsChk(g->src.b.cap, Tref)
 
 #define Stk_init(CAP, REF) (Stk) {.ref = REF, .sp = CAP, .cap = CAP}
 void initEnv(U4 blocks) {
@@ -575,7 +589,7 @@ VM vm;
 // There are a few utility functions necessary for executing instructions.
 
 U4 ftBE(Ref ref, U2 size) { // fetch Big Endian
-  U1* p = boundsCheck(size, ref);
+  U1* p = bndsChk(size, ref);
   switch(size) {
     case 1: return *p;                  case 2: return (*p<<8) + *(p + 1);
     case 4: return (*p << 24) + (*(p + 1)<<16) + (*(p + 2)<<8) + *(p + 3);
@@ -584,7 +598,7 @@ U4 ftBE(Ref ref, U2 size) { // fetch Big Endian
 }
 
 void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
-  U1* p = boundsCheck(size, ref);
+  U1* p = bndsChk(size, ref);
   switch(size) {
     case 1: *p = value; break;
     case 2: *p = value>>8; *(p+1) = value; break;
@@ -599,7 +613,7 @@ U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
 U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
 
 static inline void _memmove(Ref dst, Ref src, U2 len) {
-  void* d = boundsCheck(len, dst); void* s = boundsCheck(len, src);
+  void* d = bndsChk(len, dst); void* s = bndsChk(len, src);
   memmove(d, s, len);
 }
 
@@ -846,10 +860,15 @@ File* F_new(U2 bufCap) {
   }; return f;
 }
 
+void F_close(File* f) {
+  if(!close(F_FD(*f))) { f->code = F_error; g->syserr = errno; }
+  else { f->code = F_done; }
+}
+
 void F_open(File* f) {
   U1 pathname[256];
   ASM_ASSERT(f->b.len < 255, E_io);
-  memcpy(pathname, boundsCheck(f->b.len, f->b.ref), f->b.len);
+  memcpy(pathname, bndsChk(f->b.len, f->b.ref), f->b.len);
   pathname[f->b.len] = 0;
   int fd = F_handleErr(f, open(pathname, O_NONBLOCK, O_RDWR));
   if(fd < 0) { f->code = F_error; g->syserr = errno; errno = 0; }
@@ -897,7 +916,7 @@ void openMock(File* f, U1* contents) { // Used for tests
 
 void openUnix(File* f, U1* path) { // Used for tests
   f->b.len = strlen(path); assert(f->b.cap >= f->b.len);
-  memcpy(boundsCheck(f->b.len, f->b.ref), path, f->b.len);
+  memcpy(bndsChk(f->b.len, f->b.ref), path, f->b.len);
   F_open(f); ASSERT_EQ(F_done, f->code);
 }
 
@@ -960,7 +979,7 @@ void readNewAtLeast(File* f, U2 num) {
 }
 
 void _scan(File* f) {
-  U1 firstTg; PlcBuf* p = F_plcBuf(*f); U1* dat = boundsCheck(p->cap, p->ref);
+  U1 firstTg; PlcBuf* p = F_plcBuf(*f); U1* dat = bndsChk(p->cap, p->ref);
   while(true) { // Skip whitespace
     if(p->plc >= p->len) { readNewAtLeast(f, 1); } // buffer full of white, get new
     if(p->len == 0) return; // TODO: eof check
@@ -1030,13 +1049,15 @@ U1 charToSz(U1 c) {
   switch (c) { case '1': return 1; case '2': return 2; case '4': return 4;
                case 'R': return RSIZE; default: SET_ERR(E_sz); } }
 
-Ref bump(U1 aligned, U4 size) {
-  Ref ref;  BBA* bba = asPtr(BBA, g->curBBA);  U1 starti = bba->rooti;
+Ref bump(BBA* bba, U1 aligned, U4 size) {
+  Ref ref;  U1 starti = bba->rooti;
   if(aligned) ref = BBA_alloc(bba, size);
   else        ref = BBA_allocUnaligned(bba, size);
   ASM_ASSERT(starti == bba->rooti, E_newBlock); ASM_ASSERT(ref, E_oom);
   return ref;
 }
+
+Ref kbump(U1 aligned, U4 size) { return bump(asPtr(BBA, g->curBBA), aligned, size); }
 
 U1 scanInstr(File* f) { // scan a single instruction, combine with sz
   scan(f); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
@@ -1079,10 +1100,10 @@ void cDot() { // `.`, aka "set size"
   Tplc += 1;
 }
 
-void cForwardSlash() { // `\`, aka line comment
+void cForwardSlash(File* f) { // `\`, aka line comment
   U1* dat = Tdat;
   while(true) {
-    if (Tplc >= Tlen) readNewAtLeast(SRC, 1);
+    if (Tplc >= Tlen) readNewAtLeast(f, 1);
     if (Tlen == 0) break;
     if (dat[Tplc] == '\n') break;
     Tplc += 1;
@@ -1102,11 +1123,11 @@ void cHash() { // `#`, aka hex literal
 
 void cEqual() { // `=`, aka dict set
   U1 meta = WS_POP(); U4 value = WS_POP(); scan(SRC);
-  Ref ckey = bump(false, Tplc + 1);
+  Ref ckey = kbump(false, Tplc + 1);
   *(mem + ckey) = Tplc; // Note: unsafe write, memory already checked.
   _memmove(ckey + 1, Tref, Tplc);
 
-  DNode* add = (DNode*) (mem + bump(true, sizeof(DNode)));
+  DNode* add = (DNode*) (mem + kbump(true, sizeof(DNode)));
   *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
 
   DNode* root = NULL; if(k->dict) root = asPtr(DNode, k->dict);
@@ -1122,11 +1143,11 @@ void cAt() { // `@`, aka dict get
 
 void cComma() { // `,`, aka write heap
   U4 value = WS_POP();
-  srBE(bump(/*aligned=*/ false, compiler.sz), compiler.sz, value);
+  srBE(kbump(/*aligned=*/ false, compiler.sz), compiler.sz, value);
 }
 
 void cPercent() { // `%`, aka compile instr
-  srBE(bump(/*aligned=*/ false, 1), 1, scanInstr(SRC));
+  srBE(kbump(/*aligned=*/ false, 1), 1, scanInstr(SRC));
 }
 
 void cCarrot() { // `^`, aka execute instr
@@ -1140,7 +1161,7 @@ void cDollar() { // `$`, aka execute token
 
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
     U1 len = *asU1(n->v);
-    memmove(asU1(bump(false, len)), asU1(n->v + 1), len);
+    memmove(asU1(kbump(false, len)), asU1(n->v + 1), len);
     return;
   }
   if(TY_FN_SYN == (TY_FN_TY_MASK & n->m1)) WS_PUSH(false); // pass asNow=false
@@ -1165,7 +1186,7 @@ TEST_END
 void compile() {
   Tplc = 1; U1 c = *asU1(Tref); // spor compiler only uses first character
   switch (c) {
-    case '.': cDot(); R             case '\\': cForwardSlash(); R
+    case '.': cDot(); R             case '\\': cForwardSlash(SRC); R
     case '#': cHash(); R            case '=': cEqual(); R
     case '@': cAt(); R              case ',': cComma(); R
     case '%': cPercent(); R         case '^': cCarrot(); R
@@ -1211,6 +1232,16 @@ TEST_END
 //   (2) enable a usable computer operating system or general purpose
 //       programming language.
 
+FileMethods fileMethods = (FileMethods) {
+  /* 0 */ .open = F_open,
+  /* 1 */ .close = F_close,
+  /* 2 */ .stop = NULL,
+  /* 3 */ .seek = NULL,
+  /* 4 */ .clear = NULL,
+  /* 5 */ .read = F_read,
+  /* 6 */ .insert = NULL,
+};
+
 static inline void executeDV(U1 dv) {
   switch (dv) {
     case D_assert: { U4 chk = WS_POP(); ASM_ASSERT(chk, WS_POP()); R }
@@ -1226,21 +1257,43 @@ static inline void executeDV(U1 dv) {
       err_jmp = prev_err_jmp;      // restore prev jmp location
       WS_PUSH(g->err); g->err = 0; // push and clear error
       return;
-    }
-    case D_memset: {
-        U2 len = WS_POP(); U1 value = WS_POP(); void* dst = boundsCheck(len, WS_POP());
-        memset(dst, value, len);
-        return;
-    }
-    case D_memcmp: {
+    } case D_memset: {
+        U2 len = WS_POP(); U1 value = WS_POP(); void* dst = bndsChk(len, WS_POP());
+        memset(dst, value, len); return;
+    } case D_memcmp: {
         U2 len = WS_POP();
-        void* r = boundsCheck(len, WS_POP()); void* l = boundsCheck(len, WS_POP());
+        void* r = bndsChk(len, WS_POP()); void* l = bndsChk(len, WS_POP());
         return WS_PUSH(memcmp(l, r, len));
-    }
-    case D_memmove: {
+    } case D_memmove: {
         U2 len = WS_POP(); Ref src = WS_POP(); return _memmove(WS_POP(), src, len);
-    }
-    case D_bump: {
+    } case D_bump: {
+      BBA* bba = asPtr(BBA, WS_POP()); U4 aligned = WS_POP();
+      return WS_PUSH(bump(bba, aligned, WS_POP()));
+    } case D_log: {
+      U1 lvl = WS_POP(); U2 len = WS_POP();
+      if(g->logLvlUsr & lvl) {
+        eprintf("D_log [%X]", lvl);
+        for(U2 i = 0; i < len; i++) eprintf(" %.4X", WS_POP());
+      } else {
+        for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
+      }
+      return;
+    } case D_file: { // method &File &FileMethods
+      U2 method = WS_POP(); Ref m = WS_POP();
+      if (m) { // execute a role method
+        WS_PUSH(*asPtr(Ref, m + (method * sizeof(Ref)))); execute(SZ4 + XLW);
+      } else { // execute a native method
+        ASM_ASSERT(method < sizeof(FileMethods) / sizeof(fileMethod), E_dv);
+        ((fileMethod*) &fileMethods)[method](asPtr(File, WS_POP()));
+      }
+      return;
+    } case D_scan: {
+      U2 method = WS_POP(); Ref m = WS_POP();
+      File* f = asPtr(File, WS_POP());
+      switch (method) {
+        case 0: readAtLeast(f, 1); R   case 1: cForwardSlash(f); R   case 2: scan(f); R
+        default: SET_ERR(E_dv);
+      }
     }
     default: SET_ERR(E_dv);
   }

@@ -171,7 +171,7 @@
 \ the kernel anyway, so it might as well be used by spor and fngi. Ops are:
 \   0 => read (at least) single byte. May or may not affect b.len.
 \   1 => read until EOL (for comments). May or may not affect b.len
-\   2 => read token into start of buffer. Sets b.len.
+\   2 => "scan" token into start of buffer. Sets b.len.
 
 #01 #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
 #02 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
@@ -180,9 +180,9 @@
 #05 #0=D_memmove  \ {&dst &src len} dst = src [of len]
 #06 #0=D_bump     \ {size aligned &bba -> &mem} bump allocate size
 #07 #0=D_log      \ { ... len lvl} log len integers to com
-#08 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
-#09 #0=D_scan     \ {method:U1 f:FRole} run a scan method
-#0D #0=D_dictFind
+#08 #0=D_file     \ {f:FRole method:U1} run a file method with kernel support
+#09 #0=D_scan     \ {f:FRole method:U1} run a scan method
+#0A #0=D_dictFind
 
 \ The RG 1 byte literal has the following byte format. Note: FT will return the
 \ register value + offset, SR will store the value + offset in the register.
@@ -239,16 +239,13 @@
 \ #C0 #0=ZOAB_PTR  \ equality: next 4 bytes are a pointer.
 \ 
 \ \ * [3.c] Log Levels
-\ #00 #0=LOG_SILENT
-\ 
-\ \ Log Levels
-\ #10 #0=LOG_USER
-\ #1F #0=LOG_TRACE
-\ #17 #0=LOG_DEBUG
-\ #13 #0=LOG_INFO
-\ #11 #0=LOG_WARN
-\ #10 #0=LOG_CRIT
-\ 
+#10 #0=LOG_USER
+#1F #0=LOG_TRACE
+#17 #0=LOG_DEBUG
+#13 #0=LOG_INFO
+#11 #0=LOG_WARN
+#10 #0=LOG_CRIT
+
 \ \ Language Level (builtin) Logs
 \ #27 #0=LOG_INSTR
 \ #23 #0=LOG_EXECUTE
