@@ -95,6 +95,7 @@ void* boundsCheck(U4 size, Ref r) {
 
 #define asRef(PTR)      ((U1*)(PTR)  - mem)
 #define asPtr(TY, REF)  ((TY*)boundsCheck(sizeof(TY), REF))
+#define asU1(REF)       asPtr(U1, REF)
 #define WS              (g->ws)
 #define LS              (g->ls)
 #define CS              (g->cs)
@@ -425,7 +426,7 @@ TEST_END
 //
 // The other core type is cdata, often just represented as "c". This is counted
 // data where the first byte has the count (length).
-#define cAsSlc(CDATA)  asSlc(CDATA + 1, *asPtr(U1, CDATA))
+#define cAsSlc(CDATA)  asSlc(CDATA + 1, *asU1(CDATA))
 #define sAsTmpSlc(S)   mvAndSlc(S, strlen(S))
 
 Slc asSlc(Ref ref, U2 len) {
@@ -434,7 +435,7 @@ Slc asSlc(Ref ref, U2 len) {
 }
 
 Slc mvAndSlc(U1* buf, U2 len) {
-  U1* gbuf = asPtr(U1, g->gbuf.ref + g->gbuf.len);
+  U1* gbuf = asU1(g->gbuf.ref + g->gbuf.len);
   memmove(gbuf, buf, len);
   return (Slc) { .ref = asRef(gbuf), .len = len };
 }
@@ -456,9 +457,9 @@ I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
   Ref c_a = BLOCK_SIZE; \
   Ref c_b = c_a + 4; \
   Ref c_c = c_b + 5; \
-  memmove(asPtr(U1, c_a), "\x03" "aaa", 4); \
-  memmove(asPtr(U1, c_b), "\x04" "abbd", 5); \
-  memmove(asPtr(U1, c_c), "\x03" "abc", 4); \
+  memmove(asU1(c_a), "\x03" "aaa", 4); \
+  memmove(asU1(c_b), "\x04" "abbd", 5); \
+  memmove(asU1(c_c), "\x03" "abc", 4); \
   Slc a = cAsSlc(c_a); \
   Slc b = cAsSlc(c_b); \
   Slc c = cAsSlc(c_c);
@@ -466,7 +467,7 @@ I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
 BARE_TEST(testSlc, 5)
   TEST_SLICES
   ASSERT_EQ(3, c.len); assert(c_c + 1 == c.ref);
-  ASSERT_EQ('a', *asPtr(U1, c.ref));  ASSERT_EQ('c', *asPtr(U1, c.ref + 2));
+  ASSERT_EQ('a', *asU1(c.ref));  ASSERT_EQ('c', *asU1(c.ref + 2));
 
 
   ASSERT_EQ(0,  Slc_cmp(a, a));
@@ -622,7 +623,7 @@ void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
 
 void xlImpl(Ref fn) { // impl for XL*
   // get amount to grow, must be multipled by APtr size .
-  U1 growSz = *asPtr(U1, fn);
+  U1 growSz = *asU1(fn);
   ASM_ASSERT(growSz % RSIZE, E_align4);
   ASM_ASSERT(g->ls.sp >= growSz, E_stkOvr);
   g->ls.sp -= growSz; // grow locals stack
@@ -706,35 +707,35 @@ inline static void executeInstr(Instr instr) {
       return;
 
     // Mem Cases
-    case SZ1 + FT: WS_PUSH(*asPtr(U1, WS_POP())); R
+    case SZ1 + FT: WS_PUSH(*asU1(WS_POP())); R
     case SZ2 + FT: WS_PUSH(*asPtr(U2, WS_POP())); R
     case SZ4 + FT: WS_PUSH(*asPtr(U4, WS_POP())); R
 
-    case SZ1 + FTO: WS_PUSH(*asPtr(U1, WS_POP() + popLit(1))); R
+    case SZ1 + FTO: WS_PUSH(*asU1(WS_POP() + popLit(1))); R
     case SZ2 + FTO: WS_PUSH(*asPtr(U2, WS_POP() + popLit(1))); R
     case SZ4 + FTO: WS_PUSH(*asPtr(U4, WS_POP() + popLit(1))); R
 
-    case SZ1 + FTLL: WS_PUSH(*asPtr(U1, LS_SP + popLit(1))); R
+    case SZ1 + FTLL: WS_PUSH(*asU1(LS_SP + popLit(1))); R
     case SZ2 + FTLL: WS_PUSH(*asPtr(U2, LS_SP + popLit(1))); R
     case SZ4 + FTLL: WS_PUSH(*asPtr(U4, LS_SP + popLit(1))); R
 
-    case SZ1 + FTGL: WS_PUSH(*asPtr(U1, g->gbuf.ref + popLit(2))); R
+    case SZ1 + FTGL: WS_PUSH(*asU1(g->gbuf.ref + popLit(2))); R
     case SZ2 + FTGL: WS_PUSH(*asPtr(U2, g->gbuf.ref + popLit(2))); R
     case SZ4 + FTGL: WS_PUSH(*asPtr(U4, g->gbuf.ref + popLit(2))); R
 
-    case SZ1 + SR: r = WS_POP(); *asPtr(U1, r) = WS_POP(); R
+    case SZ1 + SR: r = WS_POP(); *asU1(r) = WS_POP(); R
     case SZ2 + SR: r = WS_POP(); *asPtr(U2, r) = WS_POP(); R
     case SZ4 + SR: r = WS_POP(); *asPtr(U4, r) = WS_POP(); R
 
-    case SZ1 + SRO: r = WS_POP(); *asPtr(U1, r + popLit(1)) = WS_POP(); R
+    case SZ1 + SRO: r = WS_POP(); *asU1(r + popLit(1)) = WS_POP(); R
     case SZ2 + SRO: r = WS_POP(); *asPtr(U2, r + popLit(1)) = WS_POP(); R
     case SZ4 + SRO: r = WS_POP(); *asPtr(U4, r + popLit(1)) = WS_POP(); R
 
-    case SZ1 + SRLL: *asPtr(U1, LS_SP + popLit(1)) = WS_POP(); R
+    case SZ1 + SRLL: *asU1(LS_SP + popLit(1)) = WS_POP(); R
     case SZ2 + SRLL: *asPtr(U2, LS_SP + popLit(1)) = WS_POP(); R
     case SZ4 + SRLL: *asPtr(U4, LS_SP + popLit(1)) = WS_POP(); R
 
-    case SZ1 + SRGL: *asPtr(U1, g->gbuf.ref + popLit(2)) = WS_POP(); R
+    case SZ1 + SRGL: *asU1(g->gbuf.ref + popLit(2)) = WS_POP(); R
     case SZ2 + SRGL: *asPtr(U2, g->gbuf.ref + popLit(2)) = WS_POP(); R
     case SZ4 + SRGL: *asPtr(U4, g->gbuf.ref + popLit(2)) = WS_POP(); R
 
@@ -791,28 +792,42 @@ void execute(U1 instr) {
 
 
 // ***********************
-// * 4: Source Code
+// * 4: Files and Source Code
+// Fngi uses a File object for all file operations, including scanning tokens.
+// The design differs from linux in several ways:
+//
+//  1. File is both a struct and a role, meaning there are FileMethods. This
+//     allows using user-space filesystems and mocks while still calling
+//     the device op.
+//  2. There is only a single device op which uses the index to the
+//     FileMethods.  Unlike unix, all operations happen on the same small File
+//     struct instead of introducing a whole range of complex structures to
+//     manage operation.
+//  3. Always non-blocking. Fngi only supports cooperative multi-tasking, so
+//     blocking can never be okay.
+//  4. EOF code. Fngi has distinct codes for done (buffer full) and EOF
+//     conditions. Linux's design here is convoluted, especially when you
+//     want to select() a file at the EOF.
+//
+// > Note: After mostly flushing out the design of fngi's File API I came across
+// > the more modern `aio.h`, which shares many similarities.
+//
+// ******
+// * Scanner
 // The fngi scanner is used for both spor and fngi syntax. The entire compiler
 // works by:
-//   (1) scanning a single tokens.
-//   (2) executing or compiling the current token.
-//      (2.a) possibly in some special way by peeking at the next token.
+//  1. scanning a single tokens.
+//  2. executing or compiling the current token.
+//     2.a. peek at the next token
+//     2.b. reading raw characters
 //
-// There are a few use-cases that must be supported:
-//   (1) scanning tokens
-//   (2) peeking at tokens
-//   (3) reading raw characters performantly
-//
-// The basic architecture is to use a small buffer (~128 bytes) to buffer input
-// from the operating system or hardware. We keep track of the currently scanned
-// token. When it is not used, we shift bytes to the left to delete the current
-// token.
+// The basic architecture is to use a small buffer to buffer input from the
+// operating system or hardware. We keep track of the currently scanned token.
+// When it is not used, we shift bytes to the left to delete the current token.
 //
 // The advantage to this is simplicity. We do pay some cost for the performance
-// of shifting bytes left after ever token, but that cost is small compared to
+// of shifting bytes left after every token, but that cost is small compared to
 // serial IO.
-//
-// https://my.eng.utah.edu/~cs4400/file-descriptor.pdf
 
 #include <fcntl.h>
 #include <signal.h>
@@ -852,7 +867,7 @@ void F_read(File* f) {
     _memmove(f->b.ref, p->ref + p->plc, len); p->plc += len;
   } else {
     f->code = F_reading;
-    len = F_handleErr(f, read(F_FD(*f), asPtr(U1, f->b.ref), f->b.cap - f->b.len));
+    len = F_handleErr(f, read(F_FD(*f), asU1(f->b.ref), f->b.cap - f->b.len));
     assert(len >= 0);
   }
   f->b.len += len; f->pos += len;
@@ -874,7 +889,7 @@ void readAtLeast2(File* f, U2 atLeast) {
 void openMock(File* f, U1* contents) { // Used for tests
   PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bba, sizeof(PlcBuf)));
   U2 len = strlen(contents);
-  U1* s = asPtr(U1, BBA_allocUnaligned(&k->bba, len));
+  U1* s = asU1(BBA_allocUnaligned(&k->bba, len));
   memmove(s, contents, len);
   *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
   f->fid = asRef(p);
@@ -888,16 +903,13 @@ void openUnix(File* f, U1* path) { // Used for tests
 
 U1* TEST_expectedTxt = "Hi there Bob\nThis is Jane.\n";
 BARE_TEST(testReadMock, 4)  BA_init(&k->ba);
-  File* f = F_new(5); ASSERT_EQ(5, f->b.cap);
+  File* f = F_new(10); ASSERT_EQ(10, f->b.cap);
   openMock(f, TEST_expectedTxt);
   F_read(f); ASSERT_EQ(F_done, f->code);
-  ASSERT_EQ(5, f->b.len);
-  ASSERT_EQ(0, memcmp("Hi th", asPtr(U1, f->b.ref), 5));
-  f->b.len = 0; F_read(f); assert(!memcmp("ere B", asPtr(U1, f->b.ref), 5));
-  f->b.len = 0; F_read(f); assert(!memcmp("ob\nTh", asPtr(U1, f->b.ref), 5));
-  f->b.len = 0; F_read(f); assert(!memcmp("is is", asPtr(U1, f->b.ref), 5));
-  f->b.len = 0; F_read(f); assert(!memcmp(" Jane", asPtr(U1, f->b.ref), 5));
-  f->b.len = 0; F_read(f); assert(!memcmp(".\n", asPtr(U1, f->b.ref), 1));
+  ASSERT_EQ(10, f->b.len);
+  ASSERT_EQ(0, memcmp("Hi there B", asU1(f->b.ref), 10));
+  f->b.len = 0; F_read(f); assert(!memcmp("ob\nThis is", asU1(f->b.ref), 10));
+  f->b.len = 0; F_read(f); assert(!memcmp(" Jane.", asU1(f->b.ref), 6));
   ASSERT_EQ(F_done, f->code); F_read(f); ASSERT_EQ(F_eof, f->code);
 TEST_END
 
@@ -906,7 +918,7 @@ BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
   openUnix(f, "./tests/testData.txt"); f->b.len = 0;
   readAtLeast2(f, 128); ASSERT_EQ(F_eof, f->code);
   ASSERT_EQ(strlen(TEST_expectedTxt), f->b.len);
-  assert(!memcmp(TEST_expectedTxt, asPtr(U1, f->b.ref), f->b.len));
+  assert(!memcmp(TEST_expectedTxt, asU1(f->b.ref), f->b.len));
 TEST_END
 
 // FIXME TODO next item is to replace all of this with the new File API
@@ -1202,8 +1214,8 @@ void cDollar() { // `$`, aka execute token
   scan(); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
 
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
-    U1 len = *asPtr(U1, n->v);
-    memmove(asPtr(U1, bump(false, len)), asPtr(U1, n->v + 1), len);
+    U1 len = *asU1(n->v);
+    memmove(asU1(bump(false, len)), asU1(n->v + 1), len);
     return;
   }
   if(TY_FN_SYN == (TY_FN_TY_MASK & n->m1)) WS_PUSH(false); // pass asNow=false
