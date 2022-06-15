@@ -124,16 +124,14 @@ static inline void* bndsChkNull(U4 size, Ref r) {
 void initEnv(U4 blocks) {
   memSize = BLOCK_SIZE * blocks;
   mem = malloc(memSize); assert(mem); memEnd = mem + memSize;
-  k = (Kern*) mem;
-  th = asPtr(Thread, sizeof(Kern));
+  k = (Kern*) mem;                    *k = (Kern)    {0};
+  th = asPtr(Thread, sizeof(Kern));   *th = (Thread) {.ep = 1};
   g = asPtr(Globals,
             asRef(th) + sizeof(Thread)
             + (WS_DEPTH + CS_DEPTH) * RSIZE + CS_DEPTH // stacks
-            + (2 * blocks)); // nodes
-  *k = (Kern)    {0};
+            + (2 * blocks)); // BA nodes
   *g = (Globals) {0};
 
-  *th = (Thread) { .ep = 1, };
   WS  = Stk_init(WS_DEPTH * RSIZE, asRef(th) + sizeof(Thread));
   CS  = Stk_init(CS_DEPTH * RSIZE, WS.ref + WS.cap);
   CSZ = Stk_init(CS_DEPTH        , CS.ref + CS.cap);
@@ -202,7 +200,7 @@ TEST_END
 
 U4 Stk_pop(Stk* stk) {
   ASM_ASSERT(stk->sp + RSIZE <= stk->cap, E_stkUnd);
-  U4 out = *((U4*) (mem + stk->sp));
+  U4 out = *((U4*) (mem + stk->ref + stk->sp));
   stk->sp += RSIZE;
   return out;
 }
@@ -210,7 +208,7 @@ U4 Stk_pop(Stk* stk) {
 void Stk_push(Stk* stk, U4 value) {
   ASM_ASSERT(stk->sp > 0, E_stkOvr);
   stk->sp -= RSIZE;
-  *((U4*) (mem + stk->sp)) = value;
+  *((U4*) (mem + stk->ref + stk->sp)) = value;
 }
 
 // Return value of ASCII hex char (or 0xFF if not a hex character)
@@ -222,7 +220,8 @@ void Stk_push(Stk* stk, U4 value) {
 }
 
 BARE_TEST(testStk, 2)
-  WS_PUSH(0xA);  ASSERT_WS(0xA);
+  WS_PUSH(0xA);
+  ASSERT_EQ(4, WS.cap - WS.sp); ASSERT_WS(0xA);
   WS_PUSH(0x10); WS_PUSH(0x11);
   assert(WS.sp == WS.cap - 8);
   ASSERT_WS(0x11); ASSERT_WS(0x10);
@@ -1248,6 +1247,9 @@ TEST_END
 #include <signal.h>
 #include <ucontext.h>
 
+typedef struct {
+
+} CThread;
 
 //      if ((sigstk.ss_sp = malloc(SIGSTKSZ)) == NULL)
 //          /* error return */

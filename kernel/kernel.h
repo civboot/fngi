@@ -78,7 +78,6 @@ typedef struct {
 } Kern;
 
 typedef struct {
-  Ref next; Ref prev;
   Ref fn;   Ref ep;
   Stk ws; Stk ls;   // Working and Local Stacks
   Stk cs; Stk csz;  // Call and Call Size Stacks
