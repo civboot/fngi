@@ -12,11 +12,7 @@
 
 \ Kernel Global Offsets
 #02  #0=k_err
-#04  #0=k_ws
-#0C  #0=k_ls
-#14  #0=k_cs
-#1C  #0=k_csz
-#24  #0=k_gbuf
-#2C  #0=k_curBBA
-#34  #0=k_src
+#04  #0=k_gbuf
+#0C  #0=k_curBBA
+#14  #0=k_src
 

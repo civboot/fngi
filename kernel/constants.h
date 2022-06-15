@@ -68,6 +68,7 @@
 #define XSL                  0x86
 #define XSW                  0x87
 #define SLIT                 0xC0
+#define D_cede               0x0
 #define D_assert             0x1
 #define D_catch              0x2
 #define D_memset             0x3

@@ -86,14 +86,15 @@ bool expectingErr = false;
 // are (1) everything is in 4k blocks, (2) everything except for the local stack
 // data is in the first block. The layout of "everything" is below:
 //
-//   Kern | ws data | cs data | csz data | bba.nodes | Globals ... room to grow
+//   Kern | Th | ws data | cs data | csz data | bba.nodes | Globals ... room to grow
 U1        *mem, *memEnd;  // start/end of spor memory
 Ref       memSize;
 Kern*     k;    // kernel owned data structures
+Thread*   th;   // current thread
 Globals*  g;    // global data structures (global base can move)
 U4 line;
 
-static inline void* bndsChk(U4 size, Ref r) {
+static inline void* bndsChk(U4 size, Ref r) { // bounds check
   ASM_ASSERT(r, E_null); ASM_ASSERT(r + size <= memSize, E_oob);
   return (void*) ((ssize_t)mem + r);
 }
@@ -101,17 +102,16 @@ static inline void* bndsChk(U4 size, Ref r) {
 static inline void* bndsChkNull(U4 size, Ref r) {
   if(!r) return NULL; return bndsChk(size, r); }
 
-
 #define asRef(PTR)          ((U1*)(PTR)  - mem)
 #define asPtr(TY, REF)      ((TY*)bndsChk(sizeof(TY), REF))
 #define asPtrNull(TY, REF)  ((TY*)bndsChkNull(sizeof(TY), REF))
 #define asU1(REF)       asPtr(U1, REF)
-#define WS              (g->ws)
-#define LS              (g->ls)
-#define CS              (g->cs)
-#define CSZ             (g->csz)
-#define LS_SP           (g->ls.ref + g->ls.sp)
-#define CS_SP           (g->cs.ref + g->cs.sp)
+#define WS              (th->ws)
+#define LS              (th->ls)
+#define CS              (th->cs)
+#define CSZ             (th->csz)
+#define LS_SP           (LS.ref + LS.sp)
+#define CS_SP           (CS.ref + CS.sp)
 #define SRC             (&g->src)
 #define SRCM            asPtrNull(FileMethods, g->srcM)
 #define Tplc    (g->src.plc)
@@ -125,17 +125,19 @@ void initEnv(U4 blocks) {
   memSize = BLOCK_SIZE * blocks;
   mem = malloc(memSize); assert(mem); memEnd = mem + memSize;
   k = (Kern*) mem;
+  th = asPtr(Thread, sizeof(Kern));
   g = asPtr(Globals,
-            sizeof(Kern)
+            asRef(th) + sizeof(Thread)
             + (WS_DEPTH + CS_DEPTH) * RSIZE + CS_DEPTH // stacks
             + (2 * blocks)); // nodes
   *k = (Kern)    {0};
   *g = (Globals) {0};
 
-  LS  = Stk_init(BLOCK_SIZE      , BLOCK_SIZE);
-  WS  = Stk_init(WS_DEPTH * RSIZE, sizeof(Kern));
+  *th = (Thread) { .ep = 1, };
+  WS  = Stk_init(WS_DEPTH * RSIZE, asRef(th) + sizeof(Thread));
   CS  = Stk_init(CS_DEPTH * RSIZE, WS.ref + WS.cap);
   CSZ = Stk_init(CS_DEPTH        , CS.ref + CS.cap);
+  LS  = Stk_init(BLOCK_SIZE      , BLOCK_SIZE);
   k->ba = (BA) {
     .blocks = BLOCK_SIZE * 2, .nodes = CSZ.ref + CSZ.cap,
     .rooti = BLOCK_END,       .cap = blocks - 2,
@@ -222,7 +224,7 @@ void Stk_push(Stk* stk, U4 value) {
 BARE_TEST(testStk, 2)
   WS_PUSH(0xA);  ASSERT_WS(0xA);
   WS_PUSH(0x10); WS_PUSH(0x11);
-  assert(g->ws.sp == g->ws.cap - 8);
+  assert(WS.sp == WS.cap - 8);
   ASSERT_WS(0x11); ASSERT_WS(0x10);
   ASSERT_EQ(0,   charToHex('0'));    ASSERT_EQ(9,   charToHex('9'));
   ASSERT_EQ(0xA, charToHex('A'));    ASSERT_EQ(0xF, charToHex('F'));
@@ -583,8 +585,7 @@ TEST_END
 //
 // The VM executes instruction bytecode in the fngi memory space, utilizing
 // the fngi globals like CS and WS.
-#define sectorRef(R)  (/*join with ep's sector*/ (0xFFFF0000 & vm.ep) | r)
-VM vm;
+#define sectorRef(R)  (/*join with ep's sector*/ (0xFFFF0000 & th->ep) | r)
 
 //   *******
 //   * 3.a: Utilities
@@ -610,7 +611,7 @@ void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
   }
 }
 
-U4 popLit(U1 size) { U4 out = ftBE(vm.ep, size); vm.ep += size; return out; }
+U4 popLit(U1 size) { U4 out = ftBE(th->ep, size); th->ep += size; return out; }
 U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
 U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
 
@@ -632,7 +633,7 @@ BARE_TEST(testUtilities, 2)
   ASSERT_EQ(0x01,         ftBE(BLOCK_SIZE, 1));
   ASSERT_EQ(0x2345,       ftBE(BLOCK_SIZE + 1, 2));
   ASSERT_EQ(0x6789ABCD,   ftBE(BLOCK_SIZE + 3, 4));
-  vm.ep = BLOCK_SIZE;
+  th->ep = BLOCK_SIZE;
   ASSERT_EQ(0x01,         popLit(1));
   ASSERT_EQ(0x2345,       popLit(2));
 
@@ -647,17 +648,17 @@ TEST_END
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
-  CS_PUSH(vm.ep);
-  g->csz.sp -= 1; *(mem + g->csz.ref + g->csz.sp) = growSz; // push growSz onto csz
-  vm.ep = fn;
+  CS_PUSH(th->ep);
+  CSZ.sp -= 1; *(mem + CSZ.ref + CSZ.sp) = growSz; // push growSz onto csz
+  th->ep = fn;
 }
 
 void xlImpl(Ref fn) { // impl for XL*
   // get amount to grow, must be multipled by APtr size .
   U1 growSz = *asU1(fn);
   ASM_ASSERT(growSz % RSIZE, E_align4);
-  ASM_ASSERT(g->ls.sp >= growSz, E_stkOvr);
-  g->ls.sp -= growSz; // grow locals stack
+  ASM_ASSERT(LS.sp >= growSz, E_stkOvr);
+  LS.sp -= growSz; // grow locals stack
   xImpl(growSz, fn + 1);
 }
 
@@ -679,11 +680,11 @@ inline static void executeInstr(Instr instr) {
     case RETZ: if(WS_POP()) return; // intentional fallthrough
     case RET:
       r = Stk_pop(&CS);
-      l = *(mem + g->csz.ref + g->csz.sp); // size to shrink locals
-      g->csz.sp += 1;
-      ASM_ASSERT(g->ls.sp + l <= g->ls.cap, E_stkUnd);
-      g->ls.sp += l;
-      vm.ep = r;
+      l = *(mem + CSZ.ref + CSZ.sp); // size to shrink locals
+      CSZ.sp += 1;
+      ASM_ASSERT(LS.sp + l <= LS.cap, E_stkUnd);
+      LS.sp += l;
+      th->ep = r;
       return;
     case SWP: r = WS_POP(); l = WS_POP(); WS_PUSH(r); WS_PUSH(l); R
     case DRP : WS_POP(); R
@@ -697,7 +698,7 @@ inline static void executeInstr(Instr instr) {
         return WS_PUSH(LS_SP + (0x7F & r)); // local stack pointer + offset
       } else {
         switch (r) {
-          case R_EP: WS_PUSH(vm.ep); R
+          case R_EP: WS_PUSH(th->ep); R
           case R_GB: WS_PUSH(g->gbuf.ref); R
           default: SET_ERR(E_cReg);
         }
@@ -775,23 +776,23 @@ inline static void executeInstr(Instr instr) {
     case SZ4 + LIT: WS_PUSH(popLit(4)); R
 
     // Jmp Cases
-    case SZ1 + JMPL: r = popLit(1); vm.ep = vm.ep + (I1)r; R
-    case SZ2 + JMPL: r = popLit(2); vm.ep = sectorRef(r); R
-    case SZ4 + JMPL: r = popLit(4); vm.ep = r; R
+    case SZ1 + JMPL: r = popLit(1); th->ep = th->ep + (I1)r; R
+    case SZ2 + JMPL: r = popLit(2); th->ep = sectorRef(r); R
+    case SZ4 + JMPL: r = popLit(4); th->ep = r; R
 
     case SZ1 + JMPW:
     case SZ2 + JMPW:
-    case SZ4 + JMPW: vm.ep = WS_POP();
+    case SZ4 + JMPW: th->ep = WS_POP();
 
-    case SZ1 + JZL: r = popLit(1); if(!WS_POP()) { vm.ep = vm.ep + (I1)r; } R
-    case SZ2 + JZL: r = popLit(2); if(!WS_POP()) { vm.ep = sectorRef(r); } R
-    case SZ4 + JZL: r = popLit(4); if(!WS_POP()) { vm.ep = r; } R
+    case SZ1 + JZL: r = popLit(1); if(!WS_POP()) { th->ep = th->ep + (I1)r; } R
+    case SZ2 + JZL: r = popLit(2); if(!WS_POP()) { th->ep = sectorRef(r); } R
+    case SZ4 + JZL: r = popLit(4); if(!WS_POP()) { th->ep = r; } R
 
     case SZ1 + JTBL:
     case SZ2 + JTBL:
     case SZ4 + JTBL: assert(false); // TODO: not impl
 
-    case SZ1 + XLL: xlImpl(vm.ep + (I1)popLit(1)); R;
+    case SZ1 + XLL: xlImpl(th->ep + (I1)popLit(1)); R;
     case SZ2 + XLL: xlImpl(sectorRef(popLit(2))); R;
     case SZ4 + XLL: xlImpl(popLit(4)); R;
 
@@ -799,7 +800,7 @@ inline static void executeInstr(Instr instr) {
     case SZ2 + XLW:
     case SZ4 + XLW: xlImpl(WS_POP()); R;
 
-    case SZ1 + XSL: xImpl(0, vm.ep + (I1)popLit(1)); R;
+    case SZ1 + XSL: xImpl(0, th->ep + (I1)popLit(1)); R;
     case SZ2 + XSL: xImpl(0, sectorRef(popLit(2))); R;
     case SZ4 + XSL: xImpl(0, popLit(4)); R;
 
@@ -813,10 +814,10 @@ inline static void executeInstr(Instr instr) {
 }
 
 void execute(U1 instr) {
-  U2 startingLen = Stk_len(g->cs);
+  U2 startingLen = Stk_len(CS);
   while(true) {
     executeInstr(instr);
-    if(Stk_len(g->cs) == startingLen) return;
+    if(Stk_len(CS) == startingLen) return;
     instr = popLit(1);
   }
 }
@@ -1089,7 +1090,6 @@ U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine wi
   initSpor();
 
 void initSpor() {
-  vm = (VM) { .ep = 1 };
   compiler = (Compiler) { .sz = RSIZE, .instr = NOP };
   BA_init(&k->ba);
 }
@@ -1160,7 +1160,7 @@ void cPercent() { // `%`, aka compile instr
 
 void cCarrot() { // `^`, aka execute instr
   U1 instr = scanInstr(SRCM, SRC);
-  vm.ep += 1;
+  th->ep += 1;
   executeInstr(instr);
 }
 
@@ -1232,7 +1232,30 @@ SPOR_TEST(testConstants, 4)
 TEST_END
 
 // ***********************
-// * 6: Device Operations (DV)
+// * 6: Cooperative Multitasking
+// Fngi supports cooperative multitasking. If you are familiar with threading,
+// this has several differences:
+// * All operations that would normally take a long time (such as file IO and
+//   sleeping), are always non-blocking.
+// * Threads yield control using the `CEDE` instruction. This stops execution on
+//   the current thread until other threads have been checked.
+//
+// Threads can be created with D_thread. On the fngi side, this must be passed
+// memory for a new WS, LS, CS, CSZ, VM, and (optionally) globals. In the C
+// implementation, this also creates a new "thread context" using makecontext,
+// which is added to the current threads to be executed as the top priority
+// (immediately after CEDE is called).
+#include <signal.h>
+#include <ucontext.h>
+
+
+//      if ((sigstk.ss_sp = malloc(SIGSTKSZ)) == NULL)
+//          /* error return */
+//        sigstk.ss_size = SIGSTKSZ;
+//            sigstk.ss_flags = 0;
+
+// ***********************
+// * 7: Device Operations (DV)
 // Besides instructions for the most basic actions, Device Operations (DV) are
 // the primary mechanism that spor code communicates with hardware. The kernel
 // defines some extremely basic device operations which are sufficient to both:
@@ -1244,13 +1267,13 @@ static inline void executeDV(U1 dv) {
   switch (dv) {
     case D_assert: { U4 chk = WS_POP(); ASM_ASSERT(chk, WS_POP()); R }
     case D_catch: {
-      U4 ep = vm.ep, cs_sp = CS.sp, ls_sp = LS.sp;
+      U4 ep = th->ep, cs_sp = CS.sp, ls_sp = LS.sp;
       jmp_buf* prev_err_jmp = err_jmp; // cache prev jmp location
       jmp_buf local_err_jmp; err_jmp = &local_err_jmp;
       if(setjmp(local_err_jmp)) { /* got error, handled below */ }
       else execute(SZ4 + XLW);
       // ALWAYS Reset ep, call, and local stack
-      vm.ep = ep, CS.sp = cs_sp, CSZ.sp = cs_sp / 4, LS.sp = ls_sp;
+      th->ep = ep, CS.sp = cs_sp, CSZ.sp = cs_sp / 4, LS.sp = ls_sp;
       WS.sp = WS.cap;              // clear WS
       err_jmp = prev_err_jmp;      // restore prev jmp location
       WS_PUSH(g->err); g->err = 0; // push and clear error

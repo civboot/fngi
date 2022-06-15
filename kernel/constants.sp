@@ -174,6 +174,7 @@
 \   1 => read until EOL (for comments). May or may not affect b.len
 \   2 => "scan" token into start of buffer. Sets b.len.
 
+#00 #0=D_cede     \ {} cede, allowing another thread to run
 #01 #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
 #02 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
 #03 #0=D_memset   \ {&dst v:U1 len} set dst to v

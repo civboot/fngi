@@ -77,26 +77,25 @@ typedef struct {
   Ref dict;
 } Kern;
 
+typedef struct {
+  Ref next; Ref prev;
+  Ref fn;   Ref ep;
+  Stk ws; Stk ls;   // Working and Local Stacks
+  Stk cs; Stk csz;  // Call and Call Size Stacks
+  Ref globals;
+} Thread;
 
 typedef struct {
-  U2 _null;
+  U1 logLvlSys;
+  U1 logLvlUsr;
   U2 err;
-  Stk ws;   // working stack
-  Stk ls;   // locals stack
-  Stk cs;   // call stack
-  Stk csz;  // call stack size bytes
   Buf gbuf;   // global data buffer (for tracking growing globals)
   Ref curBBA; // current bba to use for storing code/dictionary
   Ref srcM;
   File src;
   U1 buf0[TOKEN_SIZE];
-  U1 logLvlSys;
-  U1 logLvlUsr;
-  U2 _unused;
 
   int syserr;
 } Globals;
-
-typedef struct { Ref ep; } VM;
 
 #endif // __KERNEL_H

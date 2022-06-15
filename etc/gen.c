@@ -38,10 +38,6 @@ void main() {
 
   assert(dprintf(fd, "\n\\ Kernel Global Offsets\n") > 0);
   WRITE_GLOBAL(fd, err);
-  WRITE_GLOBAL(fd, ws);
-  WRITE_GLOBAL(fd, ls);
-  WRITE_GLOBAL(fd, cs);
-  WRITE_GLOBAL(fd, csz);
   WRITE_GLOBAL(fd, gbuf);
   WRITE_GLOBAL(fd, curBBA);
   WRITE_GLOBAL(fd, src);
