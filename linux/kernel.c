@@ -34,11 +34,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <unistd.h>
 #include <assert.h>
 #include <string.h>
 #include <setjmp.h>
-#include <stdbool.h>
 #include <errno.h>
 
 #include "../kernel/kernel.h"
@@ -112,6 +113,7 @@ static inline void* bndsChkNull(U4 size, Ref r) {
 #define LS_SP           (g->ls.ref + g->ls.sp)
 #define CS_SP           (g->cs.ref + g->cs.sp)
 #define SRC             (&g->src)
+#define SRCM            asPtrNull(FileMethods, g->srcM)
 #define Tplc    (g->src.plc)
 #define Tlen    (g->src.b.len)
 #define Tref    (g->src.b.ref)
@@ -843,6 +845,8 @@ void execute(U1 instr) {
 // > Note: After mostly flushing out the design of fngi's File API I came across
 // > the more modern `aio.h`, which shares many similarities.
 #include <fcntl.h>
+#define handleFMethods(name, m, f) \
+  if(m) { WS_PUSH(asRef(f)); WS_PUSH(m->name); return execute(SZ4 + XLW); }
 
 int F_handleErr(File* f, int res) {
   if(errno == EWOULDBLOCK) return res;
@@ -860,12 +864,8 @@ File* F_new(U2 bufCap) {
   }; return f;
 }
 
-void F_close(File* f) {
-  if(!close(F_FD(*f))) { f->code = F_error; g->syserr = errno; }
-  else { f->code = F_done; }
-}
-
-void F_open(File* f) {
+void F_open(FileMethods* m, File* f) {
+  handleFMethods(open, m, f);
   U1 pathname[256];
   ASM_ASSERT(f->b.len < 255, E_io);
   memcpy(pathname, bndsChk(f->b.len, f->b.ref), f->b.len);
@@ -876,7 +876,15 @@ void F_open(File* f) {
   f->plc = 0; f->b.len = 0; f->code = F_done;
 }
 
-void F_read(File* f) {
+void F_close(FileMethods* m, File* f) {
+  handleFMethods(close, m, f);
+  if(m) { WS_PUSH(asRef(f)); WS_PUSH(m->close); return execute(SZ4 + XLW); }
+  if(!close(F_FD(*f))) { f->code = F_error; g->syserr = errno; }
+  else { f->code = F_done; }
+}
+
+void F_read(FileMethods* m, File* f) {
+  handleFMethods(read, m, f);
   ASM_ASSERT(f->code == F_reading || f->code >= F_done, E_io);
   int len;
   if(!(F_INDEX & f->fid)) { // mocked file. TODO: add some randomness
@@ -894,11 +902,11 @@ void F_read(File* f) {
 }
 
 // Read file blocking. Any errors result in a panic.
-void readAtLeast(File* f, U2 atLeast) {
+void readAtLeast(FileMethods* m, File* f, U2 atLeast) {
   ASM_ASSERT(f->b.cap - f->b.len >= atLeast, E_intern);
   U2 startLen = f->b.len;
   while(1) {
-    F_read(f);
+    F_read(m, f);
     if(f->code == F_eof || f->b.len - startLen >= atLeast) break;
     ASM_ASSERT(f->code < F_error, E_io);
   }
@@ -917,25 +925,25 @@ void openMock(File* f, U1* contents) { // Used for tests
 void openUnix(File* f, U1* path) { // Used for tests
   f->b.len = strlen(path); assert(f->b.cap >= f->b.len);
   memcpy(bndsChk(f->b.len, f->b.ref), path, f->b.len);
-  F_open(f); ASSERT_EQ(F_done, f->code);
+  F_open(NULL, f); ASSERT_EQ(F_done, f->code);
 }
 
 U1* TEST_expectedTxt = "Hi there Bob\nThis is Jane.\n";
 BARE_TEST(testReadMock, 4)  BA_init(&k->ba);
   File* f = F_new(10); ASSERT_EQ(10, f->b.cap);
   openMock(f, TEST_expectedTxt);
-  F_read(f); ASSERT_EQ(F_done, f->code);
+  F_read(NULL, f); ASSERT_EQ(F_done, f->code);
   ASSERT_EQ(10, f->b.len);
   ASSERT_EQ(0, memcmp("Hi there B", asU1(f->b.ref), 10));
-  f->b.len = 0; F_read(f); assert(!memcmp("ob\nThis is", asU1(f->b.ref), 10));
-  f->b.len = 0; F_read(f); assert(!memcmp(" Jane.", asU1(f->b.ref), 6));
-  ASSERT_EQ(F_done, f->code); F_read(f); ASSERT_EQ(F_eof, f->code);
+  f->b.len = 0; F_read(NULL, f); assert(!memcmp("ob\nThis is", asU1(f->b.ref), 10));
+  f->b.len = 0; F_read(NULL, f); assert(!memcmp(" Jane.", asU1(f->b.ref), 6));
+  ASSERT_EQ(F_done, f->code); F_read(NULL, f); ASSERT_EQ(F_eof, f->code);
 TEST_END
 
 BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
   File* f = F_new(128); ASSERT_EQ(128, f->b.cap);
   openUnix(f, "./tests/testData.txt"); f->b.len = 0;
-  readAtLeast(f, 128); ASSERT_EQ(F_eof, f->code);
+  readAtLeast(NULL, f, 128); ASSERT_EQ(F_eof, f->code);
   ASSERT_EQ(strlen(TEST_expectedTxt), f->b.len);
   assert(!memcmp(TEST_expectedTxt, asU1(f->b.ref), f->b.len));
 TEST_END
@@ -974,26 +982,26 @@ U1 toTokenGroup(U1 c) {
   return T_SYMBOL;
 }
 
-void readNewAtLeast(File* f, U2 num) {
-  f->plc = 0; f->b.len = 0; readAtLeast(f, num);
+void readNewAtLeast(FileMethods* m, File* f, U2 num) {
+  f->plc = 0; f->b.len = 0; readAtLeast(m, f, num);
 }
 
-void _scan(File* f) {
+void _scan(FileMethods* m, File* f) {
   U1 firstTg; PlcBuf* p = F_plcBuf(*f); U1* dat = bndsChk(p->cap, p->ref);
   while(true) { // Skip whitespace
-    if(p->plc >= p->len) { readNewAtLeast(f, 1); } // buffer full of white, get new
+    if(p->plc >= p->len) { readNewAtLeast(m, f, 1); } // buffer full of white, get new
     if(p->len == 0) return; // TODO: eof check
     firstTg = toTokenGroup(dat[p->plc]); if(firstTg != T_WHITE) break;
     if(dat[p->plc] == '\n') line += 1;
     p->plc += 1;
   }
   clearPlcBuf(F_plcBuf(*f));
-  if(!p->len) { readAtLeast(f, 1); }
+  if(!p->len) { readAtLeast(m, f, 1); }
   assert(p->len); U1 c = dat[p->plc];
   if(firstTg == T_SINGLE) { p->plc += 1; R }
   // Parse token until the group changes.
   while (true) {
-    if (p->plc >= p->len) readAtLeast(f, 1);
+    if (p->plc >= p->len) readAtLeast(m, f, 1);
     if (p->plc >= p->len) break;
     ASM_ASSERT(p->plc < p->cap, E_cTLen);
     c = dat[p->plc];
@@ -1005,9 +1013,9 @@ void _scan(File* f) {
   }
 }
 
-void scan(File* f) { _scan(f); }
+void scan(FileMethods* m, File* f) { _scan(m, f); }
 
-#define ASSERT_TOKEN(S)  if(1) { scan(SRC); if(!Teq(S)) { \
+#define ASSERT_TOKEN(S)  if(1) { scan(NULL, SRC); if(!Teq(S)) { \
   eprintf("! Token: %s == %.*s\n", S, Tplc, asU1(Tref)); \
   assert(false); } }
 U1 Teq(U1* s) { U2 len = strlen(s);  if(len != Tplc) return false;
@@ -1059,8 +1067,8 @@ Ref bump(BBA* bba, U1 aligned, U4 size) {
 
 Ref kbump(U1 aligned, U4 size) { return bump(asPtr(BBA, g->curBBA), aligned, size); }
 
-U1 scanInstr(File* f) { // scan a single instruction, combine with sz
-  scan(f); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine with sz
+  scan(m, f); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
   U1 instr = node->v;
   if((0xC0 & instr == I_MEM) || (0xC0 & instr == I_JMP)) {
     switch (compiler.sz) {
@@ -1094,16 +1102,16 @@ Ref newBlock() { // start a new block
 }
 
 void cDot() { // `.`, aka "set size"
-  if(Tplc >= Tlen) readAtLeast(SRC, 1);
+  if(Tplc >= Tlen) readAtLeast(SRCM, SRC, 1);
   ASM_ASSERT(Tlen, E_eof);
   compiler.sz = charToSz(*asU1(Tref + Tplc));
   Tplc += 1;
 }
 
-void cForwardSlash(File* f) { // `\`, aka line comment
+void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
   U1* dat = Tdat;
   while(true) {
-    if (Tplc >= Tlen) readNewAtLeast(f, 1);
+    if (Tplc >= Tlen) readNewAtLeast(m, f, 1);
     if (Tlen == 0) break;
     if (dat[Tplc] == '\n') break;
     Tplc += 1;
@@ -1111,7 +1119,7 @@ void cForwardSlash(File* f) { // `\`, aka line comment
 }
 
 void cHash() { // `#`, aka hex literal
-  U1* dat = Tdat; U4 v = 0; scan(SRC);
+  U1* dat = Tdat; U4 v = 0; scan(SRCM, SRC);
   for(U1 i = 0; i < Tplc; i += 1) {
     U1 c = dat[i];
     if (c == '_') continue;
@@ -1122,7 +1130,7 @@ void cHash() { // `#`, aka hex literal
 }
 
 void cEqual() { // `=`, aka dict set
-  U1 meta = WS_POP(); U4 value = WS_POP(); scan(SRC);
+  U1 meta = WS_POP(); U4 value = WS_POP(); scan(SRCM, SRC);
   Ref ckey = kbump(false, Tplc + 1);
   *(mem + ckey) = Tplc; // Note: unsafe write, memory already checked.
   _memmove(ckey + 1, Tref, Tplc);
@@ -1136,7 +1144,7 @@ void cEqual() { // `=`, aka dict set
 }
 
 void cAt() { // `@`, aka dict get
-  scan(SRC);
+  scan(SRCM, SRC);
   DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
   WS_PUSH(node->v);
 }
@@ -1147,17 +1155,17 @@ void cComma() { // `,`, aka write heap
 }
 
 void cPercent() { // `%`, aka compile instr
-  srBE(kbump(/*aligned=*/ false, 1), 1, scanInstr(SRC));
+  srBE(kbump(/*aligned=*/ false, 1), 1, scanInstr(SRCM, SRC));
 }
 
 void cCarrot() { // `^`, aka execute instr
-  U1 instr = scanInstr(SRC);
+  U1 instr = scanInstr(SRCM, SRC);
   vm.ep += 1;
   executeInstr(instr);
 }
 
 void cDollar() { // `$`, aka execute token
-  scan(SRC); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
+  scan(SRCM, SRC); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
 
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
     U1 len = *asU1(n->v);
@@ -1186,7 +1194,7 @@ TEST_END
 void compile() {
   Tplc = 1; U1 c = *asU1(Tref); // spor compiler only uses first character
   switch (c) {
-    case '.': cDot(); R             case '\\': cForwardSlash(SRC); R
+    case '.': cDot(); R             case '\\': cForwardSlash(SRCM, SRC); R
     case '#': cHash(); R            case '=': cEqual(); R
     case '@': cAt(); R              case ',': cComma(); R
     case '%': cPercent(); R         case '^': cCarrot(); R
@@ -1198,7 +1206,7 @@ void compile() {
 
 void compileLoop() {
   while(true) {
-    scan(SRC); if(Tplc == 0) return; else compile();
+    scan(SRCM, SRC); if(Tplc == 0) return; else compile();
   }
 }
 
@@ -1231,16 +1239,6 @@ TEST_END
 //   (1) bootstrap fngi on running spor assembly
 //   (2) enable a usable computer operating system or general purpose
 //       programming language.
-
-FileMethods fileMethods = (FileMethods) {
-  /* 0 */ .open = F_open,
-  /* 1 */ .close = F_close,
-  /* 2 */ .stop = NULL,
-  /* 3 */ .seek = NULL,
-  /* 4 */ .clear = NULL,
-  /* 5 */ .read = F_read,
-  /* 6 */ .insert = NULL,
-};
 
 static inline void executeDV(U1 dv) {
   switch (dv) {
@@ -1279,19 +1277,22 @@ static inline void executeDV(U1 dv) {
       }
       return;
     } case D_file: { // method &File &FileMethods
-      U2 method = WS_POP(); Ref m = WS_POP();
-      if (m) { // execute a role method
-        WS_PUSH(*asPtr(Ref, m + (method * sizeof(Ref)))); execute(SZ4 + XLW);
-      } else { // execute a native method
-        ASM_ASSERT(method < sizeof(FileMethods) / sizeof(fileMethod), E_dv);
-        ((fileMethod*) &fileMethods)[method](asPtr(File, WS_POP()));
+      FileMethods* m = asPtrNull(FileMethods, WS_POP());
+      File* f = asPtr(File, WS_POP());
+      switch (WS_POP()) {
+        case (offsetof(FileMethods, open)  / RSIZE): F_open(m, f);  R
+        case (offsetof(FileMethods, close) / RSIZE): F_close(m, f); R
+        case (offsetof(FileMethods, read)  / RSIZE): F_read(m, f);  R
+        default: SET_ERR(E_dv);
       }
       return;
-    } case D_scan: {
-      U2 method = WS_POP(); Ref m = WS_POP();
+    } case D_scan: { // method &File &FileMethods
+      FileMethods* m = asPtrNull(FileMethods, WS_POP());
       File* f = asPtr(File, WS_POP());
-      switch (method) {
-        case 0: readAtLeast(f, 1); R   case 1: cForwardSlash(f); R   case 2: scan(f); R
+      switch (WS_POP()) {
+        case 0: readAtLeast(m, f, 1); R
+        case 1: cForwardSlash(m, f);  R
+        case 2: scan(m, f);           R
         default: SET_ERR(E_dv);
       }
     }

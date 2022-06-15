@@ -18,5 +18,5 @@
 #1C  #0=k_csz
 #24  #0=k_gbuf
 #2C  #0=k_curBBA
-#30  #0=k_src
+#34  #0=k_src
 

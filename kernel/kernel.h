@@ -35,13 +35,13 @@ typedef struct {
 typedef void (*fileMethod)(File* f);
 
 typedef struct {
-  fileMethod open;    // open the file
-  fileMethod close;   // immediately close the file
-  fileMethod stop;    // stop current operation
-  fileMethod seek;    // seek to pos
-  fileMethod clear;   // clear all data after pos
-  fileMethod read;    // read data from pos
-  fileMethod insert;  // insert data at pos
+  Ref open;    // open the file
+  Ref close;   // immediately close the file
+  Ref stop;    // stop current operation
+  Ref seek;    // seek to pos
+  Ref clear;   // clear all data after pos
+  Ref read;    // read data from pos
+  Ref insert;  // insert data at pos
 } FileMethods;
 
 typedef struct { FileMethods* m; File* f; } FileRole;
@@ -87,6 +87,7 @@ typedef struct {
   Stk csz;  // call stack size bytes
   Buf gbuf;   // global data buffer (for tracking growing globals)
   Ref curBBA; // current bba to use for storing code/dictionary
+  Ref srcM;
   File src;
   U1 buf0[TOKEN_SIZE];
   U1 logLvlSys;

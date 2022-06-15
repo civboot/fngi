@@ -164,12 +164,13 @@
 \ DV is the primary mechanism to communicate complex logic with the kernel.
 \ Many of these consume a pointer to a role of {&methods &data}. If the
 \ "methods" pointer in that role is null, then the kernel uses a native
-\ implementation. For instance, for &FRole (file role) the data will be
-\ an index into the kernel's file manager.
+\ implementation. For instance, for FRole (&File &FileMethods=NULL) the data
+\ will be an index into the kernel's file manager.
 \
 \ D_scan is a toolbox of compiler functionality which has to be implemented in
-\ the kernel anyway, so it might as well be used by spor and fngi. Ops are:
-\   0 => read (at least) single byte. May or may not affect b.len.
+\ the kernel anyway, and allowing it to be usable by spor massively reduces
+\ the complexity of bootstrapping. Ops are:
+\   0 => read (at least) single byte. May or may not affect b.len
 \   1 => read until EOL (for comments). May or may not affect b.len
 \   2 => "scan" token into start of buffer. Sets b.len.
 
@@ -180,8 +181,8 @@
 #05 #0=D_memmove  \ {&dst &src len} dst = src [of len]
 #06 #0=D_bump     \ {size aligned &bba -> &mem} bump allocate size
 #07 #0=D_log      \ { ... len lvl} log len integers to com
-#08 #0=D_file     \ {f:FRole method:U1} run a file method with kernel support
-#09 #0=D_scan     \ {f:FRole method:U1} run a scan method
+#08 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
+#09 #0=D_scan     \ {method:U1 f:FRole} run a scan method
 #0A #0=D_dictFind
 
 \ The RG 1 byte literal has the following byte format. Note: FT will return the
