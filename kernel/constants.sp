@@ -66,8 +66,10 @@
 #05 #0=OVR   \ {l r -> l r l}  over
 #06 #0=DUP   \ {l   -> l l}    duplicate
 #07 #0=DUPN  \ {l   -> l l==0} DUP then NOT
-#08 #0=DV    \ Device Operation
-#09 #0=RG    \ {-> v}  Register
+#08 #0=YLD   \ {} yield control to another fiber
+#09 #0=DV    \ Device Operation
+#0A #0=RG    \ {-> v}  Register
+#0F #0=END   \ end of operation
 
 \ # [1.b] Operations: One Inp -> One Out
 #10 #0=INC   \ {l+1}  increment 1

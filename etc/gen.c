@@ -31,14 +31,12 @@ void main() {
   assert(dprintf(fd, header) > 0);
   assert(dprintf(fd, "\\ Kernel Data. Note: raw references, not global offsets\n") > 0);
   WRITE_KERN(fd, memTop);
-  WRITE_KERN(fd, ba);
-  WRITE_KERN(fd, bba);
-  WRITE_KERN(fd, bbaTmp);
   WRITE_KERN(fd, dict);
+  printf("Fiber size: %u\n", sizeof(Fiber));
 
   assert(dprintf(fd, "\n\\ Kernel Global Offsets\n") > 0);
   WRITE_GLOBAL(fd, err);
-  WRITE_GLOBAL(fd, gbuf);
+  WRITE_GLOBAL(fd, glen); WRITE_GLOBAL(fd, gcap);
   WRITE_GLOBAL(fd, curBBA);
   WRITE_GLOBAL(fd, src);
   assert(dprintf(fd, "\n") > 0);

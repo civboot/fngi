@@ -5,14 +5,12 @@
 
 \ Kernel Data. Note: raw references, not global offsets
 #04  #0=k_memTop
-#08  #0=k_ba
-#14  #0=k_bba
-#20  #0=k_bbaTmp
 #2C  #0=k_dict
 
 \ Kernel Global Offsets
-#02  #0=k_err
-#04  #0=k_gbuf
-#0C  #0=k_curBBA
-#14  #0=k_src
+#06  #0=k_err
+#00  #0=k_glen
+#02  #0=k_gcap
+#08  #0=k_curBBA
+#10  #0=k_src
 

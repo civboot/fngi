@@ -59,6 +59,8 @@ typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
 typedef struct { Ref root; Ref free; }                      Dict;
 typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;
 
+#define Stk_init(CAP, REF) (Stk) {.ref = REF, .sp = CAP, .cap = CAP}
+
 typedef struct {
   U1 valTy;     U1 _align;  U2 _align2;
   U2 valueASz;
@@ -69,26 +71,24 @@ typedef struct {
 } ErrData;
 
 typedef struct {
-  U4 _null;
-  Ref memTop;
-  BA ba;
-  BBA bba;
-  BBA bbaTmp;
+  U4 _null;  Ref memTop;
+  BA ba;     BBA bba;    BBA bbaTmp;
   Ref dict;
 } Kern;
 
 typedef struct {
-  Ref fn;   Ref ep;
+  Ref next; Ref prev; // LL pointers to other fibers.
+  Ref ep;           // Execution pointer
   Stk ws; Stk ls;   // Working and Local Stacks
   Stk cs; Stk csz;  // Call and Call Size Stacks
-  Ref globals;
-} Thread;
+  Ref gbp;          // Globals base pointer
+} Fiber;
 
 typedef struct {
+  U2 glen; U2 gcap; // global data used and cap
   U1 logLvlSys;
   U1 logLvlUsr;
   U2 err;
-  Buf gbuf;   // global data buffer (for tracking growing globals)
   Ref curBBA; // current bba to use for storing code/dictionary
   Ref srcM;
   File src;

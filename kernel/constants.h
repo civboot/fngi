@@ -17,8 +17,10 @@
 #define OVR                  0x5
 #define DUP                  0x6
 #define DUPN                 0x7
-#define DV                   0x8
-#define RG                   0x9
+#define YLD                  0x8
+#define DV                   0x9
+#define RG                   0xA
+#define END                  0xF
 #define INC                  0x10
 #define INC2                 0x11
 #define INC4                 0x12
