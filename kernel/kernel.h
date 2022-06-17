@@ -49,6 +49,7 @@ typedef struct { FileMethods* m; File* f; } FileRole;
 #define BLOCK_END  0xFF
 #define BLOCK_PO2  12
 #define BLOCK_SIZE (1<<BLOCK_PO2)
+#define CSZ_CATCH 0xFF
 
 typedef U1 Instr;
 

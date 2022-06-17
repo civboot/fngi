@@ -109,7 +109,7 @@ static inline void* bndsChkNull(U4 size, Ref r) {
 #define asU1(REF)       asPtr(U1, REF)
 
 void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
-  fb->ep = 1;
+  fb->ep = 0;
   fb->ws  = Stk_init(WS_DEPTH * RSIZE, asRef(fb) + sizeof(Fiber));
   fb->cs  = Stk_init(CS_DEPTH * RSIZE, fb->ws.ref + fb->ws.cap);
   fb->csz = Stk_init(CS_DEPTH        , fb->cs.ref + fb->cs.cap);
@@ -135,6 +135,7 @@ void initEnv(U4 blocks) {
   mem = malloc(memSize); assert(mem); memEnd = mem + memSize;
   k = (Kern*) mem;                    *k = (Kern)    {0};
   kfb = asPtr(Fiber, sizeof(Kern));    Fiber_init(kfb);
+  kfb->prev = asRef(kfb); kfb->next = asRef(kfb);
   g = asPtr(Globals, BLOCK_SIZE);
   *g = (Globals) {
     .glen = sizeof(Globals), .gcap = BLOCK_SIZE,
@@ -198,6 +199,7 @@ TEST_END
 // Stacks are the core memory manager for operations (via the working stack
 // (WS)) and for executing functions (via the call stack (CS)).
 #define Stk_len(S)       (((S).cap - (S).sp) / RSIZE)
+#define Stk_clear(S)     ((S).sp = (S).cap);
 #define WS_POP()         Stk_pop(&WS)
 #define WS_PUSH(V)       Stk_push(&WS, V)
 #define WS_PUSH2(A, B)   if(1) { Stk_push(&WS, A); Stk_push(&WS, B); }
@@ -673,7 +675,6 @@ TEST_END
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
-  eprintf("??? xImpl grow=%X fn=%X\n", growSz, fn);
   CS_PUSH(kfb->ep);
   CSZ.sp -= 1; *(mem + CSZ.ref + CSZ.sp) = growSz; // push growSz onto csz
   kfb->ep = fn;
@@ -684,6 +685,7 @@ void xlImpl(Ref fn) { // impl for XL*
   U1 growSz = *asU1(fn);
   ASM_ASSERT(growSz % RSIZE, E_align4);
   ASM_ASSERT(LS.sp >= growSz, E_stkOvr);
+  ASM_ASSERT(growSz < CSZ_CATCH, E_xlSz);
   LS.sp -= growSz; // grow locals stack
   xImpl(growSz, fn + 1);
 }
@@ -834,37 +836,79 @@ inline static Instr executeInstr(Instr instr) {
   SET_ERR(E_cInstr);
 }
 
+void ret() {
+  U4 r = Stk_pop(&CS);
+  U4 sh = *(mem + CSZ.ref + CSZ.sp); // size to shrink locals
+  sh = CSZ_CATCH == sh ? 0 : sh; // if sh is CSZ_CATCH it is actually a panic handler
+  CSZ.sp += 1;
+  ASM_ASSERT(LS.sp + sh <= LS.cap, E_stkUnd);
+  LS.sp += sh;
+  kfb->ep = r;
+}
+
+U2 getPanicHandler() { // find the index of the panic handler
+  for(U2 i = CSZ.sp; i < CSZ.cap; i += 1) {
+    if(CSZ_CATCH == *(mem + CSZ.ref + i)) return i;
+  }
+  return 0xFFFF; // not found
+}
+
+bool catchPanic() { // return whether it is caught
+  U2 csDepth = Stk_len(CS);
+  U2 handler = getPanicHandler();
+  if(0xFFFF == handler) return false; // no handler
+  Stk_clear(WS); WS_PUSH(csDepth); // set WS to {csDepth}
+  CSZ.sp = handler; CS.sp = handler * RSIZE; ret(); // ret from catchable fn
+  return true;
+}
+
+void killKfb() { // kill kernel fiber by removing from LL
+  Fiber* next = asPtr(Fiber, kfb->next);
+  if(kfb == next) { kfb = NULL; return; } // no more fibers
+  next->prev = kfb->prev;
+  asPtr(Fiber, kfb->prev)->next = kfb->next;
+  kfb = next;
+}
+
 void executeLoop() {
-  while(true) {
-    U1 instr = popLit(1);
-    instr = executeInstr(instr);
-    if(instr) { // nested if instead of switch for normal-case speed
-      if(YLD == instr) return;
-      else { // else RET
-        if(0 == Stk_len(CS)) {
-          // TODO: remove fiber
-          return;
-        }
-        U4 r = Stk_pop(&CS);
-        U4 l = 0xEF & *(mem + CSZ.ref + CSZ.sp); // size to shrink locals
-        CSZ.sp += 1;
-        ASM_ASSERT(LS.sp + l <= LS.cap, E_stkUnd);
-        LS.sp += l;
-        kfb->ep = r;
+  jmp_buf local_err_jmp;
+  jmp_buf* prev_err_jmp = err_jmp; err_jmp = &local_err_jmp;
+  while(kfb) {
+    if(setjmp(local_err_jmp)) { // got panic
+      if(!catchPanic()) { // couldn't catch panic, propogate it.
+        err_jmp = prev_err_jmp; longjmp(*err_jmp, 1);
+      }
+    }
+    U1 res = executeInstr(popLit(1));
+    if(res) {
+      if(YLD == res) kfb = asPtr(Fiber, kfb->next);
+      else /* RET */ {
+        if(0 == Stk_len(CS)) { killKfb(); } // empty stack, fiber done
+        else ret();
       }
     }
   }
+  err_jmp = prev_err_jmp;
 }
 
 Ref compileInstrs(U1* instrs) {
-  Ref out = kheap; for(U1 i = 0; instrs[i] != END; i += 1) compileValue(instrs[i], 1); return out; }
-Ref executeInstrs(U1* instrs) { Ref f = compileInstrs(instrs); kfb->ep = f; executeLoop(); return f; }
+  Ref out = kheap;
+  for(U1 i = 0; instrs[i] != END; i += 1) compileValue(instrs[i], 1);
+  return out;
+}
+Ref executeInstrs(U1* instrs) {
+  Fiber* _kfb = kfb; Ref f = compileInstrs(instrs); kfb->ep = f; executeLoop();
+  kfb = _kfb;        return f; // executeLoop always removes kfb
+}
 
 BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock();
   Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, END });    ASSERT_WS(5);
   Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, END }); ASSERT_WS(5);
   Ref jmp = executeInstrs((U1[]) { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, END });
   ASSERT_WS(5); ASSERT_WS(5); assert(0 == Stk_len(WS));
+
+  Ref panic = compileInstrs((U1[]) { SLIT + 0, SLIT + 1, DV, D_assert, END });
+  kfb->ep = panic; EXPECT_ERR(1, executeLoop());
 TEST_END
 
 // ***********************
@@ -892,7 +936,7 @@ TEST_END
 //   * 4.a: Opening and Closing Files
 #include <fcntl.h>
 #define handleFMethods(METHOD, METHODS, F) \
-  // if(m) { WS_PUSH(asRef(f)); return xlImpl(WS_PUSH((METHODS)->METHOD)); }
+  if(m) { WS_PUSH(asRef(F)); return xlImpl((METHODS)->METHOD); }
 
 int F_handleErr(File* f, int res) {
   if(errno == EWOULDBLOCK) return res;
@@ -1182,9 +1226,7 @@ void cPercent() { // `%`, aka compile instr
 }
 
 void cCarrot() { // `^`, aka execute instr
-  U1 instr = scanInstr(SRCM, SRC);
-  kfb->ep += 1;
-  executeInstr(instr);
+  U1 instr = scanInstr(SRCM, SRC); executeInstr(instr);
 }
 
 void cDollar() { // `$`, aka execute token
@@ -1200,14 +1242,14 @@ void cDollar() { // `$`, aka execute token
   else                    xImpl(0, n->v);
 }
 
-#define ASSERT_VALUE(K, V) ASSERT_EQ( \
+#define ASSERT_DICT(K, V) ASSERT_EQ( \
   V, Dict_get(asPtr(DNode, k->dict), sAsTmpSlc(K))->v)
 
 SPOR_TEST(testSporBasics, 4)  newBlock();
   openMock(SRC, " 12 ");  cHash();   ASSERT_EQ(0x12, WS_POP());
-  WS_PUSH2(0x42, 0); openMock(SRC, "mid");    cEqual(); ASSERT_VALUE("mid", 0x42);
-  WS_PUSH2(0x44, 0); openMock(SRC, "aLeft");  cEqual(); ASSERT_VALUE("aLeft", 0x44);
-  WS_PUSH2(0x88, 0); openMock(SRC, "zRight"); cEqual(); ASSERT_VALUE("zRight", 0x88);
+  WS_PUSH2(0x42, 0); openMock(SRC, "mid");    cEqual(); ASSERT_DICT("mid", 0x42);
+  WS_PUSH2(0x44, 0); openMock(SRC, "aLeft");  cEqual(); ASSERT_DICT("aLeft", 0x44);
+  WS_PUSH2(0x88, 0); openMock(SRC, "zRight"); cEqual(); ASSERT_DICT("zRight", 0x88);
 TEST_END
 
 //   *******
@@ -1230,9 +1272,18 @@ void compile() {
   }
 }
 
-void compileLoop() {
-  while(true) {
-    scan(SRCM, SRC); if(Tplc == 0) return; else compile();
+void compileLoop() { // compile source code
+  Fiber* kernel = kfb;
+  while(kfb) {
+    if (kfb->ep) {
+      // Note: executeLoop handles multi-threading and will remove the kernel
+      // fiber when it encounteres a return. We simply re-add the kernel fiber
+      // and continue.
+      executeLoop(); kfb = kernel; kfb->ep = 0;
+    } else {
+      scan(SRCM, SRC); if(Tplc == 0 /* EOF */) return;
+      compile();
+    }
   }
 }
 
@@ -1240,8 +1291,7 @@ void compileLoop() {
 //   * 5.d: Compile Constants
 
 void compileFile(char* s) {
-  line = 1;
-  openUnix(SRC, s); compileLoop(); ASSERT_NO_ERR();
+  line = 1; openUnix(SRC, s); compileLoop(); ASSERT_NO_ERR();
 }
 
 void compileConstants() {
@@ -1253,8 +1303,8 @@ void compileConstants() {
 
 SPOR_TEST(testConstants, 4)
   compileConstants();
-  ASSERT_VALUE("JMPL", 0x80);    ASSERT_VALUE("XLW", 0x85);
-  ASSERT_VALUE("E_io", 0xE010);  ASSERT_VALUE("E_unreach", 0xE003);
+  ASSERT_DICT("JMPL", 0x80);    ASSERT_DICT("XLW", 0x85);
+  ASSERT_DICT("E_io", 0xE010);  ASSERT_DICT("E_unreach", 0xE003);
 TEST_END
 
 // ***********************
@@ -1268,20 +1318,8 @@ TEST_END
 
 static inline void executeDV(U1 dv) {
   switch (dv) {
-    case D_assert: { U4 chk = WS_POP(); ASM_ASSERT(chk, WS_POP()); RV }
-    // case D_catch: {
-    //   U4 ep = kfb->ep, cs_sp = CS.sp, ls_sp = LS.sp;
-    //   jmp_buf* prev_err_jmp = err_jmp; // cache prev jmp location
-    //   jmp_buf local_err_jmp; err_jmp = &local_err_jmp;
-    //   if(setjmp(local_err_jmp)) { /* got error, handled below */ }
-    //   else execute(SZ4 + XLW);
-    //   // ALWAYS Reset ep, call, and local stack
-    //   kfb->ep = ep, CS.sp = cs_sp, CSZ.sp = cs_sp / 4, LS.sp = ls_sp;
-    //   WS.sp = WS.cap;              // clear WS
-    //   err_jmp = prev_err_jmp;      // restore prev jmp location
-    //   WS_PUSH(g->err); g->err = 0; // push and clear error
-    //   return;
-    //
+    case D_assert: { U4 code = WS_POP(); ASM_ASSERT(WS_POP(), code); RV }
+    case D_catch: xImpl(CSZ_CATCH, WS_POP()); RV // essentially XSW with catch flag set
     case D_memset: {
         U2 len = WS_POP(); U1 value = WS_POP(); void* dst = bndsChk(len, WS_POP());
         memset(dst, value, len); return;
@@ -1327,7 +1365,17 @@ static inline void executeDV(U1 dv) {
   }
 }
 
-int main() {
+void sporMain(U4 blocks) {
+  jmp_buf spor_err_jmp;
+  NEW_ENV_BARE(blocks);
+  initSpor();
+  compileConstants();
+  if(setjmp(spor_err_jmp)) {
+    eprintf("!! Uncaught Error #%X (line %u)\n", g->err, line); exit(1);
+  } else compileLoop();
+}
+
+void tests() {
   eprint("# Tests\n");
   // * 1: Environment and Test Setup
   testSetErr();
@@ -1351,7 +1399,10 @@ int main() {
   testConstants();
   // * 6: Fibers
   // testFiber();
-
   eprint("# Tests DONE\n");
+}
+
+int main() {
+  tests();
   return 0;
 }

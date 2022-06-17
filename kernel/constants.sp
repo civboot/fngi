@@ -58,9 +58,9 @@
     #0=CODE_HEAP_START \ start of code heap
 
 \ # [1.a] Operations: Special
-#00 #0=NOP   \ { -> }     no operation
-#01 #0=RETZ  \ Return if zero
-#02 #0=RET   \ Return
+#00 #0=NOP   \ {}  no operation
+#01 #0=RET   \ {}  return
+#02 #0=RETZ  \ {l} return if zero
 #03 #0=YLD   \ {} yield control to another fiber
 #04 #0=SWP   \ {l r -> r l}    swap
 #05 #0=DRP   \ {l   -> }       drop

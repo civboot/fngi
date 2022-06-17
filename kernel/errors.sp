@@ -28,6 +28,7 @@
 #E0A6  #0=E_align4  \ access off 4byte align
 #E0A7  #0=E_divZero \ divide by zero
 #E0A8  #0=E_oom     \ out of memory
+#E0A9  #0=E_xlSz    \ invalid XL sz
 
 #E0C1  #0=E_cInstr  \ invalid instr
 #E0C2  #0=E_cToken  \ token invalid

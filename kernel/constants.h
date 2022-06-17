@@ -10,8 +10,8 @@
 #define I_MEM                0x40
 #define I_JMP                0x80
 #define NOP                  0x0
-#define RETZ                 0x1
-#define RET                  0x2
+#define RET                  0x1
+#define RETZ                 0x2
 #define YLD                  0x3
 #define SWP                  0x4
 #define DRP                  0x5
@@ -142,6 +142,7 @@
 #define E_align4             0xE0A6
 #define E_divZero            0xE0A7
 #define E_oom                0xE0A8
+#define E_xlSz               0xE0A9
 #define E_cInstr             0xE0C1
 #define E_cToken             0xE0C2
 #define E_cTLen              0xE0C3
