@@ -25,11 +25,10 @@
 //   * 4.b: Reading Files
 //
 // * 5: Compiler
-//   * 5.a: Utilities
-//   * 5.b: Scan
-//   * 5.c: Spor Token Functions
-//   * 5.d: Spor Compiler
-//   * 5.e: Compile Constants
+//   * 5.a: Scan
+//   * 5.b: Spor Token Functions
+//   * 5.c: Spor Compiler
+//   * 5.d: Compile Constants
 //
 // * 6: Fibers
 //
@@ -589,11 +588,32 @@ TEST_END
 //
 // The VM executes instruction bytecode in the fngi memory space, utilizing
 // the fngi globals like CS and WS.
-#define sectorRef(R)  (/*join with ep's sector*/ (0xFFFF0000 & kfb->ep) | r)
+#define sectorRef(REF)  ((0xFFFF0000 & kfb->ep) | REF)
 
 //   *******
 //   * 3.a: Utilities
-// There are a few utility functions necessary for executing instructions.
+// There are a few utility functions necessary for executing instructions and
+// compiling them in tests.
+#define kheap        (BA_block(*BBA_ba(k->bba), k->bba.rooti) + k->bba.len)
+
+Ref bump(BBA* bba, U1 aligned, U4 size) { // bump memory from the bba
+  Ref ref;  U1 starti = bba->rooti;
+  if(aligned) ref = BBA_alloc(bba, size);
+  else        ref = BBA_allocUnaligned(bba, size);
+  ASM_ASSERT(starti == bba->rooti, E_newBlock); ASM_ASSERT(ref, E_oom);
+  return ref;
+}
+
+Ref kbump(U1 aligned, U4 size) { return bump(asPtr(BBA, g->curBBA), aligned, size); }
+
+U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
+U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
+
+// "Clear" the place buffer by moving existing data after plc to the beginning.
+void clearPlcBuf(PlcBuf* p) {
+  U1* ref = mem + p->ref;   p->len -= p->plc; // the new length
+  memmove(ref, ref + p->plc, p->len); p->plc = 0;
+}
 
 U4 ftBE(Ref ref, U2 size) { // fetch Big Endian
   U1* p = bndsChk(size, ref);
@@ -616,18 +636,18 @@ void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
 }
 
 U4 popLit(U1 size) { U4 out = ftBE(kfb->ep, size); kfb->ep += size; return out; }
-U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
-U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
+void compileValue(U4 value, U1 sz) { srBE(kbump(/*aligned=*/ false, sz), sz, value); }
 
 static inline void _memmove(Ref dst, Ref src, U2 len) {
   void* d = bndsChk(len, dst); void* s = bndsChk(len, src);
   memmove(d, s, len);
 }
 
-// "Clear" the place buffer by moving existing data after plc to the beginning.
-void clearPlcBuf(PlcBuf* p) {
-  U1* ref = mem + p->ref;   p->len -= p->plc; // the new length
-  memmove(ref, ref + p->plc, p->len); p->plc = 0;
+Ref newBlock() { // start a new block
+  BBA* bba = asPtr(BBA, g->curBBA);
+  Ref r = BA_alloc(asPtr(BA, bba->ba), &bba->rooti);
+  ASM_ASSERT(r, E_oom); bba->len = 0; bba->cap = BLOCK_SIZE;
+  return r;
 }
 
 BARE_TEST(testUtilities, 3)
@@ -653,6 +673,7 @@ TEST_END
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
+  eprintf("??? xImpl grow=%X fn=%X\n", growSz, fn);
   CS_PUSH(kfb->ep);
   CSZ.sp -= 1; *(mem + CSZ.ref + CSZ.sp) = growSz; // push growSz onto csz
   kfb->ep = fn;
@@ -677,27 +698,20 @@ void xlImpl(Ref fn) { // impl for XL*
 
 static inline void executeDV(U1 dv);
 
-inline static U1 executeInstr(Instr instr) {
+inline static Instr executeInstr(Instr instr) {
   eprintf("??? executeInstr: %X\n", instr);
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
     case NOP: R0
-    case RETZ: if(WS_POP()) R0 // intentional fallthrough
-    case RET:
-      r = Stk_pop(&CS);
-      l = *(mem + CSZ.ref + CSZ.sp); // size to shrink locals
-      CSZ.sp += 1;
-      ASM_ASSERT(LS.sp + l <= LS.cap, E_stkUnd);
-      LS.sp += l;
-      kfb->ep = r;
-      R0
+    case RETZ: if(!WS_POP()) R0 // intentional fallthrough
+    case RET: return RET;
+    case YLD: return YLD;
     case SWP: r = WS_POP(); l = WS_POP(); WS_PUSH(r); WS_PUSH(l); R0
     case DRP : WS_POP(); R0
     case OVR : r = WS_POP(); l = WS_POP(); WS_PUSH(l); WS_PUSH(r); WS_PUSH(l); R0
     case DUP : r = WS_POP(); WS_PUSH(r); WS_PUSH(r);      R0
     case DUPN: r = WS_POP(); WS_PUSH(r); WS_PUSH(0 == r); R0
-    // case YLD: yield(); R0
     case DV: executeDV(popLit(1)); R0
     case RG:
       r = popLit(1);
@@ -823,18 +837,35 @@ inline static U1 executeInstr(Instr instr) {
 void executeLoop() {
   while(true) {
     U1 instr = popLit(1);
-    U1 sig = executeInstr(instr);
+    instr = executeInstr(instr);
+    if(instr) { // nested if instead of switch for normal-case speed
+      if(YLD == instr) return;
+      else { // else RET
+        if(0 == Stk_len(CS)) {
+          // TODO: remove fiber
+          return;
+        }
+        U4 r = Stk_pop(&CS);
+        U4 l = 0xEF & *(mem + CSZ.ref + CSZ.sp); // size to shrink locals
+        CSZ.sp += 1;
+        ASM_ASSERT(LS.sp + l <= LS.cap, E_stkUnd);
+        LS.sp += l;
+        kfb->ep = r;
+      }
+    }
   }
 }
 
-void execute(U1 instr) {
-  U2 startingLen = Stk_len(CS);
-  while(true) {
-    executeInstr(instr);
-    if(Stk_len(CS) == startingLen) return;
-    instr = popLit(1);
-  }
-}
+Ref compileInstrs(U1* instrs) {
+  Ref out = kheap; for(U1 i = 0; instrs[i] != END; i += 1) compileValue(instrs[i], 1); return out; }
+Ref executeInstrs(U1* instrs) { Ref f = compileInstrs(instrs); kfb->ep = f; executeLoop(); return f; }
+
+BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock();
+  Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, END });    ASSERT_WS(5);
+  Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, END }); ASSERT_WS(5);
+  Ref jmp = executeInstrs((U1[]) { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, END });
+  ASSERT_WS(5); ASSERT_WS(5); assert(0 == Stk_len(WS));
+TEST_END
 
 // ***********************
 // * 4: Files
@@ -860,8 +891,8 @@ void execute(U1 instr) {
 //   *******
 //   * 4.a: Opening and Closing Files
 #include <fcntl.h>
-#define handleFMethods(name, m, f) \
-  if(m) { WS_PUSH(asRef(f)); WS_PUSH(m->name); return execute(SZ4 + XLW); }
+#define handleFMethods(METHOD, METHODS, F) \
+  // if(m) { WS_PUSH(asRef(f)); return xlImpl(WS_PUSH((METHODS)->METHOD)); }
 
 int F_handleErr(File* f, int res) {
   if(errno == EWOULDBLOCK) return res;
@@ -893,7 +924,6 @@ void F_open(FileMethods* m, File* f) {
 
 void F_close(FileMethods* m, File* f) {
   handleFMethods(close, m, f);
-  if(m) { WS_PUSH(asRef(f)); WS_PUSH(m->close); return execute(SZ4 + XLW); }
   if(!close(F_FD(*f))) { f->code = F_error; g->syserr = errno; }
   else { f->code = F_done; }
 }
@@ -994,30 +1024,13 @@ typedef struct { U1 sz; U1 instr; } Compiler;
 Compiler compiler;
 
 //   *******
-//   * 5.a: Utilities
+//   * 5.a: Scan
+// spor and fngi both use the same token syntax
 
 U1 charToSz(U1 c) {
   switch (c) { case '1': return 1; case '2': return 2; case '4': return 4;
                case 'R': return RSIZE; default: SET_ERR(E_sz); } }
 
-Ref bump(BBA* bba, U1 aligned, U4 size) {
-  Ref ref;  U1 starti = bba->rooti;
-  if(aligned) ref = BBA_alloc(bba, size);
-  else        ref = BBA_allocUnaligned(bba, size);
-  ASM_ASSERT(starti == bba->rooti, E_newBlock); ASM_ASSERT(ref, E_oom);
-  return ref;
-}
-
-#define kheap        (BA_block(*BBA_ba(k->bba), k->bba.rooti) + k->bba.len)
-Ref kbump(U1 aligned, U4 size) { return bump(asPtr(BBA, g->curBBA), aligned, size); }
-void compileValue(U4 value, U1 sz) { srBE(kbump(/*aligned=*/ false, sz), sz, value); }
-void compileInstrs(U1* instrs) {
-  for(U1 i = 0; instrs[i] != END; i += 1) compileValue(instrs[i], 1);
-}
-
-//   *******
-//   * 5.b: Scan
-// spor and fngi both use the same token syntax
 U1 toTokenGroup(U1 c) {
   if(c <= ' ')             return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
@@ -1099,7 +1112,7 @@ BARE_TEST(testScan, 3)  BA_init(&k->ba);
 TEST_END
 
 //   *******
-//   * 5.c: Spor Token Functions
+//   * 5.b: Spor Token Functions
 // Each of these handle a single "token" (really single character) case in the
 // spore compiler.
 
@@ -1110,13 +1123,6 @@ TEST_END
 void initSpor() {
   compiler = (Compiler) { .sz = RSIZE, .instr = NOP };
   BA_init(&k->ba);
-}
-
-Ref newBlock() { // start a new block
-  BBA* bba = asPtr(BBA, g->curBBA);
-  Ref r = BA_alloc(asPtr(BA, bba->ba), &bba->rooti);
-  ASM_ASSERT(r, E_oom); bba->len = 0; bba->cap = BLOCK_SIZE;
-  return r;
 }
 
 void cDot() { // `.`, aka "set size"
@@ -1190,9 +1196,8 @@ void cDollar() { // `$`, aka execute token
     return;
   }
   if(TY_FN_SYN == (TY_FN_TY_MASK & n->m1)) WS_PUSH(false); // pass asNow=false
-  WS_PUSH(n->v);
-  if(TY_FN_LARGE & n->m1) execute(SZ4 + XLW);
-  else                    execute(SZ4 + XSW);
+  if(TY_FN_LARGE & n->m1) xlImpl(n->v);
+  else                    xImpl(0, n->v);
 }
 
 #define ASSERT_VALUE(K, V) ASSERT_EQ( \
@@ -1206,7 +1211,7 @@ SPOR_TEST(testSporBasics, 4)  newBlock();
 TEST_END
 
 //   *******
-//   * 5.d: Spor Compiler
+//   * 5.c: Spor Compiler
 // Yes, these two functions are the entire spor compiler. It is so simple
 // because spor syntax is based on a single character. However, that character
 // (especially '$') can do almost anything since it can run an arbitrary spor
@@ -1232,7 +1237,7 @@ void compileLoop() {
 }
 
 //   *******
-//   * 5.e: Compile Constants
+//   * 5.d: Compile Constants
 
 void compileFile(char* s) {
   line = 1;
@@ -1264,19 +1269,20 @@ TEST_END
 static inline void executeDV(U1 dv) {
   switch (dv) {
     case D_assert: { U4 chk = WS_POP(); ASM_ASSERT(chk, WS_POP()); RV }
-    case D_catch: {
-      U4 ep = kfb->ep, cs_sp = CS.sp, ls_sp = LS.sp;
-      jmp_buf* prev_err_jmp = err_jmp; // cache prev jmp location
-      jmp_buf local_err_jmp; err_jmp = &local_err_jmp;
-      if(setjmp(local_err_jmp)) { /* got error, handled below */ }
-      else execute(SZ4 + XLW);
-      // ALWAYS Reset ep, call, and local stack
-      kfb->ep = ep, CS.sp = cs_sp, CSZ.sp = cs_sp / 4, LS.sp = ls_sp;
-      WS.sp = WS.cap;              // clear WS
-      err_jmp = prev_err_jmp;      // restore prev jmp location
-      WS_PUSH(g->err); g->err = 0; // push and clear error
-      return;
-    } case D_memset: {
+    // case D_catch: {
+    //   U4 ep = kfb->ep, cs_sp = CS.sp, ls_sp = LS.sp;
+    //   jmp_buf* prev_err_jmp = err_jmp; // cache prev jmp location
+    //   jmp_buf local_err_jmp; err_jmp = &local_err_jmp;
+    //   if(setjmp(local_err_jmp)) { /* got error, handled below */ }
+    //   else execute(SZ4 + XLW);
+    //   // ALWAYS Reset ep, call, and local stack
+    //   kfb->ep = ep, CS.sp = cs_sp, CSZ.sp = cs_sp / 4, LS.sp = ls_sp;
+    //   WS.sp = WS.cap;              // clear WS
+    //   err_jmp = prev_err_jmp;      // restore prev jmp location
+    //   WS_PUSH(g->err); g->err = 0; // push and clear error
+    //   return;
+    //
+    case D_memset: {
         U2 len = WS_POP(); U1 value = WS_POP(); void* dst = bndsChk(len, WS_POP());
         memset(dst, value, len); return;
     } case D_memcmp: {
@@ -1335,6 +1341,7 @@ int main() {
   testDict();
   // * 3: Executing Instructions
   testUtilities();
+  testExecuteLoop();
   // * 4: Files and Source Code
   testReadMock();
   testReadUnix();

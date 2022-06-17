@@ -61,15 +61,15 @@
 #00 #0=NOP   \ { -> }     no operation
 #01 #0=RETZ  \ Return if zero
 #02 #0=RET   \ Return
-#03 #0=SWP   \ {l r -> r l}    swap
-#04 #0=DRP   \ {l   -> }       drop
-#05 #0=OVR   \ {l r -> l r l}  over
-#06 #0=DUP   \ {l   -> l l}    duplicate
-#07 #0=DUPN  \ {l   -> l l==0} DUP then NOT
-#08 #0=YLD   \ {} yield control to another fiber
+#03 #0=YLD   \ {} yield control to another fiber
+#04 #0=SWP   \ {l r -> r l}    swap
+#05 #0=DRP   \ {l   -> }       drop
+#06 #0=OVR   \ {l r -> l r l}  over
+#07 #0=DUP   \ {l   -> l l}    duplicate
+#08 #0=DUPN  \ {l   -> l l==0} DUP then NOT
 #09 #0=DV    \ Device Operation
 #0A #0=RG    \ {-> v}  Register
-#0F #0=END   \ end of operation
+#0F #0=END   \ not actual instr, used in tests.
 
 \ # [1.b] Operations: One Inp -> One Out
 #10 #0=INC   \ {l+1}  increment 1
