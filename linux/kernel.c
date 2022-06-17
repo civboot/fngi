@@ -30,9 +30,9 @@
 //   * 5.c: Spor Compiler
 //   * 5.d: Compile Constants
 //
-// * 6: Fibers
+// * 6: Device Operations (DV)
 //
-// * 7: Device Operations (DV)
+// * 7: Main Function and Running Tests
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,10 +73,10 @@
 
 jmp_buf* err_jmp = NULL;
 bool expectingErr = false;
-#define SET_ERR(E)  if(true) { assert(E); g->err = E; \
+#define SET_ERR(E)  if(true) { assert(E); cfb->err = E; \
   if(!expectingErr) { eprintf("!! Hit Error, fn=%s [cline=%u]\n", __func__, __LINE__); } \
   longjmp(*err_jmp, 1); }
-#define ASSERT_NO_ERR()    assert(!g->err)
+#define ASSERT_NO_ERR()    assert(!cfb->err)
 #define ASM_ASSERT(C, E)   if(!(C)) { SET_ERR(E); }
 
 //   *******
@@ -91,15 +91,13 @@ bool expectingErr = false;
 U1        *mem, *memEnd;  // start/end of spor memory
 Ref       memSize;
 Kern*     k;    // kernel owned data structures
-Fiber*    kfb;  // current fiber
+Fiber*    cfb;  // current fiber
 Globals*  g;    // global data structures (global base can move)
 U4 line;
 
 static inline void* bndsChk(U4 size, Ref r) { // bounds check
   ASM_ASSERT(r, E_null); ASM_ASSERT(r + size <= memSize, E_oob);
-  return (void*) ((ssize_t)mem + r);
-}
-
+  return (void*) ((ssize_t)mem + r); }
 static inline void* bndsChkNull(U4 size, Ref r) {
   if(!r) return NULL; return bndsChk(size, r); }
 
@@ -109,18 +107,19 @@ static inline void* bndsChkNull(U4 size, Ref r) {
 #define asU1(REF)       asPtr(U1, REF)
 
 void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
-  fb->ep = 0;
-  fb->ws  = Stk_init(WS_DEPTH * RSIZE, asRef(fb) + sizeof(Fiber));
-  fb->cs  = Stk_init(CS_DEPTH * RSIZE, fb->ws.ref + fb->ws.cap);
-  fb->csz = Stk_init(CS_DEPTH        , fb->cs.ref + fb->cs.cap);
+  *fb = (Fiber) {
+    .ws  = Stk_init(WS_DEPTH * RSIZE, asRef(fb) + sizeof(Fiber)),
+    .cs  = Stk_init(CS_DEPTH * RSIZE, fb->ws.ref + fb->ws.cap),
+    .csz = Stk_init(CS_DEPTH        , fb->cs.ref + fb->cs.cap),
+  };
   Ref lsRef = fb->csz.ref + fb->csz.cap; // local stack is rest of block
-  fb->ls  = Stk_init(BLOCK_SIZE - lsRef, lsRef);
+  fb->ls  = Stk_init(BLOCK_SIZE - lsRef - asRef(fb), lsRef);
 }
 
-#define WS              (kfb->ws)
-#define LS              (kfb->ls)
-#define CS              (kfb->cs)
-#define CSZ             (kfb->csz)
+#define WS              (cfb->ws)
+#define LS              (cfb->ls)
+#define CS              (cfb->cs)
+#define CSZ             (cfb->csz)
 #define LS_SP           (LS.ref + LS.sp)
 #define CS_SP           (CS.ref + CS.sp)
 #define SRC             (&g->src)
@@ -134,19 +133,20 @@ void initEnv(U4 blocks) {
   memSize = BLOCK_SIZE * blocks;
   mem = malloc(memSize); assert(mem); memEnd = mem + memSize;
   k = (Kern*) mem;                    *k = (Kern)    {0};
-  kfb = asPtr(Fiber, sizeof(Kern));    Fiber_init(kfb);
-  kfb->prev = asRef(kfb); kfb->next = asRef(kfb);
+  cfb = asPtr(Fiber, sizeof(Kern));    Fiber_init(cfb);
+  cfb->prev = asRef(cfb); cfb->next = asRef(cfb);
   g = asPtr(Globals, BLOCK_SIZE);
   *g = (Globals) {
     .glen = sizeof(Globals), .gcap = BLOCK_SIZE,
+    .bbaPub = asRef(&k->bbaPub), .bbaPriv = asRef(&k->bbaPriv),
     .src = (File) {
       .b = (Buf) { .ref = asRef(&g->buf0), .cap = TOKEN_SIZE },
       .code = F_error,
     },
   };
-  kfb->gbp = asRef(g);
+  cfb->gb = asRef(g);
 
-  WS  = Stk_init(WS_DEPTH * RSIZE, asRef(kfb) + sizeof(Fiber));
+  WS  = Stk_init(WS_DEPTH * RSIZE, asRef(cfb) + sizeof(Fiber));
   CS  = Stk_init(CS_DEPTH * RSIZE, WS.ref + WS.cap);
   CSZ = Stk_init(CS_DEPTH        , CS.ref + CS.cap);
   LS  = Stk_init(BLOCK_SIZE      , BLOCK_SIZE);
@@ -154,9 +154,8 @@ void initEnv(U4 blocks) {
     .blocks = BLOCK_SIZE * 2, .nodes = CSZ.ref + CSZ.cap,
     .rooti = BLOCK_END,       .cap = blocks - 2,
   };
-  k->bba    = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
-  k->bbaTmp = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
-  g->curBBA = asRef(&k->bba);
+  k->bbaPub  = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
+  k->bbaPriv = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
 }
 
 #define NEW_ENV_BARE(BLOCKS) \
@@ -173,14 +172,14 @@ void initEnv(U4 blocks) {
   eprintf("## %s\n", #NAME); \
   NEW_ENV_BARE(BLOCKS); \
   if(setjmp(local_err_jmp)) { \
-    eprintf("!! Error #%X (line %u)\n", g->err, line); exit(1); } \
+    eprintf("!! Error #%X (line %u)\n", cfb->err, line); exit(1); } \
   else { /*Test code here */
 
 #define TEST_END   } ENV_CLEANUP(); }
 
 #define EXPECT_ERR(E, CALL) \
   err_jmp = &test_err_jmp; expectingErr = true; if(setjmp(test_err_jmp)) \
-  { expectingErr = false; ASSERT_EQ(E, g->err); err_jmp = &local_err_jmp; } \
+  { expectingErr = false; ASSERT_EQ(E, cfb->err); err_jmp = &local_err_jmp; } \
   else { CALL; UNREACH; }
 
 BARE_TEST(testSetErr, 2)
@@ -254,6 +253,7 @@ TEST_END
 #define BBA_ba(bba) asPtr(BA, (bba).ba)
 
 void BA_init(BA* ba) {
+  eprint("??? BA_init start\n");
   if(ba->cap == 0) return; ASM_ASSERT(ba->cap < BLOCK_END, E_intern);
   BANode* nodes = asPtr(BANode, ba->nodes);
   ba->rooti = 0;
@@ -263,6 +263,7 @@ void BA_init(BA* ba) {
     previ = i;
   }
   nodes[i - 1].nexti = BLOCK_END;
+  eprint("??? BA_init end\n");
 }
 
 
@@ -339,8 +340,7 @@ void BA_freeAll(BA* ba, uint8_t* clientRooti) {
   }
 }
 
-BARE_TEST(testBANew, 6)
-  BA_init(&k->ba);
+BARE_TEST(testBANew, 6) BA_init(&k->ba);
   BANode* nodes = asPtr(BANode, k->ba.nodes);
 
   ASSERT_EQ(4, k->ba.cap);
@@ -353,8 +353,7 @@ BARE_TEST(testBANew, 6)
   ASSERT_EQ(BLOCK_END, nodes[3].nexti);
 TEST_END
 
-BARE_TEST(testAllocFree, 6)
-  BA_init(&k->ba);
+BARE_TEST(testAllocFree, 6) BA_init(&k->ba);
   BANode* nodes = asPtr(BANode, k->ba.nodes);
   uint8_t crooti = BLOCK_END; // clientRoot
 
@@ -378,8 +377,7 @@ BARE_TEST(testAllocFree, 6)
   ASSERT_EQ(0         , nodes[1].previ);
 TEST_END
 
-BARE_TEST(testAlloc2FreeFirst, 6)
-  BA_init(&k->ba);
+BARE_TEST(testAlloc2FreeFirst, 6) BA_init(&k->ba);
   BANode* nodes = asPtr(BANode, k->ba.nodes);
   uint8_t crooti = BLOCK_END; // clientRoot
 
@@ -438,12 +436,12 @@ Ref BBA_allocUnaligned(BBA* bba, uint16_t size) {
 
 BARE_TEST(testBBA, 6)   BA_init(&k->ba);
   BANode* nodes = asPtr(BANode, k->ba.nodes);
-  ASSERT_EQ(k->ba.blocks + BLOCK_SIZE - 12  , BBA_alloc(&k->bba, 12));
-  ASSERT_EQ(BA_block(k->ba, 1)              , BBA_alloc(&k->bba, BLOCK_SIZE));
-  ASSERT_EQ(BA_block(k->ba, 2)              , BBA_allocUnaligned(&k->bba, 13));
-  ASSERT_EQ(BA_block(k->ba, 2) + 13         , BBA_allocUnaligned(&k->bba, 25));
-  ASSERT_EQ(BA_block(k->ba, 3)              , BBA_allocUnaligned(&k->bba, BLOCK_SIZE - 20));
-  ASSERT_EQ(0                               , BBA_alloc(&k->bba, BLOCK_SIZE));
+  ASSERT_EQ(k->ba.blocks + BLOCK_SIZE - 12  , BBA_alloc(&k->bbaPub, 12));
+  ASSERT_EQ(BA_block(k->ba, 1)              , BBA_alloc(&k->bbaPub, BLOCK_SIZE));
+  ASSERT_EQ(BA_block(k->ba, 2)              , BBA_allocUnaligned(&k->bbaPub, 13));
+  ASSERT_EQ(BA_block(k->ba, 2) + 13         , BBA_allocUnaligned(&k->bbaPub, 25));
+  ASSERT_EQ(BA_block(k->ba, 3)              , BBA_allocUnaligned(&k->bbaPub, BLOCK_SIZE - 20));
+  ASSERT_EQ(0                               , BBA_alloc(&k->bbaPub, BLOCK_SIZE));
 TEST_END
 
 //   *******
@@ -465,7 +463,7 @@ Slc asSlc(Ref ref, U2 len) {
 }
 
 Slc mvAndSlc(U1* buf, U2 len) {
-  U1* gbuf = asU1(kfb->gbp + g->glen);
+  U1* gbuf = asU1(cfb->gb + g->glen);
   memmove(gbuf, buf, len);
   return (Slc) { .ref = asRef(gbuf), .len = len };
 }
@@ -517,6 +515,7 @@ TEST_END
 // Find slice in BST, starting at node. Set result to node.
 // returns 0 if node==NULL
 // The return value is the result of `Slc_cmp(node.ckey, out.ckey)`
+
 I4 Dict_find(DNode** node, Slc slc) {
   if(!*node) return 0;
   while(true) {
@@ -530,11 +529,6 @@ I4 Dict_find(DNode** node, Slc slc) {
       else            return cmp; // not found
     }
   }
-}
-
-DNode* Dict_get(DNode* root, Slc slc) {
-  ASM_ASSERT(!Dict_find(&root, slc), E_cNoKey);
-  return root;
 }
 
 // Add a node to the tree. WARNING: modifies *node.
@@ -590,13 +584,25 @@ TEST_END
 //
 // The VM executes instruction bytecode in the fngi memory space, utilizing
 // the fngi globals like CS and WS.
-#define sectorRef(REF)  ((0xFFFF0000 & kfb->ep) | REF)
+#define sectorRef(REF)  ((0xFFFF0000 & cfb->ep) | REF)
 
 //   *******
 //   * 3.a: Utilities
 // There are a few utility functions necessary for executing instructions and
 // compiling them in tests.
-#define kheap        (BA_block(*BBA_ba(k->bba), k->bba.rooti) + k->bba.len)
+#define PUB_STORE  (C_PUB      & g->cstate)
+#define PUB_NAME   (C_PUB_NAME & g->cstate)
+#define NAME_BBA   (PUB_NAME ?  g->bbaPub :  g->bbaPriv)
+#define NAME_DICT  (PUB_NAME ? g->dictPub : g->dictPriv)
+#define STORE_BBA  (PUB_STORE ? g->bbaPub : g->bbaPriv)
+#define heap          _heap(false)
+#define topHeap       _heap(true)
+#define blockRemain   (topHeap - heap)
+Ref _heap(bool top) {
+  BBA* bba = asPtr(BBA, STORE_BBA);
+  if(top) return BA_block(*BBA_ba(*bba), bba->rooti) + bba->cap;
+          return BA_block(*BBA_ba(*bba), bba->rooti) + bba->len;
+}
 
 Ref bump(BBA* bba, U1 aligned, U4 size) { // bump memory from the bba
   Ref ref;  U1 starti = bba->rooti;
@@ -605,8 +611,6 @@ Ref bump(BBA* bba, U1 aligned, U4 size) { // bump memory from the bba
   ASM_ASSERT(starti == bba->rooti, E_newBlock); ASM_ASSERT(ref, E_oom);
   return ref;
 }
-
-Ref kbump(U1 aligned, U4 size) { return bump(asPtr(BBA, g->curBBA), aligned, size); }
 
 U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
 U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
@@ -637,8 +641,10 @@ void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
   }
 }
 
-U4 popLit(U1 size) { U4 out = ftBE(kfb->ep, size); kfb->ep += size; return out; }
-void compileValue(U4 value, U1 sz) { srBE(kbump(/*aligned=*/ false, sz), sz, value); }
+U4 popLit(U1 size) { U4 out = ftBE(cfb->ep, size); cfb->ep += size; return out; }
+void compileValue(U4 value, U1 sz) {
+  srBE(bump(asPtr(BBA, STORE_BBA), /*aligned=*/ false, sz), sz, value);
+}
 
 static inline void _memmove(Ref dst, Ref src, U2 len) {
   void* d = bndsChk(len, dst); void* s = bndsChk(len, src);
@@ -646,7 +652,7 @@ static inline void _memmove(Ref dst, Ref src, U2 len) {
 }
 
 Ref newBlock() { // start a new block
-  BBA* bba = asPtr(BBA, g->curBBA);
+  BBA* bba = asPtr(BBA, STORE_BBA);
   Ref r = BA_alloc(asPtr(BA, bba->ba), &bba->rooti);
   ASM_ASSERT(r, E_oom); bba->len = 0; bba->cap = BLOCK_SIZE;
   return r;
@@ -660,7 +666,7 @@ BARE_TEST(testUtilities, 3)
   ASSERT_EQ(0x01,         ftBE(ref, 1));
   ASSERT_EQ(0x2345,       ftBE(ref + 1, 2));
   ASSERT_EQ(0x6789ABCD,   ftBE(ref + 3, 4));
-  kfb->ep = ref;
+  cfb->ep = ref;
   ASSERT_EQ(0x01,         popLit(1));
   ASSERT_EQ(0x2345,       popLit(2));
 
@@ -675,9 +681,10 @@ TEST_END
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
-  CS_PUSH(kfb->ep);
+  eprintf("??? xImpl ep=%X grow=%X, fn=%X\n", cfb->ep, growSz, fn);
+  CS_PUSH(cfb->ep);
   CSZ.sp -= 1; *(mem + CSZ.ref + CSZ.sp) = growSz; // push growSz onto csz
-  kfb->ep = fn;
+  cfb->ep = fn;
 }
 
 void xlImpl(Ref fn) { // impl for XL*
@@ -698,10 +705,17 @@ void xlImpl(Ref fn) { // impl for XL*
 // literal values from the execution pointer. Some can also affect the execution
 // pointerand the call stack.
 
+void dbgWs() {
+  eprint("WS:");
+  for(U2 i = WS.cap - 4; i >= WS.sp; i -= RSIZE)
+    eprintf(" %.4X", *asPtr(U4, WS.ref + i));
+  eprint("\n");
+}
+
 static inline void executeDV(U1 dv);
 
 inline static Instr executeInstr(Instr instr) {
-  eprintf("??? executeInstr: %X\n", instr);
+  eprintf("??? executeInstr: %X  ", instr); dbgWs();
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -721,12 +735,11 @@ inline static Instr executeInstr(Instr instr) {
         WS_PUSH(LS_SP + (0x7F & r)); R0 // local stack pointer + offset
       } else {
         switch (r) {
-          case R_EP: WS_PUSH(kfb->ep); R0
-          case R_GB: WS_PUSH(kfb->gbp); R0
+          case R_EP: WS_PUSH(cfb->ep); R0
+          case R_GB: WS_PUSH(cfb->gb); R0
           default: SET_ERR(E_cReg);
         }
       }
-
     case INC : WS_PUSH(WS_POP() + 1); R0
     case INC2: WS_PUSH(WS_POP() + 2); R0
     case INC4: WS_PUSH(WS_POP() + 4); R0
@@ -766,6 +779,10 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + FT: WS_PUSH(*asPtr(U2, WS_POP())); R0
     case SZ4 + FT: WS_PUSH(*asPtr(U4, WS_POP())); R0
 
+    case SZ1 + FTBE: WS_PUSH(ftBE(WS_POP(), 1)); R0
+    case SZ2 + FTBE: WS_PUSH(ftBE(WS_POP(), 2)); R0
+    case SZ4 + FTBE: WS_PUSH(ftBE(WS_POP(), 4)); R0
+
     case SZ1 + FTO: WS_PUSH(*asU1(WS_POP() + popLit(1))); R0
     case SZ2 + FTO: WS_PUSH(*asPtr(U2, WS_POP() + popLit(1))); R0
     case SZ4 + FTO: WS_PUSH(*asPtr(U4, WS_POP() + popLit(1))); R0
@@ -774,13 +791,17 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + FTLL: WS_PUSH(*asPtr(U2, LS_SP + popLit(1))); R0
     case SZ4 + FTLL: WS_PUSH(*asPtr(U4, LS_SP + popLit(1))); R0
 
-    case SZ1 + FTGL: WS_PUSH(*asU1(kfb->gbp + popLit(2))); R0
-    case SZ2 + FTGL: WS_PUSH(*asPtr(U2, kfb->gbp + popLit(2))); R0
-    case SZ4 + FTGL: WS_PUSH(*asPtr(U4, kfb->gbp + popLit(2))); R0
+    case SZ1 + FTGL: WS_PUSH(*asU1(cfb->gb + popLit(2))); R0
+    case SZ2 + FTGL: WS_PUSH(*asPtr(U2, cfb->gb + popLit(2))); R0
+    case SZ4 + FTGL: WS_PUSH(*asPtr(U4, cfb->gb + popLit(2))); R0
 
     case SZ1 + SR: r = WS_POP(); *asU1(r) = WS_POP(); R0
     case SZ2 + SR: r = WS_POP(); *asPtr(U2, r) = WS_POP(); R0
     case SZ4 + SR: r = WS_POP(); *asPtr(U4, r) = WS_POP(); R0
+
+    case SZ1 + SRBE: r = WS_POP(); srBE(r, 1, WS_POP()); R0
+    case SZ2 + SRBE: r = WS_POP(); srBE(r, 2, WS_POP()); R0
+    case SZ4 + SRBE: r = WS_POP(); srBE(r, 4, WS_POP()); R0
 
     case SZ1 + SRO: r = WS_POP(); *asU1(r + popLit(1)) = WS_POP(); R0
     case SZ2 + SRO: r = WS_POP(); *asPtr(U2, r + popLit(1)) = WS_POP(); R0
@@ -790,32 +811,32 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + SRLL: *asPtr(U2, LS_SP + popLit(1)) = WS_POP(); R0
     case SZ4 + SRLL: *asPtr(U4, LS_SP + popLit(1)) = WS_POP(); R0
 
-    case SZ1 + SRGL: *asU1(kfb->gbp + popLit(2)) = WS_POP(); R0
-    case SZ2 + SRGL: *asPtr(U2, kfb->gbp + popLit(2)) = WS_POP(); R0
-    case SZ4 + SRGL: *asPtr(U4, kfb->gbp + popLit(2)) = WS_POP(); R0
+    case SZ1 + SRGL: *asU1(cfb->gb + popLit(2)) = WS_POP(); R0
+    case SZ2 + SRGL: *asPtr(U2, cfb->gb + popLit(2)) = WS_POP(); R0
+    case SZ4 + SRGL: *asPtr(U4, cfb->gb + popLit(2)) = WS_POP(); R0
 
     case SZ1 + LIT: WS_PUSH(popLit(1)); R0
     case SZ2 + LIT: WS_PUSH(popLit(2)); R0
     case SZ4 + LIT: WS_PUSH(popLit(4)); R0
 
     // Jmp Cases
-    case SZ1 + JMPL: r = popLit(1); kfb->ep = kfb->ep + (I1)r; R0
-    case SZ2 + JMPL: r = popLit(2); kfb->ep = sectorRef(r); R0
-    case SZ4 + JMPL: r = popLit(4); kfb->ep = r; R0
+    case SZ1 + JMPL: r = popLit(1); cfb->ep = cfb->ep + (I1)r; R0
+    case SZ2 + JMPL: r = popLit(2); cfb->ep = sectorRef(r); R0
+    case SZ4 + JMPL: r = popLit(4); cfb->ep = r; R0
 
     case SZ1 + JMPW:
     case SZ2 + JMPW:
-    case SZ4 + JMPW: kfb->ep = WS_POP();
+    case SZ4 + JMPW: cfb->ep = WS_POP();
 
-    case SZ1 + JZL: r = popLit(1); if(!WS_POP()) { kfb->ep = kfb->ep + (I1)r; } R0
-    case SZ2 + JZL: r = popLit(2); if(!WS_POP()) { kfb->ep = sectorRef(r); } R0
-    case SZ4 + JZL: r = popLit(4); if(!WS_POP()) { kfb->ep = r; } R0
+    case SZ1 + JZL: r = popLit(1); if(!WS_POP()) { cfb->ep = cfb->ep + (I1)r; } R0
+    case SZ2 + JZL: r = popLit(2); if(!WS_POP()) { cfb->ep = sectorRef(r); } R0
+    case SZ4 + JZL: r = popLit(4); if(!WS_POP()) { cfb->ep = r; } R0
 
     case SZ1 + JTBL:
     case SZ2 + JTBL:
     case SZ4 + JTBL: assert(false); // TODO: not impl
 
-    case SZ1 + XLL: xlImpl(kfb->ep + (I1)popLit(1)); R0;
+    case SZ1 + XLL: xlImpl(cfb->ep + (I1)popLit(1)); R0;
     case SZ2 + XLL: xlImpl(sectorRef(popLit(2))); R0;
     case SZ4 + XLL: xlImpl(popLit(4)); R0;
 
@@ -823,7 +844,7 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + XLW:
     case SZ4 + XLW: xlImpl(WS_POP()); R0;
 
-    case SZ1 + XSL: xImpl(0, kfb->ep + (I1)popLit(1)); R0;
+    case SZ1 + XSL: xImpl(0, cfb->ep + (I1)popLit(1)); R0;
     case SZ2 + XSL: xImpl(0, sectorRef(popLit(2))); R0;
     case SZ4 + XSL: xImpl(0, popLit(4)); R0;
 
@@ -843,7 +864,11 @@ void ret() {
   CSZ.sp += 1;
   ASM_ASSERT(LS.sp + sh <= LS.cap, E_stkUnd);
   LS.sp += sh;
-  kfb->ep = r;
+  cfb->ep = r;
+}
+
+void nextFb() { // switch to next fiber
+  cfb = asPtr(Fiber, cfb->next); g = asPtr(Globals, cfb->gb);
 }
 
 U2 getPanicHandler() { // find the index of the panic handler
@@ -862,26 +887,23 @@ bool catchPanic() { // return whether it is caught
   return true;
 }
 
-void killKfb() { // kill kernel fiber by removing from LL
-  Fiber* next = asPtr(Fiber, kfb->next);
-  if(kfb == next) { kfb = NULL; return; } // no more fibers
-  next->prev = kfb->prev;
-  asPtr(Fiber, kfb->prev)->next = kfb->next;
-  kfb = next;
+void killKfb() { // kill current fiber by removing from LL and setting ep=0
+  cfb->ep = 0; Fiber* next = asPtr(Fiber, cfb->next);
+  if(cfb == next) { cfb = NULL; return; } // no more fibers
+  next->prev = cfb->prev;
+  asPtr(Fiber, cfb->prev)->next = cfb->next;
+  cfb = next;
 }
 
-void executeLoop() {
+void executeLoop() { // execute fibers until all fibers are done.
   jmp_buf local_err_jmp;
   jmp_buf* prev_err_jmp = err_jmp; err_jmp = &local_err_jmp;
-  while(kfb) {
-    if(setjmp(local_err_jmp)) { // got panic
-      if(!catchPanic()) { // couldn't catch panic, propogate it.
-        err_jmp = prev_err_jmp; longjmp(*err_jmp, 1);
-      }
-    }
+  while(cfb) {
+    if(setjmp(local_err_jmp)) // got panic
+      if(!catchPanic()) longjmp(*prev_err_jmp, 1);
     U1 res = executeInstr(popLit(1));
     if(res) {
-      if(YLD == res) kfb = asPtr(Fiber, kfb->next);
+      if(YLD == res) nextFb();
       else /* RET */ {
         if(0 == Stk_len(CS)) { killKfb(); } // empty stack, fiber done
         else ret();
@@ -892,23 +914,25 @@ void executeLoop() {
 }
 
 Ref compileInstrs(U1* instrs) {
-  Ref out = kheap;
+  Ref out = heap;
   for(U1 i = 0; instrs[i] != END; i += 1) compileValue(instrs[i], 1);
   return out;
 }
 Ref executeInstrs(U1* instrs) {
-  Fiber* _kfb = kfb; Ref f = compileInstrs(instrs); kfb->ep = f; executeLoop();
-  kfb = _kfb;        return f; // executeLoop always removes kfb
+  Fiber* _cfb = cfb; Ref f = compileInstrs(instrs); cfb->ep = f; executeLoop();
+  cfb = _cfb;        return f; // executeLoop always removes cfb. Add it back
 }
 
 BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock();
+  eprint("??? 0\n");
   Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, END });    ASSERT_WS(5);
   Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, END }); ASSERT_WS(5);
-  Ref jmp = executeInstrs((U1[]) { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, END });
+  Ref jmp = executeInstrs((U1[])
+    { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, END });
   ASSERT_WS(5); ASSERT_WS(5); assert(0 == Stk_len(WS));
 
-  Ref panic = compileInstrs((U1[]) { SLIT + 0, SLIT + 1, DV, D_assert, END });
-  kfb->ep = panic; EXPECT_ERR(1, executeLoop());
+  Ref panic = compileInstrs((U1[]) { SLIT+0, SLIT+4, SLIT+1, DV, D_assert, END });
+  cfb->ep = panic; EXPECT_ERR(1, executeLoop());
 TEST_END
 
 // ***********************
@@ -946,10 +970,10 @@ int F_handleErr(File* f, int res) {
   return res;
 }
 
-File* F_new(U2 bufCap) {
-  File* f = asPtr(File, BBA_alloc(&k->bba, sizeof(File)));
+File* F_new(U2 bufCap) { // For testing only
+  File* f = asPtr(File, BBA_alloc(&k->bbaPub, sizeof(File)));
   *f = (File) {
-    .b = (Buf) { .ref = BBA_allocUnaligned(&k->bba, bufCap), .cap = bufCap },
+    .b = (Buf) { .ref = BBA_allocUnaligned(&k->bbaPub, bufCap), .cap = bufCap },
     .code = F_done,
   }; return f;
 }
@@ -972,10 +996,10 @@ void F_close(FileMethods* m, File* f) {
   else { f->code = F_done; }
 }
 
-void openMock(File* f, U1* contents) { // Used for tests
-  PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bba, sizeof(PlcBuf)));
+void openMock(File* f, const U1* contents) { // Used for tests
+  PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bbaPub, sizeof(PlcBuf)));
   U2 len = strlen(contents);
-  U1* s = asU1(BBA_allocUnaligned(&k->bba, len));
+  U1* s = asU1(BBA_allocUnaligned(&k->bbaPub, len));
   memmove(s, contents, len);
   *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
   f->fid = asRef(p); f->pos = 0;
@@ -1064,8 +1088,42 @@ TEST_END
 // The scanner reads the next token, storing at the beginning of Tbuf with
 // length Tplc.
 
-typedef struct { U1 sz; U1 instr; } Compiler;
+typedef struct { U1 sz; U1 instr; Ref lastUpdate; } Compiler;
 Compiler compiler;
+
+DNode* dictAddMut(U2 meta, U4 value, Slc s) {
+  if(PUB_NAME) ASM_ASSERT(PUB_STORE, E_cState);
+  eprintf("??? dict adding \"%.*s\" blockRemain:%X PUB=%X\n",
+          Tplc, Tdat, blockRemain, (C_PUB | C_PUB_NAME) & g->cstate);
+  // TODO: update both meta bytes.
+  BBA* bba = asPtr(BBA, NAME_BBA);
+  Ref ckey = bump(bba, false, s.len + 1);
+  *(mem + ckey) = s.len; // Note: unsafe write, memory already checked.
+  _memmove(ckey + 1, s.ref, s.len);
+
+  DNode* add = (DNode*) (mem + bump(bba, true, sizeof(DNode)));
+  *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
+
+  DNode* root = asPtrNull(DNode, NAME_DICT); Dict_add(&root, add);
+  Ref r = asRef(root);
+  if(!NAME_DICT) {
+    if(PUB_NAME) g->dictPub = r;  else g->dictPriv = r;
+  }
+  compiler.lastUpdate = r;
+  g->cstate &= ~C_PUB_NAME;
+  return add;
+}
+
+DNode* dictGetAny(Slc slc) { // Attempt to retrive DNode from all "base" dicts
+  DNode* n = asPtrNull(DNode, g->dictPriv);
+  if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, g->dictPub);
+  if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, k->dict);
+  ASM_ASSERT(!Dict_find(&n, slc) && n, E_cNoKey);
+  // TODO: add "main" lookup
+  return n;
+}
 
 //   *******
 //   * 5.a: Scan
@@ -1120,9 +1178,9 @@ void _scan(FileMethods* m, File* f) {
 void scan(FileMethods* m, File* f) { _scan(m, f); }
 
 U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine with sz
-  scan(m, f); DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+  scan(m, f); DNode* node = dictGetAny(Tslc);
   U1 instr = node->v;
-  if((0xC0 & instr == I_MEM) || (0xC0 & instr == I_JMP)) {
+  if(((0xC0 & instr) == I_MEM) || ((0xC0 & instr) == I_JMP)) {
     switch (compiler.sz) {
       case 1: instr |= SZ1; break; case 2: instr |= SZ2; break;
       case 4: instr |= SZ4; break; default: SET_ERR(E_intern);
@@ -1164,8 +1222,10 @@ TEST_END
   BARE_TEST(NAME, BLOCKS) \
   initSpor();
 
+Ref retImmediately; // ret immediately function, created by compiler
+
 void initSpor() {
-  compiler = (Compiler) { .sz = RSIZE, .instr = NOP };
+  compiler = (Compiler) { .sz = RSIZE };
   BA_init(&k->ba);
 }
 
@@ -1176,14 +1236,9 @@ void cDot() { // `.`, aka "set size"
   Tplc += 1;
 }
 
-void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
-  U1* dat = Tdat;
-  while(true) {
-    if (Tplc >= Tlen) readNewAtLeast(m, f, 1);
-    if (Tlen == 0) break;
-    if (dat[Tplc] == '\n') break;
-    Tplc += 1;
-  }
+void cPercent() { // `%`, aka compile instr
+  Instr instr = scanInstr(SRCM, SRC);
+  compileValue(instr, 1);
 }
 
 void cHash() { // `#`, aka hex literal
@@ -1197,23 +1252,9 @@ void cHash() { // `#`, aka hex literal
   WS_PUSH(v); clearPlcBuf(F_plcBuf(*SRC));
 }
 
-void cEqual() { // `=`, aka dict set
-  U1 meta = WS_POP(); U4 value = WS_POP(); scan(SRCM, SRC);
-  Ref ckey = kbump(false, Tplc + 1);
-  *(mem + ckey) = Tplc; // Note: unsafe write, memory already checked.
-  _memmove(ckey + 1, Tref, Tplc);
-
-  DNode* add = (DNode*) (mem + kbump(true, sizeof(DNode)));
-  *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
-
-  DNode* root = NULL; if(k->dict) root = asPtr(DNode, k->dict);
-  Dict_add(&root, add);
-  if(!k->dict) k->dict = asRef(root);
-}
-
 void cAt() { // `@`, aka dict get
   scan(SRCM, SRC);
-  DNode* node = Dict_get(asPtr(DNode, k->dict), Tslc);
+  DNode* node = dictGetAny(Tslc);
   WS_PUSH(node->v);
 }
 
@@ -1221,8 +1262,28 @@ void cComma() { // `,`, aka write heap
   compileValue(WS_POP(), compiler.sz);
 }
 
-void cPercent() { // `%`, aka compile instr
-  compileValue(scanInstr(SRCM, SRC), 1);
+void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
+  U1* dat = Tdat;
+  while(true) {
+    if (Tplc >= Tlen) readNewAtLeast(m, f, 1);
+    if (Tlen == 0) break;
+    if (dat[Tplc] == '\n') break;
+    Tplc += 1;
+  }
+}
+
+void cColon() { // `:`, aka define function
+  U2 meta = WS_POP(); scan(SRCM, SRC);
+  eprintf("??? cColon token=%.*s, heap=%X\n", Tplc, Tdat, heap);
+  DNode* n = dictAddMut(meta, /*value=*/0, Tslc);
+  eprintf("??? n.ckey=%.*s\n", *asPtr(U1, n->ckey), asPtr(U1, n->ckey + 1));
+  n->v = heap;
+  eprintf("??? cColon end heap=%X\n", heap);
+}
+
+void cEqual() { // `=`, aka dict set
+  U2 meta = WS_POP(); U4 value = WS_POP(); scan(SRCM, SRC);
+  dictAddMut(meta, value, Tslc);
 }
 
 void cCarrot() { // `^`, aka execute instr
@@ -1230,20 +1291,24 @@ void cCarrot() { // `^`, aka execute instr
 }
 
 void cDollar() { // `$`, aka execute token
-  scan(SRCM, SRC); DNode* n = Dict_get(asPtr(DNode, k->dict), Tslc);
+  scan(SRCM, SRC); DNode* n = dictGetAny(Tslc);
+  eprintf("??? cDollar %.*s n=%X\n", Tplc, Tdat, n);
 
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
+    eprint("??? inline\n");
     U1 len = *asU1(n->v);
-    memmove(asU1(kbump(false, len)), asU1(n->v + 1), len);
+    memmove(asU1(bump(asPtr(BBA, STORE_BBA), false, len)), asU1(n->v + 1), len);
     return;
   }
+  eprint("??? NOT inline\n");
   if(TY_FN_SYN == (TY_FN_TY_MASK & n->m1)) WS_PUSH(false); // pass asNow=false
-  if(TY_FN_LARGE & n->m1) xlImpl(n->v);
-  else                    xImpl(0, n->v);
+  cfb->ep = retImmediately;
+  if(TY_FN_LARGE & n->m1) xlImpl(n->v);   // Note: updates ep for compileLoop
+  else                    xImpl(0, n->v); // Note: updates ep for compileLoop
 }
 
 #define ASSERT_DICT(K, V) ASSERT_EQ( \
-  V, Dict_get(asPtr(DNode, k->dict), sAsTmpSlc(K))->v)
+  V, dictGetAny(sAsTmpSlc(K))->v)
 
 SPOR_TEST(testSporBasics, 4)  newBlock();
   openMock(SRC, " 12 ");  cHash();   ASSERT_EQ(0x12, WS_POP());
@@ -1262,24 +1327,24 @@ TEST_END
 void compile() {
   Tplc = 1; U1 c = *asU1(Tref); // spor compiler only uses first character
   switch (c) {
-    case '.': cDot(); RV            case '\\': cForwardSlash(SRCM, SRC); RV
-    case '#': cHash(); RV           case '=': cEqual(); RV
-    case '@': cAt(); RV             case ',': cComma(); RV
-    case '%': cPercent(); RV        case '^': cCarrot(); RV
-    case '$': cDollar(); RV
+    case '.': cDot(); RV            case '%': cPercent(); RV
+    case '#': cHash(); RV           case '@': cAt(); RV
+    case ',': cComma(); RV          case '\\': cForwardSlash(SRCM, SRC); RV
+    case ':': cColon(); RV          case '=': cEqual(); RV
+    case '^': cCarrot(); RV         case '$': cDollar(); RV
     default: eprintf("!! Invalid ASM token: %.*s\n", Tplc, asU1(Tref));
              SET_ERR(E_cToken);
   }
 }
 
 void compileLoop() { // compile source code
-  Fiber* kernel = kfb;
-  while(kfb) {
-    if (kfb->ep) {
-      // Note: executeLoop handles multi-threading and will remove the kernel
-      // fiber when it encounteres a return. We simply re-add the kernel fiber
-      // and continue.
-      executeLoop(); kfb = kernel; kfb->ep = 0;
+  Fiber* kernel = cfb;
+  while(cfb) {
+    if (cfb->ep) {
+      // Note: executeLoop handles multi-fiber execution and will remove the
+      // kernel fiber when it encounteres a return. We simply re-add the kernel
+      // fiber and continue scanning.
+      executeLoop(); cfb = kernel;
     } else {
       scan(SRCM, SRC); if(Tplc == 0 /* EOF */) return;
       compile();
@@ -1298,7 +1363,7 @@ void compileConstants() {
   WS_PUSH(newBlock());
   WS_PUSH(RSIZE); WS_PUSH(SZR);
   compileFile("kernel/constants.sp");
-  newBlock(); compileFile("kernel/errors.sp");
+  newBlock(); compileFile("kernel/errors.sp"); compileFile("kernel/offsets.sp");
 }
 
 SPOR_TEST(testConstants, 4)
@@ -1308,7 +1373,7 @@ SPOR_TEST(testConstants, 4)
 TEST_END
 
 // ***********************
-// * 7: Device Operations (DV)
+// * 6: Device Operations (DV)
 // Besides instructions for the most basic actions, Device Operations (DV) are
 // the primary mechanism that spor code communicates with hardware. The kernel
 // defines some extremely basic device operations which are sufficient to both:
@@ -1317,8 +1382,15 @@ TEST_END
 //       programming language.
 
 static inline void executeDV(U1 dv) {
+  eprintf("??? executeDV: %X\n", dv);
   switch (dv) {
-    case D_assert: { U4 code = WS_POP(); ASM_ASSERT(WS_POP(), code); RV }
+    case D_assert: { // {l r err} assert l == r
+      U4 err = WS_POP(); U4 r = WS_POP(); U4 l = WS_POP();
+      if(l == r) RV
+      if(!(C_EXPECT_ERR & g->cstate))
+        eprintf("!! assert failed with err=0x%X: 0x%X == 0x%X\n", err, l, r);
+      SET_ERR(err);
+    }
     case D_catch: xImpl(CSZ_CATCH, WS_POP()); RV // essentially XSW with catch flag set
     case D_memset: {
         U2 len = WS_POP(); U1 value = WS_POP(); void* dst = bndsChk(len, WS_POP());
@@ -1337,9 +1409,7 @@ static inline void executeDV(U1 dv) {
       if(g->logLvlUsr & lvl) {
         eprintf("D_log [%X]", lvl);
         for(U2 i = 0; i < len; i++) eprintf(" %.4X", WS_POP());
-      } else {
-        for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
-      }
+      } else for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
       return;
     } case D_file: { // method &File &FileMethods
       FileMethods* m = asPtrNull(FileMethods, WS_POP());
@@ -1351,13 +1421,18 @@ static inline void executeDV(U1 dv) {
         default: SET_ERR(E_dv);
       }
       return;
-    } case D_scan: { // method &File &FileMethods
-      FileMethods* m = asPtrNull(FileMethods, WS_POP());
-      File* f = asPtr(File, WS_POP());
+    } case D_comp: { // method &File &FileMethods
       switch (WS_POP()) {
-        case 0: readAtLeast(m, f, 1); RV
-        case 1: cForwardSlash(m, f);  RV
-        case 2: scan(m, f);           RV
+        case D_comp_heap: WS_PUSH(heap); RV
+        case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
+        case D_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
+        case D_comp_dGet: WS_PUSH(asRef(dictGetAny(Tslc))); RV
+        case D_comp_dAdd: {
+          U2 meta = WS_POP(); dictAddMut(meta, WS_POP(), Tslc); RV
+        }
+        case D_comp_read1: readAtLeast(SRCM, SRC, 1); RV
+        case D_comp_readEol: cForwardSlash(SRCM, SRC);  RV
+        case D_comp_scan: scan(SRCM, SRC);           RV
         default: SET_ERR(E_dv);
       }
     }
@@ -1365,13 +1440,35 @@ static inline void executeDV(U1 dv) {
   }
 }
 
+// ***********************
+// * 7: Main Function and Running Tests
+
+void compileKernel() {
+  g->cstate |= C_PUB | C_PUB_NAME; // full public
+  newBlock(); retImmediately = compileInstrs((U1[]) {RET, END});
+  compileFile("kernel/kernel.sp");
+}
+
+void compileStr(const U1* s) {
+  line = 1; openMock(SRC, s); compileLoop(); ASSERT_NO_ERR();
+}
+
+SPOR_TEST(testKernel, 10)
+  compileConstants(); compileKernel();
+  assert(!PUB_NAME);
+  Ref r = heap; compileStr("#97 $h1"); 
+  ASSERT_EQ(heap, r + 1);
+  ASSERT_EQ(0x97, *asU1(r));
+
+TEST_END
+
 void sporMain(U4 blocks) {
   jmp_buf spor_err_jmp;
   NEW_ENV_BARE(blocks);
   initSpor();
   compileConstants();
   if(setjmp(spor_err_jmp)) {
-    eprintf("!! Uncaught Error #%X (line %u)\n", g->err, line); exit(1);
+    eprintf("!! Uncaught Error #%X (line %u)\n", cfb->err, line); exit(1);
   } else compileLoop();
 }
 
@@ -1397,8 +1494,8 @@ void tests() {
   // * 5: Compiler
   testSporBasics();
   testConstants();
-  // * 6: Fibers
-  // testFiber();
+  // * 7: Main Function and Running Tests
+  testKernel();
   eprint("# Tests DONE\n");
 }
 

@@ -59,8 +59,8 @@
 
 \ # [1.a] Operations: Special
 #00 #0=NOP   \ {}  no operation
-#01 #0=RET   \ {}  return
-#02 #0=RETZ  \ {l} return if zero
+#01 #0=RETZ  \ {l} return if zero
+#02 #0=RET   \ {}  return
 #03 #0=YLD   \ {} yield control to another fiber
 #04 #0=SWP   \ {l r -> r l}    swap
 #05 #0=DRP   \ {l   -> }       drop
@@ -118,14 +118,16 @@
 
 \ # [1.e] Mem|Store              |Description
 #40 #0=FT    \ {addr} -> {value}  |FeTch value from addr
-#41 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
-#42 #0=FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
-#43 #0=FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
-#44 #0=SR    \ {value addr} -> {} |Store value at addr
-#45 #0=SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
-#46 #0=SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
-#47 #0=SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
-#48 #0=LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
+#41 #0=FTBE  \ {addr} -> {value}  |FeTch value from addr (big endian)
+#42 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
+#43 #0=FTLL  \ {} -> {local}      |FeTch from LP + U1 literal offset
+#44 #0=FTGL  \ {} -> {global}     |FeTch from GB + U2 literal offset
+#45 #0=SR    \ {value addr} -> {} |Store value at addr
+#46 #0=SRBE  \ {value addr} -> {} |Store value at addr (big endian)
+#47 #0=SRO   \ {value addr} -> {} |Store value at addr + U1 literal offset
+#48 #0=SRLL  \ {value} -> {}      |StoRe value at LP + U1 literal offset
+#49 #0=SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
+#4A #0=LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ # [1.f] Jmp
 \
@@ -169,12 +171,6 @@
 \ implementation. For instance, for FRole (&File &FileMethods=NULL) the data
 \ will be an index into the kernel's file manager.
 \
-\ D_scan is a toolbox of compiler functionality which has to be implemented in
-\ the kernel anyway, and allowing it to be usable by spor massively reduces
-\ the complexity of bootstrapping. Ops are:
-\   0 => read (at least) single byte. May or may not affect b.len
-\   1 => read until EOL (for comments). May or may not affect b.len
-\   2 => "scan" token into start of buffer. Sets b.len.
 
 #00 #0=D_cede     \ {} cede, allowing another thread to run
 #01 #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
@@ -185,8 +181,21 @@
 #06 #0=D_bump     \ {size aligned &bba -> &mem} bump allocate size
 #07 #0=D_log      \ { ... len lvl} log len integers to com
 #08 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
-#09 #0=D_scan     \ {method:U1 f:FRole} run a scan method
-#0A #0=D_dictFind
+#09 #0=D_comp     \ {...} run a compiler method (see below)
+#0A #0=D_dict     \ {slc root:&DNode-> &DNode cmp} perform dict_find
+
+\ D_comp is a toolbox of compiler functionality which has to be implemented
+\ in the kernel anyway. Allowing it to be usable by spor reduces the complexity
+\ of bootstrapping considerably.
+#00 #0=D_comp_heap    \ {-> heap} get the current heap (depends on cstate C_PUB)
+#01 #0=D_comp_last    \ {-> &DNode} last dictionary node modified
+#02 #0=D_comp_wsLen   \ {-> wsLen} get working stack length
+#03 #0=D_comp_block   \ {} start new block
+#04 #0=D_comp_dGet    \ {-> &DNode} get src.b[0:src.plc] from any "base" dict
+#05 #0=D_comp_dAdd    \ {v m2} set current (priv or pub) dictionary to v + meta
+#06 #0=D_comp_read1   \ {} read (at least) single byte in src
+#07 #0=D_comp_readEol \ {} read src until EOL (for comments), incrementing b.len
+#08 #0=D_comp_scan    \ {} "scan" token into start of buffer. Sets b.len.
 
 \ The RG 1 byte literal has the following byte format. Note: FT will return the
 \ register value + offset, SR will store the value + offset in the register.
@@ -208,6 +217,10 @@
 #5  #0=T_WHITE
 
 #30 #0=SZ_MASK \ size bit mask (for instr and meta)
+
+#0040 #0=C_PUB        \ G_cstate AND meta0: store as public (function data)
+#4000 #0=C_PUB_NAME   \ G_cstate: make next name public
+#2000 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
 #C0 #0=META_TY_MASK \ upper three bits determine type

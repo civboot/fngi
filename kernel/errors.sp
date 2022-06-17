@@ -48,6 +48,7 @@
 #E0D0  #0=E_cKeyLen \ Key len too large
 #E0D1  #0=E_cReg    \ Register error
 #E0D2  #0=E_cStr    \ Str invalid
+#E0D3  #0=E_cState  \ compiler state invalid
 
 #E0E0  #0=E_cNotGlobal \ using a non-global as global
 #E0E1  #0=E_cIsX       \ using an XS for an X

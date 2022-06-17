@@ -73,24 +73,28 @@ typedef struct {
 
 typedef struct {
   U4 _null;  Ref memTop;
-  BA ba;     BBA bba;    BBA bbaTmp;
+  BA ba;
+  BBA bbaPub;    BBA bbaPriv;
   Ref dict;
 } Kern;
 
 typedef struct {
   Ref next; Ref prev; // LL pointers to other fibers.
-  Ref ep;           // Execution pointer
-  Stk ws; Stk ls;   // Working and Local Stacks
-  Stk cs; Stk csz;  // Call and Call Size Stacks
-  Ref gbp;          // Globals base pointer
+  Ref ep;           // execution pointer
+  Stk ws; Stk ls;   // working and local stacks
+  Stk cs; Stk csz;  // call and call size stacks
+  Ref gb;           // globals base pointer
+  U2 err;
 } Fiber;
 
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
+  Ref fb; // current fiber
+  U2 cstate;
   U1 logLvlSys;
   U1 logLvlUsr;
-  U2 err;
-  Ref curBBA; // current bba to use for storing code/dictionary
+  Ref bbaPub;   Ref bbaPriv;
+  Ref dictPub;  Ref dictPriv;
   Ref srcM;
   File src;
   U1 buf0[TOKEN_SIZE];

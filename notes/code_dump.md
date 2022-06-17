@@ -1,5 +1,17 @@
 # Code Dump: where code goes to die
 
+## Use as test
+```
+\ Note: we need to add 3 here to reserve the cdata "_h"
+#3^ADD @TY_FN=_h  \ { -> heap} get the code heap
+  .R%FTGL@G_bbaPub.2,      \ {&bba}
+  .1%FTO @BBA_rooti,    \ {rooti}
+  @SLIT#0C^JN.1,  %SHL  \ {rooti<<12} convert to &block
+  .R%FTGL@G_bbaPub.2,  .1%FTO@BBA_len, %ADD \ + bba.len
+  .R%FTGL@G_bbaPub.2,  .R%FTO@BBA_ba.1, \ {&blockLoc &ba}
+  .R%FTO@BA_blocks.1, %ADD %RET \ &blockLoc + &blocks
+```
+
 ## Fetch/Store Local Offset
 
 This was replaced by FTO and SRO
