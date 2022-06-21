@@ -60,6 +60,12 @@ typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
 typedef struct { Ref root; Ref free; }                      Dict;
 typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;
 
+typedef struct {
+  Ref bump;
+  Ref newBlock;
+  Ref drop;
+} BBAMethods;
+
 #define Stk_init(CAP, REF) (Stk) {.ref = REF, .sp = CAP, .cap = CAP}
 
 typedef struct {
@@ -93,8 +99,11 @@ typedef struct {
   U2 cstate;
   U1 logLvlSys;
   U1 logLvlUsr;
-  Ref bbaPub;   Ref bbaPriv;
-  Ref dictPub;  Ref dictPriv;
+  U2 metaNext; // meta of next fn
+  U2 _unused;
+  BBA bbaLocal;  Ref dictLocal;
+  Ref bbaPub;    Ref dictPub;
+  Ref bbaPriv;   Ref dictPriv;
   Ref srcM;
   File src;
   U1 buf0[TOKEN_SIZE];

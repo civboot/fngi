@@ -17,9 +17,11 @@
 #08   #0=G_cstate              \ U2: compiler state
 #0A   #0=G_logLvlSys           \ U1
 #0B   #0=G_logLvlUsr           \ U1
-#0C   #0=G_bbaPub              \ &BBA: current bba for code
-#1C   #0=G_srcM                \ &FileMethods: src file methods
-#20   #0=G_src                 \ &File: src File
+#0C   #0=G_metaNext            \ U2: next function's m1 and m0
+#20   #0=G_bbaPub              \ &BBA: current public bba
+#28   #0=G_bbaPriv             \ &BBA: current private bba
+#30   #0=G_srcM                \ &FileMethods: src file methods
+#34   #0=G_src                 \ &File: src File
 
 \ struct Fiber { ... }
 #0C   #0=Fb_ws                 \ Stk struct: working stack
@@ -37,4 +39,12 @@
 #04   #0=BBA_rooti             \ U1: owned block root index
 #06   #0=BBA_len               \ U2: unsigned heap
 #08   #0=BBA_cap               \ U2: signed topheap
+
+\ struct DNode { ... }
+#00   #0=DN_l                  \ Ref: left
+#04   #0=DN_r                  \ Ref: right
+#08   #0=DN_ckey               \ Ref: counted data key
+#0D   #0=DN_m1                 \ U1: meta 1, kernel metadata
+#0C   #0=DN_m0                 \ U1: meta 0, type metadata
+#10   #0=DN_v                  \ Ref: value, which may be a constant
 

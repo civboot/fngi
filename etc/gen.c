@@ -49,7 +49,9 @@ void main() {
   WRITE_FIELD(Globals, "G_", cstate, "U2: compiler state");
   WRITE_FIELD(Globals, "G_", logLvlSys, "U1");
   WRITE_FIELD(Globals, "G_", logLvlUsr, "U1");
-  WRITE_FIELD(Globals, "G_", bbaPub, "&BBA: current bba for code");
+  WRITE_FIELD(Globals, "G_", metaNext, "U2: next function's m1 and m0");
+  WRITE_FIELD(Globals, "G_", bbaPub, "&BBA: current public bba");
+  WRITE_FIELD(Globals, "G_", bbaPriv, "&BBA: current private bba");
   WRITE_FIELD(Globals, "G_", srcM, "&FileMethods: src file methods");
   WRITE_FIELD(Globals, "G_", src, "&File: src File");
 
@@ -69,6 +71,15 @@ void main() {
   WRITE_FIELD(BBA, "BBA_", rooti, "U1: owned block root index");
   WRITE_FIELD(BBA, "BBA_", len, "U2: unsigned heap");
   WRITE_FIELD(BBA, "BBA_", cap, "U2: signed topheap");
+
+  assert(dprintf(fd, "\n\\ struct DNode { ... }\n") > 0);
+// typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;
+  WRITE_FIELD(DNode, "DN_", l, "Ref: left");
+  WRITE_FIELD(DNode, "DN_", r, "Ref: right");
+  WRITE_FIELD(DNode, "DN_", ckey, "Ref: counted data key");
+  WRITE_FIELD(DNode, "DN_", m1, "U1: meta 1, kernel metadata");
+  WRITE_FIELD(DNode, "DN_", m0, "U1: meta 0, type metadata");
+  WRITE_FIELD(DNode, "DN_", v, "Ref: value, which may be a constant");
 
   assert(dprintf(fd, "\n") > 0); close(fd);
 }

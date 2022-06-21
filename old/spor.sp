@@ -167,7 +167,6 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 \ fn c_updateGkey [ -> &key]      : update gkey=dictLen and return it
 \ fn ldictRef / ldictArgs / ldictLen  : interface directly with local dict
 \ fn ldictSet / ldictGet / ldictGetK  : set/get/get-ref of local dict key
-\ fn c_dictSetMeta [<dictArgs> meta:U1 &key] : update dict key meta
 \
 \ Note: any SYN function must be prefixed with asNow (typically #0)
 \ since it will not be tagged as SYN until c_makeFn.
@@ -256,11 +255,6 @@ $assertWsEmpty
   .1%FT %JN    \ {&key newMeta}
   %SWP %INCA .1%SR \ update meta
   %RET
-
-@_FP$loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
-  %SWP %OVR \ {<dictArgs> &key meta &key}
-  %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
-  @D_dictDump$L0 %DVFT %RET \ dict dump entry
 
 \ END: used for INLINE, IF/ELSE and BREAK0
 @_FP $loc _END \ {&addr heapDiff} addr is where to store (heap-heapDiff)

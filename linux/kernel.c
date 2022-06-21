@@ -55,9 +55,9 @@
 #define RV  return;
 #define UNREACH   if(1) { eprint("!!! unreachable\n"); assert(false); }
 #define ASSERT_EQ(E, CODE) if(1) { \
-  U4 r = CODE; \
-  if((E) != r) eprintf("!!! Assertion failed: 0x%X == 0x%X\n", E, r); \
-  assert((E) == r); }
+  U4 __result = CODE; \
+  if((E) != __result) eprintf("!!! Assertion failed: 0x%X == 0x%X\n", E, __result); \
+  assert((E) == __result); }
 
 // ***********************
 // * 1: Environment and Test Setup
@@ -595,11 +595,10 @@ TEST_END
 #define NAME_BBA   (PUB_NAME ?  g->bbaPub :  g->bbaPriv)
 #define NAME_DICT  (PUB_NAME ? g->dictPub : g->dictPriv)
 #define STORE_BBA  (PUB_STORE ? g->bbaPub : g->bbaPriv)
-#define heap          _heap(false)
-#define topHeap       _heap(true)
-#define blockRemain   (topHeap - heap)
-Ref _heap(bool top) {
-  BBA* bba = asPtr(BBA, STORE_BBA);
+#define heap          _heap(STORE_BBA, false)
+#define topHeap       _heap(STORE_BBA, true)
+Ref _heap(Ref bbaR, bool top) {
+  BBA* bba = asPtr(BBA, bbaR);
   if(top) return BA_block(*BBA_ba(*bba), bba->rooti) + bba->cap;
           return BA_block(*BBA_ba(*bba), bba->rooti) + bba->len;
 }
@@ -651,8 +650,8 @@ static inline void _memmove(Ref dst, Ref src, U2 len) {
   memmove(d, s, len);
 }
 
-Ref newBlock() { // start a new block
-  BBA* bba = asPtr(BBA, STORE_BBA);
+Ref newBlock(Ref bbaR) { // start a new block
+  BBA* bba = asPtr(BBA, bbaR);
   Ref r = BA_alloc(asPtr(BA, bba->ba), &bba->rooti);
   ASM_ASSERT(r, E_oom); bba->len = 0; bba->cap = BLOCK_SIZE;
   return r;
@@ -740,6 +739,7 @@ inline static Instr executeInstr(Instr instr) {
           default: SET_ERR(E_cReg);
         }
       }
+    case GR: WS_PUSH(cfb->gb + popLit(2)); R0
     case INC : WS_PUSH(WS_POP() + 1); R0
     case INC2: WS_PUSH(WS_POP() + 2); R0
     case INC4: WS_PUSH(WS_POP() + 4); R0
@@ -923,7 +923,7 @@ Ref executeInstrs(U1* instrs) {
   cfb = _cfb;        return f; // executeLoop always removes cfb. Add it back
 }
 
-BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock();
+BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock(g->bbaPriv);
   eprint("??? 0\n");
   Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, END });    ASSERT_WS(5);
   Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, END }); ASSERT_WS(5);
@@ -997,9 +997,9 @@ void F_close(FileMethods* m, File* f) {
 }
 
 void openMock(File* f, const U1* contents) { // Used for tests
-  PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bbaPub, sizeof(PlcBuf)));
+  PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bbaPriv, sizeof(PlcBuf)));
   U2 len = strlen(contents);
-  U1* s = asU1(BBA_allocUnaligned(&k->bbaPub, len));
+  U1* s = asU1(BBA_allocUnaligned(&k->bbaPriv, len));
   memmove(s, contents, len);
   *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
   f->fid = asRef(p); f->pos = 0;
@@ -1093,8 +1093,11 @@ Compiler compiler;
 
 DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   if(PUB_NAME) ASM_ASSERT(PUB_STORE, E_cState);
-  eprintf("??? dict adding \"%.*s\" blockRemain:%X PUB=%X\n",
-          Tplc, Tdat, blockRemain, (C_PUB | C_PUB_NAME) & g->cstate);
+  eprintf("??? dict adding \"%.*s\" remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
+          Tplc, Tdat,
+          _heap(g->bbaPub, true)  - _heap(g->bbaPub, false),
+          _heap(g->bbaPriv, true) - _heap(g->bbaPriv, false),
+          (C_PUB | C_PUB_NAME) & g->cstate);
   // TODO: update both meta bytes.
   BBA* bba = asPtr(BBA, NAME_BBA);
   Ref ckey = bump(bba, false, s.len + 1);
@@ -1109,20 +1112,18 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   if(!NAME_DICT) {
     if(PUB_NAME) g->dictPub = r;  else g->dictPriv = r;
   }
-  compiler.lastUpdate = r;
+  compiler.lastUpdate = asRef(add);
   g->cstate &= ~C_PUB_NAME;
   return add;
 }
 
 DNode* dictGetAny(Slc slc) { // Attempt to retrive DNode from all "base" dicts
-  DNode* n = asPtrNull(DNode, g->dictPriv);
-  if(!Dict_find(&n, slc) && n) return n;
-  n = asPtrNull(DNode, g->dictPub);
-  if(!Dict_find(&n, slc) && n) return n;
-  n = asPtrNull(DNode, k->dict);
-  ASM_ASSERT(!Dict_find(&n, slc) && n, E_cNoKey);
+  DNode* n;
+  n = asPtrNull(DNode, g->dictPriv); if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, g->dictPub);  if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, k->dict);     if(!Dict_find(&n, slc) && n) return n;
   // TODO: add "main" lookup
-  return n;
+  return NULL;
 }
 
 //   *******
@@ -1178,8 +1179,8 @@ void _scan(FileMethods* m, File* f) {
 void scan(FileMethods* m, File* f) { _scan(m, f); }
 
 U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine with sz
-  scan(m, f); DNode* node = dictGetAny(Tslc);
-  U1 instr = node->v;
+  scan(m, f); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
+  U1 instr = n->v;
   if(((0xC0 & instr) == I_MEM) || ((0xC0 & instr) == I_JMP)) {
     switch (compiler.sz) {
       case 1: instr |= SZ1; break; case 2: instr |= SZ2; break;
@@ -1253,9 +1254,8 @@ void cHash() { // `#`, aka hex literal
 }
 
 void cAt() { // `@`, aka dict get
-  scan(SRCM, SRC);
-  DNode* node = dictGetAny(Tslc);
-  WS_PUSH(node->v);
+  scan(SRCM, SRC); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
+  WS_PUSH(n->v);
 }
 
 void cComma() { // `,`, aka write heap
@@ -1291,8 +1291,8 @@ void cCarrot() { // `^`, aka execute instr
 }
 
 void cDollar() { // `$`, aka execute token
-  scan(SRCM, SRC); DNode* n = dictGetAny(Tslc);
-  eprintf("??? cDollar %.*s n=%X\n", Tplc, Tdat, n);
+  scan(SRCM, SRC); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
+  eprintf("??? cDollar %.*s n.v=%X\n", Tplc, Tdat, n->v);
 
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
     eprint("??? inline\n");
@@ -1310,7 +1310,7 @@ void cDollar() { // `$`, aka execute token
 #define ASSERT_DICT(K, V) ASSERT_EQ( \
   V, dictGetAny(sAsTmpSlc(K))->v)
 
-SPOR_TEST(testSporBasics, 4)  newBlock();
+SPOR_TEST(testSporBasics, 4)  newBlock(g->bbaPriv);
   openMock(SRC, " 12 ");  cHash();   ASSERT_EQ(0x12, WS_POP());
   WS_PUSH2(0x42, 0); openMock(SRC, "mid");    cEqual(); ASSERT_DICT("mid", 0x42);
   WS_PUSH2(0x44, 0); openMock(SRC, "aLeft");  cEqual(); ASSERT_DICT("aLeft", 0x44);
@@ -1360,10 +1360,10 @@ void compileFile(char* s) {
 }
 
 void compileConstants() {
-  WS_PUSH(newBlock());
+  WS_PUSH(newBlock(g->bbaPriv));
   WS_PUSH(RSIZE); WS_PUSH(SZR);
   compileFile("kernel/constants.sp");
-  newBlock(); compileFile("kernel/errors.sp"); compileFile("kernel/offsets.sp");
+  newBlock(g->bbaPriv); compileFile("kernel/errors.sp"); compileFile("kernel/offsets.sp");
 }
 
 SPOR_TEST(testConstants, 4)
@@ -1424,9 +1424,18 @@ static inline void executeDV(U1 dv) {
     } case D_comp: { // method &File &FileMethods
       switch (WS_POP()) {
         case D_comp_heap: WS_PUSH(heap); RV
-        case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
+        case D_comp_bump: {
+          U1 aligned = WS_POP(); BBA* bba = asPtr(BBA, STORE_BBA);
+          WS_PUSH(bump(bba, aligned, WS_POP())); RV
+        } case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
+        case D_comp_newBlock: newBlock(WS_POP()); RV
         case D_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
-        case D_comp_dGet: WS_PUSH(asRef(dictGetAny(Tslc))); RV
+        case D_comp_dGet: {
+          DNode* n = asPtrNull(DNode, WS_POP()); if(n) {
+            ASM_ASSERT(!Dict_find(&n, Tslc), E_cNoKey); ASM_ASSERT(n, E_cNoKey);
+            WS_PUSH(asRef(n));
+          } else { WS_PUSH(asRef(dictGetAny(Tslc))); } RV
+        }
         case D_comp_dAdd: {
           U2 meta = WS_POP(); dictAddMut(meta, WS_POP(), Tslc); RV
         }
@@ -1435,6 +1444,16 @@ static inline void executeDV(U1 dv) {
         case D_comp_scan: scan(SRCM, SRC);           RV
         default: SET_ERR(E_dv);
       }
+    } case D_bba: { // method &BBA &BBAMethods
+      BBAMethods* m = asPtrNull(BBAMethods, WS_POP());
+      BBA* bba = asPtr(BBA, WS_POP());
+      switch (WS_POP()) {
+        case (offsetof(BBAMethods, bump)  / RSIZE):    assert(false); RV
+        case (offsetof(BBAMethods, newBlock) / RSIZE): assert(false); RV
+        case (offsetof(BBAMethods, drop)  / RSIZE):    assert(false); RV
+        default: SET_ERR(E_dv);
+      }
+      return;
     }
     default: SET_ERR(E_dv);
   }
@@ -1445,7 +1464,7 @@ static inline void executeDV(U1 dv) {
 
 void compileKernel() {
   g->cstate |= C_PUB | C_PUB_NAME; // full public
-  newBlock(); retImmediately = compileInstrs((U1[]) {RET, END});
+  newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, END});
   compileFile("kernel/kernel.sp");
 }
 
@@ -1455,10 +1474,10 @@ void compileStr(const U1* s) {
 
 SPOR_TEST(testKernel, 10)
   compileConstants(); compileKernel();
-  assert(!PUB_NAME);
-  Ref r = heap; compileStr("#97 $h1"); 
-  ASSERT_EQ(heap, r + 1);
-  ASSERT_EQ(0x97, *asU1(r));
+  assert(PUB_STORE); assert(!PUB_NAME);
+  Ref r = heap;
+  compileStr("#97 $h1"); ASSERT_EQ(0x97, *asU1(r)); ASSERT_EQ(heap, r + 1);
+  ASSERT_EQ(0x42, dictGetAny(sAsTmpSlc("answerV"))->v);
 
 TEST_END
 
