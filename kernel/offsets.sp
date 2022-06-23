@@ -39,6 +39,9 @@
 #04   #0=BBA_rooti             \ U1: owned block root index
 #06   #0=BBA_len               \ U2: unsigned heap
 #08   #0=BBA_cap               \ U2: signed topheap
+#00   #0=BBAm_bump             \ method index
+#01   #0=BBAm_newBlock         \ method index
+#02   #0=BBAm_drop             \ method index
 
 \ struct DNode { ... }
 #00   #0=DN_l                  \ Ref: left

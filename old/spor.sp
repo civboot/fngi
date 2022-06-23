@@ -256,6 +256,11 @@ $assertWsEmpty
   %SWP %INCA .1%SR \ update meta
   %RET
 
+@_FP$loc c_dictSetMeta \ {<dictArgs> meta:U1 &key} update dict key's meta.
+  %SWP %OVR \ {<dictArgs> &key meta &key}
+  %SWP $_xsl c_keyJnMeta \ {<dictArgs> &key}
+  @D_dictDump$L0 %DVFT %RET \ dict dump entry
+
 \ END: used for INLINE, IF/ELSE and BREAK0
 @_FP $loc _END \ {&addr heapDiff} addr is where to store (heap-heapDiff)
   .A%FTGL @heap$h2             \ {&addr heapDiff heap}

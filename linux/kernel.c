@@ -101,9 +101,10 @@ static inline void* bndsChk(U4 size, Ref r) { // bounds check
 static inline void* bndsChkNull(U4 size, Ref r) {
   if(!r) return NULL; return bndsChk(size, r); }
 
-#define asRef(PTR)          ((U1*)(PTR)  - mem)
-#define asPtr(TY, REF)      ((TY*)bndsChk(sizeof(TY), REF))
-#define asPtrNull(TY, REF)  ((TY*)bndsChkNull(sizeof(TY), REF))
+#define asRef(PTR)           ((U1*)(PTR)  - mem)
+#define asPtr(TY, REF)       ((TY*)bndsChk(sizeof(TY), REF))
+#define asPtrNull(TY, REF)   ((TY*)bndsChkNull(sizeof(TY), REF))
+#define asPtrOr(TY, REF, OR) ((TY*)bndsChk(sizeof(TY), REF ? REF : OR)
 #define asU1(REF)       asPtr(U1, REF)
 
 void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
@@ -434,6 +435,12 @@ Ref BBA_allocUnaligned(BBA* bba, uint16_t size) {
   return out;
 }
 
+Ref BBA_drop(BBA* bba) {
+  BA* ba = BBA_ba(*bba);
+  while(bba->rooti != BLOCK_END) BA_free(ba, &bba->rooti, BA_block(*ba, bba->rooti));
+  bba->len = 0; bba->cap = 0;
+}
+
 BARE_TEST(testBBA, 6)   BA_init(&k->ba);
   BANode* nodes = asPtr(BANode, k->ba.nodes);
   ASSERT_EQ(k->ba.blocks + BLOCK_SIZE - 12  , BBA_alloc(&k->bbaPub, 12));
@@ -442,6 +449,7 @@ BARE_TEST(testBBA, 6)   BA_init(&k->ba);
   ASSERT_EQ(BA_block(k->ba, 2) + 13         , BBA_allocUnaligned(&k->bbaPub, 25));
   ASSERT_EQ(BA_block(k->ba, 3)              , BBA_allocUnaligned(&k->bbaPub, BLOCK_SIZE - 20));
   ASSERT_EQ(0                               , BBA_alloc(&k->bbaPub, BLOCK_SIZE));
+  BBA_drop(&k->bbaPub); ASSERT_EQ(0x2000, BBA_alloc(&k->bbaPub, BLOCK_SIZE));
 TEST_END
 
 //   *******
@@ -590,15 +598,39 @@ TEST_END
 //   * 3.a: Utilities
 // There are a few utility functions necessary for executing instructions and
 // compiling them in tests.
-#define PUB_STORE  (C_PUB      & g->cstate)
-#define PUB_NAME   (C_PUB_NAME & g->cstate)
-#define NAME_BBA   (PUB_NAME ?  g->bbaPub :  g->bbaPriv)
-#define NAME_DICT  (PUB_NAME ? g->dictPub : g->dictPriv)
-#define STORE_BBA  (PUB_STORE ? g->bbaPub : g->bbaPriv)
-#define heap          _heap(STORE_BBA, false)
-#define topHeap       _heap(STORE_BBA, true)
-Ref _heap(Ref bbaR, bool top) {
-  BBA* bba = asPtr(BBA, bbaR);
+
+typedef enum { LOC_LOCAL, LOC_PRIV, LOC_PUB } Loc; // Location of name/storage
+
+Loc nameLoc() { // get the location to store names
+  if(C_LOCAL    & g->cstate) return LOC_LOCAL;
+  if(C_PUB_NAME & g->cstate) return LOC_PUB; else return LOC_PRIV;
+}
+
+Loc codeLoc() { // get the location to store code
+  if(C_LOCAL & g->cstate) return LOC_LOCAL;
+  if(C_PUB   & g->cstate) return LOC_PUB;  else return LOC_PRIV;
+}
+
+DNode* nameDict() { Ref r; switch(nameLoc()) {
+    case LOC_LOCAL: r = g->dictLocal; break;  case LOC_PUB: r = g->dictPub; break;
+    case LOC_PRIV:  r = g->dictPriv; break;   default: assert(false);
+  }
+  return asPtrNull(DNode, r);
+}
+
+BBA* locBBA(Loc l) { Ref r; switch(l) {
+    case LOC_LOCAL: return &g->bbaLocal;      case LOC_PUB: r = g->bbaPub; break;
+    case LOC_PRIV:  r = g->bbaPriv; break;    default: assert(false);
+  }
+  return asPtr(BBA, r);
+}
+
+BBA* nameBBA() { return locBBA(nameLoc()); }
+BBA* codeBBA() { return locBBA(codeLoc()); }
+
+#define heap          _heap(codeBBA(), false)
+#define topHeap       _heap(codeBBA(), true)
+Ref _heap(BBA* bba, bool top) {
   if(top) return BA_block(*BBA_ba(*bba), bba->rooti) + bba->cap;
           return BA_block(*BBA_ba(*bba), bba->rooti) + bba->len;
 }
@@ -640,9 +672,13 @@ void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
   }
 }
 
-U4 popLit(U1 size) { U4 out = ftBE(cfb->ep, size); cfb->ep += size; return out; }
+U4 popLit(U1 size) {
+  U4 out = ftBE(cfb->ep, size);
+  eprintf("  ??? poplit: %X  size=%u\n", out, size);
+  cfb->ep += size; return out; }
+
 void compileValue(U4 value, U1 sz) {
-  srBE(bump(asPtr(BBA, STORE_BBA), /*aligned=*/ false, sz), sz, value);
+  srBE(bump(codeBBA(), /*aligned=*/ false, sz), sz, value);
 }
 
 static inline void _memmove(Ref dst, Ref src, U2 len) {
@@ -820,15 +856,15 @@ inline static Instr executeInstr(Instr instr) {
     case SZ4 + LIT: WS_PUSH(popLit(4)); R0
 
     // Jmp Cases
-    case SZ1 + JMPL: r = popLit(1); cfb->ep = cfb->ep + (I1)r; R0
+    case JMPW: cfb->ep = WS_POP();
+    case XLW: xlImpl(WS_POP()); R0;
+    case XSW: xImpl(0, WS_POP()); R0;
+
+    case SZ1 + JMPL: r = popLit(1); cfb->ep += (I1)r - 1; R0
     case SZ2 + JMPL: r = popLit(2); cfb->ep = sectorRef(r); R0
     case SZ4 + JMPL: r = popLit(4); cfb->ep = r; R0
 
-    case SZ1 + JMPW:
-    case SZ2 + JMPW:
-    case SZ4 + JMPW: cfb->ep = WS_POP();
-
-    case SZ1 + JZL: r = popLit(1); if(!WS_POP()) { cfb->ep = cfb->ep + (I1)r; } R0
+    case SZ1 + JZL: r = popLit(1); if(!WS_POP()) { cfb->ep += (I1)r - 1; } R0
     case SZ2 + JZL: r = popLit(2); if(!WS_POP()) { cfb->ep = sectorRef(r); } R0
     case SZ4 + JZL: r = popLit(4); if(!WS_POP()) { cfb->ep = r; } R0
 
@@ -840,17 +876,9 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + XLL: xlImpl(sectorRef(popLit(2))); R0;
     case SZ4 + XLL: xlImpl(popLit(4)); R0;
 
-    case SZ1 + XLW:
-    case SZ2 + XLW:
-    case SZ4 + XLW: xlImpl(WS_POP()); R0;
-
     case SZ1 + XSL: xImpl(0, cfb->ep + (I1)popLit(1)); R0;
     case SZ2 + XSL: xImpl(0, sectorRef(popLit(2))); R0;
     case SZ4 + XSL: xImpl(0, popLit(4)); R0;
-
-    case SZ1 + XSW:
-    case SZ2 + XSW:
-    case SZ4 + XSW: xImpl(0, WS_POP()); R0;
 
     default: if(instr >= SLIT) { WS_PUSH(0x3F & instr); R0 }
   }
@@ -915,7 +943,7 @@ void executeLoop() { // execute fibers until all fibers are done.
 
 Ref compileInstrs(U1* instrs) {
   Ref out = heap;
-  for(U1 i = 0; instrs[i] != END; i += 1) compileValue(instrs[i], 1);
+  for(U1 i = 0; instrs[i] != IEND; i += 1) compileValue(instrs[i], 1);
   return out;
 }
 Ref executeInstrs(U1* instrs) {
@@ -925,13 +953,13 @@ Ref executeInstrs(U1* instrs) {
 
 BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock(g->bbaPriv);
   eprint("??? 0\n");
-  Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, END });    ASSERT_WS(5);
-  Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, END }); ASSERT_WS(5);
+  Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, IEND });    ASSERT_WS(5);
+  Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, IEND }); ASSERT_WS(5);
   Ref jmp = executeInstrs((U1[])
-    { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, END });
+    { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, IEND });
   ASSERT_WS(5); ASSERT_WS(5); assert(0 == Stk_len(WS));
 
-  Ref panic = compileInstrs((U1[]) { SLIT+0, SLIT+4, SLIT+1, DV, D_assert, END });
+  Ref panic = compileInstrs((U1[]) { SLIT+0, SLIT+4, SLIT+1, DV, D_assert, IEND });
   cfb->ep = panic; EXPECT_ERR(1, executeLoop());
 TEST_END
 
@@ -1092,25 +1120,26 @@ typedef struct { U1 sz; U1 instr; Ref lastUpdate; } Compiler;
 Compiler compiler;
 
 DNode* dictAddMut(U2 meta, U4 value, Slc s) {
-  if(PUB_NAME) ASM_ASSERT(PUB_STORE, E_cState);
+  if(LOC_PUB == nameLoc()) ASM_ASSERT(LOC_PUB == codeLoc(), E_cState);
   eprintf("??? dict adding \"%.*s\" remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
           Tplc, Tdat,
-          _heap(g->bbaPub, true)  - _heap(g->bbaPub, false),
-          _heap(g->bbaPriv, true) - _heap(g->bbaPriv, false),
+          _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
+          _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false),
           (C_PUB | C_PUB_NAME) & g->cstate);
   // TODO: update both meta bytes.
-  BBA* bba = asPtr(BBA, NAME_BBA);
-  Ref ckey = bump(bba, false, s.len + 1);
+  BBA* bba = nameBBA();  Ref ckey = bump(bba, false, s.len + 1);
   *(mem + ckey) = s.len; // Note: unsafe write, memory already checked.
   _memmove(ckey + 1, s.ref, s.len);
 
   DNode* add = (DNode*) (mem + bump(bba, true, sizeof(DNode)));
   *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
 
-  DNode* root = asPtrNull(DNode, NAME_DICT); Dict_add(&root, add);
+  DNode* root = nameDict(); Dict_add(&root, add);
   Ref r = asRef(root);
-  if(!NAME_DICT) {
-    if(PUB_NAME) g->dictPub = r;  else g->dictPriv = r;
+  if(!nameDict()) switch (nameLoc()) {
+    case LOC_LOCAL: g->dictLocal = r; break;
+    case LOC_PUB:   g->dictPub = r;   break;
+    case LOC_PRIV:  g->dictPriv = r;  break; default: assert(false);
   }
   compiler.lastUpdate = asRef(add);
   g->cstate &= ~C_PUB_NAME;
@@ -1297,7 +1326,7 @@ void cDollar() { // `$`, aka execute token
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
     eprint("??? inline\n");
     U1 len = *asU1(n->v);
-    memmove(asU1(bump(asPtr(BBA, STORE_BBA), false, len)), asU1(n->v + 1), len);
+    memmove(asU1(bump(codeBBA(), false, len)), asU1(n->v + 1), len);
     return;
   }
   eprint("??? NOT inline\n");
@@ -1368,7 +1397,7 @@ void compileConstants() {
 
 SPOR_TEST(testConstants, 4)
   compileConstants();
-  ASSERT_DICT("JMPL", 0x80);    ASSERT_DICT("XLW", 0x85);
+  ASSERT_DICT("JMPL", 0x81);    ASSERT_DICT("XLW", 0xA0);
   ASSERT_DICT("E_io", 0xE010);  ASSERT_DICT("E_unreach", 0xE003);
 TEST_END
 
@@ -1401,9 +1430,6 @@ static inline void executeDV(U1 dv) {
         return WS_PUSH(memcmp(l, r, len));
     } case D_memmove: {
         U2 len = WS_POP(); Ref src = WS_POP(); return _memmove(WS_POP(), src, len);
-    } case D_bump: {
-      BBA* bba = asPtr(BBA, WS_POP()); U4 aligned = WS_POP();
-      return WS_PUSH(bump(bba, aligned, WS_POP()));
     } case D_log: {
       U1 lvl = WS_POP(); U2 len = WS_POP();
       if(g->logLvlUsr & lvl) {
@@ -1424,11 +1450,7 @@ static inline void executeDV(U1 dv) {
     } case D_comp: { // method &File &FileMethods
       switch (WS_POP()) {
         case D_comp_heap: WS_PUSH(heap); RV
-        case D_comp_bump: {
-          U1 aligned = WS_POP(); BBA* bba = asPtr(BBA, STORE_BBA);
-          WS_PUSH(bump(bba, aligned, WS_POP())); RV
-        } case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
-        case D_comp_newBlock: newBlock(WS_POP()); RV
+        case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
         case D_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
         case D_comp_dGet: {
           DNode* n = asPtrNull(DNode, WS_POP()); if(n) {
@@ -1445,12 +1467,14 @@ static inline void executeDV(U1 dv) {
         default: SET_ERR(E_dv);
       }
     } case D_bba: { // method &BBA &BBAMethods
-      BBAMethods* m = asPtrNull(BBAMethods, WS_POP());
-      BBA* bba = asPtr(BBA, WS_POP());
-      switch (WS_POP()) {
-        case (offsetof(BBAMethods, bump)  / RSIZE):    assert(false); RV
-        case (offsetof(BBAMethods, newBlock) / RSIZE): assert(false); RV
-        case (offsetof(BBAMethods, drop)  / RSIZE):    assert(false); RV
+      U4 method = WS_POP(); BBA* bba = asPtrNull(BBA, WS_POP());
+      if(!bba) bba = codeBBA();
+      switch (method) {
+        case (offsetof(BBAMethods, bump)  / RSIZE):    {
+          U4 aligned = WS_POP(); WS_PUSH(bump(bba, aligned, WS_POP())); RV
+        }
+        case (offsetof(BBAMethods, newBlock) / RSIZE): newBlock(asRef(bba)); RV
+        case (offsetof(BBAMethods, drop)  / RSIZE):    BBA_drop(bba); RV
         default: SET_ERR(E_dv);
       }
       return;
@@ -1464,7 +1488,7 @@ static inline void executeDV(U1 dv) {
 
 void compileKernel() {
   g->cstate |= C_PUB | C_PUB_NAME; // full public
-  newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, END});
+  newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, IEND});
   compileFile("kernel/kernel.sp");
 }
 
@@ -1474,7 +1498,7 @@ void compileStr(const U1* s) {
 
 SPOR_TEST(testKernel, 10)
   compileConstants(); compileKernel();
-  assert(PUB_STORE); assert(!PUB_NAME);
+  assert(LOC_PUB == codeLoc()); assert(LOC_PRIV == nameLoc());
   Ref r = heap;
   compileStr("#97 $h1"); ASSERT_EQ(0x97, *asU1(r)); ASSERT_EQ(heap, r + 1);
   ASSERT_EQ(0x42, dictGetAny(sAsTmpSlc("answerV"))->v);

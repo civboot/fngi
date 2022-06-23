@@ -24,13 +24,16 @@ int writeto(U1* path) {
 
 #define WRITE_FIELD(TYPE, PRE, FIELD, COMMENT) \
     assert(dprintf(fd,                         \
-        "#%.2X   #0=%-20s  \\ %s\n",            \
+        "#%.2X   #0=%-20s  \\ %s\n",           \
         offsetof(TYPE, FIELD),                 \
                 PRE #FIELD, COMMENT))
 
-#define WRITE_KERN(FD, FIELD)     WRITE_VAL(FD, #FIELD, offsetof(Kern, FIELD), "K_")
-#define WRITE_FB(FD, FIELD)       WRITE_VAL(FD, #FIELD, offsetof(Fiber, FIELD), "Fb_")
-#define WRITE_GLOBAL(FD, FIELD)   WRITE_VAL(FD, #FIELD, offsetof(Globals, FIELD), "G_")
+
+#define WRITE_INDEX(TYPE, PRE, FIELD, COMMENT) \
+    assert(dprintf(fd,                         \
+        "#%.2X   #0=%-20s  \\ %s\n",           \
+        offsetof(TYPE, FIELD) / RSIZE,         \
+                PRE #FIELD, COMMENT))
 
 void main() {
   int fd = writeto("kernel/offsets.sp");
@@ -71,6 +74,9 @@ void main() {
   WRITE_FIELD(BBA, "BBA_", rooti, "U1: owned block root index");
   WRITE_FIELD(BBA, "BBA_", len, "U2: unsigned heap");
   WRITE_FIELD(BBA, "BBA_", cap, "U2: signed topheap");
+  WRITE_INDEX(BBAMethods, "BBAm_", bump, "method index");
+  WRITE_INDEX(BBAMethods, "BBAm_", newBlock, "method index");
+  WRITE_INDEX(BBAMethods, "BBAm_", drop, "method index");
 
   assert(dprintf(fd, "\n\\ struct DNode { ... }\n") > 0);
 // typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;

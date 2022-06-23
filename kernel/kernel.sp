@@ -59,14 +59,18 @@ $pub @TY_FN@TY_FN_NOW^JN :STORE_PRIV \ switch to using private storage.
   .2%LIT@C_PUB^INV, %FTGL@G_cstate, %MSK %SRGL@G_cstate, %RET
 
 $STORE_PRIV
-@TY_FN@TY_FN_INLINE^JN :BBA_newBlock \ {&BBA} start new block
-  .1#3, @SLIT@D_comp_newBlock^JN, %DV@D_comp, %RET
+@_FP@TY_FN_INLINE^JN :BBA_bump \ {size align &BBA}: bump memory from BBA
+  .1#3, @SLIT@BBAm_bump    ^JN, %DV@D_bba, %RET
+@_FP@TY_FN_INLINE^JN :BBA_newBlock \ {&BBA}: create new block
+  .1#3, @SLIT@BBAm_newBlock^JN, %DV@D_bba, %RET
+@_FP@TY_FN_INLINE^JN :BBA_drop \ {&BBA}: drop BBA (return all blocks)
+  .1#3, @SLIT@BBAm_drop    ^JN, %DV@D_bba, %RET
 
 $STORE_PUB
 $pub @TY_FN@TY_FN_NOW^JN :NEW_BLOCK_PUB \ start new public block
-  .R%FTGL @G_bbaPub.2, $BBA_newBlock %RET
+  .R%FTGL@G_bbaPub.2,  $BBA_newBlock %RET
 $pub @TY_FN@TY_FN_NOW^JN :NEW_BLOCK_PRIV \ start new private block
-  .R%FTGL @G_bbaPriv.2, $BBA_newBlock %RET
+  .R%FTGL@G_bbaPriv.2, $BBA_newBlock %RET
 
 \ Using DV instr, we define a way to make assertions for tests.
 $pub @_FP@TY_FN_INLINE^JN  :assertEq .1#2, %DV@D_assert, %RET \ {l r err}
@@ -90,7 +94,7 @@ $assertNoWs
 
 $STORE_PUB  $getCState@C_PUB^MSK $tAssert
 $pub @_FP@TY_FN_INLINE^JN :bump \ {size align} bump some memory
-  .1#3, @SLIT@D_comp_bump^JN, %DV@D_comp, %RET \ {&U1} Note: #3 is size of INLINE
+  .1#4, @SLIT, $BBA_bump %RET \ {&U1} Note: #3 is size of INLINE
 
 @_FP :h1 \ {U1}: store 1 byte on heap (unchecked)
   .1@SLIT#1^JN, @SLIT,  \ {U1 size=1 aligned=false}
@@ -126,6 +130,8 @@ $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :scan      #3$h1 @D_comp_scan$L0 %DV@D_comp$h1 %RET
                 @_FP :dictRef   $scan @D_comp_dGet$L0 %DV@D_comp$h1 %RET
                 @_FP :dictAdd   $scan @D_comp_dAdd$L0 %DV@D_comp$h1 %RET
+
+
 \ @_TY_FN :newLocalsBlock %GR@G_bbaLocals$h2  $BBA_newBlock %RET
 \ @_TY_FN :dropLocals 
 
@@ -149,15 +155,20 @@ $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :retif   #2$h1     %NOT %RETZ %RET
 
 \ * [2] Spor syntax
-\ Syntax helpers, before the "true" ones are defined.
+\ These are core spor syntax helpers, many of which will also be used to
+\ build equivalent fngi syntax.
+\
 \   fn FN <name>              : declare a function
 \   fn PRE                    : make function "pre" (run after next token)
 \   fn INLINE                 : make function "pre" (run after next token)
 \   fn SYN                    : make function "syn" (syntax, always now)
 \   fn NOW                    : require function to be "now" (use $)
 \   fn LARGE                  : make function large (has locals)
+\
+\ There are also many helpers, like
+\   fn isFnPre, isFnNormal
 
-$STORE_PRIV
+$STORE_PRIV $NEW_BLOCK_PRIV
 
 @_FP :_j2 .2%XSL@h1, .2%JMPL@h2, \ {ref instr} compile a context switch
 
@@ -167,12 +178,15 @@ $STORE_PRIV
 @TY_FN :_jmp \ $_jmp <token> : compile unchecked jmpl
   #0$L0 .2%XSL@dictRef, $d_vGet    .1%LIT@JMPL2,  .2%JMPL@_j2,
 
+@_FP@TY_FN_NOW^JN :c1 \ {instr} compile "compile instr" into function
+  $_xsl L1
+  @h1$L2 @XSL2$L2 $_jmp _j2
+
 @TY_FN :callAnswer  $_xsl answer %RET     $callAnswer #42 $tAssertEq
 @TY_FN :jmpAnswer   $_jmp answer          $jmpAnswer  #42 $tAssertEq
 
 \ These take {&DNode} and return or assert information about it
 $STORE_PUB      $assertNoWs
-$NEW_BLOCK_PRIV
 @_FP :isTyConst   $d_m0Get  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
 @_FP :isTyFn      $d_m0Get  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
 @_FP :isFnLarge   $d_m0Get  @TY_FN_LARGE$L1 %MSK %RET
@@ -202,7 +216,6 @@ $NEW_BLOCK_PRIV
   %SWP $d_m0Set %RET
 
 $pub @_FP@TY_FN_INLINE^JN :heap #3$h1 @D_comp_heap$L0 %DV@D_comp$h1 %RET
-@_FP :assertJmpL1  #80$L1 %LT_U  @E_cJmpL1$L2 $_jmp assert
 $pub @_FP :assertNoNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
 @TY_FN :_implFnTy \ {meta asNow}
   %SWP $_xsl assertNoNow \ {meta}
@@ -222,6 +235,7 @@ $pub @TY_FN@TY_FN_SYN^JN :large  @TY_FN_LARGE $L1 $_jmp _implFnTy
   $_jmp assertNoWs
 $assertNoWs
 
+\ These tell something about a &DNode. Type: [&DNode -> bool]
 $pre $FN isFnPre     $d_m0Get  @TY_FN_PRE$L1     %MSK %RET
 $pre $FN isVarInput  $d_m0Get  @TY_VAR_INPUT$L1  %MSK %RET
 $pre $FN isFnNormal  $d_m0Get  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1 %EQ %RET
@@ -240,6 +254,97 @@ $pre $FN assertSzI \ {szI}
 
 $now $pre $FN ftoN \ {offset szI} compile FTO szI w/offset
   %DUP $_xsl assertSzI  @FTO$L1 %ADD  $_xsl h1 $_jmp h1
+
+\ **********
+\ * [7] ASM (initial) Flow Control
+\ Flow control either pushes the current heap on the WS or uses a local
+\ constant. END/AGAIN uses this heap-val/local to do the right thing.
+\
+\   if/else: $IF ... $ELSE ... $END
+\   loop:    $LOOP <l0> ... $BREAK0 <b0> ... $AGAIN <l0> $BREAK_END <b0>
+
+\ @_FP :assertJmpL1  #80$L1 %LT_U  @E_cJmpL1$L2 $_jmp assert
+$FN assertJmpL1 #80$L1 %LT_U @E_cJmpL1$L2 $_jmp assert \ {&jmpTo} assert valid
+
+\ Switch to non/local storage
+$FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
+$FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
+$FN ldictRef $_xsl storeLocal $_xsl dictRef $_jmp storeNonLocal \ see dictRef
+$FN ldictAdd $_xsl storeLocal $_xsl dictAdd $_jmp storeNonLocal \ see dictAdd
+
+$pub $pre $syn $FN IF $_xsl assertNoNow \ {} -> {&jmpTo} : start an if block
+  @SZ1@JZL^JN $c1 \ compile .1%JZL instr
+  $heap #0$L0 $_jmp h1  \ compile 0 (jump pad)
+
+$FN _END \ {&jmpTo heapDiff} jmpTo is where to store (heap-heapDiff)
+  $heap \ {&jmpTo heapDiff heap}
+  %SWP %SUB   %DUP $_xsl assertJmpL1 \ {heapDiff (heap-heapDiff)}
+  %SWP .1%SR %RET \ store at &jmpTo (1 byte literal)
+
+$syn $FN END $_xsl assertNoNow %DUP $_jmp _END
+
+$syn $FN ELSE $_xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
+  @JMPL $c1       \ (end IF) compile unconditional jmp to end of ELSE
+  $heap %SWP      \ {&elseBlockJmpTo &ifNotJmpTo}
+  #0$L0 $_xsl h1  \ compile jmp lit for &elseBlockJmpTo
+  %DUP $_jmp _END \ end of IF block (beginning of ELSE)
+
+\ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
+     $syn $FN LOOP   $_xsl assertNoNow  $heap  #0$L0 $_jmp ldictAdd
+$pre $syn $FN BREAK0 $_xsl IF                  #0$L0 $_jmp ldictAdd
+$syn $FN END_BREAK  $_xsl assertNoNow $_xsl ldictRef $d_vGet %DUP $_jmp _END
+$pre $syn $FN BREAK_IF  @NOT$c1  $_jmp BREAK0 \ break if true
+$pre $syn $FN BREAK_EQ  @NEQ$c1  $_jmp BREAK0 \ break if equal
+$pre $syn $FN BREAK_NEQ @EQ$c1   $_jmp BREAK0 \ break if not equal
+
+$syn $FN AGAIN $_xsl assertNoNow
+  @JMPL $c1  \ {} compile jmp
+  $heap $_xsl ldictRef $d_vGet  \ {heap &loopTo}
+  %SUB %DUP  $_xsl assertJmpL1  \ {heap-&loopTo}
+  %NEG $_jmp h1  \ compile negative backwards jump to jmp offset
+
+$STORE_PRIV
+$FN testIf \ converts 1->4 else: 13
+  #1$L0 %EQ  $IF   #4$L0  %RET
+             $END  #13$L0 %RET
+#1 $testIf      #4  $tAssertEq
+#2 $testIf      #13 $tAssertEq
+
+$FN testIfElse
+  #1$L0 %EQ $IF #4$L0 $ELSE #13$L0 $END
+  #2$L0 %ADD %RET
+#1 $testIfElse  #6 $tAssertEq
+#2 $testIfElse  #15 $tAssertEq
+
+$STORE_PUB $assertNoWs
+
+
+\ **********
+\ * [8] xx, jmpl, Scanning and Alignment Utilities
+\ Reading, peeking and szI alignment
+\
+\ fn xx:<token> [...]             : compile an execute to a token
+\ fn jmp:<token> [...]            : compile an jmp to a token
+\ fn align [aptr sz -> aptr]      : align aptr with sz bytes
+\ fn align4 [aptr -> aptr]        : align aptr with 4 bytes
+\ fn alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
+\ fn hN [U4 szI]                  : write a value of szI to heap (no align)
+\ fn szToSzI [U4 -> SzI]          : convert number of bytes to SzI
+\ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
+\
+\ fn dictK [-> &key isFromLocal]  : any ref to current token.
+\ fn c_read [ -> numRead]         : attempt to read bytes from src.
+\ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
+\ fn c_scanNoEof []               : scan and assert not EOF.
+\ fn c_peekChr [ -> c]            : peek at the next character.
+\ fn c_clearToken []              : shift buffer to clear current token
+\
+\ fn assertSzI [szI]              : assert that szI is valid
+\ fn c_isEof [ -> bool]           : return whether there was a token scanned
+\ fn c_assertToken []             : assert there is a token
+\ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
+
+
 
 
 

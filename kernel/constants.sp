@@ -70,7 +70,7 @@
 #09 #0=DV    \ Device Operation (U1 literal)
 #0A #0=RG    \ {-> v} Register  (U1 literal)
 #0B #0=GR    \ {-> &global}     (U2 literal)
-#0F #0=END   \ not actual instr, used in tests.
+#0F #0=IEND  \ not actual instr, used in tests.
 
 \ # [1.b] Operations: One Inp -> One Out
 #10 #0=INC   \ {l+1}  increment 1
@@ -140,15 +140,17 @@
 \   address, which  are loaded by the execute instr and stored in the highest
 \   byte in the  callstack (which RET uses to shrink the local stack on return).
 
+\ Unsized jumps:
+#80 #0=JMPW  \ Jmp to WS
+#90 #0=XSW   \ Execute Small WS (no LS update)
+#A0 #0=XLW   \ Execute WS (aPtr)
+
 \   Jmp      Description
-#80 #0=JMPL  \ Jmp to Literal
-#81 #0=JMPW  \ Jmp to WS
+#81 #0=JMPL  \ Jmp to Literal
 #82 #0=JZL   \ Jmp to Literal if store==0
 #83 #0=JTBL  \ Jump to Table index using size=Literal
 #84 #0=XLL   \ Execute Literal (mPtr)
-#85 #0=XLW   \ Execute WS (aPtr)
-#86 #0=XSL   \ Execute Small Literal (no LS update)
-#87 #0=XSW   \ Execute Small WS (no LS update)
+#85 #0=XSL   \ Execute Small Literal (no LS update)
 
 \ Common instr+szs
 @SZ2@XSL  ^JN   #0=XSL2
@@ -174,32 +176,29 @@
 \
 
 #00 #0=D_cede     \ {} cede, allowing another thread to run
-#01 #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
-#02 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
-#03 #0=D_memset   \ {&dst v:U1 len} set dst to v
-#04 #0=D_memcmp   \ {&a &b len -> cmp} compare a and b
-#05 #0=D_memmove  \ {&dst &src len} dst = src [of len]
-#06 #0=D_bump     \ {size aligned &bba -> &mem} bump allocate size
-#07 #0=D_log      \ { ... len lvl} log len integers to com
-#08 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
-#09 #0=D_comp     \ {...} run a compiler method (see below)
-#0A #0=D_dict     \ {slc root:&DNode -> &DNode cmp} perform dict_find
-#0B #0=D_bba      \ {... method &BBA -> ...} execute method on &BBA
+#01 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
+#02 #0=D_memset   \ {&dst v:U1 len} set dst to v
+#03 #0=D_memcmp   \ {&a &b len -> cmp} compare a and b
+#04 #0=D_memmove  \ {&dst &src len} dst = src [of len]
+#05 #0=D_log      \ { ... len lvl} log len integers to com
+#06 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
+
+#0A #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
+#0B #0=D_bba      \ {... &BBA method -> ...} execute method on &BBA
+#0C #0=D_comp     \ {...} run a compiler method (see below)
+#0D #0=D_dict     \ {slc root:&DNode -> &DNode cmp} perform dict_find
 
 \ D_comp is a toolbox of compiler functionality which has to be implemented
 \ in the kernel anyway. Allowing it to be usable by spor reduces the complexity
 \ of bootstrapping considerably.
 #00 #0=D_comp_heap    \ {-> heap} get the current heap (depends on cstate C_PUB)
-#01 #0=D_comp_bump    \ {size aligned -> mem} bump from pub/priv store BBA
-#02 #0=D_comp_newBlock \ {&BBA} start new block for the BBA
-#03 #0=D_comp_last    \ {-> &DNode} last dictionary node modified
-#04 #0=D_comp_wsLen   \ {-> wsLen} get working stack length
-#05 #0=D_comp_block   \ {} start new block
-#06 #0=D_comp_dGet    \ {&root -> &DNode} get token from dict (default=base)
-#07 #0=D_comp_dAdd    \ {v m2 &root} add dict token={v, meta} (default=base)
-#08 #0=D_comp_read1   \ {} read (at least) single byte in src
-#09 #0=D_comp_readEol \ {} read src until EOL (for comments), incrementing b.len
-#0A #0=D_comp_scan    \ {} "scan" token into start of buffer. Sets b.len.
+#01 #0=D_comp_last    \ {-> &DNode} last dictionary node modified
+#02 #0=D_comp_wsLen   \ {-> wsLen} get working stack length
+#03 #0=D_comp_dGet    \ {&root -> &DNode} get token from dict (default=base)
+#04 #0=D_comp_dAdd    \ {v m2 &root} add dict token={v, meta} (default=base)
+#05 #0=D_comp_read1   \ {} read (at least) single byte in src
+#06 #0=D_comp_readEol \ {} read src until EOL (for comments), incrementing b.len
+#07 #0=D_comp_scan    \ {} "scan" token into start of buffer. Sets b.len.
 
 \ The RG 1 byte literal has the following byte format. Note: FT will return the
 \ register value + offset, SR will store the value + offset in the register.
@@ -222,6 +221,7 @@
 
 #30 #0=SZ_MASK \ size bit mask (for instr and meta)
 
+#0080 #0=C_LOCAL      \ G_cstate AND meta0: store as locals (func and name)
 #0040 #0=C_PUB        \ G_cstate AND meta0: store as public (function data)
 #4000 #0=C_PUB_NAME   \ G_cstate: make next name public
 #2000 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
