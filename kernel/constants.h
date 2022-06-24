@@ -75,9 +75,9 @@
 #define SLIT                 0xC0
 #define D_cede               0x0
 #define D_catch              0x1
-#define D_memset             0x2
-#define D_memcmp             0x3
-#define D_memmove            0x4
+#define D_memSet             0x2
+#define D_memCmp             0x3
+#define D_memMove            0x4
 #define D_log                0x5
 #define D_file               0x6
 #define D_assert             0xA

@@ -110,10 +110,10 @@ static inline void* bndsChkNull(U4 size, Ref r) {
 void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
   *fb = (Fiber) {
     .ws  = Stk_init(WS_DEPTH * RSIZE, asRef(fb) + sizeof(Fiber)),
-    .cs  = Stk_init(CS_DEPTH * RSIZE, fb->ws.ref + fb->ws.cap),
-    .csz = Stk_init(CS_DEPTH        , fb->cs.ref + fb->cs.cap),
+    .cs  = Stk_init(CS_DEPTH * RSIZE, fb->ws.dat + fb->ws.cap),
+    .csz = Stk_init(CS_DEPTH        , fb->cs.dat + fb->cs.cap),
   };
-  Ref lsRef = fb->csz.ref + fb->csz.cap; // local stack is rest of block
+  Ref lsRef = fb->csz.dat + fb->csz.cap; // local stack is rest of block
   fb->ls  = Stk_init(BLOCK_SIZE - lsRef - asRef(fb), lsRef);
 }
 
@@ -121,15 +121,15 @@ void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
 #define LS              (cfb->ls)
 #define CS              (cfb->cs)
 #define CSZ             (cfb->csz)
-#define LS_SP           (LS.ref + LS.sp)
-#define CS_SP           (CS.ref + CS.sp)
+#define LS_SP           (LS.dat + LS.sp)
+#define CS_SP           (CS.dat + CS.sp)
 #define SRC             (&g->src)
 #define SRCM            asPtrNull(FileMethods, g->srcM)
 #define Tplc    (g->src.plc)
-#define Tlen    (g->src.b.len)
-#define Tref    (g->src.b.ref)
-#define Tslc    (Slc) {g->src.b.ref, g->src.plc}
-#define Tdat    bndsChk(g->src.b.cap, Tref)
+#define Tlen    (g->src.buf.len)
+#define Tref    (g->src.buf.dat)
+#define Tslc    (Slc) {g->src.buf.dat, g->src.plc}
+#define Tdat    bndsChk(g->src.buf.cap, Tref)
 void initEnv(U4 blocks) {
   memSize = BLOCK_SIZE * blocks;
   mem = malloc(memSize); assert(mem); memEnd = mem + memSize;
@@ -141,18 +141,18 @@ void initEnv(U4 blocks) {
     .glen = sizeof(Globals), .gcap = BLOCK_SIZE,
     .bbaPub = asRef(&k->bbaPub), .bbaPriv = asRef(&k->bbaPriv),
     .src = (File) {
-      .b = (Buf) { .ref = asRef(&g->buf0), .cap = TOKEN_SIZE },
+      .buf = (Buf) { .dat = asRef(&g->buf0), .cap = TOKEN_SIZE },
       .code = F_error,
     },
   };
   cfb->gb = asRef(g);
 
   WS  = Stk_init(WS_DEPTH * RSIZE, asRef(cfb) + sizeof(Fiber));
-  CS  = Stk_init(CS_DEPTH * RSIZE, WS.ref + WS.cap);
-  CSZ = Stk_init(CS_DEPTH        , CS.ref + CS.cap);
+  CS  = Stk_init(CS_DEPTH * RSIZE, WS.dat + WS.cap);
+  CSZ = Stk_init(CS_DEPTH        , CS.dat + CS.cap);
   LS  = Stk_init(BLOCK_SIZE      , BLOCK_SIZE);
   k->ba = (BA) {
-    .blocks = BLOCK_SIZE * 2, .nodes = CSZ.ref + CSZ.cap,
+    .blocks = BLOCK_SIZE * 2, .nodes = CSZ.dat + CSZ.cap,
     .rooti = BLOCK_END,       .cap = blocks - 2,
   };
   k->bbaPub  = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
@@ -209,7 +209,7 @@ TEST_END
 
 U4 Stk_pop(Stk* stk) {
   ASM_ASSERT(stk->sp + RSIZE <= stk->cap, E_stkUnd);
-  U4 out = *((U4*) (mem + stk->ref + stk->sp));
+  U4 out = *((U4*) (mem + stk->dat + stk->sp));
   stk->sp += RSIZE;
   return out;
 }
@@ -217,7 +217,7 @@ U4 Stk_pop(Stk* stk) {
 void Stk_push(Stk* stk, U4 value) {
   ASM_ASSERT(stk->sp > 0, E_stkOvr);
   stk->sp -= RSIZE;
-  *((U4*) (mem + stk->ref + stk->sp)) = value;
+  *((U4*) (mem + stk->dat + stk->sp)) = value;
 }
 
 // Return value of ASCII hex char (or 0xFF if not a hex character)
@@ -463,22 +463,22 @@ TEST_END
 // data where the first byte has the count (length).
 #define cAsSlc(CDATA)  asSlc(CDATA + 1, *asU1(CDATA))
 #define sAsTmpSlc(S)   mvAndSlc(S, strlen(S))
-#define bAsSlc(BUF)    (Slc) {.ref = (BUF).ref, .len = (BUF).len }
+#define bAsSlc(BUF)    (Slc) {.dat = (BUF).dat, .len = (BUF).len }
 
 Slc asSlc(Ref ref, U2 len) {
   ASM_ASSERT(ref, E_null); ASM_ASSERT(ref + len < memSize, E_oob);
-  return (Slc) {.ref = ref, .len = len};
+  return (Slc) {.dat = ref, .len = len};
 }
 
 Slc mvAndSlc(U1* buf, U2 len) {
   U1* gbuf = asU1(cfb->gb + g->glen);
   memmove(gbuf, buf, len);
-  return (Slc) { .ref = asRef(gbuf), .len = len };
+  return (Slc) { .dat = asRef(gbuf), .len = len };
 }
 
 I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
   U2 len; if(l.len < r.len) len = l.len;  else len = r.len;
-  U1 *lp = mem + l.ref, *rp = mem + r.ref;
+  U1 *lp = mem + l.dat, *rp = mem + r.dat;
   for(U2 i = 0; i < len; i += 1) {
     if(*lp < *rp) return -1;
     if(*lp > *rp) return 1;
@@ -502,8 +502,8 @@ I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
 
 BARE_TEST(testSlc, 3)
   TEST_SLICES
-  ASSERT_EQ(3, c.len); assert(c_c + 1 == c.ref);
-  ASSERT_EQ('a', *asU1(c.ref));  ASSERT_EQ('c', *asU1(c.ref + 2));
+  ASSERT_EQ(3, c.len); assert(c_c + 1 == c.dat);
+  ASSERT_EQ('a', *asU1(c.dat));  ASSERT_EQ('c', *asU1(c.dat + 2));
   ASSERT_EQ(0,  Slc_cmp(a, a));
   ASSERT_EQ(-1, Slc_cmp(a, b));
   ASSERT_EQ(-1, Slc_cmp(a, c));
@@ -648,7 +648,7 @@ U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
 
 // "Clear" the place buffer by moving existing data after plc to the beginning.
 void clearPlcBuf(PlcBuf* p) {
-  U1* ref = mem + p->ref;   p->len -= p->plc; // the new length
+  U1* ref = mem + p->dat;   p->len -= p->plc; // the new length
   memmove(ref, ref + p->plc, p->len); p->plc = 0;
 }
 
@@ -705,10 +705,10 @@ BARE_TEST(testUtilities, 3)
   ASSERT_EQ(0x01,         popLit(1));
   ASSERT_EQ(0x2345,       popLit(2));
 
-  memmove(asU1(SRC->b.ref), "Hi there?!", 10);
+  memmove(asU1(SRC->buf.dat), "Hi there?!", 10);
   Tplc = 4; Tlen = 10; clearPlcBuf(F_plcBuf(*SRC));
   ASSERT_EQ(0, Tplc); ASSERT_EQ(6, Tlen);
-  assert(!memcmp("here?!", asU1(SRC->b.ref), 6));
+  assert(!memcmp("here?!", asU1(SRC->buf.dat), 6));
 TEST_END
 
 //   *******
@@ -718,14 +718,14 @@ TEST_END
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
   eprintf("??? xImpl ep=%X grow=%X, fn=%X\n", cfb->ep, growSz, fn);
   CS_PUSH(cfb->ep);
-  CSZ.sp -= 1; *(mem + CSZ.ref + CSZ.sp) = growSz; // push growSz onto csz
+  CSZ.sp -= 1; *(mem + CSZ.dat + CSZ.sp) = growSz; // push growSz onto csz
   cfb->ep = fn;
 }
 
 void xlImpl(Ref fn) { // impl for XL*
   // get amount to grow, must be multipled by APtr size .
   U1 growSz = *asU1(fn);
-  ASM_ASSERT(growSz % RSIZE, E_align4);
+  ASM_ASSERT(!(growSz % RSIZE), E_align4);
   ASM_ASSERT(LS.sp >= growSz, E_stkOvr);
   ASM_ASSERT(growSz < CSZ_CATCH, E_xlSz);
   LS.sp -= growSz; // grow locals stack
@@ -743,7 +743,7 @@ void xlImpl(Ref fn) { // impl for XL*
 void dbgWs() {
   eprint("WS:");
   for(U2 i = WS.cap - 4; i >= WS.sp; i -= RSIZE)
-    eprintf(" %.4X", *asPtr(U4, WS.ref + i));
+    eprintf(" %.4X", *asPtr(U4, WS.dat + i));
   eprint("\n");
 }
 
@@ -755,7 +755,7 @@ inline static Instr executeInstr(Instr instr) {
   switch ((U1)instr) {
     // Operation Cases
     case NOP: R0
-    case RETZ: if(!WS_POP()) R0 // intentional fallthrough
+    case RETZ: if(WS_POP()) { R0 } // intentional fallthrough
     case RET: return RET;
     case YLD: return YLD;
     case SWP: r = WS_POP(); l = WS_POP(); WS_PUSH(r); WS_PUSH(l); R0
@@ -887,7 +887,7 @@ inline static Instr executeInstr(Instr instr) {
 
 void ret() {
   U4 r = Stk_pop(&CS);
-  U4 sh = *(mem + CSZ.ref + CSZ.sp); // size to shrink locals
+  U4 sh = *(mem + CSZ.dat + CSZ.sp); // size to shrink locals
   sh = CSZ_CATCH == sh ? 0 : sh; // if sh is CSZ_CATCH it is actually a panic handler
   CSZ.sp += 1;
   ASM_ASSERT(LS.sp + sh <= LS.cap, E_stkUnd);
@@ -901,7 +901,7 @@ void nextFb() { // switch to next fiber
 
 U2 getPanicHandler() { // find the index of the panic handler
   for(U2 i = CSZ.sp; i < CSZ.cap; i += 1) {
-    if(CSZ_CATCH == *(mem + CSZ.ref + i)) return i;
+    if(CSZ_CATCH == *(mem + CSZ.dat + i)) return i;
   }
   return 0xFFFF; // not found
 }
@@ -1001,7 +1001,7 @@ int F_handleErr(File* f, int res) {
 File* F_new(U2 bufCap) { // For testing only
   File* f = asPtr(File, BBA_alloc(&k->bbaPub, sizeof(File)));
   *f = (File) {
-    .b = (Buf) { .ref = BBA_allocUnaligned(&k->bbaPub, bufCap), .cap = bufCap },
+    .buf = (Buf) { .dat = BBA_allocUnaligned(&k->bbaPub, bufCap), .cap = bufCap },
     .code = F_done,
   }; return f;
 }
@@ -1009,13 +1009,13 @@ File* F_new(U2 bufCap) { // For testing only
 void F_open(FileMethods* m, File* f) {
   handleFMethods(open, m, f);
   U1 pathname[256];
-  ASM_ASSERT(f->b.len < 255, E_io);
-  memcpy(pathname, bndsChk(f->b.len, f->b.ref), f->b.len);
-  pathname[f->b.len] = 0;
+  ASM_ASSERT(f->buf.len < 255, E_io);
+  memcpy(pathname, bndsChk(f->buf.len, f->buf.dat), f->buf.len);
+  pathname[f->buf.len] = 0;
   int fd = F_handleErr(f, open(pathname, O_NONBLOCK, O_RDWR));
   if(fd < 0) { f->code = F_error; g->syserr = errno; errno = 0; }
   else { f->pos = 0; f->fid = F_INDEX | fd; f->code = F_done; f->plc = 0; }
-  f->plc = 0; f->b.len = 0; f->code = F_done;
+  f->plc = 0; f->buf.len = 0; f->code = F_done;
 }
 
 void F_close(FileMethods* m, File* f) {
@@ -1029,14 +1029,14 @@ void openMock(File* f, const U1* contents) { // Used for tests
   U2 len = strlen(contents);
   U1* s = asU1(BBA_allocUnaligned(&k->bbaPriv, len));
   memmove(s, contents, len);
-  *p = (PlcBuf) { .ref = asRef(s), .len = len, .cap = len };
+  *p = (PlcBuf) { .dat = asRef(s), .len = len, .cap = len };
   f->fid = asRef(p); f->pos = 0;
-  f->plc = 0; f->b.len = 0; f->code = F_done;
+  f->plc = 0; f->buf.len = 0; f->code = F_done;
 }
 
 void openUnix(File* f, U1* path) { // Used for tests
-  f->b.len = strlen(path); assert(f->b.cap >= f->b.len);
-  memcpy(bndsChk(f->b.len, f->b.ref), path, f->b.len);
+  f->buf.len = strlen(path); assert(f->buf.cap >= f->buf.len);
+  memcpy(bndsChk(f->buf.len, f->buf.dat), path, f->buf.len);
   F_open(NULL, f); ASSERT_EQ(F_done, f->code);
 }
 
@@ -1049,51 +1049,52 @@ void F_read(FileMethods* m, File* f) {
   int len;
   if(!(F_INDEX & f->fid)) { // mocked file. TODO: add some randomness
     PlcBuf* p = asPtr(PlcBuf, f->fid);
-    len = min(p->len - p->plc, f->b.cap - f->b.len);
-    _memmove(f->b.ref, p->ref + p->plc, len); p->plc += len;
+    len = min(p->len - p->plc, f->buf.cap - f->buf.len);
+    _memmove(f->buf.dat, p->dat + p->plc, len); p->plc += len;
   } else {
     f->code = F_reading;
-    len = F_handleErr(f, read(F_FD(*f), asU1(f->b.ref + f->b.len), f->b.cap - f->b.len));
+    len = F_handleErr(f, read(F_FD(*f), asU1(f->buf.dat + f->buf.len), f->buf.cap - f->buf.len));
     assert(len >= 0);
   }
-  f->b.len += len; f->pos += len;
-  if(f->b.len == f->b.cap) f->code = F_done;
+  f->buf.len += len; f->pos += len;
+  if(f->buf.len == f->buf.cap) f->code = F_done;
   else if (0 == len) f->code = F_eof;
 }
 
 // Read file blocking. Any errors result in a panic.
-void readAtLeast(FileMethods* m, File* f, U2 atLeast) {
-  ASM_ASSERT(f->b.cap - f->b.len >= atLeast, E_intern);
-  U2 startLen = f->b.len;
+U2 readAtLeast(FileMethods* m, File* f, U2 atLeast) {
+  ASM_ASSERT(f->buf.cap - f->buf.len >= atLeast, E_intern);
+  U2 startLen = f->buf.len;
   while(1) {
     F_read(m, f);
-    if(f->code == F_eof || f->b.len - startLen >= atLeast) break;
+    if(f->code == F_eof || f->buf.len - startLen >= atLeast) break;
     ASM_ASSERT(f->code < F_error, E_io);
   }
+  return f->buf.len - startLen;
 }
 
 void readNewAtLeast(FileMethods* m, File* f, U2 num) {
-  f->plc = 0; f->b.len = 0; readAtLeast(m, f, num);
+  f->plc = 0; f->buf.len = 0; readAtLeast(m, f, num);
 }
 
 U1* TEST_expectedTxt = "Hi there Bob\nThis is Jane.\n";
 BARE_TEST(testReadMock, 4)  BA_init(&k->ba);
-  File* f = F_new(10); ASSERT_EQ(10, f->b.cap);
+  File* f = F_new(10); ASSERT_EQ(10, f->buf.cap);
   openMock(f, TEST_expectedTxt);
   F_read(NULL, f); ASSERT_EQ(F_done, f->code);
-  ASSERT_EQ(10, f->b.len);
-  ASSERT_EQ(0, memcmp("Hi there B", asU1(f->b.ref), 10));
-  f->b.len = 0; F_read(NULL, f); assert(!memcmp("ob\nThis is", asU1(f->b.ref), 10));
-  f->b.len = 0; F_read(NULL, f); assert(!memcmp(" Jane.", asU1(f->b.ref), 6));
+  ASSERT_EQ(10, f->buf.len);
+  ASSERT_EQ(0, memcmp("Hi there B", asU1(f->buf.dat), 10));
+  f->buf.len = 0; F_read(NULL, f); assert(!memcmp("ob\nThis is", asU1(f->buf.dat), 10));
+  f->buf.len = 0; F_read(NULL, f); assert(!memcmp(" Jane.", asU1(f->buf.dat), 6));
   ASSERT_EQ(F_done, f->code); F_read(NULL, f); ASSERT_EQ(F_eof, f->code);
 TEST_END
 
 BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
-  File* f = F_new(128); ASSERT_EQ(128, f->b.cap);
-  openUnix(f, "./tests/testData.txt"); f->b.len = 0;
+  File* f = F_new(128); ASSERT_EQ(128, f->buf.cap);
+  openUnix(f, "./tests/testData.txt"); f->buf.len = 0;
   readAtLeast(NULL, f, 128); ASSERT_EQ(F_eof, f->code);
-  ASSERT_EQ(strlen(TEST_expectedTxt), f->b.len);
-  assert(!memcmp(TEST_expectedTxt, asU1(f->b.ref), f->b.len));
+  ASSERT_EQ(strlen(TEST_expectedTxt), f->buf.len);
+  assert(!memcmp(TEST_expectedTxt, asU1(f->buf.dat), f->buf.len));
 TEST_END
 
 
@@ -1129,10 +1130,10 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   // TODO: update both meta bytes.
   BBA* bba = nameBBA();  Ref ckey = bump(bba, false, s.len + 1);
   *(mem + ckey) = s.len; // Note: unsafe write, memory already checked.
-  _memmove(ckey + 1, s.ref, s.len);
+  _memmove(ckey + 1, s.dat, s.len);
 
   DNode* add = (DNode*) (mem + bump(bba, true, sizeof(DNode)));
-  *add = (DNode) {.ckey = ckey, .v = value, .m1 = meta};
+  *add = (DNode) {.ckey = ckey, .v = value, .m = meta};
 
   DNode* root = nameDict(); Dict_add(&root, add);
   Ref r = asRef(root);
@@ -1179,7 +1180,7 @@ U1 toTokenGroup(U1 c) {
 }
 
 void _scan(FileMethods* m, File* f) {
-  U1 firstTg; PlcBuf* p = F_plcBuf(*f); U1* dat = bndsChk(p->cap, p->ref);
+  U1 firstTg; PlcBuf* p = F_plcBuf(*f); U1* dat = bndsChk(p->cap, p->dat);
   while(true) { // Skip whitespace
     if(p->plc >= p->len) { readNewAtLeast(m, f, 1); } // buffer full of white, get new
     if(p->len == 0) return; // TODO: eof check
@@ -1207,10 +1208,18 @@ void _scan(FileMethods* m, File* f) {
 
 void scan(FileMethods* m, File* f) { _scan(m, f); }
 
+bool usesSzI(U1 instr) {
+  if ((0xC0 & instr) == I_MEM) return true;
+  if (((0xC0 & instr) == I_JMP) &&
+      // Account for non-sized jumps (XLW, XSW, etc)
+      ((0x0F & instr) > 0)) return true;
+  return false;
+}
+
 U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine with sz
   scan(m, f); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
   U1 instr = n->v;
-  if(((0xC0 & instr) == I_MEM) || ((0xC0 & instr) == I_JMP)) {
+  if(usesSzI(instr)) {
     switch (compiler.sz) {
       case 1: instr |= SZ1; break; case 2: instr |= SZ2; break;
       case 4: instr |= SZ4; break; default: SET_ERR(E_intern);
@@ -1303,7 +1312,7 @@ void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
 
 void cColon() { // `:`, aka define function
   U2 meta = WS_POP(); scan(SRCM, SRC);
-  eprintf("??? cColon token=%.*s, heap=%X\n", Tplc, Tdat, heap);
+  eprintf("??? cColon token=%.*s, meta=%X heap=%X\n", Tplc, Tdat, meta, heap);
   DNode* n = dictAddMut(meta, /*value=*/0, Tslc);
   eprintf("??? n.ckey=%.*s\n", *asPtr(U1, n->ckey), asPtr(U1, n->ckey + 1));
   n->v = heap;
@@ -1323,17 +1332,17 @@ void cDollar() { // `$`, aka execute token
   scan(SRCM, SRC); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
   eprintf("??? cDollar %.*s n.v=%X\n", Tplc, Tdat, n->v);
 
-  if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m1)) {
+  if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m)) {
     eprint("??? inline\n");
     U1 len = *asU1(n->v);
     memmove(asU1(bump(codeBBA(), false, len)), asU1(n->v + 1), len);
     return;
   }
   eprint("??? NOT inline\n");
-  if(TY_FN_SYN == (TY_FN_TY_MASK & n->m1)) WS_PUSH(false); // pass asNow=false
+  if(TY_FN_SYN == (TY_FN_TY_MASK & n->m)) WS_PUSH(false); // pass asNow=false
   cfb->ep = retImmediately;
-  if(TY_FN_LARGE & n->m1) xlImpl(n->v);   // Note: updates ep for compileLoop
-  else                    xImpl(0, n->v); // Note: updates ep for compileLoop
+  if(TY_FN_LARGE & n->m) xlImpl(n->v);   // Note: updates ep for compileLoop
+  else                   xImpl(0, n->v); // Note: updates ep for compileLoop
 }
 
 #define ASSERT_DICT(K, V) ASSERT_EQ( \
@@ -1421,14 +1430,14 @@ static inline void executeDV(U1 dv) {
       SET_ERR(err);
     }
     case D_catch: xImpl(CSZ_CATCH, WS_POP()); RV // essentially XSW with catch flag set
-    case D_memset: {
+    case D_memSet: {
         U2 len = WS_POP(); U1 value = WS_POP(); void* dst = bndsChk(len, WS_POP());
         memset(dst, value, len); return;
-    } case D_memcmp: {
+    } case D_memCmp: {
         U2 len = WS_POP();
         void* r = bndsChk(len, WS_POP()); void* l = bndsChk(len, WS_POP());
         return WS_PUSH(memcmp(l, r, len));
-    } case D_memmove: {
+    } case D_memMove: {
         U2 len = WS_POP(); Ref src = WS_POP(); return _memmove(WS_POP(), src, len);
     } case D_log: {
       U1 lvl = WS_POP(); U2 len = WS_POP();
@@ -1461,7 +1470,7 @@ static inline void executeDV(U1 dv) {
         case D_comp_dAdd: {
           U2 meta = WS_POP(); dictAddMut(meta, WS_POP(), Tslc); RV
         }
-        case D_comp_read1: readAtLeast(SRCM, SRC, 1); RV
+        case D_comp_read1: WS_PUSH(readAtLeast(SRCM, SRC, 1)); RV
         case D_comp_readEol: cForwardSlash(SRCM, SRC);  RV
         case D_comp_scan: scan(SRCM, SRC);           RV
         default: SET_ERR(E_dv);

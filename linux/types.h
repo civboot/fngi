@@ -19,8 +19,8 @@ typedef int32_t              I4;
 typedef uint32_t             APtr;
 typedef uint32_t             Ref;
 
-typedef struct { Ref ref; U2 len; }                         Slc;
-typedef struct { Ref ref; U2 len; U2 cap; }                 Buf;
-typedef struct { Ref ref; U2 len; U2 cap; U2 plc; }         PlcBuf;
+typedef struct { Ref dat; U2 len; }                         Slc;
+typedef struct { Ref dat; U2 len; U2 cap; }                 Buf;
+typedef struct { Ref dat; U2 len; U2 cap; U2 plc; }         PlcBuf;
 
 #endif // __TYPES_H

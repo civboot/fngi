@@ -23,11 +23,11 @@ const U2 F_error    = 0xE0;
 const U2 F_Eperm    = 0xE1;
 const U2 F_Eio      = 0xE2;
 
-#define F_plcBuf(F)  ((PlcBuf*) &(F).b)
+#define F_plcBuf(F)  ((PlcBuf*) &(F).buf)
 typedef struct {
   U4 pos;   // current position in file. If seek: desired position.
   Ref fid;  // file id or reference
-  Buf b;    // buffer for reading or writing data
+  Buf buf;  // buffer for reading or writing data
   U2 plc;   // place, makes buf a PlcBuf. write: write pos.
   U2 code;  // status or error (F_*)
 } File;
@@ -53,12 +53,12 @@ typedef struct { FileMethods* m; File* f; } FileRole;
 
 typedef U1 Instr;
 
-typedef struct { Ref ref; U2 sp; U2 cap; }                  Stk;
+typedef struct { Ref dat; U2 sp; U2 cap; }                  Stk;
 typedef struct { U1 previ; U1 nexti; }                      BANode;
 typedef struct { Ref nodes; Ref blocks; U1 rooti; U1 cap; } BA;
 typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
 typedef struct { Ref root; Ref free; }                      Dict;
-typedef struct { Ref l; Ref r; Ref ckey; U1 m0; U1 m1; U4 v; } DNode;
+typedef struct { Ref l; Ref r; Ref ckey; U2 m; U4 v; }      DNode;
 
 typedef struct {
   Ref bump;
@@ -66,7 +66,7 @@ typedef struct {
   Ref drop;
 } BBAMethods;
 
-#define Stk_init(CAP, REF) (Stk) {.ref = REF, .sp = CAP, .cap = CAP}
+#define Stk_init(CAP, REF) (Stk) {.dat = REF, .sp = CAP, .cap = CAP}
 
 typedef struct {
   U1 valTy;     U1 _align;  U2 _align2;
@@ -101,11 +101,11 @@ typedef struct {
   U1 logLvlUsr;
   U2 metaNext; // meta of next fn
   U2 _unused;
+  Ref compFn;
   BBA bbaLocal;  Ref dictLocal;
   Ref bbaPub;    Ref dictPub;
   Ref bbaPriv;   Ref dictPriv;
-  Ref srcM;
-  File src;
+  Ref srcM;      File src;
   U1 buf0[TOKEN_SIZE];
 
   int syserr;

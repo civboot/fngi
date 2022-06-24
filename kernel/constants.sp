@@ -54,7 +54,7 @@
 
 \ Values put on stack by kernel-compiler
     #0=SZA   \ SZ2 or SZ4 depending on arch
-    #0=ASIZE \ 2 or 4 depending on arch
+    #0=RSIZE \ 2 or 4 depending on arch
     #0=CODE_HEAP_START \ start of code heap
 
 \ # [1.a] Operations: Special
@@ -177,9 +177,9 @@
 
 #00 #0=D_cede     \ {} cede, allowing another thread to run
 #01 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
-#02 #0=D_memset   \ {&dst v:U1 len} set dst to v
-#03 #0=D_memcmp   \ {&a &b len -> cmp} compare a and b
-#04 #0=D_memmove  \ {&dst &src len} dst = src [of len]
+#02 #0=D_memSet   \ {&dst v:U1 len} set dst to v
+#03 #0=D_memCmp   \ {&a &b len -> cmp} compare a and b
+#04 #0=D_memMove  \ {&dst &src len} dst = src [of len]
 #05 #0=D_log      \ { ... len lvl} log len integers to com
 #06 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
 
@@ -196,7 +196,7 @@
 #02 #0=D_comp_wsLen   \ {-> wsLen} get working stack length
 #03 #0=D_comp_dGet    \ {&root -> &DNode} get token from dict (default=base)
 #04 #0=D_comp_dAdd    \ {v m2 &root} add dict token={v, meta} (default=base)
-#05 #0=D_comp_read1   \ {} read (at least) single byte in src
+#05 #0=D_comp_read1   \ {->numRead} read (at least) single byte from src
 #06 #0=D_comp_readEol \ {} read src until EOL (for comments), incrementing b.len
 #07 #0=D_comp_scan    \ {} "scan" token into start of buffer. Sets b.len.
 

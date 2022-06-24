@@ -3,6 +3,11 @@
 \
 \ @brief Defines global variable offsets.
 
+\ struct Buf { ... }
+#00   #0=Buf_dat               \ Ref: data
+#04   #0=Buf_len               \ U2: length of buffer
+#06   #0=Buf_cap               \ U2: cap of buffer
+
 \ struct Kernel { ... }
 #04   #0=K_memTop              \ Ref: highest address in memory
 #08   #0=K_ba                  \ BA struct: kernel BA
@@ -17,16 +22,22 @@
 #08   #0=G_cstate              \ U2: compiler state
 #0A   #0=G_logLvlSys           \ U1
 #0B   #0=G_logLvlUsr           \ U1
-#0C   #0=G_metaNext            \ U2: next function's m1 and m0
-#20   #0=G_bbaPub              \ &BBA: current public bba
-#28   #0=G_bbaPriv             \ &BBA: current private bba
-#30   #0=G_srcM                \ &FileMethods: src file methods
-#34   #0=G_src                 \ &File: src File
+#0C   #0=G_metaNext            \ U2: next function's meta
+#10   #0=G_compFn              \ Ref: function used for compiling
+#24   #0=G_bbaPub              \ &BBA: current public bba
+#2C   #0=G_bbaPriv             \ &BBA: current private bba
+#34   #0=G_srcM                \ &FileMethods: src file methods
+#38   #0=G_src                 \ &File: src File
 
 \ struct Fiber { ... }
 #0C   #0=Fb_ws                 \ Stk struct: working stack
 #2C   #0=Fb_gb                 \ &Globals: globals base pointer
 #30   #0=Fb_err                \ U2: panic error
+
+\ struct File { ... }
+#08   #0=Fs_buf                \ Buf: buffer
+#10   #0=Fs_plc                \ U2: plc in buffer
+#12   #0=Fs_code               \ U2: file code
 
 \ BA { Ref nodes; Ref blocks; U1 rooti; U1 cap; }
 #00   #0=BA_nodes              \ &Node: start of nodes len cap*2
@@ -47,7 +58,6 @@
 #00   #0=DN_l                  \ Ref: left
 #04   #0=DN_r                  \ Ref: right
 #08   #0=DN_ckey               \ Ref: counted data key
-#0D   #0=DN_m1                 \ U1: meta 1, kernel metadata
-#0C   #0=DN_m0                 \ U1: meta 0, type metadata
+#0C   #0=DN_m                  \ U2: meta
 #10   #0=DN_v                  \ Ref: value, which may be a constant
 

@@ -59,7 +59,7 @@ $pub @TY_FN@TY_FN_NOW^JN :STORE_PRIV \ switch to using private storage.
   .2%LIT@C_PUB^INV, %FTGL@G_cstate, %MSK %SRGL@G_cstate, %RET
 
 $STORE_PRIV
-@_FP@TY_FN_INLINE^JN :BBA_bump \ {size align &BBA}: bump memory from BBA
+@_FP@TY_FN_INLINE^JN :BBA_bump \ {size align &BBA -> &dat}: bump memory from BBA
   .1#3, @SLIT@BBAm_bump    ^JN, %DV@D_bba, %RET
 @_FP@TY_FN_INLINE^JN :BBA_newBlock \ {&BBA}: create new block
   .1#3, @SLIT@BBAm_newBlock^JN, %DV@D_bba, %RET
@@ -93,7 +93,7 @@ $getCState@C_PUB^MSK $tAssertNot
 $assertNoWs
 
 $STORE_PUB  $getCState@C_PUB^MSK $tAssert
-$pub @_FP@TY_FN_INLINE^JN :bump \ {size align} bump some memory
+$pub @_FP@TY_FN_INLINE^JN :bump \ {size align -> &dat} bump some memory
   .1#4, @SLIT, $BBA_bump %RET \ {&U1} Note: #3 is size of INLINE
 
 @_FP :h1 \ {U1}: store 1 byte on heap (unchecked)
@@ -128,21 +128,18 @@ $STORE_PUB   $assertNoWs
 
 @_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @D_comp_last$L0 %DV@D_comp$h1 %RET
 @_FP@TY_FN_INLINE^JN :scan      #3$h1 @D_comp_scan$L0 %DV@D_comp$h1 %RET
-                @_FP :dictRef   $scan @D_comp_dGet$L0 %DV@D_comp$h1 %RET
-                @_FP :dictAdd   $scan @D_comp_dAdd$L0 %DV@D_comp$h1 %RET
 
+\ {&root -> &DNode} root can be null
+@_FP :dictRef   $scan @D_comp_dGet$L0 %DV@D_comp$h1 %RET
+@_FP :dictAdd   $scan @D_comp_dAdd$L0 %DV@D_comp$h1 %RET \ {m v &root} root can be null
 
-\ @_TY_FN :newLocalsBlock %GR@G_bbaLocals$h2  $BBA_newBlock %RET
-\ @_TY_FN :dropLocals 
-
-
-$STORE_PRIV
-@_FP@TY_FN_INLINE^JN :d_m0Get  #2$h1 .1%FTO@DN_m0$h1 %RET \ {&DNode -> m0}
-@_FP@TY_FN_INLINE^JN :d_m0Set  #2$h1 .1%SRO@DN_m0$h1 %RET \ {m0 &DNode}
+$STORE_PRIV       $NEW_BLOCK_PRIV
+@_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m$h1 %RET \ {&DNode -> m}
+@_FP@TY_FN_INLINE^JN :d_mSet   #2$h1 .2%SRO@DN_m$h1 %RET \ {m &DNode}
 @_FP@TY_FN_INLINE^JN :d_vGet   #2$h1 .R%FTO@DN_v $h1 %RET \ {&DNode -> v}
 @_FP@TY_FN_INLINE^JN :d_vSet   #2$h1 .R%SRO@DN_v $h1 %RET \ {v &DNode}
 
-
+@_FP :tDictRef #0$L0 .2%XSL@dictRef,  %RET \ get dict ref for testing
 @_FP :assertDictV \ {<token> v} assert the value of token
   #0$L0 .2%XSL@dictRef, $d_vGet .2%JMPL@tAssertEq,
 
@@ -168,7 +165,7 @@ $STORE_PUB   $assertNoWs
 \ There are also many helpers, like
 \   fn isFnPre, isFnNormal
 
-$STORE_PRIV $NEW_BLOCK_PRIV
+$STORE_PRIV
 
 @_FP :_j2 .2%XSL@h1, .2%JMPL@h2, \ {ref instr} compile a context switch
 
@@ -187,9 +184,9 @@ $STORE_PRIV $NEW_BLOCK_PRIV
 
 \ These take {&DNode} and return or assert information about it
 $STORE_PUB      $assertNoWs
-@_FP :isTyConst   $d_m0Get  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
-@_FP :isTyFn      $d_m0Get  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
-@_FP :isFnLarge   $d_m0Get  @TY_FN_LARGE$L1 %MSK %RET
+@_FP :isTyConst   $d_mGet  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
+@_FP :isTyFn      $d_mGet  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
+@_FP :isFnLarge   $d_mGet  @TY_FN_LARGE$L1 %MSK %RET
 @_FP :assertFn    $_xsl isTyFn @E_cNotFn$L2 $_jmp assert
 @_FP :assertFnSmall %DUP $_xsl assertFn
   $_xsl isFnLarge  @E_cIsX$L2  $_jmp assertNot
@@ -210,10 +207,10 @@ $STORE_PUB      $assertNoWs
 @_FP :_jSetup \ [&DNode] -> [ref]: checked jmp setup
   %DUP $_xsl assertFnSmall  $d_vGet %DUP $_jmp assertCurMod \ {ref}
 
-\ TODO: rename d_m0Jn and swap args
-@_FP :c_keyJnMeta \ {&DNode m0 -> &DNode} : apply meta to key
-  %OVR $d_m0Get %JN \ {&DNode m0New}
-  %SWP $d_m0Set %RET
+\ TODO: rename d_mJn and swap args
+@_FP :keyJnMeta \ {&DNode m -> &DNode} : apply meta to key
+  %OVR $d_mGet %JN \ {&DNode mNew}
+  %SWP $d_mSet %RET
 
 $pub @_FP@TY_FN_INLINE^JN :heap #3$h1 @D_comp_heap$L0 %DV@D_comp$h1 %RET
 $pub @_FP :assertNoNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
@@ -225,7 +222,7 @@ $pub @TY_FN@TY_FN_SYN^JN :syn    @TY_FN_SYN   $L1 $_jmp _implFnTy
 $pub @TY_FN@TY_FN_SYN^JN :now    @TY_FN_NOW   $L1 $_jmp _implFnTy
      @TY_FN@TY_FN_SYN^JN :pre    @TY_FN_PRE   $L1 $_jmp _implFnTy
 $pub @TY_FN@TY_FN_SYN^JN :inline @TY_FN_INLINE$L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :large  @TY_FN_LARGE $L1 $_jmp _implFnTy
+     @TY_FN@TY_FN_SYN^JN :large  @TY_FN_LARGE $L1 $_jmp _implFnTy
 
 \ example: $syn $large $FN <token>: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN :FN   $_xsl assertNoNow \ {}
@@ -236,14 +233,16 @@ $pub @TY_FN@TY_FN_SYN^JN :large  @TY_FN_LARGE $L1 $_jmp _implFnTy
 $assertNoWs
 
 \ These tell something about a &DNode. Type: [&DNode -> bool]
-$pre $FN isFnPre     $d_m0Get  @TY_FN_PRE$L1     %MSK %RET
-$pre $FN isVarInput  $d_m0Get  @TY_VAR_INPUT$L1  %MSK %RET
-$pre $FN isFnNormal  $d_m0Get  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1 %EQ %RET
-$pre $FN isFnNow     $d_m0Get  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
-$pre $FN isFnSyn     $d_m0Get  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
-$pre $FN isFnInline  $d_m0Get  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
-$pre $FN isTyVar     $d_m0Get  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
+$pre $FN isFnPre     $d_mGet  @TY_FN_PRE$L1     %MSK %RET
+$pre $FN isVarInput  $d_mGet  @TY_VAR_INPUT$L1  %MSK %RET
+$pre $FN isFnNormal  $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1 %EQ %RET
+$pre $FN isFnNow     $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
+$pre $FN isFnSyn     $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
+$pre $FN isFnInline  $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
+$pre $FN isTyVar     $d_mGet  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
 $pre $FN assertTyVar $_xsl isTyVar  @E_cNotLocal$L2 $_jmp assert
+
+$tDictRef assert  ^DUP $isFnPre $tAssert $isFnNormal $tAssert
 
 $pub $pre $FN panic   #0$L0 $_jmp assert \ {err} panic immediately
 $pub      $FN unreach @E_unreach$L2 $_jmp panic \ unreachable code
@@ -269,8 +268,8 @@ $FN assertJmpL1 #80$L1 %LT_U @E_cJmpL1$L2 $_jmp assert \ {&jmpTo} assert valid
 \ Switch to non/local storage
 $FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
 $FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
-$FN ldictRef $_xsl storeLocal $_xsl dictRef $_jmp storeNonLocal \ see dictRef
-$FN ldictAdd $_xsl storeLocal $_xsl dictAdd $_jmp storeNonLocal \ see dictAdd
+$FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ see dictRef
+$FN ldictAdd $_xsl storeLocal #0$L0 $_xsl dictAdd $_jmp storeNonLocal \ see dictAdd
 
 $pub $pre $syn $FN IF $_xsl assertNoNow \ {} -> {&jmpTo} : start an if block
   @SZ1@JZL^JN $c1 \ compile .1%JZL instr
@@ -292,14 +291,14 @@ $syn $FN ELSE $_xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
      $syn $FN LOOP   $_xsl assertNoNow  $heap  #0$L0 $_jmp ldictAdd
 $pre $syn $FN BREAK0 $_xsl IF                  #0$L0 $_jmp ldictAdd
-$syn $FN END_BREAK  $_xsl assertNoNow $_xsl ldictRef $d_vGet %DUP $_jmp _END
+$syn $FN END_BREAK  $_xsl assertNoNow #0$L0 $_xsl ldictRef $d_vGet %DUP $_jmp _END
 $pre $syn $FN BREAK_IF  @NOT$c1  $_jmp BREAK0 \ break if true
 $pre $syn $FN BREAK_EQ  @NEQ$c1  $_jmp BREAK0 \ break if equal
 $pre $syn $FN BREAK_NEQ @EQ$c1   $_jmp BREAK0 \ break if not equal
 
 $syn $FN AGAIN $_xsl assertNoNow
   @JMPL $c1  \ {} compile jmp
-  $heap $_xsl ldictRef $d_vGet  \ {heap &loopTo}
+  $heap #0$L0 $_xsl ldictRef $d_vGet  \ {heap &loopTo}
   %SUB %DUP  $_xsl assertJmpL1  \ {heap-&loopTo}
   %NEG $_jmp h1  \ compile negative backwards jump to jmp offset
 
@@ -318,7 +317,6 @@ $FN testIfElse
 
 $STORE_PUB $assertNoWs
 
-
 \ **********
 \ * [8] xx, jmpl, Scanning and Alignment Utilities
 \ Reading, peeking and szI alignment
@@ -333,19 +331,151 @@ $STORE_PUB $assertNoWs
 \ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
 \
 \ fn dictK [-> &key isFromLocal]  : any ref to current token.
-\ fn c_read [ -> numRead]         : attempt to read bytes from src.
-\ fn c_readNew [ -> numRead]      : clear token buf and read bytes.
-\ fn c_scanNoEof []               : scan and assert not EOF.
-\ fn c_peekChr [ -> c]            : peek at the next character.
-\ fn c_clearToken []              : shift buffer to clear current token
+\ fn read [ -> numRead]         : attempt to read bytes from src.
+\ fn readNew [ -> numRead]      : clear token buf and read bytes.
+\ fn scanNoEof []               : scan and assert not EOF.
+\ fn peekChr [ -> c]            : peek at the next character.
 \
 \ fn assertSzI [szI]              : assert that szI is valid
-\ fn c_isEof [ -> bool]           : return whether there was a token scanned
-\ fn c_assertToken []             : assert there is a token
-\ fn c_assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
+\ fn isEof [ -> bool]           : return whether there was a token scanned
+\ fn assertToken []             : assert there is a token
+\ fn assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
+$pre $FN dnodeSzI $d_mGet @SZ_MASK$L1 %MSK %RET \ {&dnode -> szI}
 
+$pub $pre $FN szIToSz \ {szI} -> {sz}
+  %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
+  %DUP @SZ2$L1 %EQ $IF  %DRP #2$L0 %RET  $END
+       @SZ4$L1 %EQ $IF       #4$L0 %RET  $END
+  @E_sz$L2 $_jmp panic
 
+$pub $pre $FN hN \ {value szI} write a value of szI to heap
+  %DUP @SZ1$L1 %EQ $IF  %DRP $_jmp h1  $END
+  %DUP @SZ2$L1 %EQ $IF  %DRP $_jmp h2  $END
+  %DUP @SZ4$L1 %EQ $IF  %DRP $_jmp h4  $END
+  @E_sz$L2 $_jmp panic
 
+$pub $pre $FN szToSzI \ [sz] -> [SzI] convert sz to szI (instr)
+  %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
+  %DUP #2$L0 %EQ $IF  %DRP @SZ2 $L1 %RET  $END
+       #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
+  @E_sz$L2 $_jmp panic
+
+$pub $pre $FN reqAlign \ {sz -> sz}: get required alignment
+  %DUP @RSIZE^DEC$L0 %LT_U $retif  %DRP @RSIZE$L0 %RET
+
+$pub $large $pre $FN align \ {aptr sz -> aptr}: align aptr with sz bytes
+  @RSIZE$h1 \ locals [sz:U1]
+  .1%SRLL#0$h1 \ cache sz
+  %DUP \ {aptr aptr}
+  .1%FTLL#0$h1 %MOD \ {aptr aptr%sz}
+  %DUP $IF
+    .1%FTLL#0$h1 %SWP %SUB \ {aptr (sz - aptr%sz)}
+    %ADD %RET \ aptr + (sz - aptr%sz)
+  $END
+  %DRP %RET
+
+$pub$pre $FN alignA  $_xsl reqAlign .2%XLL @align$h2 %RET  \ {aptr sz -> aptr}: align to SZA
+$pub$pre $FN align4   #4$L0         .2%XLL @align$h2 %RET  \ {addr -> aligned4Addr}
+$pub     $FN alignSzI $_xsl szIToSz  .2%XLL @align$h2 %RET \ {addr szI -> addrAlignedSzI}
+
+$pre $FN ftSzI \ {&addr szI}
+  %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
+  %DUP @SZ2$L1 %EQ $IF %DRP .2%FT %RET $END
+       @SZ4$L1 %EQ $IF      .4%FT %RET $END
+  @E_sz$L2 $_xsl panic
+
+$pre $FN srSzI \ {value &addr szI}
+  %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
+  %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
+       @SZ4$L1 %EQ $IF      .4%SR %RET $END
+  @E_sz$L2 $_xsl panic
+
+$pre $FN xSzI \ {&DNode -> szI}: size requirement of calling DNode
+  $d_vGet $_xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZA$L1 %RET
+
+$STORE_PRIV
+#0 $reqAlign  #0 $tAssertEq     #1 $reqAlign  #1 $tAssertEq
+#2 $reqAlign  #2 $tAssertEq     #3 $reqAlign  #4 $tAssertEq
+#4 $reqAlign  #4 $tAssertEq     #5 $reqAlign  #4 $tAssertEq
+
+#20 #1 $alignA #20 $tAssertEq   #21 #1  $alignA #21 $tAssertEq
+#20 #2 $alignA #20 $tAssertEq   #21 #2  $alignA #22 $tAssertEq
+#21 #4 $alignA #24 $tAssertEq   #21 #11 $alignA #24 $tAssertEq
+
+\ Inline helper functions for src and token
+$inline $FN read #3$h1 @D_comp_read1$L0 %DV@D_comp$h1 %RET \ { -> numRead}
+$inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
+$inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
+$inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
+$inline $FN tokenLenSet #3$h1 .2%SRGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
+$inline $FN tokenDat #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_dat^ADD$h2 %RET
+$STORE_PUB
+
+     $FN isEof       $tokenPlc %NOT %RET
+     $FN assertToken $tokenPlc @E_cNeedToken$L2 $_jmp assert
+$pre $FN assertNoEof @E_eof$L2 $_jmp assert \ {numRead}
+
+$FN scanNoEof  $scan  $_xsl isEof  @E_eof$L2 $_jmp assertNot
+
+$FN peekChr \ {} -> {c} peek at a character
+  $scan   $_xsl isEof $IF  #0$L0 %RET  $END
+  $tokenDat .1%FT \ {c}
+  #0$L0 $tokenPlc %RET \ reset scanner for next scan
+
+$FN readNew \ { -> numRead} clear token buf and read bytes
+  #0$L0 $tokenPlcSet  #0$L0 $tokenLenSet  $read  %RET
+
+\ {&key szInstr szLit instr} compile a literal memory instr.
+\   szLit the size of the literal to compile for the instr.
+$pre $large $FN instrLitImpl
+  @RSIZE$h1 \ 1 slot [szLit:U1 instr:U1]
+  .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
+  .1%SRLL #0$h1 \ var szLit          {&key szInstr}
+  .1%FTLL #1$h1 %JN  $_xsl h1 \ compile (szInstr | instr) {&key}
+  $d_vGet \ {oRef} offset or reference
+  .1%FTLL #0$h1  $_jmp hN \ compile literal of proper instrSz
+
+$pre $FN c_fn \ {&key}: compile a function of any type
+  %DUP $_xsl assertFn \ {&key}
+  %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
+    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
+    $d_vGet  $heap        \ {&heap &inlineFn}
+    %DUP %INC %SWP .1%FT  \ {&heap &inlineFn+1 inlineLen}
+    %DUP #0$L0 $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
+    %DV@D_memMove$h1 %RET \ {&inlineFn}
+  $END
+  %DUP $_xsl xSzI     \ {&key szLit}
+  %OVR $_xsl isFnLarge  $IF @XLL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
+  %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
+  .2%XLL @instrLitImpl$h2 %RET
+
+$FN execute \ {&key} -> {...}: execute a dictionary key
+  %DUP $_xsl isFnInline $IF \ if inline, assert not large and jmp to addr+1
+    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
+    .R%FT %INC .R%JMPW
+  $END
+  %DUP $_xsl isFnLarge  $IF .R%FT .R%XLW %RET $END
+  .R%FT .R%JMPW
+
+$FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
+  $scan $tokenPlc #1$L0  %EQ @E_cColon$L2 $_xsl assert \ assert len=1
+  $tokenDat .1%FT #3A$L0 %EQ @E_cColon$L2 $_jmp assert \ assert ":"
+
+$large $FN _xxPre
+  @RSIZE$h1 $_xsl assertNoNow \ locals 0=&key
+  $_xsl colon  #0$L0 $_xsl dictRef  %DUP .R%SRLL#0$h1 \ {&key}
+  \ if fn is (PRE or SYN) and a compFn exists, compile next token.
+  %DUP $_xsl isFnPre %SWP $_xsl isFnSyn %OR .R%FTGL@G_compFn$h2 %AND $IF
+    .R%FTGL@G_compFn$h2 %XLW
+  $END .R%FTLL #0$h1 %RET
+
+\ $syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
+\ $syn $FN jmp
+\   $xx:_xxPre
+\   %DUP
+\   $xx:isFnLarge @E_cXHasL$L2
+\   $xx:assertNot
+\   .R%FT @JMPL2$L1 $_jmp _j2
 
 $assertNoWs
