@@ -58,7 +58,10 @@ void main() {
   WRITE_FIELD(Globals, "G_", logLvlSys, "U1");
   WRITE_FIELD(Globals, "G_", logLvlUsr, "U1");
   WRITE_FIELD(Globals, "G_", metaNext, "U2: next function's meta");
+  WRITE_FIELD(Globals, "G_", localOffset, "U1: current offset of locals");
   WRITE_FIELD(Globals, "G_", compFn, "Ref: function used for compiling");
+  WRITE_FIELD(Globals, "G_", bbaLocal, "BBA: local BBA");
+  WRITE_FIELD(Globals, "G_", dictLocal, "&DNode: local dict");
   WRITE_FIELD(Globals, "G_", bbaPub, "&BBA: current public bba");
   WRITE_FIELD(Globals, "G_", bbaPriv, "&BBA: current private bba");
   WRITE_FIELD(Globals, "G_", srcM, "&FileMethods: src file methods");

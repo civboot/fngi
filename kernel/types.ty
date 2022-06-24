@@ -7,24 +7,30 @@ bitmap Instr [
 
   retz    0x01
   ret     0x02
-  xl      0x84
-  xw      0x85
-  xsl     0x86
-  xsw     0x87
+
+  xsw     0x90
+  xlw     0xA0
+
+  xll     0x84
+  xsl     0x85
 ]
 
 bitmap Meta [
+  type       0x00 0xC0
   const      0x00 0xC0
   fn         0x40 0xC0
   var        0x80 0xC0
   dict       0xC0 0xC0
 
-  fn        0x40 0xC0
-  fnPre     0x60
-  fnLarge   0x50
-  fnNormal  0x40 0x4C
-  fnNow     0x44 0x4C
-  fnSyn     0x48 0x4C
+  fn         0x40 0xC0
+  fnPre      0x60 0xE0
+  fnLarge    0x50 0xD0
+  fnNormal   0x40 0x4C
+  fnNow      0x44 0x4C
+  fnSyn      0x48 0x4C
+  fnInline   0x4C
+
+  local      0x2000
 ]
 
 bitmap Lvl [
@@ -40,47 +46,22 @@ bitmap Lvl [
   crit    0x10  0x5F
 ]
 
-struct WorkingStk [
-  totalLen: Int
-  data: Arr[Int]
-]
-
 struct LogEvent [ lvl: Lvl; msg: Bytes ]
 struct FileEvent [ name: Bytes ]
-
-struct DictEvent [
-  key: Bytes
-  value: Int
-  ref: Int
-  offset: Int
-  meta: Meta
-  isLocal: Int  \ bool
-]
+struct DictEvent [ key: Bytes; ref: Int; m: Meta; v: Int ]
 
 struct ErrEvent [
   code: Int
-  isCaught: Int \ bool
   ep: Int
-  lineNo: Int
+  line: Int
   data: Arr[Int]
-  callStk: Bytes
-  localsStkSz: Bytes
-  localsStk: Bytes
+  cs: Arr[Int]
+  csz: Bytes
+  ls: Bytes
 ]
 
-struct JmpEvent [
-  instr: Int
-  jloc: Int
-  ws: WorkingStk
-  xDepth: Int
-]
-
-struct RetEvent [
-  instr: Int
-  jloc: Int
-  ws: WorkingStk
-  xDepth: Int
-]
+struct JmpEvent [ instr: Int; jloc: Int ]
+struct RetEvent [ instr: Int; jloc: Int ]
 
 enum Event [
   log: LogEvent

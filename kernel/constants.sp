@@ -52,12 +52,17 @@
 #40 #0=I_MEM
 #80 #0=I_JMP
 
+\ # [1.a] Sizes
+#00 #0=SZ1
+#10 #0=SZ2
+#20 #0=SZ4
+
 \ Values put on stack by kernel-compiler
     #0=SZA   \ SZ2 or SZ4 depending on arch
     #0=RSIZE \ 2 or 4 depending on arch
     #0=CODE_HEAP_START \ start of code heap
 
-\ # [1.a] Operations: Special
+\ # [1.b] Operations: Special
 #00 #0=NOP   \ {}  no operation
 #01 #0=RETZ  \ {l} return if zero
 #02 #0=RET   \ {}  return
@@ -69,7 +74,8 @@
 #08 #0=DUPN  \ {l   -> l l==0} DUP then NOT
 #09 #0=DV    \ Device Operation (U1 literal)
 #0A #0=RG    \ {-> v} Register  (U1 literal)
-#0B #0=GR    \ {-> &global}     (U2 literal)
+#0B #0=LR    \ {-> &local}  local reference  (U1 literal)
+#0C #0=GR    \ {-> &global} global reference (U2 literal)
 #0F #0=IEND  \ not actual instr, used in tests.
 
 \ # [1.b] Operations: One Inp -> One Out
@@ -112,12 +118,7 @@
 \ Double-arg extension commands might be:
 \ floating point: add,sub,mul,div,ge,lt
 
-\ # [1.d] Sizes
-#00 #0=SZ1
-#10 #0=SZ2
-#20 #0=SZ4
-
-\ # [1.e] Mem|Store              |Description
+\ # [1.d] Mem|Store              |Description
 #40 #0=FT    \ {addr} -> {value}  |FeTch value from addr
 #41 #0=FTBE  \ {addr} -> {value}  |FeTch value from addr (big endian)
 #42 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
@@ -130,7 +131,7 @@
 #49 #0=SRGL  \ {value} -> {}      |StoRe value at GB + U2 literal offset
 #4A #0=LIT   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
-\ # [1.f] Jmp
+\ # [1.e] Jmp
 \
 \ Jumps can be to either a literal (L) or to an item on the working stack (W).
 \ - XL means "execute large" and is a call to a function with locals.
@@ -156,7 +157,7 @@
 @SZ2@XSL  ^JN   #0=XSL2
 @SZ2@JMPL ^JN   #0=JMPL2
 
-\ # [1.g] Small Literal [0xC0 - 0xFF]
+\ # [1.f] Small Literal [0xC0 - 0xFF]
 #C0 #0=SLIT
 
 \ JZL and JMPL for SZ=1
@@ -221,10 +222,10 @@
 
 #30 #0=SZ_MASK \ size bit mask (for instr and meta)
 
-#0080 #0=C_LOCAL      \ G_cstate AND meta0: store as locals (func and name)
-#0040 #0=C_PUB        \ G_cstate AND meta0: store as public (function data)
 #4000 #0=C_PUB_NAME   \ G_cstate: make next name public
-#2000 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
+#2000 #0=C_LOCAL      \ G_cstate AND meta: store as locals (func and name)
+#1000 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
+#0040 #0=C_PUB        \ G_cstate: store as public (function data)
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
 #C0 #0=META_TY_MASK \ upper three bits determine type
@@ -258,8 +259,8 @@
 \ #80 #0=ZOAB_JOIN \ bitmask: join type
 \ #40 #0=ZOAB_ARR  \ bitmask: arr type
 \ #C0 #0=ZOAB_PTR  \ equality: next 4 bytes are a pointer.
-\ 
-\ \ * [3.c] Log Levels
+
+\ * [3.c] Log Levels
 #10 #0=LOG_USER
 #1F #0=LOG_TRACE
 #17 #0=LOG_DEBUG
@@ -267,8 +268,8 @@
 #11 #0=LOG_WARN
 #10 #0=LOG_CRIT
 
-\ \ Language Level (builtin) Logs
-\ #27 #0=LOG_INSTR
-\ #23 #0=LOG_EXECUTE
-\ #21 #0=LOG_ASM
-\ #20 #0=LOG_COMPILER
+\ Language Level (builtin) Logs
+#27 #0=LOG_INSTR
+#23 #0=LOG_EXECUTE
+#21 #0=LOG_ASM
+#20 #0=LOG_COMPILER

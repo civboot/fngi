@@ -127,7 +127,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
 \ provide local dictionary support, etc.
 \
 \ fn $_xsl <token> / $_jmp <token>: compile an XSL or JMPL to key
-\ fn L1 / L2 / L4 / LA  [U] -> [] : compile 1 / 2 / 4 / ASIZE byte literal.
+\ fn L1 / L2 / L4 / LA  [U] -> [] : compile 1 / 2 / 4 / RSIZE byte literal.
 \ fn xCatch [... &fn]             : execute a large function and catch error.
 \ fn retz  [a]                    : return immediately if not a  (     %RETZ)
 \ fn retif [a]                    : return immediately if a      (%NOT %RETZ)
@@ -208,7 +208,7 @@ $_h @TY_FN=loc \ {meta} $loc <name>: define location
   @SZ4 @LIT  ^JN   $c1 \ compile .4%LIT
   $_jmp h4  \ compile the 4 byte literal
 
-@L2 @L4    @ASIZE #2 ^EQ  $select @_FP=LA \ {UA} comipile ASIZE literal
+@L2 @L4    @RSIZE #2 ^EQ  $select @_FP=LA \ {UA} comipile RSIZE literal
 
 @_FP@TY_FN_INLINE^JN $loc keyMeta \ {&key -> meta} get key's meta.
   #2$h1 %INCA .1%FT %RET \ Note: direct inline function. Two bytes
@@ -402,7 +402,7 @@ $FN szToSzI $PRE \ [sz] -> [SzI] convert sz to szI (instr)
   @E_sz$L2 $_xsl panic
 
 $FN reqAlign $PRE \ {sz -> sz}: get required alignment
-  %DUP @ASIZE$L0 %DEC %LT_U $retif  %DRP @ASIZE$L0 %RET
+  %DUP @RSIZE$L0 %DEC %LT_U $retif  %DRP @RSIZE$L0 %RET
 
 $FN align $LARGE $PRE \ {aptr sz -> aptr}: align aptr with sz bytes
   #1 $h1 \ locals [sz:U1]
@@ -679,7 +679,7 @@ $FN declEnd
 \ fn number <number> -> [value isNum]   : parse next token (parseNumber).
 
 $FN betweenIncl $PRE \ {value a b} -> a <= value <= b
-  $declL b  @SZA@TY_VAR_INPUT^JN  @ASIZE $declVar
+  $declL b  @SZA@TY_VAR_INPUT^JN  @RSIZE $declVar
   $declEnd \ {value a}
   %OVR %SWP \ {value value a}
   \ if (value<a) return FALSE;
@@ -734,7 +734,7 @@ $FN numBase $PRE \ {c -> base} get number base from char
 $FN parseBase \ {i base -> value isNumber}
   $declL i      @SZ1@TY_VAR_INPUT^JN  #1     $declVar
   $declL base   @SZ1@TY_VAR_INPUT^JN  #1     $declVar
-  $declL value  @SZA                  @ASIZE $declVar
+  $declL value  @SZA                  @RSIZE $declVar
   $declEnd
   $GET base #FE$L1 %EQ $IF \ if special 'character' base
       $GET i $SET tokenPlc \ readCharEsc is off END of tokenPlc
@@ -805,7 +805,7 @@ $FN updateCompFn $PRE \ {&newCompFn -> &prevCompFn}
 \ compilation) reduce to.
 $FN single $PRE
   $declL asNow @SZ1 #1     $declVar
-  $declL key   @SZA @ASIZE $declVar $declEnd
+  $declL key   @SZA @RSIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
   %DUP $SET asNow $xx:_compConstant %DUP $SET key %RETZ
   $GET key $xx:isFnPre $IF $GET compFn .R%XLW $END \ recurse for PRE
@@ -825,7 +825,7 @@ $FN (  $SYN%DRP  \ parens ()
   $AGAIN l0
 
 $FN _spor
-  $declL compFn  @SZA  @ASIZE $declVar $declEnd
+  $declL compFn  @SZA  @RSIZE $declVar $declEnd
   @_spor$L2  $xx:updateCompFn $SET compFn \ update compFn and cache
   $xx:scanNoEof
   @D_comp$L0  %DVFT \ compile next token as spor asm
@@ -834,7 +834,7 @@ $FN _spor
 $FN spor $SYN $xx:assertNoNow $xx:_spor %RET \ compile as assembly
 
 $FN now \ used in $ to make next token/s run NOW.
-  $declL compFn  @SZA  @ASIZE $declVar $declEnd
+  $declL compFn  @SZA  @RSIZE $declVar $declEnd
   @now$L2  $xx:updateCompFn $SET compFn \ update compFn and cache
   $xx:scanNoEof
   @TRUE$L0 $xx:single  \ compile next token as NOW
@@ -843,7 +843,7 @@ $FN now \ used in $ to make next token/s run NOW.
 $FN $ $SYN $xx:assertNoNow $xx:now %RET \ make NOW
 
 $FN _comment \ used in \ to make next token ignored (comment)
-  $declL compFn  @SZA  @ASIZE $declVar $declEnd
+  $declL compFn  @SZA  @RSIZE $declVar $declEnd
   @_comment$L2  $xx:updateCompFn $SET compFn
   $xx:scanNoEof
   \ Execute an open paren, else ignore

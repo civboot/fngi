@@ -8,31 +8,33 @@
 //   * 1.a: Panic Handling
 //   * 1.b: Environment Setup
 //
-// * 2: Memory Managers and Data Structures
+// * 2: Communication
+//
+// * 3: Memory Managers and Data Structures
 //   * 2.a: Stacks
 //   * 2.b: BlockAllocator (BA)
 //   * 2.c: BlockBumpArena (BBA)
 //   * 2.d: Slc (slice) Data Structure
 //   * 2.e: Dict Binary Search Tree
 //
-// * 3: Executing Instructions
+// * 4: Executing Instructions
 //   * 3.a: Utilities
 //   * 3.b: Functions
 //   * 3.c: Giant Switch Statement
 //
-// * 4: Source Code
+// * 5: Source Code
 //   * 4.a: Opening and Closing Files
 //   * 4.b: Reading Files
 //
-// * 5: Compiler
+// * 6: Compiler
 //   * 5.a: Scan
 //   * 5.b: Spor Token Functions
 //   * 5.c: Spor Compiler
 //   * 5.d: Compile Constants
 //
-// * 6: Device Operations (DV)
+// * 7: Device Operations (DV)
 //
-// * 7: Main Function and Running Tests
+// * 8: Main Function and Running Tests
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,6 +61,8 @@
   if((E) != __result) eprintf("!!! Assertion failed: 0x%X == 0x%X\n", E, __result); \
   assert((E) == __result); }
 
+#define EXPECTING_ERR   (C_EXPECT_ERR & g->cstate)
+
 // ***********************
 // * 1: Environment and Test Setup
 // This sets up the environment and tests.
@@ -71,10 +75,13 @@
 // fngi code can handle them with D_panic, it is not recommended to do so for
 // any but the most low-level code or for testing purposes.
 
+void dbgErr();
+
 jmp_buf* err_jmp = NULL;
-bool expectingErr = false;
 #define SET_ERR(E)  if(true) { assert(E); cfb->err = E; \
-  if(!expectingErr) { eprintf("!! Hit Error, fn=%s [cline=%u]\n", __func__, __LINE__); } \
+  if(!EXPECTING_ERR) { \
+    eprintf("!! Hit Error, fn=%s [cline=%u]\n", __func__, __LINE__); \
+    dbgErr(); } \
   longjmp(*err_jmp, 1); }
 #define ASSERT_NO_ERR()    assert(!cfb->err)
 #define ASM_ASSERT(C, E)   if(!(C)) { SET_ERR(E); }
@@ -89,6 +96,7 @@ bool expectingErr = false;
 //
 //   Kern | Th | ws data | cs data | csz data | bba.nodes | Globals ... room to grow
 U1        *mem, *memEnd;  // start/end of spor memory
+U1        startingLogLvlSys, startingLogLvlUsr;
 Ref       memSize;
 Kern*     k;    // kernel owned data structures
 Fiber*    cfb;  // current fiber
@@ -139,6 +147,7 @@ void initEnv(U4 blocks) {
   g = asPtr(Globals, BLOCK_SIZE);
   *g = (Globals) {
     .glen = sizeof(Globals), .gcap = BLOCK_SIZE,
+    .logLvlSys = startingLogLvlSys, .logLvlUsr = startingLogLvlUsr,
     .bbaPub = asRef(&k->bbaPub), .bbaPriv = asRef(&k->bbaPriv),
     .src = (File) {
       .buf = (Buf) { .dat = asRef(&g->buf0), .cap = TOKEN_SIZE },
@@ -155,8 +164,9 @@ void initEnv(U4 blocks) {
     .blocks = BLOCK_SIZE * 2, .nodes = CSZ.dat + CSZ.cap,
     .rooti = BLOCK_END,       .cap = blocks - 2,
   };
-  k->bbaPub  = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
-  k->bbaPriv = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
+  k->bbaPub   = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
+  k->bbaPriv  = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
+  g->bbaLocal = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
 }
 
 #define NEW_ENV_BARE(BLOCKS) \
@@ -179,8 +189,8 @@ void initEnv(U4 blocks) {
 #define TEST_END   } ENV_CLEANUP(); }
 
 #define EXPECT_ERR(E, CALL) \
-  err_jmp = &test_err_jmp; expectingErr = true; if(setjmp(test_err_jmp)) \
-  { expectingErr = false; ASSERT_EQ(E, cfb->err); err_jmp = &local_err_jmp; } \
+  err_jmp = &test_err_jmp; g->cstate |= C_EXPECT_ERR; if(setjmp(test_err_jmp)) \
+  { g->cstate &= ~C_EXPECT_ERR; ASSERT_EQ(E, cfb->err); err_jmp = &local_err_jmp; } \
   else { CALL; UNREACH; }
 
 BARE_TEST(testSetErr, 2)
@@ -189,13 +199,107 @@ BARE_TEST(testSetErr, 2)
 TEST_END
 
 // ***********************
-// * 2: Memory Managers and Data Structures
+// * 2: Communication (zoab)
+// Zoa is a structured data format with two types: bytes and arrays.
+//
+// Zoab is a binary format of zoa which has the following protocol.  The first
+// byte of data is:
+//
+//      array
+//  join| length
+//     JALL LLLL
+//
+// * join: if 1, then this segment does not contain all items of the data.
+//   the next segnment has more items (and may itself be a join).
+// * array: if 1, the type is an array of length L. If 0 the type is data
+//   (bytes) of length L. The values themselves be either arrays or data
+//   (bytes).
+// * length: the length of the segment, either in number of array items or
+//   number of data bytes.
+
+U1 outbuf[16];
+U1* START_BYTES = "\x80\x03";
+
+// Start a zoab log entry.
+void zoab_start() { ASM_ASSERT(fwrite(START_BYTES, 1, 2, stdout), E_io); }
+
+void writeOutbuf(U2 len) {
+  U4 out = fwrite(outbuf, 1, len, stdout);
+}
+
+// Write data of length and join bit.
+void zoab_data(U2 len, U1* str, U1 join) {
+  while(true) {
+    if(len <= 63) {
+      if(join) outbuf[0] = ZOAB_JOIN | len;
+      else outbuf[0] = len;
+      writeOutbuf(1);
+      if(len) assert(fwrite(str, 1, len, stdout));
+      return;
+    }
+    // Write a join byte
+    outbuf[0] = ZOAB_JOIN | 63;
+    writeOutbuf(1);
+    assert(fwrite(str, 1, 63, stdout));
+    len -= 63;
+    str += 63;
+  }
+}
+
+// Start an array of length and join bit.
+void zoab_arr(U1 len, U1 join) {
+  if(join) len = ZOAB_ARR | ZOAB_JOIN | len;
+  else len = ZOAB_ARR | len;
+  outbuf[0] = len;
+  writeOutbuf(1);
+}
+
+void zoab_int(U4 value) { // Write an integer (bigendian)
+  // TODO: why start at 8?
+  outbuf[8]  = value >> 24;
+  outbuf[9]  = value >> 16;
+  outbuf[10] = value >> 8;
+  outbuf[11] = value;
+  if      (value <= 0xFF)     zoab_data(1, outbuf+11, false);
+  else if (value <= 0xFFFF)   zoab_data(2, outbuf+10, false);
+  else if (value <= 0xFFFFFF) zoab_data(3, outbuf+9, false);
+  else                        zoab_data(4, outbuf+8, false);
+}
+
+void zoab_stk(Stk* stk) {
+  zoab_arr((stk->cap - stk->sp) / RSIZE, false);
+  for(U2 i = stk->sp; i < stk->cap; i += RSIZE)
+    zoab_int(*asPtr(U4, i));
+}
+
+void zoab_ntStr(U1* str, U1 join) { zoab_data(strlen(str), str, join); }
+void zoab_arrStart(U1 len) { zoab_start(); zoab_arr(len, false); }
+void zoab_enumStart(U1 var) { zoab_arrStart(2); zoab_int(var); }
+void zoab_struct(U1 posArgs) { zoab_arr(posArgs + 1, false); zoab_int(posArgs); }
+
+
+enum EventVar {
+  Ev_log = 0, Ev_file = 1, Ev_dict = 2, Ev_err = 3, Ev_jmp = 4, Ev_ret = 5, };
+
+void zoab_file(U2 len, char* file) {
+  zoab_enumStart(Ev_file); zoab_struct(1); zoab_data(len, file, false);
+}
+
+void zoab_dict(DNode* node) {
+  U1* ckey = asU1(node->ckey);
+  zoab_enumStart(Ev_dict);
+  zoab_struct(4);  zoab_data(*ckey, ckey + 1, /*join=*/ false); // key
+  zoab_int(asRef(node));  zoab_int(node->m);  zoab_int(node->v);
+}
+
+// ***********************
+// * 3: Memory Managers and Data Structures
 // Fngi has a few very simple data structures it uses for managing memory. All
 // of these work successfully on low-level systems such as microcontrollers with
 // zero overhead and no hardware support.
 
 //   *******
-//   * 2.a: Stacks
+//   * 3.a: Stacks
 // Stacks are the core memory manager for operations (via the working stack
 // (WS)) and for executing functions (via the call stack (CS)).
 #define Stk_len(S)       (((S).cap - (S).sp) / RSIZE)
@@ -241,7 +345,7 @@ BARE_TEST(testStk, 2)
 TEST_END
 
 //   *******
-//   * 2.b: BlockAllocator (BA)
+//   * 3.b: BlockAllocator (BA)
 // fngi utilizes 4KiB blocks of memory for many things including storing both
 // the code and dictionary of it's module system. The kernel allocators are
 // extremely lightweight but support dropable modules (and their code) without
@@ -254,7 +358,6 @@ TEST_END
 #define BBA_ba(bba) asPtr(BA, (bba).ba)
 
 void BA_init(BA* ba) {
-  eprint("??? BA_init start\n");
   if(ba->cap == 0) return; ASM_ASSERT(ba->cap < BLOCK_END, E_intern);
   BANode* nodes = asPtr(BANode, ba->nodes);
   ba->rooti = 0;
@@ -264,7 +367,6 @@ void BA_init(BA* ba) {
     previ = i;
   }
   nodes[i - 1].nexti = BLOCK_END;
-  eprint("??? BA_init end\n");
 }
 
 
@@ -401,7 +503,7 @@ TEST_END
 
 
 //   *******
-//   * 2.c: BlockBumpArena (BBA)
+//   * 3.c: BlockBumpArena (BBA)
 // For storing code and dictionary entries which reference code, fngi uses a
 // block bump arena. This "bumps" memory from the top (for aligned) or bottom of
 // a 4k block, but does not allow freeing it. However, the entire arena can be
@@ -453,7 +555,7 @@ BARE_TEST(testBBA, 6)   BA_init(&k->ba);
 TEST_END
 
 //   *******
-//   * 2.d: Slc (slice) Data Structure
+//   * 3.d: Slc (slice) Data Structure
 // One of the core types in fngi is the Slc (slice) and it's child the Buf
 // (buffer). A Slc is simply a reference and a U2 len (length). A Buf adds on a
 // capacity, allowing for the data to grow. Note that a reference to a Buf is
@@ -515,7 +617,7 @@ TEST_END
 
 
 //   *******
-//   * 2.e: Dict Binary Search Tree
+//   * 3.e: Dict Binary Search Tree
 // The dictionary is a basic unbalanced binary search tree with keys of cdata.
 // It contains a U4 value and some metadata necessary for distinguishing between
 // the kinds of values (see kernel/constants.sp).
@@ -586,7 +688,7 @@ BARE_TEST(testDict, 3)
 TEST_END
 
 // ***********************
-// * 3: Executing Instructions
+// * 4: Executing Instructions
 // Fngi's assembly is defined in kernel/constants.sp. These constants are
 // auto-generated into constants.h, which are imported here.
 //
@@ -595,7 +697,7 @@ TEST_END
 #define sectorRef(REF)  ((0xFFFF0000 & cfb->ep) | REF)
 
 //   *******
-//   * 3.a: Utilities
+//   * 4.a: Utilities
 // There are a few utility functions necessary for executing instructions and
 // compiling them in tests.
 
@@ -606,10 +708,8 @@ Loc nameLoc() { // get the location to store names
   if(C_PUB_NAME & g->cstate) return LOC_PUB; else return LOC_PRIV;
 }
 
-Loc codeLoc() { // get the location to store code
-  if(C_LOCAL & g->cstate) return LOC_LOCAL;
-  if(C_PUB   & g->cstate) return LOC_PUB;  else return LOC_PRIV;
-}
+// Location to store code
+Loc codeLoc() { return (C_PUB & g->cstate) ? LOC_PUB : LOC_PRIV; }
 
 DNode* nameDict() { Ref r; switch(nameLoc()) {
     case LOC_LOCAL: r = g->dictLocal; break;  case LOC_PUB: r = g->dictPub; break;
@@ -674,7 +774,6 @@ void srBE(Ref ref, U2 size, U4 value) { // store Big Endian
 
 U4 popLit(U1 size) {
   U4 out = ftBE(cfb->ep, size);
-  eprintf("  ??? poplit: %X  size=%u\n", out, size);
   cfb->ep += size; return out; }
 
 void compileValue(U4 value, U1 sz) {
@@ -712,11 +811,10 @@ BARE_TEST(testUtilities, 3)
 TEST_END
 
 //   *******
-//   * 3.b: Functions
+//   * 4.b: Functions
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
-  eprintf("??? xImpl ep=%X grow=%X, fn=%X\n", cfb->ep, growSz, fn);
   CS_PUSH(cfb->ep);
   CSZ.sp -= 1; *(mem + CSZ.dat + CSZ.sp) = growSz; // push growSz onto csz
   cfb->ep = fn;
@@ -733,12 +831,7 @@ void xlImpl(Ref fn) { // impl for XL*
 }
 
 //   *******
-//   * 3.c: Giant Switch Statement
-//
-// Instructions (which are really just a single byte) are executed inside a
-// giant switch statement. Most instructions modify the working stack and read
-// literal values from the execution pointer. Some can also affect the execution
-// pointerand the call stack.
+//   * Interlude: debug statements
 
 void dbgWs() {
   eprint("WS:");
@@ -747,10 +840,90 @@ void dbgWs() {
   eprint("\n");
 }
 
+U1 dbgSzIToSz(U1 szI) { switch(szI) { 
+  case SZ1: return 1; case SZ2: return 2; case SZ4: return 4;
+  default: return 0; } }
+
+bool dbgMemInvalid(U1 sz, Ref ref) {
+  if (!sz)                 return true;
+  if (ref % RSIZE)         return true;
+  if (ref == 0)            return true;
+  if (ref + sz > topHeap)  return true;
+  return false;
+}
+
+#define Stk_top(STK)  (*asPtr(Ref, (STK).dat + (STK).sp))
+
+static inline bool isExecute(U1 instr) {
+  switch (instr) {
+    case JMPW: case XLW: case XSW: return true; }
+  switch ((~SZ_MASK) & instr) {
+    case JMPL: return SZ1 != (SZ_MASK & instr);
+    case XLL: case XSL: case RET: return true;
+    default: return false; }
+}
+
+void dbgJmp(Instr instr) {
+  U4 jloc = 0;
+  U1 sz;
+
+  switch (instr) {
+    case JMPW: case XLW: case XSW:
+      if (!Stk_len(WS)) return;
+      jloc = Stk_top(WS); sz = sizeof(Ref); break;
+    default:
+      switch ((~SZ_MASK) & instr) {
+        case JMPL: case JZL: case XLL: case XSL:
+          U1 sz = dbgSzIToSz(SZ_MASK & instr);
+          if(dbgMemInvalid(sz, cfb->ep)) break;
+          jloc = ftBE(cfb->ep, sz);
+          if(sz == 2) jloc = sectorRef(jloc);
+          break;
+      }
+  }
+  zoab_arrStart(5); zoab_int(Ev_jmp);
+  zoab_int(instr); zoab_int(jloc);
+  zoab_int(Stk_len(CS));
+}
+
+void dbgInstr(Instr instr) {
+  if(LOG_INSTR == (LOG_INSTR & g->logLvlSys)) {}
+  else if(
+    (LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))
+     && isExecute(instr)) {}
+  else return;
+
+  if (instr == RET || (instr == RETZ && Stk_len(WS) && (Stk_top(WS) == 0))) {
+      zoab_arrStart(4); zoab_int(Ev_ret);
+      zoab_struct(2); zoab_int(instr);
+      if(CS.sp == CS.cap) zoab_int(0); // jloc=0 if empty
+      else zoab_int(Stk_top(CS)); // jloc
+      return;
+  }
+}
+
+void dbgErr() {
+  zoab_enumStart(Ev_err); zoab_struct(7);
+  zoab_int(cfb->err); zoab_int(cfb->ep); zoab_int(line);
+  zoab_arr(0, false); // err data
+  zoab_stk(&CS);
+  zoab_data(CSZ.cap - CSZ.sp, asU1(CSZ.dat), false);
+  zoab_data(LS.cap - LS.sp, asU1(LS.dat), false);
+  fflush(stdout);
+}
+
+//   *******
+//   * 4.c: Giant Switch Statement
+//
+// Instructions (which are really just a single byte) are executed inside a
+// giant switch statement. Most instructions modify the working stack and read
+// literal values from the execution pointer. Some can also affect the execution
+// pointerand the call stack.
+
 static inline void executeDV(U1 dv);
 
 inline static Instr executeInstr(Instr instr) {
-  eprintf("??? executeInstr: %X  ", instr); dbgWs();
+  dbgInstr(instr);
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -775,6 +948,7 @@ inline static Instr executeInstr(Instr instr) {
           default: SET_ERR(E_cReg);
         }
       }
+    case LR: WS_PUSH(LS.sp + popLit(1)); R0
     case GR: WS_PUSH(cfb->gb + popLit(2)); R0
     case INC : WS_PUSH(WS_POP() + 1); R0
     case INC2: WS_PUSH(WS_POP() + 2); R0
@@ -906,7 +1080,7 @@ U2 getPanicHandler() { // find the index of the panic handler
   return 0xFFFF; // not found
 }
 
-bool catchPanic() { // return whether it is caught
+bool catchPanic() { // handle a panic and return whether it is caught
   U2 csDepth = Stk_len(CS);
   U2 handler = getPanicHandler();
   if(0xFFFF == handler) return false; // no handler
@@ -952,7 +1126,6 @@ Ref executeInstrs(U1* instrs) {
 }
 
 BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock(g->bbaPriv);
-  eprint("??? 0\n");
   Ref five  = executeInstrs((U1[]) { SLIT + 2, SLIT + 3, ADD, RET, IEND });    ASSERT_WS(5);
   Ref call5 = executeInstrs((U1[]) { SZ2 + XSL, five >> 8, five, RET, IEND }); ASSERT_WS(5);
   Ref jmp = executeInstrs((U1[])
@@ -964,7 +1137,7 @@ BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock(g->bbaPriv);
 TEST_END
 
 // ***********************
-// * 4: Files
+// * 5: Files
 // Fngi uses a File object for all file operations, including scanning tokens.
 // The design differs from linux in several ways:
 //
@@ -985,7 +1158,7 @@ TEST_END
 // > the more modern `aio.h`, which shares many similarities.
 
 //   *******
-//   * 4.a: Opening and Closing Files
+//   * 5.a: Opening and Closing Files
 #include <fcntl.h>
 #define handleFMethods(METHOD, METHODS, F) \
   if(m) { WS_PUSH(asRef(F)); return xlImpl((METHODS)->METHOD); }
@@ -1041,7 +1214,7 @@ void openUnix(File* f, U1* path) { // Used for tests
 }
 
 //   *******
-//   * 4.b: Reading Files
+//   * 5.b: Reading Files
 
 void F_read(FileMethods* m, File* f) {
   handleFMethods(read, m, f);
@@ -1099,7 +1272,7 @@ TEST_END
 
 
 // ***********************
-// * 5: Compiler
+// * 6: Compiler
 // The fngi scanner is used for both spor and fngi syntax. The entire compiler
 // works by:
 //  1. scanning a single tokens.
@@ -1122,12 +1295,12 @@ Compiler compiler;
 
 DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   if(LOC_PUB == nameLoc()) ASM_ASSERT(LOC_PUB == codeLoc(), E_cState);
-  eprintf("??? dict adding \"%.*s\" remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
-          Tplc, Tdat,
-          _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
-          _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false),
-          (C_PUB | C_PUB_NAME) & g->cstate);
-  // TODO: update both meta bytes.
+  if(LOC_LOCAL == nameLoc()) meta |= C_LOCAL; // mark as a local name
+  // eprintf("??? dict adding meta=%X value=%X \"%.*s\" remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
+  //         meta, value, Tplc, Tdat,
+  //         _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
+  //         _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false),
+  //         (C_PUB | C_PUB_NAME) & g->cstate);
   BBA* bba = nameBBA();  Ref ckey = bump(bba, false, s.len + 1);
   *(mem + ckey) = s.len; // Note: unsafe write, memory already checked.
   _memmove(ckey + 1, s.dat, s.len);
@@ -1142,6 +1315,7 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
     case LOC_PUB:   g->dictPub = r;   break;
     case LOC_PRIV:  g->dictPriv = r;  break; default: assert(false);
   }
+  if(compiler.lastUpdate) zoab_dict(asPtr(DNode, compiler.lastUpdate));
   compiler.lastUpdate = asRef(add);
   g->cstate &= ~C_PUB_NAME;
   return add;
@@ -1149,15 +1323,16 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
 
 DNode* dictGetAny(Slc slc) { // Attempt to retrive DNode from all "base" dicts
   DNode* n;
-  n = asPtrNull(DNode, g->dictPriv); if(!Dict_find(&n, slc) && n) return n;
-  n = asPtrNull(DNode, g->dictPub);  if(!Dict_find(&n, slc) && n) return n;
-  n = asPtrNull(DNode, k->dict);     if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, g->dictLocal); if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, g->dictPriv);  if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, g->dictPub);   if(!Dict_find(&n, slc) && n) return n;
+  n = asPtrNull(DNode, k->dict);      if(!Dict_find(&n, slc) && n) return n;
   // TODO: add "main" lookup
   return NULL;
 }
 
 //   *******
-//   * 5.a: Scan
+//   * 6.a: Scan
 // spor and fngi both use the same token syntax
 
 U1 charToSz(U1 c) {
@@ -1253,7 +1428,7 @@ BARE_TEST(testScan, 3)  BA_init(&k->ba);
 TEST_END
 
 //   *******
-//   * 5.b: Spor Token Functions
+//   * 6.b: Spor Token Functions
 // Each of these handle a single "token" (really single character) case in the
 // spore compiler.
 
@@ -1312,11 +1487,8 @@ void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
 
 void cColon() { // `:`, aka define function
   U2 meta = WS_POP(); scan(SRCM, SRC);
-  eprintf("??? cColon token=%.*s, meta=%X heap=%X\n", Tplc, Tdat, meta, heap);
   DNode* n = dictAddMut(meta, /*value=*/0, Tslc);
-  eprintf("??? n.ckey=%.*s\n", *asPtr(U1, n->ckey), asPtr(U1, n->ckey + 1));
   n->v = heap;
-  eprintf("??? cColon end heap=%X\n", heap);
 }
 
 void cEqual() { // `=`, aka dict set
@@ -1330,15 +1502,11 @@ void cCarrot() { // `^`, aka execute instr
 
 void cDollar() { // `$`, aka execute token
   scan(SRCM, SRC); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
-  eprintf("??? cDollar %.*s n.v=%X\n", Tplc, Tdat, n->v);
-
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m)) {
-    eprint("??? inline\n");
     U1 len = *asU1(n->v);
     memmove(asU1(bump(codeBBA(), false, len)), asU1(n->v + 1), len);
     return;
   }
-  eprint("??? NOT inline\n");
   if(TY_FN_SYN == (TY_FN_TY_MASK & n->m)) WS_PUSH(false); // pass asNow=false
   cfb->ep = retImmediately;
   if(TY_FN_LARGE & n->m) xlImpl(n->v);   // Note: updates ep for compileLoop
@@ -1356,7 +1524,7 @@ SPOR_TEST(testSporBasics, 4)  newBlock(g->bbaPriv);
 TEST_END
 
 //   *******
-//   * 5.c: Spor Compiler
+//   * 6.c: Spor Compiler
 // Yes, these two functions are the entire spor compiler. It is so simple
 // because spor syntax is based on a single character. However, that character
 // (especially '$') can do almost anything since it can run an arbitrary spor
@@ -1391,9 +1559,10 @@ void compileLoop() { // compile source code
 }
 
 //   *******
-//   * 5.d: Compile Constants
+//   * 6.d: Compile Constants
 
 void compileFile(char* s) {
+  zoab_file(strlen(s), s);
   line = 1; openUnix(SRC, s); compileLoop(); ASSERT_NO_ERR();
 }
 
@@ -1411,7 +1580,7 @@ SPOR_TEST(testConstants, 4)
 TEST_END
 
 // ***********************
-// * 6: Device Operations (DV)
+// * 7: Device Operations (DV)
 // Besides instructions for the most basic actions, Device Operations (DV) are
 // the primary mechanism that spor code communicates with hardware. The kernel
 // defines some extremely basic device operations which are sufficient to both:
@@ -1420,7 +1589,6 @@ TEST_END
 //       programming language.
 
 static inline void executeDV(U1 dv) {
-  eprintf("??? executeDV: %X\n", dv);
   switch (dv) {
     case D_assert: { // {l r err} assert l == r
       U4 err = WS_POP(); U4 r = WS_POP(); U4 l = WS_POP();
@@ -1468,14 +1636,14 @@ static inline void executeDV(U1 dv) {
           } else { WS_PUSH(asRef(dictGetAny(Tslc))); } RV
         }
         case D_comp_dAdd: {
-          U2 meta = WS_POP(); dictAddMut(meta, WS_POP(), Tslc); RV
+          U2 meta = WS_POP(); WS_PUSH(asRef(dictAddMut(meta, WS_POP(), Tslc))); RV
         }
         case D_comp_read1: WS_PUSH(readAtLeast(SRCM, SRC, 1)); RV
         case D_comp_readEol: cForwardSlash(SRCM, SRC);  RV
         case D_comp_scan: scan(SRCM, SRC);           RV
         default: SET_ERR(E_dv);
       }
-    } case D_bba: { // method &BBA &BBAMethods
+    } case D_bba: { // method &BBA
       U4 method = WS_POP(); BBA* bba = asPtrNull(BBA, WS_POP());
       if(!bba) bba = codeBBA();
       switch (method) {
@@ -1493,12 +1661,12 @@ static inline void executeDV(U1 dv) {
 }
 
 // ***********************
-// * 7: Main Function and Running Tests
+// * 8: Main Function and Running Tests
 
-void compileKernel() {
+void compileBoot() {
   g->cstate |= C_PUB | C_PUB_NAME; // full public
   newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, IEND});
-  compileFile("kernel/kernel.sp");
+  compileFile("kernel/boot.sp");
 }
 
 void compileStr(const U1* s) {
@@ -1506,7 +1674,7 @@ void compileStr(const U1* s) {
 }
 
 SPOR_TEST(testKernel, 10)
-  compileConstants(); compileKernel();
+  compileConstants(); compileBoot();
   assert(LOC_PUB == codeLoc()); assert(LOC_PRIV == nameLoc());
   Ref r = heap;
   compileStr("#97 $h1"); ASSERT_EQ(0x97, *asU1(r)); ASSERT_EQ(heap, r + 1);
@@ -1528,7 +1696,7 @@ void tests() {
   eprint("# Tests\n");
   // * 1: Environment and Test Setup
   testSetErr();
-  // * 2: Memory Managers and Data Structures
+  // * 3: Memory Managers and Data Structures
   testStk();
   testBANew();
   testAllocFree();
@@ -1536,14 +1704,14 @@ void tests() {
   testBBA();
   testSlc();
   testDict();
-  // * 3: Executing Instructions
+  // * 4: Executing Instructions
   testUtilities();
   testExecuteLoop();
-  // * 4: Files and Source Code
+  // * 5: Files and Source Code
   testReadMock();
   testReadUnix();
   testScan();
-  // * 5: Compiler
+  // * 6: Compiler
   testSporBasics();
   testConstants();
   // * 7: Main Function and Running Tests
@@ -1551,7 +1719,17 @@ void tests() {
   eprint("# Tests DONE\n");
 }
 
-int main() {
+U4 strToHex(U1 len, U1* s) {
+  U4 out = 0; for(U1 i = 0; i < len; i++) { out = (out << 4) + charToHex(s[i]); }
+  return out; }
+
+int main(int argc, char** argv) {
+  if(argc != 4) return 1;
+  U1 runTests        = '0' !=      argv[1][0];
+  startingLogLvlSys  = strToHex(2, argv[2]);
+  startingLogLvlUsr  = strToHex(2, argv[3]);
+  eprintf("sysLog=%X  usrLog=%X\n", startingLogLvlSys, startingLogLvlUsr);
+
   tests();
   return 0;
 }

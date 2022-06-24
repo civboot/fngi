@@ -8,7 +8,6 @@
 #define CS_DEPTH    128
 #define TOKEN_SIZE  128
 
-typedef uint8_t              Bool;
 typedef uint8_t              U1;
 typedef uint16_t             U2;
 typedef uint32_t             U4;

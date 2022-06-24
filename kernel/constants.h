@@ -9,6 +9,9 @@
 
 #define I_MEM                0x40
 #define I_JMP                0x80
+#define SZ1                  0x0
+#define SZ2                  0x10
+#define SZ4                  0x20
 #define NOP                  0x0
 #define RETZ                 0x1
 #define RET                  0x2
@@ -20,7 +23,8 @@
 #define DUPN                 0x8
 #define DV                   0x9
 #define RG                   0xA
-#define GR                   0xB
+#define LR                   0xB
+#define GR                   0xC
 #define IEND                 0xF
 #define INC                  0x10
 #define INC2                 0x11
@@ -50,9 +54,6 @@
 #define MUL                  0x30
 #define DIV_U                0x31
 #define DIV_S                0x32
-#define SZ1                  0x0
-#define SZ2                  0x10
-#define SZ4                  0x20
 #define FT                   0x40
 #define FTBE                 0x41
 #define FTO                  0x42
@@ -102,10 +103,10 @@
 #define T_SYMBOL             0x4
 #define T_WHITE              0x5
 #define SZ_MASK              0x30
-#define C_LOCAL              0x80
-#define C_PUB                0x40
 #define C_PUB_NAME           0x4000
-#define C_EXPECT_ERR         0x2000
+#define C_LOCAL              0x2000
+#define C_EXPECT_ERR         0x1000
+#define C_PUB                0x40
 #define META_TY_MASK         0xC0
 #define TY_CONST             0x0
 #define TY_FN                0x40

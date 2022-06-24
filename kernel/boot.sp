@@ -1,9 +1,8 @@
-\ The fngi kernel.
+\ Bootstrapping fngi.
 \
 \ Included by kernel: constants.sp, errors.sp, globals.sp
 \
-\ This file bootstraps spor from a few constants and the native (i.e. C)
-\ implementation into a more full-featured language with helpful macros.
+\ This file bootstraps fngi from spor assembly implemented natively (i.e. in C).
 \
 \ # Table of Contents
 \ Search for these headings to find information
@@ -15,7 +14,6 @@
 \ [5] globals and locals
 \ [6] Zoa strings and logging zoab
 \ [7] Fngi compile loop
-
 
 \ **********
 \ * [1] Core functions and macros
@@ -40,8 +38,8 @@
 \   fn L1 [U1] -> []                : compile a 1 byte literal [#0 - #FF]
 \   fn L2 [U1] -> []                : compile a 2 byte literal [#0 - #FFFF]
 \   fn scan     [<token>]           : scan the next token in src
-\   fn $dictRef [<token> -> &DNode] : get node of token.
-\   fn $dictAdd [<token> v m2]      : set dict@token
+\   fn $dictRef [<token> &r -> &n]  : get node of token, root can be null.
+\   fn $dictAdd [<token> v m2 -> &D]: set dict@token
 \
 \ Inline functions:
 \   fn xCatch [... &fn]       : execute a large function and catch error.
@@ -124,14 +122,13 @@ $pub@_FP :L2   \ {U1} compile a 2 byte literal (unchecked)
 $STORE_PRIV
 @_FP :answer2 #42$L1 #4242$L2 %RET
 $answer2  #4242 $tAssertEq  #42 $tAssertEq
-$STORE_PUB   $assertNoWs
 
+$STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @D_comp_last$L0 %DV@D_comp$h1 %RET
 @_FP@TY_FN_INLINE^JN :scan      #3$h1 @D_comp_scan$L0 %DV@D_comp$h1 %RET
 
-\ {&root -> &DNode} root can be null
-@_FP :dictRef   $scan @D_comp_dGet$L0 %DV@D_comp$h1 %RET
-@_FP :dictAdd   $scan @D_comp_dAdd$L0 %DV@D_comp$h1 %RET \ {m v &root} root can be null
+@_FP :dictRef   $scan @D_comp_dGet$L0 %DV@D_comp$h1 %RET \ {&root -> &DNode}
+@_FP :dictAdd   $scan @D_comp_dAdd$L0 %DV@D_comp$h1 %RET \ {m v -> &D}
 
 $STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m$h1 %RET \ {&DNode -> m}
@@ -143,13 +140,15 @@ $STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP :assertDictV \ {<token> v} assert the value of token
   #0$L0 .2%XSL@dictRef, $d_vGet .2%JMPL@tAssertEq,
 
-#42 #0 $dictAdd answerV       #42 $assertDictV answerV
+#42 #0 $dictAdd answerV   ^DRP    #42 $assertDictV answerV
 
 $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :catch   #2$h1 %DV@D_catch$h1 %RET
 @_FP@TY_FN_INLINE^JN :retz    #1$h1          %RETZ %RET
 @_FP@TY_FN_INLINE^JN :reteq   #2$h1     %NEQ %RETZ %RET
 @_FP@TY_FN_INLINE^JN :retif   #2$h1     %NOT %RETZ %RET
+@_FP@TY_FN_INLINE^JN :gt_u    #2$h1     %SWP %LT_U %RET
+@_FP@TY_FN_INLINE^JN :le_u    #2$h1     %SWP %GE_U %RET
 
 \ * [2] Spor syntax
 \ These are core spor syntax helpers, many of which will also be used to
@@ -184,6 +183,7 @@ $STORE_PRIV
 
 \ These take {&DNode} and return or assert information about it
 $STORE_PUB      $assertNoWs
+@_FP :isTyLocal   $d_mGet  @C_LOCAL$L2 %MSK  %RET
 @_FP :isTyConst   $d_mGet  @META_TY_MASK$L1 %MSK  @TY_CONST$L1 %EQ %RET
 @_FP :isTyFn      $d_mGet  @META_TY_MASK$L1 %MSK  @TY_FN$L1  %EQ %RET
 @_FP :isFnLarge   $d_mGet  @TY_FN_LARGE$L1 %MSK %RET
@@ -226,8 +226,8 @@ $pub @TY_FN@TY_FN_SYN^JN :inline @TY_FN_INLINE$L1 $_jmp _implFnTy
 
 \ example: $syn $large $FN <token>: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN :FN   $_xsl assertNoNow \ {}
-  #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd
-  $heap $dnodeLast $d_vSet \ dnodeLast.v = heap
+  #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
+  $heap %SWP $d_vSet \ dnodeLast.v = heap
   #0$L0 .2%SRGL@G_metaNext$h2 \ clear metaNext
   $_jmp assertNoWs
 $assertNoWs
@@ -240,9 +240,10 @@ $pre $FN isFnNow     $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
 $pre $FN isFnSyn     $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
 $pre $FN isFnInline  $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
 $pre $FN isTyVar     $d_mGet  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
-$pre $FN assertTyVar $_xsl isTyVar  @E_cNotLocal$L2 $_jmp assert
+$pre $FN assertTyVar $_xsl isTyVar  @E_cNotVar$L2 $_jmp assert
 
-$tDictRef assert  ^DUP $isFnPre $tAssert $isFnNormal $tAssert
+$tDictRef assert    ^DUP $isFnPre $tAssert $isFnNormal $tAssert
+$tDictRef assertEq  $isFnInline $tAssert
 
 $pub $pre $FN panic   #0$L0 $_jmp assert \ {err} panic immediately
 $pub      $FN unreach @E_unreach$L2 $_jmp panic \ unreachable code
@@ -269,7 +270,7 @@ $FN assertJmpL1 #80$L1 %LT_U @E_cJmpL1$L2 $_jmp assert \ {&jmpTo} assert valid
 $FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
 $FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
 $FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ see dictRef
-$FN ldictAdd $_xsl storeLocal #0$L0 $_xsl dictAdd $_jmp storeNonLocal \ see dictAdd
+$FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ see dictAdd
 
 $pub $pre $syn $FN IF $_xsl assertNoNow \ {} -> {&jmpTo} : start an if block
   @SZ1@JZL^JN $c1 \ compile .1%JZL instr
@@ -289,8 +290,8 @@ $syn $FN ELSE $_xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   %DUP $_jmp _END \ end of IF block (beginning of ELSE)
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
-     $syn $FN LOOP   $_xsl assertNoNow  $heap  #0$L0 $_jmp ldictAdd
-$pre $syn $FN BREAK0 $_xsl IF                  #0$L0 $_jmp ldictAdd
+     $syn $FN LOOP   $_xsl assertNoNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
+$pre $syn $FN BREAK0 $_xsl IF                  #0$L0 $_xsl ldictAdd %DRP %RET
 $syn $FN END_BREAK  $_xsl assertNoNow #0$L0 $_xsl ldictRef $d_vGet %DUP $_jmp _END
 $pre $syn $FN BREAK_IF  @NOT$c1  $_jmp BREAK0 \ break if true
 $pre $syn $FN BREAK_EQ  @NEQ$c1  $_jmp BREAK0 \ break if equal
@@ -341,7 +342,7 @@ $STORE_PUB $assertNoWs
 \ fn assertToken []             : assert there is a token
 \ fn assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
-$pre $FN dnodeSzI $d_mGet @SZ_MASK$L1 %MSK %RET \ {&dnode -> szI}
+$pre $FN keySzI $d_mGet @SZ_MASK$L1 %MSK %RET \ {&dnode -> szI}
 
 $pub $pre $FN szIToSz \ {szI} -> {sz}
   %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
@@ -462,7 +463,7 @@ $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
   $scan $tokenPlc #1$L0  %EQ @E_cColon$L2 $_xsl assert \ assert len=1
   $tokenDat .1%FT #3A$L0 %EQ @E_cColon$L2 $_jmp assert \ assert ":"
 
-$large $FN _xxPre
+$large $FN _xxPre \ { -> &node} prepare for execute or jmp
   @RSIZE$h1 $_xsl assertNoNow \ locals 0=&key
   $_xsl colon  #0$L0 $_xsl dictRef  %DUP .R%SRLL#0$h1 \ {&key}
   \ if fn is (PRE or SYN) and a compFn exists, compile next token.
@@ -470,12 +471,162 @@ $large $FN _xxPre
     .R%FTGL@G_compFn$h2 %XLW
   $END .R%FTLL #0$h1 %RET
 
-\ $syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
-\ $syn $FN jmp
-\   $xx:_xxPre
-\   %DUP
-\   $xx:isFnLarge @E_cXHasL$L2
-\   $xx:assertNot
-\   .R%FT @JMPL2$L1 $_jmp _j2
+$syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
+$syn $FN jmp
+  $xx:_xxPre %DUP $xx:isFnLarge @E_cXHasL$L2 $xx:assertNot
+  $d_vGet @JMPL2$L1 $_jmp _j2
 
-$assertNoWs
+\ **********
+\ * [9] Globals and Locals
+\ We need a way to define global and local variables, as well as GET, SET and
+\ obtain a REF to them.
+\
+\ fn GET <token>            SYN : compile a FT of token (local or global)
+\ fn SET <token>            SYN : compile a SR of token (local or global)
+\ fn REF <token>            SYN : compile a "get ref" of token
+\ fn declVar                    : declare a local/gloabl variable
+\ fn declEnd                    : end locals declaration
+$STORE_PUB
+
+$FN startLocals
+  %GR@G_bbaLocal$h2 $BBA_drop   #0$L1 .R%SRGL@G_dictLocal$h2 \ drop everything
+  %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L1 .1%SRGL@G_localOffset$h2 %RET
+
+$FN declG #0$L0 %DUP $xx:dictAdd  #0$L0 %RET  \ [<token> -> &key isLocal=false]
+$FN declL #0$L0 %DUP $xx:ldictAdd #1$L0 %RET  \ [<token> -> &key isLocal=true]
+
+$large $pre $FN declVar \ {&Node isLocal meta szBytes} declare a variable
+  \ Locals          0=szBytes     1=meta         2=isLocal
+  @RSIZE^DUP^ADD$h1 .1%SRLL#0$h1  .1%SRLL#1$h1   .1%SRLL#2$h1 \ {&Node}
+  %DUP @TY_VAR$L1  $xx:keyJnMeta \ {&Node} update meta to TY_VAR
+  .1%FTLL#2$h1 $IF \ if(isLocal)
+    %DUP @C_LOCAL$L2 $xx:keyJnMeta \ {&Node} add C_LOCAL to meta
+    .2%FTGL@G_localOffset$h2  .1%FTLL#0$h1  $xx:alignA \ {&Node offsetAligned}
+    %DUP .1%FTLL#0$h1 %ADD .2%SRGL@G_localOffset$h2    \ {..} update localOffset
+  $ELSE
+    .R%FTGL@G_glen$h2       .1%FTLL#0$h1  $xx:alignA \ {&Node gheapAligned}
+    %DUP .1%FTLL#0$h1 %ADD  .R%SRGL @G_glen$h2       \ {..} update gheap
+  $END
+  %OVR .1%FTLL#1$h1 $xx:keyJnMeta \ update Node meta {&Node}
+
+  %SWP $d_vSet %RET \ update Node's value
+
+\ Test that locals are declared with proper alignment
+$startLocals
+$declL a  #0 #2 $declVar         @a #0 $tAssertEq
+$declL b  #0 #1 $declVar         @b #2 $tAssertEq
+$declL c  #0 #4 $declVar         @c #4 $tAssertEq  $startLocals
+
+\ Compile a get or set instruction.
+\ Args:
+\   &key: key to compile.
+\   localInstrSz localInstr: if isFromLocal: use these as the literal sz and instr.
+\   globalInstrSz globalInstr: if NOT isFromLocal: use these as the literal sz and instr.
+$pre $large $FN _getSetImpl
+  @RSIZE^DUP^ADD$h1 \ locals (see below)
+  .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
+  .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
+  \ {&key}
+  %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
+        %DUP $xx:keySzI .1%FTLL#0$h1 .1%FTLL#1$h1      \ local
+  $ELSE %DUP $xx:keySzI .1%FTLL#2$h1 .1%FTLL#3$h1 $END \ global
+  $xx:instrLitImpl %RET
+
+\ (create _xxxImpl for fngi to use)
+$pre $FN _getImpl \ {&key}
+  @SZ1$L1  @FTLL$L1  \ local {sz, instr}
+  @SZ2$L1  @FTGL$L1  \ global {sz, instr}
+  $xx:_getSetImpl %RET
+
+$pre $FN _setImpl \ {&key}
+  @SZ1$L1  @SRLL$L1  \ local {sz, instr}
+  @SZ2$L1  @SRGL$L1  \ global {sz, instr}
+  $xx:_getSetImpl %RET
+
+$pre $FN _refImpl \ {&key}
+  @SZ1$L1  @LR$L1  \ local {sz, instr}
+  @SZ2$L1  @GR$L1  \ global {sz, instr}
+  $xx:_getSetImpl %RET
+
+$FN _getSetSetup \ {asInstant -> &DNode asInstant}
+  #0$L0 $xx:dictRef %DUP $xx:assertTyVar %SWP %RET
+
+$STORE_PRIV
+$syn $FN GET
+  $xx:_getSetSetup \ {&DNode asInstant}
+  $IF %DUP $xx:keySzI %SWP $d_vGet %SWP $jmp:ftSzI $END
+  $jmp:_getImpl
+
+$syn $FN SET
+  $xx:_getSetSetup \ {&DNode asInstant}
+  $IF %DUP $xx:keySzI %SWP $d_vGet %SWP $jmp:srSzI $END
+  $jmp:_setImpl
+
+$syn $FN REF
+  $xx:_getSetSetup $IF $d_vGet %GR#0$h2 %ADD %RET
+  $END                 $jmp:_refImpl
+
+$large $FN testGetSet \ [-> 0x42]
+  @RSIZE$h1 $startLocals $declL a  #0  @RSIZE $declVar
+  #42$L1 $SET a $GET a %RET
+$testGetSet #42 $tAssertEq
+
+$STORE_PUB $assertNoWs
+
+\ \ How to compile local inputs:
+\ \ Compile (i.e. write to local stack) inputs in the reverse order they were
+\ \ declared. Since each input increments the local offset, this means we need to
+\ \ compile the largest offset first, then largest less than that, etc. The last
+\ \ offset will always be 0.
+\ \
+\ \ We walk the entire locals BST for every input. We are really not worried
+\ \ about the fact that this has bad time complexity O(L * I), since there can
+\ \ only be ~8 inputs and 8 more locals -- meaning this is bounded to be
+\ \ guaranateed fast.
+\ \
+\ \ struct Context [   \ This is the struct shape for &Context
+\ \   current: &Node,  \ The current node with value < maxAllowed
+\ \   maxAllowed: U1,  \ the maximum value allowed
+\ \ ]
+\ 
+\ \ TODO: I need a "start locals" which drops the previous locals. Also, I can
+\ \ start using non-input locals right now!
+\ 
+\ \ {&context &Node &fn[&context &Node]]
+\ \ Walk the BST, calling fn on each node
+\ $pub $large $FN bstWalk
+\   @RSIZE@RSIZE^ADD$h1 .R%SRLL#0$h1 %DUP .R%SRLL@RSIZE$h1 \ locals 0=&fn R=&Node
+\   %NOT $IF %DRP %RET $END \ {&context} if(not &Node) ret;
+\   %DUP .R%FTLL@RSIZE$h1 .R%FTLL#0$h1 %XLW \\ execute fn(&context &Node)
+\ 
+\   \\ execute bstWalk(&context, &Node.left, &fn), then right
+\   %DUP .R%FTLL@RSIZE$h1  .R%FTO@DN_l$h1   .R%FTLL#0$h1  $xx:bstWalk
+\        .R%FTLL@RSIZE$h1  .R%FTO@DN_r$h1   .R%FTLL#0$h1  $xx:bstWalk  %RET
+\ 
+\ $STORE_PRIV
+\ $inline $FN DN_offset #4$h1 .R%FTO@DN_v$h1 #FF$L1 %MSK %RET \ [&Node -> offset]
+\ $STORE_PUB $assertNoWs
+\ 
+\ $large $FN _walker \ [&context &Node]
+\   @RSIZE$h1 .R%SRLL#0$h1   \ locals 0=&Node  {&context}
+\   %DUP .1%FTO@RSIZE$h1     \ {&context maxAllowed}
+\   .R%FTLL#0$h1 $DN_offset  \ {&context maxAllowed offset}
+\   $le_u $IF %DRP %RET $END \ if(maxAllowed <= offset) (drp; ret;) {&context}
+\   \ if(not context.node)       ( ._\context.node = &Node; ret; )
+\   %DUP .R%FTO#0$h1 %NOT $IF  .R%FTLL#0$h1  %SWP  %SRO#0$h1 %RET  $END
+\ 
+\   %DUP .R%FTO#0$h1 $DN_offset   .R%FTLL#0$h1 $DN_offset \ {&context curMaxOffset offset}
+\   \ if (curMaxOffset < offset) ( ._\context.current = node; ret; )
+\   %LT_U $IF                  .R%FTLL#0$h1  %SWP  %SRO#0$h1 %RET  $END
+\   %DRP %RET
+\ 
+\ \ $large $FN compileInputs
+\ \   @RSIZE@RSIZE^ADD$h1 \ locals 0=Context (NOT REF)
+\ \   #0$L0 .R%SRLL#0$h1  #FF$L1 .1%SRLL@RSIZE$h1 \ context = {.current = NULL, .maxAllowed=0xFF}
+\ \   $LOOP l0
+\ \     .1%FTLL@RSIZE$h1 %RETZ \ retz (context.maxAllowed)
+\ \     %LR#0$h1 \ {&context}
+\ \ 
+\ \   $AGAIN l0
+
+$STORE_PUB $assertNoWs

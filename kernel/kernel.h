@@ -2,7 +2,7 @@
 #define __KERNEL_H
 #include <stdint.h>
 #include "constants.h"
-#include "../linux/types.h" // TODO: support more than just linux
+#include "types.h"
 
 typedef U2 FErr;
 
@@ -100,8 +100,9 @@ typedef struct {
   U1 logLvlSys;
   U1 logLvlUsr;
   U2 metaNext; // meta of next fn
-  U2 _unused;
-  Ref compFn;
+  U1 localOffset;
+  U1 _unused;
+  Ref compFn; // current function being compiled
   BBA bbaLocal;  Ref dictLocal;
   Ref bbaPub;    Ref dictPub;
   Ref bbaPriv;   Ref dictPriv;

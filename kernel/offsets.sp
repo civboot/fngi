@@ -23,7 +23,10 @@
 #0A   #0=G_logLvlSys           \ U1
 #0B   #0=G_logLvlUsr           \ U1
 #0C   #0=G_metaNext            \ U2: next function's meta
+#0E   #0=G_localOffset         \ U1: current offset of locals
 #10   #0=G_compFn              \ Ref: function used for compiling
+#14   #0=G_bbaLocal            \ BBA: local BBA
+#20   #0=G_dictLocal           \ &DNode: local dict
 #24   #0=G_bbaPub              \ &BBA: current public bba
 #2C   #0=G_bbaPriv             \ &BBA: current private bba
 #34   #0=G_srcM                \ &FileMethods: src file methods
