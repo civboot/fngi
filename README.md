@@ -81,7 +81,7 @@ fngi.
 The current command I use to run/test is:
 
 ```
-$ python3 etc/make.py
+$ python3 etc/make.py --build --test
 ```
 
 ## Contributing
