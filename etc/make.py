@@ -188,13 +188,14 @@ LVL = {0x1F: 'trace', 0x17: 'debug', 0x13: 'info', 0x11: 'warn', 0x10: 'crit'}
 
 @dataclass
 class FnEntry:
-  d: DictEvent
+  ev: DictEvent
   loffsets: Dict[int, DictEvent]
 
 @dataclass
 class FngiEnv:
   """A Map of the Fngi env from trace logs."""
   dicts: dict
+  fns: dict
   glbls: dict
   codes: dict
   uncaughtErr: "ErrEvent" = None
@@ -213,7 +214,7 @@ def findErrorCodes(glbls):
 def orderFns(dicts):
   fns = []
   for f in dicts.values():
-    if isinstance(f, FnEntry): f = f.d
+    if isinstance(f, FnEntry): f = f.ev
     if f.m.is_fn(): fns.append(f)
 
   fns.sort(key=lambda f: f.v)
@@ -270,7 +271,7 @@ def printCallStack(callStk):
       loc = f"{item.ep - item.fn.v:>5} bytes"
       if item.fnNext:
         p = (item.ep - item.fn.v) / (item.fnNext.v - item.fn.v)
-        loc = loc + f" ({100 * p:>3}%) into"
+        loc = loc + f" ({100 * p:>.3}%) into"
       else: loc += "        into"
 
     if i == 0: print("    Failure      ", end="")
@@ -306,6 +307,7 @@ def handleDictEvent(env, ev):
       # This allows us to track the local values as we recieve them.
       value = FnEntry(ev, {})
       env.currentFn = value
+      env.fns[ev.v] = value
   env.dicts[ev.ref] = value
 
 
@@ -334,6 +336,13 @@ def handleErrEvent(env, ev):
   # print("\nAll fns:")
   # for fn in fns: print(f"  {fn.v:04X}: {nice(fn.key)}")
 
+def handleExecuteEvent(env, ev):
+  out = ["+ " * ev.depth]
+
+  name = env.fns[ev.jloc].ev.key if ev.jloc in env.fns else '???'
+  out.append(f"[{ev.instr:<2X} @{ev.jloc:<4X} {name}")
+  print(''.join(out))
+
 def inputs_stream(env, io):
   while True:
     waitForStart(io)
@@ -355,6 +364,7 @@ def _eventReader(env, io):
       else: print(f"{LVL[ev.log.lvl.value]}: {nice(ev.log.msg)}")
     elif ev.dict: handleDictEvent(env, ev.dict);
     elif ev.err: handleErrEvent(env, ev.err);
+    elif ev.jmp: handleExecuteEvent(env, ev.jmp);
     elif ev.file: env.file = ev.file
     else: raise ValueError(ev)
 
@@ -416,7 +426,8 @@ def main(args):
 
   glbls = dict(all_constants())
   env = FngiEnv(
-    dicts = collections.defaultdict(dict),
+      dicts = {},
+    fns = {},
     glbls = glbls,
     codes = findErrorCodes(glbls),
     instrLookup = {

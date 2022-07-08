@@ -43,7 +43,7 @@
 \
 \ Inline functions:
 \   fn xCatch [... &fn]       : execute a large function and catch error.
-\   fn retz  [a]              : return immediately if not a  (     %RETZ)
+\   fn retIfNot  [a]          : return immediately if not a  (     %RETZ)
 \   fn retif [a]              : return immediately if a      (%NOT %RETZ)
 \   fn reteq [a b]            : return immediately if a == b (%NEQ %RETZ)
 
@@ -124,6 +124,7 @@ $STORE_PRIV
 $answer2  #4242 $tAssertEq  #42 $tAssertEq
 
 $STORE_PUB   $assertNoWs
+@_FP@TY_FN_INLINE^JN :dv_log    #2$h1 %DV@D_log$h1 %RET
 @_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @D_comp_last$L0 %DV@D_comp$h1 %RET
 @_FP@TY_FN_INLINE^JN :scan      #3$h1 @D_comp_scan$L0 %DV@D_comp$h1 %RET
 
@@ -143,12 +144,14 @@ $STORE_PRIV       $NEW_BLOCK_PRIV
 #42 #0 $dictAdd answerV   ^DRP    #42 $assertDictV answerV
 
 $STORE_PUB   $assertNoWs
-@_FP@TY_FN_INLINE^JN :catch   #2$h1 %DV@D_catch$h1 %RET
-@_FP@TY_FN_INLINE^JN :retz    #1$h1          %RETZ %RET
-@_FP@TY_FN_INLINE^JN :reteq   #2$h1     %NEQ %RETZ %RET
-@_FP@TY_FN_INLINE^JN :retif   #2$h1     %NOT %RETZ %RET
-@_FP@TY_FN_INLINE^JN :gt_u    #2$h1     %SWP %LT_U %RET
-@_FP@TY_FN_INLINE^JN :le_u    #2$h1     %SWP %GE_U %RET
+@_FP@TY_FN_INLINE^JN :catch     #2$h1 %DV@D_catch$h1 %RET
+@_FP@TY_FN_INLINE^JN :retIfNot  #1$h1           %RETZ %RET
+@_FP@TY_FN_INLINE^JN :reteq     #2$h1     %NEQ  %RETZ %RET
+@_FP@TY_FN_INLINE^JN :retif     #2$h1     %NOT  %RETZ %RET
+@_FP@TY_FN_INLINE^JN :retLe     #2$h1     %GE_U %RETZ %RET
+@_FP@TY_FN_INLINE^JN :retGt     #2$h1     %LT_U %RETZ %RET
+@_FP@TY_FN_INLINE^JN :gt_u      #2$h1     %SWP %LT_U %RET
+@_FP@TY_FN_INLINE^JN :le_u      #2$h1     %SWP %GE_U %RET
 
 \ * [2] Spor syntax
 \ These are core spor syntax helpers, many of which will also be used to
@@ -269,8 +272,8 @@ $FN assertJmpL1 #80$L1 %LT_U @E_cJmpL1$L2 $_jmp assert \ {&jmpTo} assert valid
 \ Switch to non/local storage
 $FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
 $FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
-$FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ see dictRef
-$FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ see dictAdd
+$FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
+$FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v}
 
 $pub $pre $syn $FN IF $_xsl assertNoNow \ {} -> {&jmpTo} : start an if block
   @SZ1@JZL^JN $c1 \ compile .1%JZL instr
@@ -298,9 +301,8 @@ $pre $syn $FN BREAK_EQ  @NEQ$c1  $_jmp BREAK0 \ break if equal
 $pre $syn $FN BREAK_NEQ @EQ$c1   $_jmp BREAK0 \ break if not equal
 
 $syn $FN AGAIN $_xsl assertNoNow
-  @JMPL $c1  \ {} compile jmp
-  $heap #0$L0 $_xsl ldictRef $d_vGet  \ {heap &loopTo}
-  %SUB %DUP  $_xsl assertJmpL1  \ {heap-&loopTo}
+  @JMPL$c1  \ {} compile jmp
+  $heap $_xsl ldictRef $d_vGet  %SUB %DUP  $_xsl assertJmpL1 \ {heap-&loopTo}
   %NEG $_jmp h1  \ compile negative backwards jump to jmp offset
 
 $STORE_PRIV
@@ -327,7 +329,7 @@ $STORE_PUB $assertNoWs
 \ fn align [aptr sz -> aptr]      : align aptr with sz bytes
 \ fn align4 [aptr -> aptr]        : align aptr with 4 bytes
 \ fn alignSzI [aptr szI -> aptr]  : align aptr with szI bytes
-\ fn hN [U4 szI]                  : write a value of szI to heap (no align)
+\ fn heapSzI [U4 szI]             : write a value of szI to heap (no align)
 \ fn szToSzI [U4 -> SzI]          : convert number of bytes to SzI
 \ fn szIToSz [SzI -> U1]          : convert szI to number of bytes
 \
@@ -342,28 +344,34 @@ $STORE_PUB $assertNoWs
 \ fn assertToken []             : assert there is a token
 \ fn assertNoEof [numRead]      : assert that numRead > 0 (E_eof)
 
-$pre $FN keySzI $d_mGet @SZ_MASK$L1 %MSK %RET \ {&dnode -> szI}
+$pre $FN L4   @SZ4@LIT^JN $c1  $_jmp h4
+$pre $FN L \ {v} compile literal of appropriate size
+  %DUP #40$L1        %LT_U $IF  $_jmp L0  $END
+  %DUP #100$L2       %LT_U $IF  $_jmp L1  $END
+  %DUP #FFFF$L2 %INC %LT_U $IF  $_jmp L2  $END   $_jmp L4
+
+$pre $FN keySzI $d_mGet @SZ_MASK$L %MSK %RET \ {&dnode -> szI}
 
 $pub $pre $FN szIToSz \ {szI} -> {sz}
-  %DUP @SZ1$L1 %EQ $IF  %DRP #1$L0 %RET  $END
-  %DUP @SZ2$L1 %EQ $IF  %DRP #2$L0 %RET  $END
-       @SZ4$L1 %EQ $IF       #4$L0 %RET  $END
+  %DUP @SZ1$L %EQ $IF  %DRP #1$L %RET  $END
+  %DUP @SZ2$L %EQ $IF  %DRP #2$L %RET  $END
+       @SZ4$L %EQ $IF       #4$L %RET  $END
   @E_sz$L2 $_jmp panic
 
-$pub $pre $FN hN \ {value szI} write a value of szI to heap
-  %DUP @SZ1$L1 %EQ $IF  %DRP $_jmp h1  $END
-  %DUP @SZ2$L1 %EQ $IF  %DRP $_jmp h2  $END
-  %DUP @SZ4$L1 %EQ $IF  %DRP $_jmp h4  $END
+$pub $pre $FN heapSzI \ {value szI} write a value of szI to heap
+  %DUP @SZ1$L %EQ $IF  %DRP $_jmp h1  $END
+  %DUP @SZ2$L %EQ $IF  %DRP $_jmp h2  $END
+  %DUP @SZ4$L %EQ $IF  %DRP $_jmp h4  $END
   @E_sz$L2 $_jmp panic
 
 $pub $pre $FN szToSzI \ [sz] -> [SzI] convert sz to szI (instr)
-  %DUP #1$L0 %EQ $IF  %DRP @SZ1 $L1 %RET  $END
-  %DUP #2$L0 %EQ $IF  %DRP @SZ2 $L1 %RET  $END
-       #4$L0 %EQ $IF  %DRP @SZ4 $L1 %RET  $END
+  %DUP #1$L %EQ $IF  %DRP @SZ1 $L %RET  $END
+  %DUP #2$L %EQ $IF  %DRP @SZ2 $L %RET  $END
+       #4$L %EQ $IF  %DRP @SZ4 $L %RET  $END
   @E_sz$L2 $_jmp panic
 
 $pub $pre $FN reqAlign \ {sz -> sz}: get required alignment
-  %DUP @RSIZE^DEC$L0 %LT_U $retif  %DRP @RSIZE$L0 %RET
+  %DUP @RSIZE^DEC$L %LT_U $retif  %DRP @RSIZE$L %RET
 
 $pub $large $pre $FN align \ {aptr sz -> aptr}: align aptr with sz bytes
   @RSIZE$h1 \ locals [sz:U1]
@@ -376,24 +384,24 @@ $pub $large $pre $FN align \ {aptr sz -> aptr}: align aptr with sz bytes
   $END
   %DRP %RET
 
-$pub$pre $FN alignA  $_xsl reqAlign .2%XLL @align$h2 %RET  \ {aptr sz -> aptr}: align to SZA
-$pub$pre $FN align4   #4$L0         .2%XLL @align$h2 %RET  \ {addr -> aligned4Addr}
+$pub$pre $FN alignA  $_xsl reqAlign .2%XLL @align$h2 %RET  \ {aptr sz -> aptr}: align to SZR
+$pub$pre $FN align4   #4$L         .2%XLL @align$h2 %RET  \ {addr -> aligned4Addr}
 $pub     $FN alignSzI $_xsl szIToSz  .2%XLL @align$h2 %RET \ {addr szI -> addrAlignedSzI}
 
 $pre $FN ftSzI \ {&addr szI}
-  %DUP @SZ1$L1 %EQ $IF %DRP .1%FT %RET $END
-  %DUP @SZ2$L1 %EQ $IF %DRP .2%FT %RET $END
-       @SZ4$L1 %EQ $IF      .4%FT %RET $END
+  %DUP @SZ1$L %EQ $IF %DRP .1%FT %RET $END
+  %DUP @SZ2$L %EQ $IF %DRP .2%FT %RET $END
+       @SZ4$L %EQ $IF      .4%FT %RET $END
   @E_sz$L2 $_xsl panic
 
 $pre $FN srSzI \ {value &addr szI}
-  %DUP @SZ1$L1 %EQ $IF %DRP .1%SR %RET $END
-  %DUP @SZ2$L1 %EQ $IF %DRP .2%SR %RET $END
-       @SZ4$L1 %EQ $IF      .4%SR %RET $END
+  %DUP @SZ1$L %EQ $IF %DRP .1%SR %RET $END
+  %DUP @SZ2$L %EQ $IF %DRP .2%SR %RET $END
+       @SZ4$L %EQ $IF      .4%SR %RET $END
   @E_sz$L2 $_xsl panic
 
 $pre $FN xSzI \ {&DNode -> szI}: size requirement of calling DNode
-  $d_vGet $_xsl isCurMod $IF  @SZ2$L1 %RET  $END  @SZA$L1 %RET
+  $d_vGet $_xsl isCurMod $IF  @SZ2$L %RET  $END  @SZR$L %RET
 
 $STORE_PRIV
 #0 $reqAlign  #0 $tAssertEq     #1 $reqAlign  #1 $tAssertEq
@@ -405,7 +413,7 @@ $STORE_PRIV
 #21 #4 $alignA #24 $tAssertEq   #21 #11 $alignA #24 $tAssertEq
 
 \ Inline helper functions for src and token
-$inline $FN read #3$h1 @D_comp_read1$L0 %DV@D_comp$h1 %RET \ { -> numRead}
+$inline $FN read #3$h1 @D_comp_read1$L %DV@D_comp$h1 %RET \ { -> numRead}
 $inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
 $inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
 $inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
@@ -420,22 +428,21 @@ $pre $FN assertNoEof @E_eof$L2 $_jmp assert \ {numRead}
 $FN scanNoEof  $scan  $_xsl isEof  @E_eof$L2 $_jmp assertNot
 
 $FN peekChr \ {} -> {c} peek at a character
-  $scan   $_xsl isEof $IF  #0$L0 %RET  $END
+  $scan   $_xsl isEof $IF  #0$L %RET  $END
   $tokenDat .1%FT \ {c}
-  #0$L0 $tokenPlc %RET \ reset scanner for next scan
+  #0$L $tokenPlc %RET \ reset scanner for next scan
 
 $FN readNew \ { -> numRead} clear token buf and read bytes
-  #0$L0 $tokenPlcSet  #0$L0 $tokenLenSet  $read  %RET
+  #0$L $tokenPlcSet  #0$L $tokenLenSet  $read  %RET
 
-\ {&key szInstr szLit instr} compile a literal memory instr.
+\ {&key instrSzI litSzI instr} compile a literal memory instr.
 \   szLit the size of the literal to compile for the instr.
 $pre $large $FN instrLitImpl
   @RSIZE$h1 \ 1 slot [szLit:U1 instr:U1]
   .1%SRLL #1$h1 \ var instr          {&key szInstr szLit}
   .1%SRLL #0$h1 \ var szLit          {&key szInstr}
-  .1%FTLL #1$h1 %JN  $_xsl h1 \ compile (szInstr | instr) {&key}
-  $d_vGet \ {oRef} offset or reference
-  .1%FTLL #0$h1  $_jmp hN \ compile literal of proper instrSz
+  .1%FTLL #1$h1 %JN  $_xsl h1 \ compile jn(szInstr, instr) {&key}
+  $d_vGet  .1%FTLL#0$h1  $_jmp heapSzI \ compile literal of proper instrSz
 
 $pre $FN c_fn \ {&key}: compile a function of any type
   %DUP $_xsl assertFn \ {&key}
@@ -443,11 +450,11 @@ $pre $FN c_fn \ {&key}: compile a function of any type
     %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
     $d_vGet  $heap        \ {&heap &inlineFn}
     %DUP %INC %SWP .1%FT  \ {&heap &inlineFn+1 inlineLen}
-    %DUP #0$L0 $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
+    %DUP #0$L $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
     %DV@D_memMove$h1 %RET \ {&inlineFn}
   $END
   %DUP $_xsl xSzI     \ {&key szLit}
-  %OVR $_xsl isFnLarge  $IF @XLL$L1 $ELSE @XSL$L1 $END \ {&key instrSzI instr}
+  %OVR $_xsl isFnLarge  $IF @XLL$L $ELSE @XSL$L $END \ {&key instrSzI instr}
   %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
   .2%XLL @instrLitImpl$h2 %RET
 
@@ -460,12 +467,12 @@ $FN execute \ {&key} -> {...}: execute a dictionary key
   .R%FT .R%JMPW
 
 $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
-  $scan $tokenPlc #1$L0  %EQ @E_cColon$L2 $_xsl assert \ assert len=1
-  $tokenDat .1%FT #3A$L0 %EQ @E_cColon$L2 $_jmp assert \ assert ":"
+  $scan $tokenPlc #1$L  %EQ @E_cColon$L2 $_xsl assert \ assert len=1
+  $tokenDat .1%FT #3A$L %EQ @E_cColon$L2 $_jmp assert \ assert ":"
 
 $large $FN _xxPre \ { -> &node} prepare for execute or jmp
   @RSIZE$h1 $_xsl assertNoNow \ locals 0=&key
-  $_xsl colon  #0$L0 $_xsl dictRef  %DUP .R%SRLL#0$h1 \ {&key}
+  $_xsl colon  #0$L $_xsl dictRef  %DUP .R%SRLL#0$h1 \ {&key}
   \ if fn is (PRE or SYN) and a compFn exists, compile next token.
   %DUP $_xsl isFnPre %SWP $_xsl isFnSyn %OR .R%FTGL@G_compFn$h2 %AND $IF
     .R%FTGL@G_compFn$h2 %XLW
@@ -474,7 +481,7 @@ $large $FN _xxPre \ { -> &node} prepare for execute or jmp
 $syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
 $syn $FN jmp
   $xx:_xxPre %DUP $xx:isFnLarge @E_cXHasL$L2 $xx:assertNot
-  $d_vGet @JMPL2$L1 $_jmp _j2
+  $d_vGet @JMPL2$L $_jmp _j2
 
 \ **********
 \ * [9] Globals and Locals
@@ -489,23 +496,30 @@ $syn $FN jmp
 $STORE_PUB
 
 $FN startLocals
-  %GR@G_bbaLocal$h2 $BBA_drop   #0$L1 .R%SRGL@G_dictLocal$h2 \ drop everything
-  %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L1 .1%SRGL@G_localOffset$h2 %RET
+  %GR@G_bbaLocal$h2 $BBA_drop   #0$L .R%SRGL@G_dictLocal$h2 \ drop everything
+  %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L .1%SRGL@G_localOffset$h2 %RET
 
-$FN declG #0$L0 %DUP $xx:dictAdd  #0$L0 %RET  \ [<token> -> &key isLocal=false]
-$FN declL #0$L0 %DUP $xx:ldictAdd #1$L0 %RET  \ [<token> -> &key isLocal=true]
+$FN declG #0$L %DUP $xx:dictAdd  #0$L %RET  \ [<token> -> &key isLocal=false]
+$FN declL #0$L %DUP $xx:ldictAdd #1$L %RET  \ [<token> -> &key isLocal=true]
 
 $large $pre $FN declVar \ {&Node isLocal meta szBytes} declare a variable
   \ Locals          0=szBytes     1=meta         2=isLocal
   @RSIZE^DUP^ADD$h1 .1%SRLL#0$h1  .1%SRLL#1$h1   .1%SRLL#2$h1 \ {&Node}
-  %DUP @TY_VAR$L1  $xx:keyJnMeta \ {&Node} update meta to TY_VAR
+  %DUP @TY_VAR$L  $xx:keyJnMeta \ {&Node} update meta to TY_VAR
+
+  %DUP .1%FTLL#0$h1 @RSIZE$L %GE_U \ {&Node &Node (szBytes > RSIZE)}
+  $IF   @SZR$L
+  $ELSE .1%FTLL#0$h1 $xx:szToSzI $END $xx:keyJnMeta \ {&Node}
+
   .1%FTLL#2$h1 $IF \ if(isLocal)
     %DUP @C_LOCAL$L2 $xx:keyJnMeta \ {&Node} add C_LOCAL to meta
     .2%FTGL@G_localOffset$h2  .1%FTLL#0$h1  $xx:alignA \ {&Node offsetAligned}
     %DUP .1%FTLL#0$h1 %ADD .2%SRGL@G_localOffset$h2    \ {..} update localOffset
+
   $ELSE
     .R%FTGL@G_glen$h2       .1%FTLL#0$h1  $xx:alignA \ {&Node gheapAligned}
     %DUP .1%FTLL#0$h1 %ADD  .R%SRGL @G_glen$h2       \ {..} update gheap
+
   $END
   %OVR .1%FTLL#1$h1 $xx:keyJnMeta \ update Node meta {&Node}
 
@@ -520,13 +534,12 @@ $declL c  #0 #4 $declVar         @c #4 $tAssertEq  $startLocals
 \ Compile a get or set instruction.
 \ Args:
 \   &key: key to compile.
-\   localInstrSz localInstr: if isFromLocal: use these as the literal sz and instr.
-\   globalInstrSz globalInstr: if NOT isFromLocal: use these as the literal sz and instr.
+\   localInstrSz  localInstr:  if isTyLocal: use these as the literal sz and instr.
+\   globalInstrSz globalInstr: if not isTyLocal: use these as the literal sz and instr.
 $pre $large $FN _getSetImpl
   @RSIZE^DUP^ADD$h1 \ locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
-  .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr
-  \ {&key}
+  .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr   {&key}
   %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
         %DUP $xx:keySzI .1%FTLL#0$h1 .1%FTLL#1$h1      \ local
   $ELSE %DUP $xx:keySzI .1%FTLL#2$h1 .1%FTLL#3$h1 $END \ global
@@ -534,99 +547,138 @@ $pre $large $FN _getSetImpl
 
 \ (create _xxxImpl for fngi to use)
 $pre $FN _getImpl \ {&key}
-  @SZ1$L1  @FTLL$L1  \ local {sz, instr}
-  @SZ2$L1  @FTGL$L1  \ global {sz, instr}
+  @SZ1$L  @FTLL$L  \ local  {sz, instr}
+  @SZ2$L  @FTGL$L  \ global {sz, instr}
   $xx:_getSetImpl %RET
 
 $pre $FN _setImpl \ {&key}
-  @SZ1$L1  @SRLL$L1  \ local {sz, instr}
-  @SZ2$L1  @SRGL$L1  \ global {sz, instr}
+  @SZ1$L  @SRLL$L  \ local  {sz, instr}
+  @SZ2$L  @SRGL$L  \ global {sz, instr}
   $xx:_getSetImpl %RET
 
-$pre $FN _refImpl \ {&key}
-  @SZ1$L1  @LR$L1  \ local {sz, instr}
-  @SZ2$L1  @GR$L1  \ global {sz, instr}
-  $xx:_getSetImpl %RET
 
-$FN _getSetSetup \ {asInstant -> &DNode asInstant}
-  #0$L0 $xx:dictRef %DUP $xx:assertTyVar %SWP %RET
+$pre $FN _getSetNow \ {&key -> ref szI}
+  %DUP $xx:keySzI %SWP   \ {szI &key}
+  $d_vGet %GR#0$h1 %ADD \ {szI ref}
+  %SWP %RET
 
 $STORE_PRIV
 $syn $FN GET
-  $xx:_getSetSetup \ {&DNode asInstant}
-  $IF %DUP $xx:keySzI %SWP $d_vGet %SWP $jmp:ftSzI $END
+  #0$L $xx:dictRef %SWP $IF $xx:_getSetNow $jmp:ftSzI $END
   $jmp:_getImpl
 
 $syn $FN SET
-  $xx:_getSetSetup \ {&DNode asInstant}
-  $IF %DUP $xx:keySzI %SWP $d_vGet %SWP $jmp:srSzI $END
+  #0$L $xx:dictRef %SWP $IF $xx:_getSetNow $jmp:srSzI $END
   $jmp:_setImpl
 
 $syn $FN REF
-  $xx:_getSetSetup $IF $d_vGet %GR#0$h2 %ADD %RET
-  $END                 $jmp:_refImpl
+  #0$L $xx:dictRef %SWP $IF $d_vGet %GR#0$h2 %ADD %RET $END
+  %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
+          #0$L @SZ1$L @LR$L
+  $ELSE   #0$L @SZ2$L @GR$L $END
+  $xx:instrLitImpl %RET
 
-$large $FN testGetSet \ [-> 0x42]
+$large $FN testSetRefGet \ [-> 0x42 0x42]
   @RSIZE$h1 $startLocals $declL a  #0  @RSIZE $declVar
-  #42$L1 $SET a $GET a %RET
-$testGetSet #42 $tAssertEq
+  #42$L  $SET a   $REF a .R%FT   $GET a  %RET
+$testSetRefGet  #42 $tAssertEq  #42 $tAssertEq
 
 $STORE_PUB $assertNoWs
 
-\ \ How to compile local inputs:
-\ \ Compile (i.e. write to local stack) inputs in the reverse order they were
-\ \ declared. Since each input increments the local offset, this means we need to
-\ \ compile the largest offset first, then largest less than that, etc. The last
-\ \ offset will always be 0.
-\ \
-\ \ We walk the entire locals BST for every input. We are really not worried
-\ \ about the fact that this has bad time complexity O(L * I), since there can
-\ \ only be ~8 inputs and 8 more locals -- meaning this is bounded to be
-\ \ guaranateed fast.
-\ \
-\ \ struct Context [   \ This is the struct shape for &Context
-\ \   current: &Node,  \ The current node with value < maxAllowed
-\ \   maxAllowed: U1,  \ the maximum value allowed
-\ \ ]
-\ 
-\ \ TODO: I need a "start locals" which drops the previous locals. Also, I can
-\ \ start using non-input locals right now!
-\ 
-\ \ {&context &Node &fn[&context &Node]]
-\ \ Walk the BST, calling fn on each node
-\ $pub $large $FN bstWalk
-\   @RSIZE@RSIZE^ADD$h1 .R%SRLL#0$h1 %DUP .R%SRLL@RSIZE$h1 \ locals 0=&fn R=&Node
-\   %NOT $IF %DRP %RET $END \ {&context} if(not &Node) ret;
-\   %DUP .R%FTLL@RSIZE$h1 .R%FTLL#0$h1 %XLW \\ execute fn(&context &Node)
-\ 
-\   \\ execute bstWalk(&context, &Node.left, &fn), then right
-\   %DUP .R%FTLL@RSIZE$h1  .R%FTO@DN_l$h1   .R%FTLL#0$h1  $xx:bstWalk
-\        .R%FTLL@RSIZE$h1  .R%FTO@DN_r$h1   .R%FTLL#0$h1  $xx:bstWalk  %RET
-\ 
-\ $STORE_PRIV
-\ $inline $FN DN_offset #4$h1 .R%FTO@DN_v$h1 #FF$L1 %MSK %RET \ [&Node -> offset]
-\ $STORE_PUB $assertNoWs
-\ 
-\ $large $FN _walker \ [&context &Node]
-\   @RSIZE$h1 .R%SRLL#0$h1   \ locals 0=&Node  {&context}
-\   %DUP .1%FTO@RSIZE$h1     \ {&context maxAllowed}
-\   .R%FTLL#0$h1 $DN_offset  \ {&context maxAllowed offset}
-\   $le_u $IF %DRP %RET $END \ if(maxAllowed <= offset) (drp; ret;) {&context}
-\   \ if(not context.node)       ( ._\context.node = &Node; ret; )
-\   %DUP .R%FTO#0$h1 %NOT $IF  .R%FTLL#0$h1  %SWP  %SRO#0$h1 %RET  $END
-\ 
-\   %DUP .R%FTO#0$h1 $DN_offset   .R%FTLL#0$h1 $DN_offset \ {&context curMaxOffset offset}
-\   \ if (curMaxOffset < offset) ( ._\context.current = node; ret; )
-\   %LT_U $IF                  .R%FTLL#0$h1  %SWP  %SRO#0$h1 %RET  $END
-\   %DRP %RET
-\ 
-\ \ $large $FN compileInputs
-\ \   @RSIZE@RSIZE^ADD$h1 \ locals 0=Context (NOT REF)
-\ \   #0$L0 .R%SRLL#0$h1  #FF$L1 .1%SRLL@RSIZE$h1 \ context = {.current = NULL, .maxAllowed=0xFF}
-\ \   $LOOP l0
-\ \     .1%FTLL@RSIZE$h1 %RETZ \ retz (context.maxAllowed)
-\ \     %LR#0$h1 \ {&context}
-\ \ 
-\ \   $AGAIN l0
+\ How to compile local inputs:
+\ Compile (i.e. write to local stack) inputs in the reverse order they were
+\ declared. Since each input increments the local offset, this means we need to
+\ compile the largest offset first, then largest less than that, etc. The last
+\ offset will always be 0.
+\
+\ We walk the entire locals BST for every input. We are really not worried
+\ about the fact that this has bad time complexity O(L * I), since there can
+\ only be ~8 inputs and 8 more locals -- meaning this is bounded to be
+\ guaranateed fast.
+\
+\ struct Context [   \ This is the struct shape for &Context
+\   node: &Node,  \ The current node with value < maxAllowed
+\   max: U1,      \ the maximum value allowed
+\ ]
+
+$STORE_PRIV
+$inline $FN Ctx_node    #2$h1 .R%FTO#0$h1     \ [&Context -> &Node]
+$inline $FN Ctx_nodeSet #2$h1 .R%SRO#0$h1     \ [&Node &Context]
+$inline $FN Ctx_max     #2$h1 .R%FTO@RSIZE$h1 \ [&Context -> maxAllowed]
+$inline $FN Ctx_maxSet  #2$h1 .R%SRO@RSIZE$h1 \ [maxAllowed &Context]
+
+$inline $FN DN_offset #4$h1 .R%FTO@DN_v$h1 #FF$L %MSK %RET \ [&Node -> offset]
+$STORE_PUB $assertNoWs
+
+
+\ TODO: I need a "start locals" which drops the previous locals. Also, I can
+\ start using non-input locals right now!
+
+$large $FN _walker \ [&context &Node]
+  @RSIZE@RSIZE^ADD$h1  $startLocals
+  $declL ctx  #0 @RSIZE $declVar
+  $declL node #0 @RSIZE $declVar   $SET node $SET ctx
+  $GET node$xx:isTyVar #20$L #2$L #10$L $dv_log
+  $GET node$xx:isTyVar $retIfNot   $GET node$xx:isVarInput $retIfNot \ type check
+  $GET node #21$L #2$L #10$L $dv_log
+  $GET node$DN_offset $GET ctx$Ctx_max %LT_U $retIfNot\(offset < max)
+  $GET ctx$Ctx_node %NOT  $IF  $GET node  $GET ctx$Ctx_nodeSet %RET  $END
+  $GET ctx$Ctx_node$DN_offset  $GET node$DN_offset $retGt \ retGt(cur,offset)
+  $GET node $GET ctx$Ctx_nodeSet %RET \ .ctx.node = node
+
+\ {&context &Node]]
+\ Walk the BST, calling fn on each node
+$large $FN bstWalk
+  @RSIZE@RSIZE^ADD$h1 $startLocals
+  $declL ctx  #0 @RSIZE $declVar
+  $declL node #0 @RSIZE $declVar
+  %SWP $SET ctx  %DUP  $SET node $retIfNot
+  $GET node #10$L #2$L #10$L $dv_log
+  \\ perform DFS preorder
+  $GET ctx $GET node  $xx:_walker
+  $GET ctx $GET node  .R%FTO@DN_l$h1  $xx:bstWalk
+  $GET ctx $GET node  .R%FTO@DN_r$h1  $xx:bstWalk  %RET
+  %RET
+
+$large $FN compileInputs
+  @RSIZE@RSIZE^ADD$h1 \ local: Context struct
+  $startLocals  $declL ctx_node #0 @RSIZE $declVar
+                $declL ctx_max  #0 @RSIZE $declVar  #FF$L $SET ctx_max
+  $LOOP l0
+    $GET ctx_node $GET ctx_max #0$L #3$L #10$L $dv_log
+    $GET ctx_max %RETZ   #0$L $SET ctx_node
+    $REF ctx_node $GET G_dictLocal $xx:bstWalk
+    $GET ctx_node $GET ctx_max #1$L #3$L #10$L $dv_log
+
+    $GET ctx_node $retIfNot   $GET ctx_node$DN_offset  $SET ctx_max
+    $GET ctx_node $xx:_setImpl
+  $AGAIN l0
+  %RET
+
+$STORE_PRIV
+$pre $FN setNow #1$L $jmp:SET
+$pre $FN setLogLvlSys .2%SRGL@G_logLvlSys$h2 %RET
+
+$FN getDictLocal $GET G_dictLocal %RET
+
+$large $FN testCompileInputs \ { a b c -> a - c + b }
+  @RSIZE@RSIZE@RSIZE^ADD^ADD$h1 $startLocals
+  $declL a  #0             @RSIZE $declVar \ not used, left on stack
+  $declL b  @TY_VAR_INPUT  @RSIZE $declVar
+  $declL c  @TY_VAR_INPUT  @RSIZE $declVar
+  $compileInputs
+  \ Some assertions:
+    $ldictRef a  $isTyVar $tAssert
+    $ldictRef b  $isTyVar $tAssert
+    $getDictLocal  $ldictRef a  $tAssertEq
+
+  %RET
+  \ $GET c %SUB $GET b %ADD %RET
+
+
+\ @LOG_EXECUTE $setNow G_logLvlSys
+@LOG_EXECUTE $setLogLvlSys
+#10 #4 #8 $testCompileInputs   $tAssertEq
+\ #C $tAssertEq
 
 $STORE_PUB $assertNoWs

@@ -13,7 +13,7 @@
 \    [1.a] Operations: Special
 \    [1.b] Operations: One Inp -> One Out
 \    [1.c] Operations: Two Inp -> One Out
-\    [1.d] Sizes: SZ1, SZ2, SZ4, SZA
+\    [1.d] Sizes: SZ1, SZ2, SZ4, SZR
 \    [1.e] Mem: fetch, store, locals, globals
 \    [1.f] Jmp: jumping, execution, tables
 \    [1.g] Small Literal [0x40 - 0x80)
@@ -58,7 +58,7 @@
 #20 #0=SZ4
 
 \ Values put on stack by kernel-compiler
-    #0=SZA   \ SZ2 or SZ4 depending on arch
+    #0=SZR   \ SZ2 or SZ4 depending on arch
     #0=RSIZE \ 2 or 4 depending on arch
     #0=CODE_HEAP_START \ start of code heap
 

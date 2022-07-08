@@ -863,13 +863,13 @@ static inline bool isExecute(U1 instr) {
     default: return false; }
 }
 
-void dbgJmp(Instr instr) {
+bool dbgExecute(Instr instr) {
   U4 jloc = 0;
   U1 sz;
 
   switch (instr) {
     case JMPW: case XLW: case XSW:
-      if (!Stk_len(WS)) return;
+      if (!Stk_len(WS)) return true; // will raise error
       jloc = Stk_top(WS); sz = sizeof(Ref); break;
     default:
       switch ((~SZ_MASK) & instr) {
@@ -879,26 +879,17 @@ void dbgJmp(Instr instr) {
           jloc = ftBE(cfb->ep, sz);
           if(sz == 2) jloc = sectorRef(jloc);
           break;
+        default: return false;
       }
   }
-  zoab_arrStart(5); zoab_int(Ev_jmp);
-  zoab_int(instr); zoab_int(jloc);
-  zoab_int(Stk_len(CS));
+  zoab_enumStart(Ev_jmp); zoab_struct(3);
+  zoab_int(instr);  zoab_int(jloc);  zoab_int(Stk_len(CS));
+  return true;
 }
 
 void dbgInstr(Instr instr) {
-  if(LOG_INSTR == (LOG_INSTR & g->logLvlSys)) {}
-  else if(
-    (LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))
-     && isExecute(instr)) {}
-  else return;
-
-  if (instr == RET || (instr == RETZ && Stk_len(WS) && (Stk_top(WS) == 0))) {
-      zoab_arrStart(4); zoab_int(Ev_ret);
-      zoab_struct(2); zoab_int(instr);
-      if(CS.sp == CS.cap) zoab_int(0); // jloc=0 if empty
-      else zoab_int(Stk_top(CS)); // jloc
-      return;
+  if(LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))  {
+    if(isExecute(instr)) dbgExecute(instr);
   }
 }
 
@@ -948,8 +939,9 @@ inline static Instr executeInstr(Instr instr) {
           default: SET_ERR(E_cReg);
         }
       }
-    case LR: WS_PUSH(LS.sp + popLit(1)); R0
+    case LR: WS_PUSH(LS.dat + LS.sp + popLit(1)); R0
     case GR: WS_PUSH(cfb->gb + popLit(2)); R0
+
     case INC : WS_PUSH(WS_POP() + 1); R0
     case INC2: WS_PUSH(WS_POP() + 2); R0
     case INC4: WS_PUSH(WS_POP() + 4); R0
@@ -1612,6 +1604,7 @@ static inline void executeDV(U1 dv) {
       if(g->logLvlUsr & lvl) {
         eprintf("D_log [%X]", lvl);
         for(U2 i = 0; i < len; i++) eprintf(" %.4X", WS_POP());
+        eprint("\n");
       } else for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
       return;
     } case D_file: { // method &File &FileMethods

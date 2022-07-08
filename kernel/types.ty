@@ -60,8 +60,8 @@ struct ErrEvent [
   ls: Bytes
 ]
 
-struct JmpEvent [ instr: Int; jloc: Int ]
-struct RetEvent [ instr: Int; jloc: Int ]
+struct JmpEvent [ instr: Int; jloc: Int; depth: Int ]
+struct RetEvent [ instr: Int; jloc: Int; depth: Int ]
 
 enum Event [
   log: LogEvent
