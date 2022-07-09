@@ -102,7 +102,8 @@ typedef struct {
   U2 metaNext; // meta of next fn
   U1 localOffset;
   U1 _unused;
-  Ref compFn; // current function being compiled
+  Ref curFn; // current function being compiled
+  Ref compFn; // current compiler function
   BBA bbaLocal;  Ref dictLocal;
   Ref bbaPub;    Ref dictPub;
   Ref bbaPriv;   Ref dictPriv;

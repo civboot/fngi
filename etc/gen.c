@@ -58,6 +58,7 @@ void main() {
   WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", logLvlUsr, "U1");
   WRITE_FIELD(TY_VAR | SZ2, Globals, "G_", metaNext, "U2: next function's meta");
   WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", localOffset, "U1: current offset of locals");
+  WRITE_FIELD(TY_VAR | SZR, Globals, "G_", curFn, "Ref: current compiling fn");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", compFn, "Ref: function used for compiling");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", bbaLocal, "BBA: local BBA");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", dictLocal, "&DNode: local dict");

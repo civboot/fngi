@@ -108,8 +108,9 @@ static inline void* bndsChk(U4 size, Ref r) { // bounds check
   return (void*) ((ssize_t)mem + r); }
 static inline void* bndsChkNull(U4 size, Ref r) {
   if(!r) return NULL; return bndsChk(size, r); }
+static inline Ref asRef(void* ptr) {
+  return ptr > (void*) mem ? ptr - (void*) mem : 0; }
 
-#define asRef(PTR)           ((U1*)(PTR)  - mem)
 #define asPtr(TY, REF)       ((TY*)bndsChk(sizeof(TY), REF))
 #define asPtrNull(TY, REF)   ((TY*)bndsChkNull(sizeof(TY), REF))
 #define asPtrOr(TY, REF, OR) ((TY*)bndsChk(sizeof(TY), REF ? REF : OR)
@@ -1617,7 +1618,7 @@ static inline void executeDV(U1 dv) {
         default: SET_ERR(E_dv);
       }
       return;
-    } case D_comp: { // method &File &FileMethods
+    } case D_comp: {
       switch (WS_POP()) {
         case D_comp_heap: WS_PUSH(heap); RV
         case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
@@ -1666,12 +1667,16 @@ void compileStr(const U1* s) {
   line = 1; openMock(SRC, s); compileLoop(); ASSERT_NO_ERR();
 }
 
-SPOR_TEST(testKernel, 10)
+SPOR_TEST(testBoot, 10)
   compileConstants(); compileBoot();
   assert(LOC_PUB == codeLoc()); assert(LOC_PRIV == nameLoc());
   Ref r = heap;
   compileStr("#97 $h1"); ASSERT_EQ(0x97, *asU1(r)); ASSERT_EQ(heap, r + 1);
   ASSERT_EQ(0x42, dictGetAny(sAsTmpSlc("answerV"))->v);
+
+  eprintf("??? remaining PUB=:%X PRIV=%X\n",
+          _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
+          _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false));
 
 TEST_END
 
@@ -1708,7 +1713,7 @@ void tests() {
   testSporBasics();
   testConstants();
   // * 7: Main Function and Running Tests
-  testKernel();
+  testBoot();
   eprint("# Tests DONE\n");
 }
 

@@ -96,6 +96,8 @@
 #define R_LP                 0x80
 #define R_EP                 0x0
 #define R_GB                 0x1
+#define FALSE                0x0
+#define TRUE                 0x1
 #define T_NUM                0x0
 #define T_HEX                0x1
 #define T_ALPHA              0x2

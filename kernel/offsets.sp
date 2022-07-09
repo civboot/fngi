@@ -24,13 +24,14 @@
 #0B   #80=G_logLvlUsr           \ U1
 #0C   #90=G_metaNext            \ U2: next function's meta
 #0E   #80=G_localOffset         \ U1: current offset of locals
-#10   #A0=G_compFn              \ Ref: function used for compiling
-#14   #A0=G_bbaLocal            \ BBA: local BBA
-#20   #A0=G_dictLocal           \ &DNode: local dict
-#24   #A0=G_bbaPub              \ &BBA: current public bba
-#2C   #A0=G_bbaPriv             \ &BBA: current private bba
-#34   #A0=G_srcM                \ &FileMethods: src file methods
-#38   #A0=G_src                 \ &File: src File
+#10   #A0=G_curFn               \ Ref: current compiling fn
+#14   #A0=G_compFn              \ Ref: function used for compiling
+#18   #A0=G_bbaLocal            \ BBA: local BBA
+#24   #A0=G_dictLocal           \ &DNode: local dict
+#28   #A0=G_bbaPub              \ &BBA: current public bba
+#30   #A0=G_bbaPriv             \ &BBA: current private bba
+#38   #A0=G_srcM                \ &FileMethods: src file methods
+#3C   #A0=G_src                 \ &File: src File
 
 \ struct Fiber { ... }
 #0C   #0=Fb_ws                 \ Stk struct: working stack

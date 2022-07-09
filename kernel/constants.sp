@@ -212,6 +212,9 @@
 
 \ **********
 \ * [3] Constants
+#0  #0=FALSE
+#1  #0=TRUE
+
 \ Token Groups
 #0  #0=T_NUM
 #1  #0=T_HEX
