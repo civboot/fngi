@@ -1023,7 +1023,7 @@ inline static Instr executeInstr(Instr instr) {
     case SZ4 + LIT: WS_PUSH(popLit(4)); R0
 
     // Jmp Cases
-    case JMPW: cfb->ep = WS_POP();
+    case JMPW: cfb->ep = WS_POP(); R0;
     case XLW: xlImpl(WS_POP()); R0;
     case XSW: xImpl(0, WS_POP()); R0;
 
@@ -1378,9 +1378,8 @@ void scan(FileMethods* m, File* f) { _scan(m, f); }
 
 bool usesSzI(U1 instr) {
   if ((0xC0 & instr) == I_MEM) return true;
-  if (((0xC0 & instr) == I_JMP) &&
-      // Account for non-sized jumps (XLW, XSW, etc)
-      ((0x0F & instr) > 0)) return true;
+  if (instr == JMPW || instr == XSW || instr == XLW) return false;
+  if ((0xC0 & instr) == I_JMP) return true;
   return false;
 }
 

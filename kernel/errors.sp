@@ -61,7 +61,7 @@
 #E0E9  #0=E_cNotType
 #E0EA  #0=E_cNotLocal
 #E0EB  #0=E_cNotVar
-#E0EC  #0=E_cNotFnOrConst
+#E0EC  #0=E_cLocalNotConst
 #E0ED  #0=E_eof
 #E0EE  #0=E_cUnclosed   \ unclosed paren/brace/etc
 #E0EF  #0=E_cReqNow     \ fn is NOW but no '$' used

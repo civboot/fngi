@@ -731,7 +731,7 @@ $FN numBase $PRE \ {c -> base} get number base from char
        #78$L1 %EQ $IF      #10$L0 %RET $END \ x -> hex
   #0$L0 %RET \ unknown/use default
 
-$FN parseBase \ {<token> i base -> value isNumber}
+$FN parseBase \ {i base -> value isNumber}
   $declL i      @SZ1@TY_VAR_INPUT^JN  #1     $declVar
   $declL base   @SZ1@TY_VAR_INPUT^JN  #1     $declVar
   $declL value  @SZA                  @RSIZE $declVar
@@ -764,7 +764,7 @@ $FN parseNumber \ {} -> {value isNumber}
   $END
   $xx:parseBase %RET
 
-$FN lit  $PRE \ {U4} compile literal
+$FN c_lit  $PRE \ {U4} compile literal
   %DUP #40$L1 %LT_U        $IF  $jmp:L0  $END
   %DUP #FF$L1 %INC %LT_U   $IF  $jmp:L1  $END
   %DUP #FFFF$L2 %INC %LT_U $IF  $jmp:L2  $END

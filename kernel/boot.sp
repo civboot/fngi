@@ -362,19 +362,19 @@ $pub $pre $FN szIToSz \ {szI} -> {sz}
   %DUP @SZ1$L %EQ $IF  %DRP #1$L %RET  $END
   %DUP @SZ2$L %EQ $IF  %DRP #2$L %RET  $END
        @SZ4$L %EQ $IF       #4$L %RET  $END
-  @E_sz$L2 $_jmp panic
+  @E_sz$L $_jmp panic
 
 $pub $pre $FN heapSzI \ {value szI} write a value of szI to heap
   %DUP @SZ1$L %EQ $IF  %DRP $_jmp h1  $END
   %DUP @SZ2$L %EQ $IF  %DRP $_jmp h2  $END
   %DUP @SZ4$L %EQ $IF  %DRP $_jmp h4  $END
-  @E_sz$L2 $_jmp panic
+  @E_sz$L $_jmp panic
 
 $pub $pre $FN szToSzI \ [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L %EQ $IF  %DRP @SZ1 $L %RET  $END
   %DUP #2$L %EQ $IF  %DRP @SZ2 $L %RET  $END
        #4$L %EQ $IF  %DRP @SZ4 $L %RET  $END
-  @E_sz$L2 $_jmp panic
+  @E_sz$L $_jmp panic
 
 $pub $pre $FN reqAlign \ {sz -> sz}: get required alignment
   %DUP @RSIZE^DEC$L %LT_U $retif  %DRP @RSIZE$L %RET
@@ -391,7 +391,7 @@ $pub $large $pre $FN align \ {aptr sz -> aptr}: align aptr with sz bytes
   %DRP %RET
 
 
-$pub$pre $FN alignR   #4$L0 .2%XLL@align$h2 %RET           \ {ref -> aptr}
+$pub$pre $FN alignR   #4$L .2%XLL@align$h2 %RET           \ {ref -> aptr}
 $pub$pre $FN alignReq $_xsl reqAlign .2%XLL @align$h2 %RET \ {ref sz -> ref}
 $pub     $FN alignSzI $_xsl szIToSz  .2%XLL @align$h2 %RET \ {ref szI -> ref}
 
@@ -399,26 +399,33 @@ $pre $FN ftSzI \ {&addr szI}
   %DUP @SZ1$L %EQ $IF %DRP .1%FT %RET $END
   %DUP @SZ2$L %EQ $IF %DRP .2%FT %RET $END
        @SZ4$L %EQ $IF      .4%FT %RET $END
-  @E_sz$L2 $_xsl panic
+  @E_sz$L $_xsl panic
 
 $pre $FN srSzI \ {value &addr szI}
   %DUP @SZ1$L %EQ $IF %DRP .1%SR %RET $END
   %DUP @SZ2$L %EQ $IF %DRP .2%SR %RET $END
        @SZ4$L %EQ $IF      .4%SR %RET $END
-  @E_sz$L2 $_xsl panic
+  @E_sz$L $_xsl panic
 
 $pre $FN xSzI \ {&DNode -> szI}: size requirement of calling DNode
   $d_vGet $_xsl isCurMod $IF  @SZ2$L %RET  $END  @SZR$L %RET
 
 $STORE_PRIV
+\ Test XSW, JMPW and XLW
+$FN testXsw  @answer$L %XSW %RET      $testXsw   #42 $tAssertEq
+$FN testJmpw @answer$L %JMPW          $testJmpw  #42 $tAssertEq
+$large $FN answerL #0$h1  #42$L %RET  $answerL   #42 $tAssertEq
+$FN testXlw  @answerL$L %XLW %RET     $testXlw   #42 $tAssertEq
+
+\ Test alignment functions
 #0 $reqAlign  #0 $tAssertEq     #1 $reqAlign  #1 $tAssertEq
 #2 $reqAlign  #2 $tAssertEq     #3 $reqAlign  #4 $tAssertEq
 #4 $reqAlign  #4 $tAssertEq     #5 $reqAlign  #4 $tAssertEq
-
 #20 #1 $alignReq #20 $tAssertEq   #21 #1  $alignReq #21 $tAssertEq
 #20 #2 $alignReq #20 $tAssertEq   #21 #2  $alignReq #22 $tAssertEq
 #21 #4 $alignReq #24 $tAssertEq   #21 #11 $alignReq #24 $tAssertEq
 
+$STORE_PRIV
 \ Inline helper functions for src and token
 $inline $FN read #3$h1 @D_comp_read1$L %DV@D_comp$h1 %RET \ { -> numRead}
 $inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
@@ -426,18 +433,18 @@ $inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
 $inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
 $inline $FN tokenLenSet #3$h1 .2%SRGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
 $inline $FN tokenDat #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_dat^ADD$h2 %RET
+
 $STORE_PUB
-
      $FN isEof       $tokenPlc %NOT %RET
-     $FN assertToken $tokenPlc @E_cNeedToken$L2 $_jmp assert
-$pre $FN assertNoEof @E_eof$L2 $_jmp assert \ {numRead}
+     $FN assertToken $tokenPlc @E_cNeedToken$L $_jmp assert
+$pre $FN assertNoEof @E_eof$L $_jmp assert \ {numRead}
 
-$FN scanNoEof  $scan  $_xsl isEof  @E_eof$L2 $_jmp assertNot
+$FN scanNoEof  $scan  $_xsl isEof  @E_eof$L $_jmp assertNot
 
 $FN peekChr \ {} -> {c} peek at a character
   $scan   $_xsl isEof $IF  #0$L %RET  $END
   $tokenDat .1%FT \ {c}
-  #0$L $tokenPlc %RET \ reset scanner for next scan
+  #0$L $tokenPlcSet %RET \ reset scanner for next scan
 
 $FN readNew \ { -> numRead} clear token buf and read bytes
   #0$L $tokenPlcSet  #0$L $tokenLenSet  $read  %RET
@@ -454,7 +461,7 @@ $pre $large $FN instrLitImpl
 $pre $FN c_fn \ {&key}: compile a function of any type
   %DUP $_xsl assertFn \ {&key}
   %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
-    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
+    %DUP $_xsl isFnLarge @E_cInlineLarge$L $_xsl assertNot
     $d_vGet  $heap        \ {&heap &inlineFn}
     %DUP %INC %SWP .1%FT  \ {&heap &inlineFn+1 inlineLen}
     %DUP #0$L $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
@@ -465,35 +472,23 @@ $pre $FN c_fn \ {&key}: compile a function of any type
   %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
   .2%XLL @instrLitImpl$h2 %RET
 
-$FN execute \ {&key} -> {...}: execute a dictionary key
-  %DUP $_xsl isFnInline $IF \ if inline, assert not large and jmp to addr+1
-    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
-    .R%FT %INC .R%JMPW
-  $END
-  %DUP $_xsl isFnLarge  $IF .R%FT .R%XLW %RET $END
-  .R%FT .R%JMPW
-
 $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
-  $scan $tokenPlc #1$L  %EQ @E_cColon$L2 $_xsl assert \ assert len=1
-  $tokenDat .1%FT #3A$L %EQ @E_cColon$L2 $_jmp assert \ assert ":"
+  $scan $tokenPlc #1$L  %EQ @E_cColon$L $_xsl assert \ assert len=1
+  $tokenDat .1%FT #3A$L %EQ @E_cColon$L $_jmp assert \ assert ":"
 
 $large $FN _xxPre \ { -> &node} prepare for execute or jmp
   @RSIZE$h1 $_xsl assertNoNow \ locals 0=&key
   $_xsl colon  #0$L $_xsl dictRef  %DUP .R%SRLL#0$h1 \ {&key}
-  %DUP                #A0$L #2$L #10$L $dv_log
   %DUP @E_cNoKey$L $_xsl assert
-  %DUP                #A1$L #2$L #10$L $dv_log
   \ if fn is (PRE or SYN) and compFn exists, compile next token.
   %DUP $_xsl isFnPre %SWP $_xsl isFnSyn %OR .R%FTGL@G_compFn$h2 %AND $IF
-    .R%FTGL@G_compFn$h2 #A0$L #2$L #10$L $dv_log
     .R%FTGL@G_compFn$h2 %XLW
   $END
-  #A4$L #1$L #10$L $dv_log
   .R%FTLL #0$h1 %RET
 
 $syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
 $syn $FN jmp
-  $xx:_xxPre %DUP $xx:isFnLarge @E_cXHasL$L2 $xx:assertNot
+  $xx:_xxPre %DUP $xx:isFnLarge @E_cXHasL$L $xx:assertNot
   $d_vGet @JMPL2$L $_jmp _j2
 
 \ **********
@@ -505,13 +500,13 @@ $syn $FN jmp
 \ fn declG | declL  <token>     : begins a global or local declaration
 \ fn declVar                    : declare a local/gloabl variable
 \ fn declEnd                    : end locals declaration
-$STORE_PUB
 
 
 \ **********
 \   * [9.a] Define locals
 \ This allows us to declar globals and locals. declEnd (handling actually writing local data)
 \ will not happen until later.
+$STORE_PUB
 $FN declG #0$L %DUP $xx:dictAdd  #0$L %RET  \ [<token> -> &key isLocal=false]
 $FN declL #0$L %DUP $xx:ldictAdd #1$L %RET  \ [<token> -> &key isLocal=true]
 
@@ -525,7 +520,7 @@ $large $pre $FN declVar \ {&Node isLocal meta szBytes} declare a variable
   $ELSE .1%FTLL#0$h1 $xx:szToSzI $END $xx:keyJnMeta \ {&Node}
 
   .1%FTLL#2$h1 $IF \ if(isLocal)
-    %DUP @C_LOCAL$L2 $xx:keyJnMeta \ {&Node} add C_LOCAL to meta
+    %DUP @C_LOCAL$L $xx:keyJnMeta \ {&Node} add C_LOCAL to meta
     .2%FTGL@G_localOffset$h2  .1%FTLL#0$h1  $xx:alignReq \ {&Node offsetAligned}
     %DUP .1%FTLL#0$h1 %ADD .2%SRGL@G_localOffset$h2    \ {..} update localOffset
 
@@ -557,6 +552,7 @@ $pre $large $FN _getSetImpl
   @RSIZE^DUP^ADD$h1 \ locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr   {&key}
+  %DUP @E_cNoKey$L $xx:assert
   %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
         %DUP $xx:keySzI .1%FTLL#0$h1 .1%FTLL#1$h1      \ local
   $ELSE %DUP $xx:keySzI .1%FTLL#2$h1 .1%FTLL#3$h1 $END \ global
@@ -715,6 +711,9 @@ $pre $FN testDeclEnd \ { a b c -> a - c + b }
 \ fn number <number> -> [value isNum]   : parse next token (parseNumber).
 $STORE_PUB $assertNoWs
 
+\ **********
+\   * [11.a] Parse Numbers and String Characters
+
 $pre $FN betweenIncl \ {value a b} -> a <= value <= b
   $declL b  @TY_VAR_INPUT  @RSIZE  $declVar $declEnd \ {value a}
   %OVR %SWP \ {value value a}
@@ -764,7 +763,7 @@ $FN readCharEsc
     %DRP $xx:charNext  $xx:charToInt #8$L  %SHL
     $xx:charNext       $xx:charToInt %ADD
     \ assertNot(dup < inc(0xFF), E_cStr)
-    %DUP #FF$L %INC %LT_U  @E_cStr$L2  $xx:assertNot
+    %DUP #FF$L %INC %LT_U  @E_cStr$L  $xx:assertNot
     @FALSE$L %RET
   $END
   @TRUE$L %RET \ just return the character as-is but unknownEscape=true
@@ -784,30 +783,30 @@ $FN parseBase \ {i base -> value isNumber} parse from token
   $declL base   @SZ1@TY_VAR_INPUT^JN  #1     $declVar
   $declL value  @SZR                  @RSIZE $declVar
   $declEnd
-  $GET base #FE$L1 %EQ $IF \ if special 'character' base
+  $GET base #FE$L %EQ $IF \ if special 'character' base
       $GET i $tokenPlcSet \ readCharEsc is off END of tokenPlc
-      $xx:readCharEsc  @E_cUnknownEsc$L2 $xx:assertNot  @TRUE$L0 %RET
-  $END #0$L0 $SET value
+      $xx:readCharEsc  @E_cUnknownEsc$L $xx:assertNot  @TRUE$L %RET
+  $END #0$L $SET value
   $LOOP l0
     $GET i  $tokenPlc $BREAK_EQ b0
     $tokenDat $GET i %ADD .1%FT \ {c}
     $xx:charToInt \ {v}
     \ return {0 0} if not integer character
-    %DUP $GET base %GE_U $IF  @FALSE$L0 %RET  $END
+    %DUP $GET base %GE_U $IF  @FALSE$L %RET  $END
 
     $GET base  $GET value %MUL \ {base * value}
     %ADD $SET value \ value = v + value*10
     $GET i %INC $SET i \ i += 1
   $AGAIN l0  $END_BREAK b0
 
-  $GET i %NOT $IF  #0$L0 @FALSE$L0 %RET  $END \ no token
-  $GET value @TRUE$L0 %RET
+  $GET i %NOT $IF  #0$L @FALSE$L %RET  $END \ no token
+  $GET value @TRUE$L %RET
 
 $FN parseNumber \ {} -> {value isNumber} parse token as number
-  #0$L0 #A$L0 \ {i=0 base=0xA}. Next: if (token len>=2 and starts with '0')
-  $tokenPlc #2$L0 %GE_U $tokenDat .1%FT #30$L0 %EQ %AND $IF
+  #0$L #A$L \ {i=0 base=0xA}. Next: if (token len>=2 and starts with '0')
+  $tokenPlc #2$L %GE_U $tokenDat .1%FT #30$L %EQ %AND $IF
     %DRP $tokenDat %INC .1%FT $xx:numBase %DUPN $IF \ {i base}
-      %DRP #A$L0 \ base was = 0, just set back to 10
+      %DRP #A$L \ base was = 0, just set back to 10
     $ELSE %SWP %INC2 %SWP $END \ else i+=2
   $END
   $xx:parseBase %RET
@@ -821,14 +820,54 @@ $number 0b11100  $tAssert    #1C    $tAssertEq
 $number 0b11102  $tAssertNot ^DRP \ not valid binary
 $number notNum   $tAssertNot ^DRP \ not a number
 
-$pub$syn $FN (  %DRP  \ parens ()
-  $xx:assertToken
-  $xx:peekChr #29$L0 %EQ $IF  $scan %RET  $END \ return if we hit ")"
-  $LOOP l0
-    $GET G_compFn %XLW
-    $xx:assertToken
-    $xx:peekChr #29$L0 %EQ $IF  $scan %RET  $END \ return if we hit ")"
-  $AGAIN l0
+\ **********
+\   * [11.b] Compile Tokens
+$NEW_BLOCK_PRIV
+
+$FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
+  %SWP %NOT %RETZ $jmp:L \ if now leave on stack, else compile
+
+$pre $FN _compConstant \ {asNow} -> {&keyFn[nullable]}
+  $xx:parseNumber \ {asNow value isNumber}
+  $IF  $xx:lit #0$L %RET  $END  %DRP  \ {asNow}
+  $xx:isEof $IF  %DRP #0$L %RET  $END \ {asNow}
+  #0$L @D_comp_dGet$L %DV@D_comp$h1 \ dictRef w/out scan
+  %DUP $xx:isTyConst $IF \ {asNow &node}
+    $d_vGet  $xx:lit  %DRP #0$L %RET
+  $END \ {asNow &node}
+  %DUP $xx:isTyLocal  @E_cLocalNotConst$L $xx:assertNot
+  %SWP %DRP %DUP $jmp:assertFn \ {-> &key}
+
+$FN execute \ {&key} -> {...}: execute a dictionary key
+  %DUP $xx:isFnInline $IF \ if inline, assert not large and jmp to addr+1
+    %DUP $xx:isFnLarge @E_cInlineLarge$L $xx:assertNot
+    $d_vGet %INC %JMPW
+  $END
+  %DUP $xx:isFnLarge  $IF $d_vGet %XLW %RET $END
+  $d_vGet %JMPW
+
+$STORE_PRIV
+$FN executeIt #0$L $xx:dictRef $jmp:execute
+$executeIt answer  #42 $tAssertEq
+
+
+$STORE_PUB
+
+\ {asNow} -> {}: compile a single token.
+\ This is the primary function that all compilation steps (besides spor
+\ compilation) reduce to.
+$pre $FN single
+  $declL asNow #0 #1     $declVar
+  $declL node  #0 @RSIZE $declVar $declEnd
+  \ Handle constants, return if it compiled the token.
+  %DUP $SET asNow $xx:_compConstant %DUP $SET node %RETZ
+  $GET node $xx:isFnPre $IF $GET G_compFn .R%XLW $END \ recurse for PRE
+  $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
+  $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END
+  $GET node $GET asNow $IF  $jmp:execute  $END  $jmp:c_fn
+
+$pre $FN updateCompFn \ {&newCompFn -> &prevCompFn}
+  $GET G_compFn %SWP $SET G_compFn %RET
 
 $FN now \ used in $ to make next token/s run NOW.
   $declL compFn  #0  @RSIZE $declVar $declEnd
@@ -836,9 +875,64 @@ $FN now \ used in $ to make next token/s run NOW.
   $xx:updateCompFn
   $SET compFn \ update compFn and cache
   $xx:scanNoEof
-  @TRUE$L0 $xx:single  \ compile next token as NOW
+  @TRUE$L $xx:single  \ compile next token as NOW
   $GET compFn $SET compFn %RET
 
 $pub$syn $FN $ $xx:assertNoNow $xx:now %RET \ make NOW
+
+$pub$syn $FN (  %DRP  \ parens ()
+  $LOOP l0
+    $xx:assertToken
+    $xx:peekChr #29$L %EQ $IF  $scan %RET  $END \ return if we hit ")"
+    $GET G_compFn %XLW
+  $AGAIN l0
+
+\ {-> c} peek at the char after current token.
+$FN peekNoScan
+  $tokenPlc  $tokenLen %GE_U $IF
+    $read $xx:assertNoEof \ ensure a char exists
+  $END
+  $tokenDat $tokenPlc %ADD .1%FT %RET
+
+$FN _comment \ used in '\' to make next token ignored (i.e. a comment)
+  $declL compFn  #0  @RSIZE $declVar $declEnd
+  @_comment$L  $xx:updateCompFn $SET compFn
+  $xx:scanNoEof \ ignore token, unless it's an open parenthesis
+  $tokenDat .1%FT #28$L %EQ $IF
+    @TRUE$L $xx:single
+  $END
+  $GET compFn $SET G_compFn %RET
+
+\ Comment, of which there are three forms.
+\    \        : a line comment
+\    \foo     : an inline comment, commenting out one token
+\    \( ... ) : a block comment
+$syn $FN \  %DRP
+  \ line comment if '\' is followed by space
+  $xx:peekNoScan #20$L %EQ $IF
+    @D_comp_readEol$L %DV@D_comp$h1 %RET $END
+  $xx:_comment %RET \ else token comment
+$\ line comment
+$\token_comment
+$\(block comment)
+$\()  $\(  )
+
+\ These do nothing and are used for more readable code.
+$syn $FN _ %DRP %RET   $syn $FN , %DRP %RET   $syn $FN ; %DRP %RET
+$syn $FN -> %DRP %RET
+
+
+$FN fngi \ fngi compile loop
+  $LOOP l0
+    $tokenLen %RETZ \ exit on EOF
+    $GET G_compFn %XLW
+  $AGAIN l0
+
+$large $FN fngiSingle \ base compFn for fngi tokens.
+  #0$h1 \ not really any locals (but called with XLW)
+  $scan $tokenPlc %RETZ
+  @FALSE$L $xx:single %RET
+
+@fngiSingle $updateCompFn ^DRP
 
 $STORE_PUB $assertNoWs

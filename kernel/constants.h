@@ -191,7 +191,7 @@
 #define E_cNotType           0xE0E9
 #define E_cNotLocal          0xE0EA
 #define E_cNotVar            0xE0EB
-#define E_cNotFnOrConst      0xE0EC
+#define E_cLocalNotConst     0xE0EC
 #define E_eof                0xE0ED
 #define E_cUnclosed          0xE0EE
 #define E_cReqNow            0xE0EF
