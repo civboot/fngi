@@ -72,7 +72,7 @@
 // In normal fngi code, errors should be returned. However, for critical
 // failures code can and will "panic". In C, a panic causes a longjmp to the
 // error handler. Panics should be considered extraordinary events, and although
-// fngi code can handle them with D_panic, it is not recommended to do so for
+// fngi code can handle them with DV_catch, it is not recommended to do so for
 // any but the most low-level code or for testing purposes.
 
 void dbgErr();
@@ -184,7 +184,7 @@ void initEnv(U4 blocks) {
   eprintf("## %s\n", #NAME); \
   NEW_ENV_BARE(BLOCKS); \
   if(setjmp(local_err_jmp)) { \
-    eprintf("!! Error #%X (line %u)\n", cfb->err, line); exit(1); } \
+    eprintf("!! Error #%X (line %u) token: %.*s\n", cfb->err, line, Tplc, Tdat); exit(1); } \
   else { /*Test code here */
 
 #define TEST_END   } ENV_CLEANUP(); }
@@ -889,6 +889,7 @@ bool dbgExecute(Instr instr) {
 }
 
 void dbgInstr(Instr instr) {
+  // eprintf("??? instr: %X\n", instr);
   if(LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))  {
     if(isExecute(instr)) dbgExecute(instr);
   }
@@ -1125,7 +1126,7 @@ BARE_TEST(testExecuteLoop, 3) BA_init(&k->ba); newBlock(g->bbaPriv);
     { SZ2 + XSL, call5 >> 8, call5, SZ2 + JMPL, five>>8, five, IEND });
   ASSERT_WS(5); ASSERT_WS(5); assert(0 == Stk_len(WS));
 
-  Ref panic = compileInstrs((U1[]) { SLIT+0, SLIT+4, SLIT+1, DV, D_assert, IEND });
+  Ref panic = compileInstrs((U1[]) { SLIT+0, SLIT+4, SLIT+1, DV, DV_assert, IEND });
   cfb->ep = panic; EXPECT_ERR(1, executeLoop());
 TEST_END
 
@@ -1374,7 +1375,9 @@ void _scan(FileMethods* m, File* f) {
   }
 }
 
-void scan(FileMethods* m, File* f) { _scan(m, f); }
+void scan(FileMethods* m, File* f) { _scan(m, f); 
+  eprintf("??? scan: %.*s\n", Tplc, Tdat);
+}
 
 bool usesSzI(U1 instr) {
   if ((0xC0 & instr) == I_MEM) return true;
@@ -1469,12 +1472,14 @@ void cComma() { // `,`, aka write heap
 
 void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
   U1* dat = Tdat;
+  eprint("??? cForwardSlash start\n");
   while(true) {
     if (Tplc >= Tlen) readNewAtLeast(m, f, 1);
     if (Tlen == 0) break;
     if (dat[Tplc] == '\n') break;
     Tplc += 1;
   }
+  eprintf("??? cForwardSlash end Tlen=%u\n", Tlen);
 }
 
 void cColon() { // `:`, aka define function
@@ -1582,32 +1587,32 @@ TEST_END
 
 static inline void executeDV(U1 dv) {
   switch (dv) {
-    case D_assert: { // {l r err} assert l == r
+    case DV_assert: { // {l r err} assert l == r
       U4 err = WS_POP(); U4 r = WS_POP(); U4 l = WS_POP();
       if(l == r) RV
       if(!(C_EXPECT_ERR & g->cstate))
         eprintf("!! assert failed with err=0x%X: 0x%X == 0x%X\n", err, l, r);
       SET_ERR(err);
     }
-    case D_catch: xImpl(CSZ_CATCH, WS_POP()); RV // essentially XSW with catch flag set
-    case D_memSet: {
+    case DV_catch: xImpl(CSZ_CATCH, WS_POP()); RV // essentially XSW with catch flag set
+    case DV_memSet: {
         U2 len = WS_POP(); U1 value = WS_POP(); void* dst = bndsChk(len, WS_POP());
         memset(dst, value, len); return;
-    } case D_memCmp: {
+    } case DV_memCmp: {
         U2 len = WS_POP();
         void* r = bndsChk(len, WS_POP()); void* l = bndsChk(len, WS_POP());
         return WS_PUSH(memcmp(l, r, len));
-    } case D_memMove: {
+    } case DV_memMove: { // {dst src len}
         U2 len = WS_POP(); Ref src = WS_POP(); return _memmove(WS_POP(), src, len);
-    } case D_log: {
+    } case DV_log: {
       U1 lvl = WS_POP(); U2 len = WS_POP();
       if(g->logLvlUsr & lvl) {
-        eprintf("D_log [%X]", lvl);
+        eprintf("DV_log [%X]", lvl);
         for(U2 i = 0; i < len; i++) eprintf(" %.4X", WS_POP());
         eprint("\n");
       } else for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
       return;
-    } case D_file: { // method &File &FileMethods
+    } case DV_file: { // method &File &FileMethods
       FileMethods* m = asPtrNull(FileMethods, WS_POP());
       File* f = asPtr(File, WS_POP());
       switch (WS_POP()) {
@@ -1617,26 +1622,26 @@ static inline void executeDV(U1 dv) {
         default: SET_ERR(E_dv);
       }
       return;
-    } case D_comp: {
+    } case DV_comp: {
       switch (WS_POP()) {
-        case D_comp_heap: WS_PUSH(heap); RV
-        case D_comp_last: WS_PUSH(compiler.lastUpdate); RV
-        case D_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
-        case D_comp_dGet: {
+        case DV_comp_heap: WS_PUSH(heap); RV
+        case DV_comp_last: WS_PUSH(compiler.lastUpdate); RV
+        case DV_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
+        case DV_comp_dGet: {
           DNode* n = asPtrNull(DNode, WS_POP()); if(n) {
             ASM_ASSERT(!Dict_find(&n, Tslc), E_cNoKey); ASM_ASSERT(n, E_cNoKey);
             WS_PUSH(asRef(n));
           } else { WS_PUSH(asRef(dictGetAny(Tslc))); } RV
         }
-        case D_comp_dAdd: {
+        case DV_comp_dAdd: {
           U2 meta = WS_POP(); WS_PUSH(asRef(dictAddMut(meta, WS_POP(), Tslc))); RV
         }
-        case D_comp_read1: WS_PUSH(readAtLeast(SRCM, SRC, 1)); RV
-        case D_comp_readEol: cForwardSlash(SRCM, SRC);  RV
-        case D_comp_scan: scan(SRCM, SRC);           RV
+        case DV_comp_read1: WS_PUSH(readAtLeast(SRCM, SRC, 1)); RV
+        case DV_comp_readEol: cForwardSlash(SRCM, SRC);  RV
+        case DV_comp_scan: scan(SRCM, SRC);           RV
         default: SET_ERR(E_dv);
       }
-    } case D_bba: { // method &BBA
+    } case DV_bba: { // method &BBA
       U4 method = WS_POP(); BBA* bba = asPtrNull(BBA, WS_POP());
       if(!bba) bba = codeBBA();
       switch (method) {
@@ -1656,7 +1661,8 @@ static inline void executeDV(U1 dv) {
 // ***********************
 // * 8: Main Function and Running Tests
 
-void compileBoot() {
+void compileBootSpor() {
+  compileConstants();
   g->cstate |= C_PUB | C_PUB_NAME; // full public
   newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, IEND});
   compileFile("kernel/boot.sp");
@@ -1666,13 +1672,21 @@ void compileStr(const U1* s) {
   line = 1; openMock(SRC, s); compileLoop(); ASSERT_NO_ERR();
 }
 
-SPOR_TEST(testBoot, 10)
-  compileConstants(); compileBoot();
+SPOR_TEST(testBootSpor, 10)
+  compileBootSpor();
   assert(LOC_PUB == codeLoc()); assert(LOC_PRIV == nameLoc());
   Ref r = heap;
   compileStr("#97 $h1"); ASSERT_EQ(0x97, *asU1(r)); ASSERT_EQ(heap, r + 1);
   ASSERT_EQ(0x42, dictGetAny(sAsTmpSlc("answerV"))->v);
+TEST_END
 
+void compileBoot() {
+  compileBootSpor();
+  compileFile("kernel/boot.fn");
+}
+
+SPOR_TEST(testBoot, 10)
+  compileBoot();
   eprintf("??? remaining PUB=:%X PRIV=%X\n",
           _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
           _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false));
@@ -1712,6 +1726,7 @@ void tests() {
   testSporBasics();
   testConstants();
   // * 7: Main Function and Running Tests
+  testBootSpor();
   testBoot();
   eprint("# Tests DONE\n");
 }

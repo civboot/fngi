@@ -1,0 +1,18 @@
+$fngi  $STORE_PUB
+\ Bootstraps the fngi language.
+\ Requires: boot.sp
+\
+\ Note: at this stage the language is severely restricted and several
+\ pieces of the language are incomplete. Any CAPITAL items like FN, IF, LOOP
+\ etc do not behave in the way their lower-case counterparts will behave.
+\ Refer to boot.sp for all documentation.
+
+pub syn FN dv   notNow $c1(DV); jmp:h1(d_vGet(colonRef;))
+pub pre inline FN memSet  $h1(2) dv:D_memSet  ret; \ [&dst v len]   "dst = v"
+pub pre inline FN memCmp  $h1(2) dv:D_memCmp  ret; \ [&dst &src len] "dst = src"
+pub pre inline FN memMove $h1(2) dv:D_memMove ret; \ [&a &b len -> cmp]
+pub pre        FN memClr  0 swp; jmp:memSet(_, _) \ [&a len] clear
+
+
+
+$assertNoWs

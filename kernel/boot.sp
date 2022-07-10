@@ -44,7 +44,7 @@
 \ Inline functions:
 \   fn xCatch [... &fn]       : execute a large function and catch error.
 \   fn retIfNot  [a]          : return immediately if not a  (     %RETZ)
-\   fn retif [a]              : return immediately if a      (%NOT %RETZ)
+\   fn retIf [a]              : return immediately if a      (%NOT %RETZ)
 \   fn reteq [a b]            : return immediately if a == b (%NEQ %RETZ)
 
 
@@ -58,11 +58,11 @@ $pub @TY_FN@TY_FN_NOW^JN :STORE_PRIV \ switch to using private storage.
 
 $STORE_PRIV
 @_FP@TY_FN_INLINE^JN :BBA_bump \ {size align &BBA -> &dat}: bump memory from BBA
-  .1#3, @SLIT@BBAm_bump    ^JN, %DV@D_bba, %RET
+  .1#3, @SLIT@BBAm_bump    ^JN, %DV@DV_bba, %RET
 @_FP@TY_FN_INLINE^JN :BBA_newBlock \ {&BBA}: create new block
-  .1#3, @SLIT@BBAm_newBlock^JN, %DV@D_bba, %RET
+  .1#3, @SLIT@BBAm_newBlock^JN, %DV@DV_bba, %RET
 @_FP@TY_FN_INLINE^JN :BBA_drop \ {&BBA}: drop BBA (return all blocks)
-  .1#3, @SLIT@BBAm_drop    ^JN, %DV@D_bba, %RET
+  .1#3, @SLIT@BBAm_drop    ^JN, %DV@DV_bba, %RET
 
 $STORE_PUB
 $pub @TY_FN@TY_FN_NOW^JN :NEW_BLOCK_PUB \ start new public block
@@ -71,13 +71,16 @@ $pub @TY_FN@TY_FN_NOW^JN :NEW_BLOCK_PRIV \ start new private block
   .R%FTGL@G_bbaPriv.2, $BBA_newBlock %RET
 
 \ Using DV instr, we define a way to make assertions for tests.
-$pub @_FP@TY_FN_INLINE^JN  :assertEq .1#2, %DV@D_assert, %RET \ {l r err}
+     @_FP@TY_FN_INLINE^JN :dv_log    .1#2, %DV@DV_log,    %RET
+$pub @_FP@TY_FN_INLINE^JN  :assertEq .1#2, %DV@DV_assert, %RET \ {l r err}
 $pub @_FP :assertNot %SLIT %SWP $assertEq %RET \ { l err} assert l == 0
 $pub @_FP :assert %SWP %NOT %SWP %SLIT %SWP $assertEq %RET \ { l err} assert l != 0
 $pub @_FP :assertNotNull .2%LIT@E_null, .2%JMPL@assert,
 $pub @_FP :tAssertEq     .2%LIT@E_test, $assertEq %RET \ {chk} test assert
 $pub @_FP :tAssertNot       %SLIT .2%JMPL@tAssertEq, \ tAssertEq(_, 0)
-$pub @_FP :tAssert     %NOT %SLIT .2%JMPL@tAssertEq, \ tAssertEq(not _, 0)
+$pub @_FP :tAssert
+  %DUP .1%LIT#A0, %LIT#2, %LIT#10, $dv_log
+  %NOT %SLIT .2%JMPL@tAssertEq, \ tAssertEq(not _, 0)
 #55 #54^INC $tAssertEq     #0    $tAssertNot    #1 $tAssert
 #0 #1       $assertNot     #1 #1 $assert        #1 $assertNotNull
 
@@ -86,7 +89,7 @@ $STORE_PRIV \ Note: everything until STORE_PUB is in the private space.
 @TY_FN :getCState .2%FTGL@G_cstate, %RET  \ for assertions
 $getCState@C_PUB^MSK $tAssertNot
 
-@TY_FN :wsLen      .1@SLIT@D_comp_wsLen^JN, %DV@D_comp, %RET
+@TY_FN :wsLen      .1@SLIT@DV_comp_wsLen^JN, %DV@DV_comp, %RET
 @TY_FN :assertNoWs .2%XSL@wsLen,  .2%JMPL@tAssertNot,
 $assertNoWs
 
@@ -124,12 +127,11 @@ $STORE_PRIV
 $answer2  #4242 $tAssertEq  #42 $tAssertEq
 
 $STORE_PUB   $assertNoWs
-@_FP@TY_FN_INLINE^JN :dv_log    #2$h1 %DV@D_log$h1 %RET
-@_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @D_comp_last$L0 %DV@D_comp$h1 %RET
-@_FP@TY_FN_INLINE^JN :scan      #3$h1 @D_comp_scan$L0 %DV@D_comp$h1 %RET
+@_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @DV_comp_last$L0 %DV@DV_comp$h1 %RET
+@_FP@TY_FN_INLINE^JN :scan      #3$h1 @DV_comp_scan$L0 %DV@DV_comp$h1 %RET
 
-@_FP :dictRef   $scan @D_comp_dGet$L0 %DV@D_comp$h1 %RET \ {&root -> &Node}
-@_FP :dictAdd   $scan @D_comp_dAdd$L0 %DV@D_comp$h1 %RET \ {m v -> &Node}
+@_FP :dictRef   $scan @DV_comp_dGet$L0 %DV@DV_comp$h1 %RET \ {&root -> &Node}
+@_FP :dictAdd   $scan @DV_comp_dAdd$L0 %DV@DV_comp$h1 %RET \ {m v -> &Node}
 
 $STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m$h1 %RET \ {&DNode -> m}
@@ -146,12 +148,12 @@ $STORE_PRIV       $NEW_BLOCK_PRIV
 #42 #0 $dictAdd answerV   ^DRP    #42 $assertDictV answerV
 
 $STORE_PUB   $assertNoWs
-@_FP@TY_FN_INLINE^JN :catch     #2$h1 %DV@D_catch$h1 %RET
+@_FP@TY_FN_INLINE^JN :catch     #2$h1 %DV@DV_catch$h1 %RET
 @_FP@TY_FN_INLINE^JN :retIfNot  #1$h1           %RETZ %RET
 @_FP@TY_FN_INLINE^JN :reteq     #2$h1     %NEQ  %RETZ %RET
-@_FP@TY_FN_INLINE^JN :retif     #2$h1     %NOT  %RETZ %RET
-@_FP@TY_FN_INLINE^JN :retLe     #2$h1     %GE_U %RETZ %RET
-@_FP@TY_FN_INLINE^JN :retGt     #2$h1     %LT_U %RETZ %RET
+@_FP@TY_FN_INLINE^JN :retIf     #2$h1     %NOT  %RETZ %RET
+@_FP@TY_FN_INLINE^JN :retLt     #2$h1     %GE_U %RETZ %RET
+@_FP@TY_FN_INLINE^JN :retGe     #2$h1     %LT_U %RETZ %RET
 @_FP@TY_FN_INLINE^JN :gt_u      #2$h1     %SWP %LT_U %RET
 @_FP@TY_FN_INLINE^JN :le_u      #2$h1     %SWP %GE_U %RET
 
@@ -217,10 +219,10 @@ $STORE_PUB      $assertNoWs
   %OVR $d_mGet %JN \ {&DNode mNew}
   %SWP $d_mSet %RET
 
-$pub @_FP@TY_FN_INLINE^JN :heap #3$h1 @D_comp_heap$L0 %DV@D_comp$h1 %RET
-$pub @_FP :assertNoNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
+$pub @_FP@TY_FN_INLINE^JN :heap #3$h1 @DV_comp_heap$L0 %DV@DV_comp$h1 %RET
+$pub @_FP :notNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
 @TY_FN :_implFnTy \ {meta asNow}
-  %SWP $_xsl assertNoNow \ {meta}
+  %SWP $_xsl notNow \ {meta}
   .2%FTGL@G_metaNext$h2  %JN  .2%SRGL@G_metaNext$h2  %RET
 
 $pub @TY_FN@TY_FN_SYN^JN :syn    @TY_FN_SYN   $L1 $_jmp _implFnTy
@@ -234,7 +236,7 @@ $pub @TY_FN@TY_FN_SYN^JN :inline @TY_FN_INLINE$L1 $_jmp _implFnTy
   %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L0 .1%SRGL@G_localOffset$h2 %RET
 
 \ example: $syn $large $FN <token>: declare a function with attributes.
-@TY_FN@TY_FN_SYN^JN :FN   $_xsl assertNoNow \ {}
+@TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
   #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
   %DUP .R%SRGL@G_curFn$h2 \ update currently compiling fn
   $heap %SWP $d_vSet \ dnodeLast.v = heap
@@ -282,7 +284,7 @@ $FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %
 $FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
 $FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
 
-$pub $pre $syn $FN IF $_xsl assertNoNow \ {} -> {&jmpTo} : start an if block
+$pub $pre $syn $FN IF $_xsl notNow \ {} -> {&jmpTo} : start an if block
   @SZ1@JZL^JN $c1 \ compile .1%JZL instr
   $heap #0$L0 $_jmp h1  \ compile 0 (jump pad)
 
@@ -291,23 +293,23 @@ $FN _END \ {&jmpTo heapSub} jmpTo is where to store (heap-heapSub)
   %SWP %SUB   %DUP $_xsl assertJmpL1 \ {heapSub (heap-heapSub)}
   %SWP .1%SR %RET \ store at &jmpTo (1 byte literal)
 
-$syn $FN END $_xsl assertNoNow %DUP $_jmp _END
+$syn $FN END $_xsl notNow %DUP $_jmp _END
 
-$syn $FN ELSE $_xsl assertNoNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
+$syn $FN ELSE $_xsl notNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   @JMPL $c1       \ (end IF) compile unconditional jmp to end of ELSE
   $heap %SWP      \ {&elseBlockJmpTo &ifNotJmpTo}
   #0$L0 $_xsl h1  \ compile jmp lit for &elseBlockJmpTo
   %DUP $_jmp _END \ end of IF block (beginning of ELSE)
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
-     $syn $FN LOOP   $_xsl assertNoNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
+     $syn $FN LOOP   $_xsl notNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
 $pre $syn $FN BREAK0                 $_xsl IF  #0$L0 $_xsl ldictAdd %DRP %RET
-$syn $FN END_BREAK  $_xsl assertNoNow $_xsl ldictRef $d_vGet %DUP $_jmp _END
+$syn $FN ENDV_BREAK  $_xsl notNow $_xsl ldictRef $d_vGet %DUP $_jmp _END
 $pre $syn $FN BREAK_IF  @NOT$c1  $_jmp BREAK0 \ break if true
 $pre $syn $FN BREAK_EQ  @NEQ$c1  $_jmp BREAK0 \ break if equal
 $pre $syn $FN BREAK_NEQ @EQ$c1   $_jmp BREAK0 \ break if not equal
 
-$syn $FN AGAIN $_xsl assertNoNow
+$syn $FN AGAIN $_xsl notNow
   @JMPL$c1  \ {} compile jmp
   $heap $_xsl ldictRef $d_vGet  %SUB %DUP  $_xsl assertJmpL1 \ {heap-&loopTo}
   %NEG $_jmp h1  \ compile negative backwards jump to jmp offset
@@ -377,7 +379,7 @@ $pub $pre $FN szToSzI \ [sz] -> [SzI] convert sz to szI (instr)
   @E_sz$L $_jmp panic
 
 $pub $pre $FN reqAlign \ {sz -> sz}: get required alignment
-  %DUP @RSIZE^DEC$L %LT_U $retif  %DRP @RSIZE$L %RET
+  %DUP @RSIZE^DEC$L %LT_U $retIf  %DRP @RSIZE$L %RET
 
 $pub $large $pre $FN align \ {aptr sz -> aptr}: align aptr with sz bytes
   @RSIZE$h1 \ locals [sz:U1]
@@ -427,7 +429,7 @@ $FN testXlw  @answerL$L %XLW %RET     $testXlw   #42 $tAssertEq
 
 $STORE_PRIV
 \ Inline helper functions for src and token
-$inline $FN read #3$h1 @D_comp_read1$L %DV@D_comp$h1 %RET \ { -> numRead}
+$inline $FN read #3$h1 @DV_comp_read1$L %DV@DV_comp$h1 %RET \ { -> numRead}
 $inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
 $inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
 $inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
@@ -461,11 +463,12 @@ $pre $large $FN instrLitImpl
 $pre $FN c_fn \ {&key}: compile a function of any type
   %DUP $_xsl assertFn \ {&key}
   %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
+    %DUP #F0$L  #2$L #10$L $dv_log
     %DUP $_xsl isFnLarge @E_cInlineLarge$L $_xsl assertNot
-    $d_vGet  $heap        \ {&heap &inlineFn}
-    %DUP %INC %SWP .1%FT  \ {&heap &inlineFn+1 inlineLen}
-    %DUP #0$L $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
-    %DV@D_memMove$h1 %RET \ {&inlineFn}
+    $d_vGet  $heap %SWP      \ {&heap &inlineFn}
+    %DUP %INC %SWP .1%FT     \ {&heap &inlineFn+1 inlineLen}
+    %DUP @FALSE$L $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
+    %DV@DV_memMove$h1 %RET   \ {&inlineFn}
   $END
   %DUP $_xsl xSzI     \ {&key szLit}
   %OVR $_xsl isFnLarge  $IF @XLL$L $ELSE @XSL$L $END \ {&key instrSzI instr}
@@ -476,9 +479,11 @@ $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
   $scan $tokenPlc #1$L  %EQ @E_cColon$L $_xsl assert \ assert len=1
   $tokenDat .1%FT #3A$L %EQ @E_cColon$L $_jmp assert \ assert ":"
 
+$FN colonRef $_xsl colon  #0$L $_jmp dictRef
+
 $large $FN _xxPre \ { -> &node} prepare for execute or jmp
-  @RSIZE$h1 $_xsl assertNoNow \ locals 0=&key
-  $_xsl colon  #0$L $_xsl dictRef  %DUP .R%SRLL#0$h1 \ {&key}
+  @RSIZE$h1 $_xsl notNow \ locals 0=&key
+  $_xsl colonRef  %DUP .R%SRLL#0$h1 \ {&key}
   %DUP @E_cNoKey$L $_xsl assert
   \ if fn is (PRE or SYN) and compFn exists, compile next token.
   %DUP $_xsl isFnPre %SWP $_xsl isFnSyn %OR .R%FTGL@G_compFn$h2 %AND $IF
@@ -630,7 +635,7 @@ $large $FN _walker \ [&context &Node]
   $GET ctx$Ctx_node %NOT  $IF \ null case
     $GET node  $GET ctx$Ctx_nodeSet %RET
   $END
-  $GET ctx$Ctx_node$d_vGet  $GET node$d_vGet $retGt \ retGt(cur,offset)
+  $GET ctx$Ctx_node$d_vGet  $GET node$d_vGet $retGe \ retGe(cur,offset)
   $GET node $GET ctx$Ctx_nodeSet %RET \ .ctx.node = node
 
 \ {&context &Node]]
@@ -797,7 +802,7 @@ $FN parseBase \ {i base -> value isNumber} parse from token
     $GET base  $GET value %MUL \ {base * value}
     %ADD $SET value \ value = v + value*10
     $GET i %INC $SET i \ i += 1
-  $AGAIN l0  $END_BREAK b0
+  $AGAIN l0  $ENDV_BREAK b0
 
   $GET i %NOT $IF  #0$L @FALSE$L %RET  $END \ no token
   $GET value @TRUE$L %RET
@@ -825,15 +830,20 @@ $number notNum   $tAssertNot ^DRP \ not a number
 $NEW_BLOCK_PRIV
 
 $FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
-  %SWP %NOT %RETZ $jmp:L \ if now leave on stack, else compile
+  %SWP $retIf $jmp:L \ if now leave on stack, else compile
 
 $pre $FN _compConstant \ {asNow} -> {&keyFn[nullable]}
+  %DUP #C0$L  #2$L #10$L $dv_log
   $xx:parseNumber \ {asNow value isNumber}
+  %DUP #C1$L  #2$L #10$L $dv_log
   $IF  $xx:lit #0$L %RET  $END  %DRP  \ {asNow}
   $xx:isEof $IF  %DRP #0$L %RET  $END \ {asNow}
-  #0$L @D_comp_dGet$L %DV@D_comp$h1 \ dictRef w/out scan
+  #0$L @DV_comp_dGet$L %DV@DV_comp$h1 \ {asNow &node}
+  %DUP @E_cNoKey$L $xx:assert
+  %DUP $xx:isTyConst  #C3$L  #2$L #10$L $dv_log
+
   %DUP $xx:isTyConst $IF \ {asNow &node}
-    $d_vGet  $xx:lit  %DRP #0$L %RET
+    $d_vGet  $xx:lit  #0$L %RET
   $END \ {asNow &node}
   %DUP $xx:isTyLocal  @E_cLocalNotConst$L $xx:assertNot
   %SWP %DRP %DUP $jmp:assertFn \ {-> &key}
@@ -843,6 +853,7 @@ $FN execute \ {&key} -> {...}: execute a dictionary key
     %DUP $xx:isFnLarge @E_cInlineLarge$L $xx:assertNot
     $d_vGet %INC %JMPW
   $END
+  %DUP %DUP $d_vGet #E2$L  #3$L #10$L $dv_log
   %DUP $xx:isFnLarge  $IF $d_vGet %XLW %RET $END
   $d_vGet %JMPW
 
@@ -859,32 +870,50 @@ $STORE_PUB
 $pre $FN single
   $declL asNow #0 #1     $declVar
   $declL node  #0 @RSIZE $declVar $declEnd
+  %DUP #01$L  #2$L #10$L $dv_log
   \ Handle constants, return if it compiled the token.
   %DUP $SET asNow $xx:_compConstant %DUP $SET node %RETZ
-  $GET node $xx:isFnPre $IF $GET G_compFn .R%XLW $END \ recurse for PRE
-  $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
-  $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END
-  $GET node $GET asNow $IF  $jmp:execute  $END  $jmp:c_fn
+
+  $GET node $xx:isFnPre $IF
+    #08$L  #1$L #10$L $dv_log
+    $GET G_compFn %XLW
+    #09$L  #1$L #10$L $dv_log
+  $END \ recurse for PRE
+  $GET node $xx:isFnSyn $IF
+    #02$L  #1$L #10$L $dv_log
+    $GET asNow $GET node $jmp:execute    $END
+  $GET node $xx:isFnNow $IF
+    #03$L  #1$L #10$L $dv_log
+    $GET asNow @E_cReqNow$L $xx:assert $END
+  $GET node $GET asNow $IF
+    #04$L  #1$L #10$L $dv_log
+    $xx:execute
+    #05$L  #1$L #10$L $dv_log
+    %RET
+
+    $END  $jmp:c_fn
 
 $pre $FN updateCompFn \ {&newCompFn -> &prevCompFn}
   $GET G_compFn %SWP $SET G_compFn %RET
 
-$FN now \ used in $ to make next token/s run NOW.
+$FN _now \ used in $ to make next token/s run NOW.
   $declL compFn  #0  @RSIZE $declVar $declEnd
-  @now$L
-  $xx:updateCompFn
-  $SET compFn \ update compFn and cache
+  @_now$L $xx:updateCompFn $SET compFn \ update G_compFn and cache
   $xx:scanNoEof
+  #70$L #1$L #10$L $dv_log
   @TRUE$L $xx:single  \ compile next token as NOW
-  $GET compFn $SET compFn %RET
+  $GET compFn $SET G_compFn %RET
 
-$pub$syn $FN $ $xx:assertNoNow $xx:now %RET \ make NOW
+$pub$syn $FN $ $xx:notNow $xx:_now %RET \ make NOW
 
 $pub$syn $FN (  %DRP  \ parens ()
   $LOOP l0
+    #100$L #1$L #10$L $dv_log
     $xx:assertToken
     $xx:peekChr #29$L %EQ $IF  $scan %RET  $END \ return if we hit ")"
-    $GET G_compFn %XLW
+    $GET G_compFn
+    %DUP #101$L #2$L #10$L $dv_log
+    %XLW
   $AGAIN l0
 
 \ {-> c} peek at the char after current token.
@@ -909,13 +938,13 @@ $FN _comment \ used in '\' to make next token ignored (i.e. a comment)
 \    \( ... ) : a block comment
 $syn $FN \  %DRP
   \ line comment if '\' is followed by space
-  $xx:peekNoScan #20$L %EQ $IF
-    @D_comp_readEol$L %DV@D_comp$h1 %RET $END
+  $xx:peekNoScan %DUP #A$L %EQ $IF %DRP %RET $END \ newline
+  #20$L %EQ $IF @DV_comp_readEol$L %DV@DV_comp$h1 %RET $END
   $xx:_comment %RET \ else token comment
 $\ line comment
 $\token_comment
-$\(block comment)
-$\()  $\(  )
+\ $\(block comment)
+\ $\()  $\(  )
 
 \ These do nothing and are used for more readable code.
 $syn $FN _ %DRP %RET   $syn $FN , %DRP %RET   $syn $FN ; %DRP %RET
@@ -924,15 +953,79 @@ $syn $FN -> %DRP %RET
 
 $FN fngi \ fngi compile loop
   $LOOP l0
+    $tokenLen #E0$L  #2$L #10$L $dv_log
     $tokenLen %RETZ \ exit on EOF
+    $GET G_compFn #E1$L  #2$L #10$L $dv_log
     $GET G_compFn %XLW
+    #EF$L  #1$L #10$L $dv_log
   $AGAIN l0
 
 $large $FN fngiSingle \ base compFn for fngi tokens.
   #0$h1 \ not really any locals (but called with XLW)
-  $scan $tokenPlc %RETZ
-  @FALSE$L $xx:single %RET
+  $scan $tokenPlc
+  %RETZ
+  @FALSE$L $xx:single
+  %RET
 
-@fngiSingle $updateCompFn ^DRP
+
+\ **********
+\ * [12] Core fngi functions
+$NEW_BLOCK_PUB
+
+\ Stack operators. These are /not/ PRE since they directly modify the stack.
+$pub      $inline $FN swp   #1$h1 %SWP    %RET
+$pub      $inline $FN drp   #1$h1 %DRP    %RET
+$pub      $inline $FN ovr   #1$h1 %OVR    %RET
+$pub      $inline $FN dup   #1$h1 %DUP    %RET
+$pub      $inline $FN dupn  #1$h1 %DUPN   %RET
+
+\ Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
+$pub $pre $inline $FN ret   #1$h1 %RET
+$pub $pre $inline $FN inc   #1$h1 %INC    %RET
+$pub $pre $inline $FN inc2  #1$h1 %INC2   %RET
+$pub $pre $inline $FN inc4  #1$h1 %INC4   %RET
+$pub $pre $inline $FN dec   #1$h1 %DEC    %RET
+$pub $pre $inline $FN inv   #1$h1 %INV    %RET
+$pub $pre $inline $FN neg   #1$h1 %NEG    %RET
+$pub $pre $inline $FN not   #1$h1 %NOT    %RET
+$pub $pre $inline $FN i1to4 #1$h1 %CI1    %RET
+$pub $pre $inline $FN i2to4 #1$h1 %CI2    %RET
+$pub $pre $inline $FN +     #1$h1 %ADD    %RET
+$pub $pre $inline $FN -     #1$h1 %SUB    %RET
+$pub $pre $inline $FN %     #1$h1 %MOD    %RET
+$pub $pre $inline $FN <<    #1$h1 %SHL    %RET
+$pub $pre $inline $FN >>    #1$h1 %SHR    %RET
+$pub $pre $inline $FN msk   #1$h1 %MSK    %RET
+$pub $pre $inline $FN jn    #1$h1 %JN     %RET
+$pub $pre $inline $FN xor   #1$h1 %XOR    %RET
+$pub $pre $inline $FN and   #1$h1 %AND    %RET
+$pub $pre $inline $FN or    #1$h1 %OR     %RET
+$pub $pre $inline $FN ==    #1$h1 %EQ     %RET
+$pub $pre $inline $FN !=    #1$h1 %NEQ    %RET
+$pub $pre $inline $FN >=    #1$h1 %GE_U   %RET
+$pub $pre $inline $FN <     #1$h1 %LT_U   %RET
+$pub $pre $inline $FN *     #1$h1 %MUL    %RET
+$pub $pre $inline $FN /     #1$h1 %DIV_U  %RET
+
+\ ftN(addr): fetch a value of sz N from address.
+$pub $pre $inline $FN ft1   #1$h1 .1%FT   %RET
+$pub $pre $inline $FN ft2   #1$h1 .2%FT   %RET
+$pub $pre $inline $FN ft4   #1$h1 .4%FT   %RET
+
+\ srN(value, addr): store a value of sz N to address.
+$pub $pre $inline $FN sr1   #1$h1 .1%SR   %RET
+$pub $pre $inline $FN sr2   #1$h1 .2%SR   %RET
+$pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
+
+\ Switch to fngi syntax and test some basics
+$STORE_PRIV $assertNoWs
+@fngiSingle $updateCompFn ^DRP $fngi
+$tAssert 1;  $tAssert(1);   $tAssertNot(FALSE);
+$tAssertEq(0x42, 0x42);
+pre FN testFngiSyntax \ [a -> 0x42 + a] just make sure some syntax works
+  $declVar(declL a, TY_VAR_INPUT, 2) $declVar(declL out, 0, 2) $declEnd
+  GET a + answer -> SET out;   ret(GET out);
+$tAssertEq(0x46, testFngiSyntax(4));
+
 
 $STORE_PUB $assertNoWs

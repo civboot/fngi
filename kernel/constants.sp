@@ -176,30 +176,30 @@
 \ will be an index into the kernel's file manager.
 \
 
-#00 #0=D_cede     \ {} cede, allowing another thread to run
-#01 #0=D_catch    \ {&xlw -> errCode} execute xlw returning err
-#02 #0=D_memSet   \ {&dst v:U1 len} set dst to v
-#03 #0=D_memCmp   \ {&a &b len -> cmp} compare a and b
-#04 #0=D_memMove  \ {&dst &src len} dst = src [of len]
-#05 #0=D_log      \ { ... len lvl} log len integers to com
-#06 #0=D_file     \ {method:U1 f:FRole} run a file method with kernel support
+#00 #0=DV_cede     \ {} cede, allowing another thread to run
+#01 #0=DV_catch    \ {&xlw -> errCode} execute xlw returning err
+#02 #0=DV_memSet   \ {&dst v:U1 len} set dst to v
+#03 #0=DV_memCmp   \ {&a &b len -> cmp} compare a and b
+#04 #0=DV_memMove  \ {&dst &src len} dst = src [of len]
+#05 #0=DV_log      \ { ... len lvl} log len integers to com
+#06 #0=DV_file     \ {method:U1 f:FRole} run a file method with kernel support
 
-#0A #0=D_assert   \ {chk errCode} if(not chk) panic(errCode)
-#0B #0=D_bba      \ {... &BBA method -> ...} execute method on &BBA
-#0C #0=D_comp     \ {...} run a compiler method (see below)
-#0D #0=D_dict     \ {slc root:&DNode -> &DNode cmp} perform dict_find
+#0A #0=DV_assert   \ {chk errCode} if(not chk) panic(errCode)
+#0B #0=DV_bba      \ {... &BBA method -> ...} execute method on &BBA
+#0C #0=DV_comp     \ {...} run a compiler method (see below)
+#0D #0=DV_dict     \ {slc root:&DNode -> &DNode cmp} perform dict_find
 
-\ D_comp is a toolbox of compiler functionality which has to be implemented
+\ DV_comp is a toolbox of compiler functionality which has to be implemented
 \ in the kernel anyway. Allowing it to be usable by spor reduces the complexity
 \ of bootstrapping considerably.
-#00 #0=D_comp_heap    \ {-> heap} get the current heap (depends on cstate C_PUB)
-#01 #0=D_comp_last    \ {-> &DNode} last dictionary node modified
-#02 #0=D_comp_wsLen   \ {-> wsLen} get working stack length
-#03 #0=D_comp_dGet    \ {&root -> &DNode} get token from dict (default=base)
-#04 #0=D_comp_dAdd    \ {v m2 &root} add dict token={v, meta} (default=base)
-#05 #0=D_comp_read1   \ {->numRead} read (at least) single byte from src
-#06 #0=D_comp_readEol \ {} read src until EOL (for comments), incrementing b.len
-#07 #0=D_comp_scan    \ {} "scan" token into start of buffer. Sets b.len.
+#00 #0=DV_comp_heap    \ {-> heap} get the current heap (depends on cstate C_PUB)
+#01 #0=DV_comp_last    \ {-> &DNode} last dictionary node modified
+#02 #0=DV_comp_wsLen   \ {-> wsLen} get working stack length
+#03 #0=DV_comp_dGet    \ {&root -> &DNode} get token from dict (default=base)
+#04 #0=DV_comp_dAdd    \ {v m2 &root} add dict token={v, meta} (default=base)
+#05 #0=DV_comp_read1   \ {->numRead} read (at least) single byte from src
+#06 #0=DV_comp_readEol \ {} read src until EOL (for comments), incrementing b.len
+#07 #0=DV_comp_scan    \ {} "scan" token into start of buffer. Sets b.len.
 
 \ The RG 1 byte literal has the following byte format. Note: FT will return the
 \ register value + offset, SR will store the value + offset in the register.
