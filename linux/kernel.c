@@ -831,6 +831,12 @@ void xlImpl(Ref fn) { // impl for XL*
   xImpl(growSz, fn + 1);
 }
 
+void slcImpl(U1 sz) {
+  Ref len = popLit(sz);
+  WS_PUSH(cfb->ep); WS_PUSH(len); // {dat, len}
+  cfb->ep += len;
+}
+
 //   *******
 //   * Interlude: debug statements
 
@@ -889,7 +895,7 @@ bool dbgExecute(Instr instr) {
 }
 
 void dbgInstr(Instr instr) {
-  // eprintf("??? instr: %X\n", instr);
+  // eprintf("??? instr: %X  ep=%X\n", instr, cfb->ep);
   if(LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))  {
     if(isExecute(instr)) dbgExecute(instr);
   }
@@ -968,8 +974,8 @@ inline static Instr executeInstr(Instr instr) {
     case NEQ : r = WS_POP(); WS_PUSH(WS_POP() != r); R0
     case GE_U: r = WS_POP(); WS_PUSH(WS_POP() >= r); R0
     case LT_U: r = WS_POP(); WS_PUSH(WS_POP() < r); R0
-    case GE_S: r = WS_POP(); WS_PUSH((I4)WS_POP() >= (I4) r); R0
-    case LT_S: r = WS_POP(); WS_PUSH((I4)WS_POP() < (I4) r); R0
+    case GE_S: r = WS_POP(); WS_PUSH(((I4)WS_POP()) >= ((I4)r)); R0
+    case LT_S: r = WS_POP(); WS_PUSH(((I4)WS_POP()) < ((I4)r)); R0
     case MUL  :r = WS_POP(); WS_PUSH(WS_POP() * r); R0
     case DIV_U:r = WS_POP(); WS_PUSH(WS_POP() / r); R0
     case DIV_S:
@@ -1047,6 +1053,10 @@ inline static Instr executeInstr(Instr instr) {
     case SZ1 + XSL: xImpl(0, cfb->ep + (I1)popLit(1)); R0;
     case SZ2 + XSL: xImpl(0, sectorRef(popLit(2))); R0;
     case SZ4 + XSL: xImpl(0, popLit(4)); R0;
+
+    case SZ1 + SLC: slcImpl(1); R0;
+    case SZ2 + SLC: slcImpl(2); R0;
+    case SZ4 + SLC: slcImpl(4); R0;
 
     default: if(instr >= SLIT) { WS_PUSH(0x3F & instr); R0 }
   }

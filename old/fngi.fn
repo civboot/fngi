@@ -8,65 +8,65 @@
 
 $c_fngi
 
-\ Stack operators. These are /not/ PRE since they directly modify the stack.
-FN swp  INLINE spor%SWP  END_INLINE ret;
-FN drp  INLINE spor%DRP  END_INLINE ret;
-FN ovr  INLINE spor%OVR  END_INLINE ret;
-FN dup  INLINE spor%DUP  END_INLINE ret;
-FN dupn INLINE spor%DUPN END_INLINE ret;
-
-\ Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
-FN dvft  PRE INLINE spor%DVFT   END_INLINE ret;
-FN dvsr  PRE INLINE spor%DVSR   END_INLINE ret;
-FN inc   PRE INLINE spor%INC    END_INLINE ret;
-FN inc2  PRE INLINE spor%INC2   END_INLINE ret;
-FN inc4  PRE INLINE spor%INC4   END_INLINE ret;
-FN dec   PRE INLINE spor%DEC    END_INLINE ret;
-FN inv   PRE INLINE spor%INV    END_INLINE ret;
-FN neg   PRE INLINE spor%NEG    END_INLINE ret;
-FN not   PRE INLINE spor%NOT    END_INLINE ret;
-FN i1to4 PRE INLINE spor%CI1    END_INLINE ret;
-FN i2to4 PRE INLINE spor%CI2    END_INLINE ret;
-FN +     PRE INLINE spor%ADD    END_INLINE ret;
-FN -     PRE INLINE spor%SUB    END_INLINE ret;
-FN %     PRE INLINE spor%MOD    END_INLINE ret;
-FN <<    PRE INLINE spor%SHL    END_INLINE ret;
-FN >>    PRE INLINE spor%SHR    END_INLINE ret;
-FN msk   PRE INLINE spor%MSK    END_INLINE ret;
-FN jn    PRE INLINE spor%JN     END_INLINE ret;
-FN xor   PRE INLINE spor%XOR    END_INLINE ret;
-FN and   PRE INLINE spor%AND    END_INLINE ret;
-FN or    PRE INLINE spor%OR     END_INLINE ret;
-FN ==    PRE INLINE spor%EQ     END_INLINE ret;
-FN !=    PRE INLINE spor%NEQ    END_INLINE ret;
-FN >=    PRE INLINE spor%GE_U   END_INLINE ret;
-FN <     PRE INLINE spor%LT_U   END_INLINE ret;
-FN *     PRE INLINE spor%MUL    END_INLINE ret;
-FN /     PRE INLINE spor%DIV_U  END_INLINE ret;
-
-FN xsw  PRE SYN assertNoNow(_) $c1(SZA+XSW) ret;
-FN xw   PRE SYN assertNoNow(_) $c1(SZA+XLW)  ret;
-
-\ memSet: {dst v len}   "dst = v"
-\ memMove {dst src len} "dst = src"
-\ memCmp: {&a &b len -> cmp}
-FN memSet  PRE INLINE dvft(D_memSet) END_INLINE ret;
-FN memMove PRE INLINE dvsr(D_memSet) END_INLINE ret;
-FN memCmp  PRE INLINE dvft(D_memCmp) END_INLINE ret;
-FN memClear PRE  0 swp; ret memSet(_, _) \ {addr len} clear memory
-
-\ {a b} return if a < b
-FN retlt PRE INLINE retz(\a >= \b) END_INLINE ret;
-
-\ ftN(addr): fetch a value of sz N from address.
-FN ft1    PRE INLINE spor$(.1%FT) END_INLINE ret;
-FN ft2    PRE INLINE spor$(.2%FT) END_INLINE ret;
-FN ft4    PRE INLINE spor$(.4%FT) END_INLINE ret;
-
-\ srN(value, addr): store a value of sz N to address.
-FN sr1    PRE INLINE spor$(.1%SR) END_INLINE ret;
-FN sr2    PRE INLINE spor$(.2%SR) END_INLINE ret;
-FN sr4    PRE INLINE spor$(.4%SR) END_INLINE ret;
+\ \ Stack operators. These are /not/ PRE since they directly modify the stack.
+\ FN swp  INLINE spor%SWP  END_INLINE ret;
+\ FN drp  INLINE spor%DRP  END_INLINE ret;
+\ FN ovr  INLINE spor%OVR  END_INLINE ret;
+\ FN dup  INLINE spor%DUP  END_INLINE ret;
+\ FN dupn INLINE spor%DUPN END_INLINE ret;
+\ 
+\ \ Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
+\ FN dvft  PRE INLINE spor%DVFT   END_INLINE ret;
+\ FN dvsr  PRE INLINE spor%DVSR   END_INLINE ret;
+\ FN inc   PRE INLINE spor%INC    END_INLINE ret;
+\ FN inc2  PRE INLINE spor%INC2   END_INLINE ret;
+\ FN inc4  PRE INLINE spor%INC4   END_INLINE ret;
+\ FN dec   PRE INLINE spor%DEC    END_INLINE ret;
+\ FN inv   PRE INLINE spor%INV    END_INLINE ret;
+\ FN neg   PRE INLINE spor%NEG    END_INLINE ret;
+\ FN not   PRE INLINE spor%NOT    END_INLINE ret;
+\ FN i1to4 PRE INLINE spor%CI1    END_INLINE ret;
+\ FN i2to4 PRE INLINE spor%CI2    END_INLINE ret;
+\ FN +     PRE INLINE spor%ADD    END_INLINE ret;
+\ FN -     PRE INLINE spor%SUB    END_INLINE ret;
+\ FN %     PRE INLINE spor%MOD    END_INLINE ret;
+\ FN <<    PRE INLINE spor%SHL    END_INLINE ret;
+\ FN >>    PRE INLINE spor%SHR    END_INLINE ret;
+\ FN msk   PRE INLINE spor%MSK    END_INLINE ret;
+\ FN jn    PRE INLINE spor%JN     END_INLINE ret;
+\ FN xor   PRE INLINE spor%XOR    END_INLINE ret;
+\ FN and   PRE INLINE spor%AND    END_INLINE ret;
+\ FN or    PRE INLINE spor%OR     END_INLINE ret;
+\ FN ==    PRE INLINE spor%EQ     END_INLINE ret;
+\ FN !=    PRE INLINE spor%NEQ    END_INLINE ret;
+\ FN >=    PRE INLINE spor%GE_U   END_INLINE ret;
+\ FN <     PRE INLINE spor%LT_U   END_INLINE ret;
+\ FN *     PRE INLINE spor%MUL    END_INLINE ret;
+\ FN /     PRE INLINE spor%DIV_U  END_INLINE ret;
+\ 
+\ FN xsw  PRE SYN assertNoNow(_) $c1(SZA+XSW) ret;
+\ FN xw   PRE SYN assertNoNow(_) $c1(SZA+XLW)  ret;
+\ 
+\ \ memSet: {dst v len}   "dst = v"
+\ \ memMove {dst src len} "dst = src"
+\ \ memCmp: {&a &b len -> cmp}
+\ FN memSet  PRE INLINE dvft(D_memSet) END_INLINE ret;
+\ FN memMove PRE INLINE dvsr(D_memSet) END_INLINE ret;
+\ FN memCmp  PRE INLINE dvft(D_memCmp) END_INLINE ret;
+\ FN memClear PRE  0 swp; ret memSet(_, _) \ {addr len} clear memory
+\ 
+\ \ {a b} return if a < b
+\ FN retlt PRE INLINE retz(\a >= \b) END_INLINE ret;
+\ 
+\ \ ftN(addr): fetch a value of sz N from address.
+\ FN ft1    PRE INLINE spor$(.1%FT) END_INLINE ret;
+\ FN ft2    PRE INLINE spor$(.2%FT) END_INLINE ret;
+\ FN ft4    PRE INLINE spor$(.4%FT) END_INLINE ret;
+\ 
+\ \ srN(value, addr): store a value of sz N to address.
+\ FN sr1    PRE INLINE spor$(.1%SR) END_INLINE ret;
+\ FN sr2    PRE INLINE spor$(.2%SR) END_INLINE ret;
+\ FN sr4    PRE INLINE spor$(.4%SR) END_INLINE ret;
 
 FN = SYN panic(E_cToken)    \ prevent hanging =
 FN ) SYN panic(E_cUnclosed) \ prevent hanging )
@@ -74,19 +74,19 @@ FN setSysLogLvl PRE SET sysLogLvl ret; \ {logLvl}
 FN setUsrLogLvl PRE SET usrLogLvl ret; \ {logLvl}
 
 \ TODO: alias?
-$(select(REF sr2, REF sr4, ASIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) kdictSet srA)
-$(select(REF sr2, REF sr4, ASIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) kdictSet ftA)
+$(select(REF sr2, REF sr4, RSIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) kdictSet srA)
+$(select(REF sr2, REF sr4, RSIZE == 2) -> (TY_FN_PRE + TY_FN_SYN) kdictSet ftA)
 
 FN strEq PRE \ {aLen &a bLen &b}
-  $declVar(declL bLen, TY_VAR_INPUT+SZA, ASIZE)
-  $declVar(declL b, TY_VAR_INPUT+SZA, ASIZE)
+  $declVar(declL bLen, TY_VAR_INPUT+SZA, RSIZE)
+  $declVar(declL b, TY_VAR_INPUT+SZA, RSIZE)
   $declEnd
   swp \ {&a aLen}
   IF(\aLen != GET bLen)  drp; ret FALSE;  END \ {&a}
   ret(memCmp(\a, GET b, GET bLen) == 0)
 
 FN zEq PRE \ {&aZ &bZ} compare two zoab strings
-  $declVar(declL bZ, TY_VAR_INPUT+SZA, ASIZE) $declEnd
+  $declVar(declL bZ, TY_VAR_INPUT+SZA, RSIZE) $declEnd
          ft1(dup) -> swp -> inc; \ {aLen &a}
   GET bZ ft1(dup) -> swp -> inc; \ {aLen &a bLen &b}
   -> ret strEq;
@@ -119,7 +119,7 @@ FN zEq PRE \ {&aZ &bZ} compare two zoab strings
 \   swp; ret sr4(\num, \(&key));
 \ 
 \ FN between PRE \ {value a b -> bool} value is between [a b)
-\   $declVar(declL b, TY_VAR_INPUT+SZA, ASIZE) $declEnd \ {value a}
+\   $declVar(declL b, TY_VAR_INPUT+SZA, RSIZE) $declEnd \ {value a}
 \   ovr; swp; \ {value value a}
 \   IF(\value < \a)  drp; ret FALSE;  END
 \   ret(\value < GET b);
@@ -141,7 +141,7 @@ FN zEq PRE \ {&aZ &bZ} compare two zoab strings
 \ $assertWsEmpty \ UUUUU
 \ 
 \ $
-\ declVar(declL h, SZA, ASIZE) $declEnd
+\ declVar(declL h, SZA, RSIZE) $declEnd
 \   c_single(c_scan; FALSE) \ compile token after if
 \   0 -> $xsl IF -> SET h
 \   assertToken(c_scan; TOKEN_DO) c_single(c_scan; FALSE) \ do <token>

@@ -154,8 +154,6 @@ $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :retIf     #2$h1     %NOT  %RETZ %RET
 @_FP@TY_FN_INLINE^JN :retLt     #2$h1     %GE_U %RETZ %RET
 @_FP@TY_FN_INLINE^JN :retGe     #2$h1     %LT_U %RETZ %RET
-@_FP@TY_FN_INLINE^JN :gt_u      #2$h1     %SWP %LT_U %RET
-@_FP@TY_FN_INLINE^JN :le_u      #2$h1     %SWP %GE_U %RET
 
 \ * [2] Spor syntax
 \ These are core spor syntax helpers, many of which will also be used to
@@ -219,7 +217,7 @@ $STORE_PUB      $assertNoWs
   %OVR $d_mGet %JN \ {&DNode mNew}
   %SWP $d_mSet %RET
 
-$pub @_FP@TY_FN_INLINE^JN :heap #3$h1 @DV_comp_heap$L0 %DV@DV_comp$h1 %RET
+$pub @TY_FN@TY_FN_INLINE^JN :heap #3$h1 @DV_comp_heap$L0 %DV@DV_comp$h1 %RET
 $pub @_FP :notNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
 @TY_FN :_implFnTy \ {meta asNow}
   %SWP $_xsl notNow \ {meta}
@@ -257,7 +255,7 @@ $pre $FN assertTyVar $_xsl isTyVar  @E_cNotVar$L2 $_jmp assert
 $tDictRef assert    ^DUP $isFnPre $tAssert $isFnNormal $tAssert
 $tDictRef assertEq  $isFnInline $tAssert
 
-$pub $pre $FN panic   #0$L0 $_jmp assert \ {err} panic immediately
+$pub $pre $FN panic   #0$L0 %SWP $_jmp assert   \ {err} panic immediately
 $pub      $FN unreach @E_unreach$L2 $_jmp panic \ unreachable code
 $pub $pre $FN unimplIfTrue @E_unimpl$L2 $_jmp assert \ {chk}: if true raise unimpl
 $pre $FN assertSzI \ {szI}
@@ -754,7 +752,7 @@ $FN charNext
 $charNext* #2A $tAssertEq   $charNext  #20 $tAssertEq \ '*', ' '
 
 \ {} -> {char unknownEscape} read a character that can be escaped.
-$FN readCharEsc
+$FN charNextEsc
   $xx:charNext \ {char}
   %DUP #5C$L %NEQ $IF @FALSE$L %RET $END \ if(c != '\\') ret;
   \ c is an escape character: \
@@ -772,9 +770,9 @@ $FN readCharEsc
     @FALSE$L %RET
   $END
   @TRUE$L %RET \ just return the character as-is but unknownEscape=true
-$readCharEsc*  $tAssertNot #2A $tAssertEq    \ '*'
-$readCharEsc\n $tAssertNot #0A $tAssertEq    \ '\n'
-$readCharEsc\W $tAssert    #57 $tAssertEq    \ unknownEscape and 'W'
+$charNextEsc*  $tAssertNot #2A $tAssertEq    \ '*'
+$charNextEsc\n $tAssertNot #0A $tAssertEq    \ '\n'
+$charNextEsc\W $tAssert    #57 $tAssertEq    \ unknownEscape and 'W'
 
 $pre $FN numBase \ {c -> base} get number base from char
   %DUP #63$L %EQ $IF %DRP #FE$L %RET $END \ c -> character
@@ -789,8 +787,8 @@ $FN parseBase \ {i base -> value isNumber} parse from token
   $declL value  @SZR                  @RSIZE $declVar
   $declEnd
   $GET base #FE$L %EQ $IF \ if special 'character' base
-      $GET i $tokenPlcSet \ readCharEsc is off END of tokenPlc
-      $xx:readCharEsc  @E_cUnknownEsc$L $xx:assertNot  @TRUE$L %RET
+      $GET i $tokenPlcSet \ charNextEsc is off END of tokenPlc
+      $xx:charNextEsc  @E_cUnknownEsc$L $xx:assertNot  @TRUE$L %RET
   $END #0$L $SET value
   $LOOP l0
     $GET i  $tokenPlc $BREAK_EQ b0
@@ -1004,6 +1002,8 @@ $pub $pre $inline $FN ==    #1$h1 %EQ     %RET
 $pub $pre $inline $FN !=    #1$h1 %NEQ    %RET
 $pub $pre $inline $FN >=    #1$h1 %GE_U   %RET
 $pub $pre $inline $FN <     #1$h1 %LT_U   %RET
+$pub $pre $inline $FN ge_s  #1$h1 %GE_S   %RET
+$pub $pre $inline $FN lt_s  #1$h1 %LT_S   %RET
 $pub $pre $inline $FN *     #1$h1 %MUL    %RET
 $pub $pre $inline $FN /     #1$h1 %DIV_U  %RET
 

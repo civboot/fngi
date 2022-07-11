@@ -49,6 +49,7 @@
 #E0D1  #0=E_cReg    \ Register error
 #E0D2  #0=E_cStr    \ Str invalid
 #E0D3  #0=E_cState  \ compiler state invalid
+#E0D4  #0=E_cNotFit \ constant/str is too large
 
 #E0E0  #0=E_cNotGlobal \ using a non-global as global
 #E0E1  #0=E_cIsX       \ using an XS for an X
@@ -63,7 +64,7 @@
 #E0EB  #0=E_cNotVar
 #E0EC  #0=E_cLocalNotConst
 #E0ED  #0=E_eof
-#E0EE  #0=E_cUnclosed   \ unclosed paren/brace/etc
+#E0EE  #0=E_cParen      \ paren executed by PRE or unclosed
 #E0EF  #0=E_cReqNow     \ fn is NOW but no '$' used
 #E0EF  #0=E_cNoNow      \ fn is SYN and requires no $ used.
 #E0F0  #0=E_cUnknownEsc \ unknown character escape

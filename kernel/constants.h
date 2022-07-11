@@ -73,6 +73,7 @@
 #define JTBL                 0x83
 #define XLL                  0x84
 #define XSL                  0x85
+#define SLC                  0x86
 #define SLIT                 0xC0
 #define DV_cede              0x0
 #define DV_catch             0x1
@@ -180,6 +181,7 @@
 #define E_cReg               0xE0D1
 #define E_cStr               0xE0D2
 #define E_cState             0xE0D3
+#define E_cNotFit            0xE0D4
 #define E_cNotGlobal         0xE0E0
 #define E_cIsX               0xE0E1
 #define E_cIsXS              0xE0E2
@@ -193,7 +195,7 @@
 #define E_cNotVar            0xE0EB
 #define E_cLocalNotConst     0xE0EC
 #define E_eof                0xE0ED
-#define E_cUnclosed          0xE0EE
+#define E_cParen             0xE0EE
 #define E_cReqNow            0xE0EF
 #define E_cNoNow             0xE0EF
 #define E_cUnknownEsc        0xE0F0

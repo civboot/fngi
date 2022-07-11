@@ -152,6 +152,7 @@
 #83 #0=JTBL  \ Jump to Table index using size=Literal
 #84 #0=XLL   \ Execute Literal (mPtr)
 #85 #0=XSL   \ Execute Small Literal (no LS update)
+#86 #0=SLC   \ Inline Slc, jmp sz and push {ref, len}
 
 \ Common instr+szs
 @SZ2@XSL  ^JN   #0=XSL2

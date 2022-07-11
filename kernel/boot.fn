@@ -7,12 +7,56 @@ $fngi  $STORE_PUB
 \ etc do not behave in the way their lower-case counterparts will behave.
 \ Refer to boot.sp for all documentation.
 
-pub syn FN dv   notNow $c1(DV); jmp:h1(d_vGet(colonRef;))
-pub pre inline FN memSet  $h1(2) dv:D_memSet  ret; \ [&dst v len]   "dst = v"
-pub pre inline FN memCmp  $h1(2) dv:D_memCmp  ret; \ [&dst &src len] "dst = src"
-pub pre inline FN memMove $h1(2) dv:D_memMove ret; \ [&a &b len -> cmp]
+pub syn        FN dv      notNow $c1(DV); jmp:h1(d_vGet(colonRef;))
+pub pre inline FN memSet  $h1(2) dv:DV_memSet  ret; \ [&dst v len]   "dst = v"
+pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&dst &src len] "dst = src"
+pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&a &b len -> cmp]
 pub pre        FN memClr  0 swp; jmp:memSet(_, _) \ [&a len] clear
 
+syn FN =  panic(E_cToken)    \ prevent hanging =
+syn FN )  panic(E_cParen)    \ prevent hanging )
+
+inline pre FN >     $h1(2) swp -> (_ < _)  ret;
+inline pre FN <=    $h1(2) swp -> (_ >= _) ret;
+$tAssert(2 > 1) $tAssertNot(2 > 2) $tAssert(2 <= 2) $tAssertNot(2 <= 1)
+
+inline pre FN le_s  $h1(2) swp -> (_ ge_s _)  ret;  \ [a b -> a <= b]
+inline pre FN gt_s  $h1(2) swp -> (_ lt_s _)  ret;  \ [a b -> a >= b]
+$tAssert(gt_s(neg 1, neg 2)) $tAssertNot(gt_s(neg 2, neg 2))
+$tAssert(gt_s(2, neg 7))
+$tAssert(le_s(neg 2, neg 2)) $tAssert(le_s(neg 3, neg 2))
+$tAssert(le_s(neg 1, 100))
+
+
+pub syn FN |  notNow \ [-> dat len] Define a string slice
+  h1(SZ1 + SLC); heap; h1(0); \ {start}
+  LOOP l0  charNextEsc; \ {start, char, unknownEscape
+    \ dv_log(0x1000, 1, 0x10)
+    IF (\unknownEscape) assert(dup\char == 0c|, E_cStr);
+    ELSE IF (dup\char == 0c|)
+      drp\char; (heap - ovr\start) -> dec; \ {start len}
+      assert(0xFF >= ovr\len, E_cNotFit);
+      swp; sr1(\len, \start); ret;
+    END END  h1(\char);
+  AGAIN l0
+$STORE_PRIV
+FN helloWorld  ret |Hello World!|  \ [-> dat len]
+$tAssertEq(helloWorld, 12); \ len == 12
+$tAssertEq(ft1(dup\dat), 0cH);  $tAssertEq(ft1(inc\dat), 0ce); \ start == "He"
+
+$STORE_PUB
+pub pre FN strCmp \ [&a aLen &b bLen -> bool]
+  $declVar(declL b,    TY_VAR_INPUT, RSIZE)
+  $declVar(declL bLen, TY_VAR_INPUT, RSIZE)
+  $declEnd
+  IF(dup\aLen < GET bLen) drp; drp; ret(neg 1); END
+  IF(   \aLen > GET bLen)      drp; ret(    1); END
+  ret memCmp(\a, GET b, GET bLen)
+$STORE_PRIV
+FN helloBobby  ret |Hello Bobby!|  \ [-> dat len]
+$tAssertEq(strCmp(helloWorld, helloWorld),     0) \ is equal
+$tAssert(  strCmp(helloWorld, 0, 42)      lt_s 0) \ different lengths
+$tAssert(  strCmp(helloWorld, helloBobby) gt_s 0) \ different contents
 
 
 $assertNoWs
