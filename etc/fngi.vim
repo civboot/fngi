@@ -19,6 +19,7 @@ syn keyword elInstr
       \ NOJ   JMPL  JMPW  JZL   JTBL  XLL   XLW   XSL   SLC   XSW
       \ WS    LIT   FTLL  FTGL  FTOL  SRLL  SRGL  SROL
       \ if else loop while break ret retIfNot reteq retIf retLt retGe
+      \ xlw xsw
       \ jn msk xor or and inv neg not
       \ ge_s gt_s le_s lt_s
       \ nextgroup=elSymbol

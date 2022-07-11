@@ -130,8 +130,10 @@ $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @DV_comp_last$L0 %DV@DV_comp$h1 %RET
 @_FP@TY_FN_INLINE^JN :scan      #3$h1 @DV_comp_scan$L0 %DV@DV_comp$h1 %RET
 
-@_FP :dictRef   $scan @DV_comp_dGet$L0 %DV@DV_comp$h1 %RET \ {&root -> &Node}
 @_FP :dictAdd   $scan @DV_comp_dAdd$L0 %DV@DV_comp$h1 %RET \ {m v -> &Node}
+@_FP :dictRef \ {<token> &root -> &Node}
+  $scan @DV_comp_dGet$L0 %DV@DV_comp$h1
+  %DUP @E_cNoKey$L2 .2%JMPL@assert$h2
 
 $STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m$h1 %RET \ {&DNode -> m}
@@ -286,7 +288,7 @@ $pub $pre $syn $FN IF $_xsl notNow \ {} -> {&jmpTo} : start an if block
   @SZ1@JZL^JN $c1 \ compile .1%JZL instr
   $heap #0$L0 $_jmp h1  \ compile 0 (jump pad)
 
-$FN _END \ {&jmpTo heapSub} jmpTo is where to store (heap-heapSub)
+$pre $FN _END \ {&jmpTo heapSub} jmpTo is where to store (heap-heapSub)
   $heap \ {&jmpTo heapSub heap}
   %SWP %SUB   %DUP $_xsl assertJmpL1 \ {heapSub (heap-heapSub)}
   %SWP .1%SR %RET \ store at &jmpTo (1 byte literal)
@@ -428,11 +430,11 @@ $FN testXlw  @answerL$L %XLW %RET     $testXlw   #42 $tAssertEq
 $STORE_PRIV
 \ Inline helper functions for src and token
 $inline $FN read #3$h1 @DV_comp_read1$L %DV@DV_comp$h1 %RET \ { -> numRead}
-$inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
-$inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
-$inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
-$inline $FN tokenLenSet #3$h1 .2%SRGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
-$inline $FN tokenDat #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_dat^ADD$h2 %RET
+     $inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
+$pre $inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
+     $inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
+$pre $inline $FN tokenLenSet #3$h1 .2%SRGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
+     $inline $FN tokenDat #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_dat^ADD$h2 %RET
 
 $STORE_PUB
      $FN isEof       $tokenPlc %NOT %RET
@@ -480,14 +482,15 @@ $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
 $FN colonRef $_xsl colon  #0$L $_jmp dictRef
 
 $large $FN _xxPre \ { -> &node} prepare for execute or jmp
-  @RSIZE$h1 $_xsl notNow \ locals 0=&key
-  $_xsl colonRef  %DUP .R%SRLL#0$h1 \ {&key}
-  %DUP @E_cNoKey$L $_xsl assert
-  \ if fn is (PRE or SYN) and compFn exists, compile next token.
-  %DUP $_xsl isFnPre %SWP $_xsl isFnSyn %OR .R%FTGL@G_compFn$h2 %AND $IF
-    .R%FTGL@G_compFn$h2 %XLW
-  $END
-  .R%FTLL #0$h1 %RET
+  @RSIZE$h1 $_xsl notNow \ locals 0=&node
+  $_xsl colonRef  %DUP .R%SRLL#0$h1 \ {&node}
+  \ if compFn exists and fn is (PRE or SYN), compile normally
+  $_xsl isTyFn .R%FTGL@G_compFn$h2 %AND $IF \ {}
+    .R%FTLL#0$h1 %DUP $_xsl isFnSyn %SWP $_xsl isFnPre %OR $IF
+      \ Compile the next token first, then return &node to be compiled.
+      .R%FTGL@G_compFn$h2 %XLW
+    $END
+  $END  .R%FTLL#0$h1 %RET
 
 $syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
 $syn $FN jmp
@@ -555,7 +558,6 @@ $pre $large $FN _getSetImpl
   @RSIZE^DUP^ADD$h1 \ locals (see below)
   .1%SRLL#3$h1   .1%SRLL#2$h1 \ 2=globalInstrSz 3=globalInstr
   .1%SRLL#1$h1   .1%SRLL#0$h1 \ 0=localInstrSz 1=localInstr   {&key}
-  %DUP @E_cNoKey$L $xx:assert
   %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
         %DUP $xx:keySzI .1%FTLL#0$h1 .1%FTLL#1$h1      \ local
   $ELSE %DUP $xx:keySzI .1%FTLL#2$h1 .1%FTLL#3$h1 $END \ global
@@ -699,14 +701,14 @@ $pre $FN testDeclEnd \ { a b c -> a - c + b }
 \ fn betweenIncl [value a b -> bool]  : return whether value between [a,b]
 \ fn charToInt [c -> U8]          : convert ascii -> hex
 \
-\ fngi                          : fngi compile loop.
-\ fn fngiSingle [ -> ...]         : starting (base) compFn
-\ fn single [asNow -> ...]  : compile/execute a single token (compFn).
-\ fn fn [&key]                  : compile a function (small or large)
+\ fngi []                         : fngi compile loop
+\ fn baseCompFn [ -> ...]         : starting (base) compFn
+\ fn single [asNow -> ...]        : compile/execute a single token (compFn).
+\ fn fn [&key]                    : compile a function (small or large)
 \ fn execute [&key]               : execute a function (small or large)
 \ fn parseNumber [ -> value isNum]: parse token as number
 \ fn lit [U4]                     : compile literal
-\ fn xSzI [&key -> szI]        : return szI of the fn
+\ fn xSzI [&key -> szI]           : return szI of the fn
 \
 \ fn charNext [ -> c]           : read next character (WARN: AFTER tokenPlc)
 \ fn charNextEsc [ -> c unkEsc] : read an escapeable character (string).
@@ -830,16 +832,13 @@ $NEW_BLOCK_PRIV
 $FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
   %SWP $retIf $jmp:L \ if now leave on stack, else compile
 
-$pre $FN _compConstant \ {asNow} -> {&keyFn[nullable]}
-  %DUP #C0$L  #2$L #10$L $dv_log
+\ Attempt to compile current token as const, else return a node of TY_FN
+$pre $FN _compConstant \ [asNow -> &nodeFn(nullable)}
   $xx:parseNumber \ {asNow value isNumber}
-  %DUP #C1$L  #2$L #10$L $dv_log
   $IF  $xx:lit #0$L %RET  $END  %DRP  \ {asNow}
   $xx:isEof $IF  %DRP #0$L %RET  $END \ {asNow}
   #0$L @DV_comp_dGet$L %DV@DV_comp$h1 \ {asNow &node}
-  %DUP @E_cNoKey$L $xx:assert
-  %DUP $xx:isTyConst  #C3$L  #2$L #10$L $dv_log
-
+  %DUP @E_cNoKey$L $xx:assert \ assert node {asNow &node}
   %DUP $xx:isTyConst $IF \ {asNow &node}
     $d_vGet  $xx:lit  #0$L %RET
   $END \ {asNow &node}
@@ -851,7 +850,6 @@ $FN execute \ {&key} -> {...}: execute a dictionary key
     %DUP $xx:isFnLarge @E_cInlineLarge$L $xx:assertNot
     $d_vGet %INC %JMPW
   $END
-  %DUP %DUP $d_vGet #E2$L  #3$L #10$L $dv_log
   %DUP $xx:isFnLarge  $IF $d_vGet %XLW %RET $END
   $d_vGet %JMPW
 
@@ -859,37 +857,20 @@ $STORE_PRIV
 $FN executeIt #0$L $xx:dictRef $jmp:execute
 $executeIt answer  #42 $tAssertEq
 
-
 $STORE_PUB
-
-\ {asNow} -> {}: compile a single token.
+\ {asNow} -> {}: compile the current token.
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
 $pre $FN single
   $declL asNow #0 #1     $declVar
   $declL node  #0 @RSIZE $declVar $declEnd
-  %DUP #01$L  #2$L #10$L $dv_log
   \ Handle constants, return if it compiled the token.
   %DUP $SET asNow $xx:_compConstant %DUP $SET node %RETZ
 
-  $GET node $xx:isFnPre $IF
-    #08$L  #1$L #10$L $dv_log
-    $GET G_compFn %XLW
-    #09$L  #1$L #10$L $dv_log
-  $END \ recurse for PRE
-  $GET node $xx:isFnSyn $IF
-    #02$L  #1$L #10$L $dv_log
-    $GET asNow $GET node $jmp:execute    $END
-  $GET node $xx:isFnNow $IF
-    #03$L  #1$L #10$L $dv_log
-    $GET asNow @E_cReqNow$L $xx:assert $END
-  $GET node $GET asNow $IF
-    #04$L  #1$L #10$L $dv_log
-    $xx:execute
-    #05$L  #1$L #10$L $dv_log
-    %RET
-
-    $END  $jmp:c_fn
+  $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
+  $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
+  $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END
+  $GET node $GET asNow $IF $xx:execute %RET $END  $jmp:c_fn
 
 $pre $FN updateCompFn \ {&newCompFn -> &prevCompFn}
   $GET G_compFn %SWP $SET G_compFn %RET
@@ -898,7 +879,6 @@ $FN _now \ used in $ to make next token/s run NOW.
   $declL compFn  #0  @RSIZE $declVar $declEnd
   @_now$L $xx:updateCompFn $SET compFn \ update G_compFn and cache
   $xx:scanNoEof
-  #70$L #1$L #10$L $dv_log
   @TRUE$L $xx:single  \ compile next token as NOW
   $GET compFn $SET G_compFn %RET
 
@@ -906,11 +886,9 @@ $pub$syn $FN $ $xx:notNow $xx:_now %RET \ make NOW
 
 $pub$syn $FN (  %DRP  \ parens ()
   $LOOP l0
-    #100$L #1$L #10$L $dv_log
     $xx:assertToken
     $xx:peekChr #29$L %EQ $IF  $scan %RET  $END \ return if we hit ")"
     $GET G_compFn
-    %DUP #101$L #2$L #10$L $dv_log
     %XLW
   $AGAIN l0
 
@@ -951,19 +929,10 @@ $syn $FN -> %DRP %RET
 
 $FN fngi \ fngi compile loop
   $LOOP l0
-    $tokenLen #E0$L  #2$L #10$L $dv_log
     $tokenLen %RETZ \ exit on EOF
-    $GET G_compFn #E1$L  #2$L #10$L $dv_log
     $GET G_compFn %XLW
-    #EF$L  #1$L #10$L $dv_log
   $AGAIN l0
 
-$large $FN fngiSingle \ base compFn for fngi tokens.
-  #0$h1 \ not really any locals (but called with XLW)
-  $scan $tokenPlc
-  %RETZ
-  @FALSE$L $xx:single
-  %RET
 
 
 \ **********
@@ -1006,6 +975,8 @@ $pub $pre $inline $FN ge_s  #1$h1 %GE_S   %RET
 $pub $pre $inline $FN lt_s  #1$h1 %LT_S   %RET
 $pub $pre $inline $FN *     #1$h1 %MUL    %RET
 $pub $pre $inline $FN /     #1$h1 %DIV_U  %RET
+$pub $pre $inline $FN xsw   #1$h1 %XSW    %RET
+$pub $pre $inline $FN xlw   #1$h1 %XLW    %RET
 
 \ ftN(addr): fetch a value of sz N from address.
 $pub $pre $inline $FN ft1   #1$h1 .1%FT   %RET
@@ -1018,8 +989,14 @@ $pub $pre $inline $FN sr2   #1$h1 .2%SR   %RET
 $pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
 
 \ Switch to fngi syntax and test some basics
+$large $FN baseCompFn \ base compFn for fngi tokens.
+  #0$h1 \ not really any locals (but called with XLW)
+  $scan $tokenPlc %RETZ
+  @FALSE$L $xx:single
+  %RET
+@baseCompFn $updateCompFn ^DRP $fngi
+
 $STORE_PRIV $assertNoWs
-@fngiSingle $updateCompFn ^DRP $fngi
 $tAssert 1;  $tAssert(1);   $tAssertNot(FALSE);
 $tAssertEq(0x42, 0x42);
 pre FN testFngiSyntax \ [a -> 0x42 + a] just make sure some syntax works
