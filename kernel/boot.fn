@@ -1,4 +1,3 @@
-$fngi  $STORE_PUB
 \ Bootstraps the fngi language.
 \ Requires: boot.sp
 \
@@ -6,12 +5,15 @@ $fngi  $STORE_PUB
 \ pieces of the language are incomplete. Any CAPITAL items like FN, IF, LOOP
 \ etc do not behave in the way their lower-case counterparts will behave.
 \ Refer to boot.sp for all documentation.
+$fngi  $STORE_PUB
 
+\ **********
+\ * [1] Extra core functions
 pub syn        FN dv      notNow; $c1(DV); jmp:h1(d_vGet(colonRef))
 pub pre inline FN memSet  $h1(2) dv:DV_memSet  ret; \ [&dst v len]   "dst = v"
 pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&dst &src len] "dst = src"
 pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&a &b len -> cmp]
-pub pre        FN memClr  0 swp; jmp:memSet(_, _) \ [&a len] clear
+pub pre        FN memClr  0 swp; jmp:memSet(_, _)   \ [&a len] clear
 
 pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
   scan;  DV_comp_dGet -> dv:DV_comp; ret; 
@@ -30,6 +32,16 @@ $tAssert(gt_s(2, neg 7))
 $tAssert(le_s(neg 2, neg 2)) $tAssert(le_s(neg 3, neg 2))
 $tAssert(le_s(neg 1, 100))
 
+\ $if: the basic principle is to treat everything as a comment once
+\ a true branch has been found.
+pre FN singleNotNow
+  $declVar(declL compFn,    0, RSIZE) $declEnd
+  updateCompFn(fnRef:baseCompFn) -> SET compFn;
+  single(FALSE);
+  GET compFn -> SET G_compFn; ret;
+
+\ **********
+\ * [2] Inline slices: strings and tokens
 pub syn FN |  notNow; \ [-> dat len] Define a string slice
   h1(SZ1 + SLC); heap; h1(0); \ {start}
   LOOP l0  charNextEsc; \ {start, char, unknownEscape
@@ -66,22 +78,27 @@ $tAssert(  slcCmp(helloWorld, 0, 42)      lt_s 0) \ different lengths
 $tAssert(  slcCmp(helloWorld, helloBobby) gt_s 0) \ different contents
 
 $STORE_PUB
-
-pre FN expectToken \ [<token/s> slc -> &node(nullable)]
+pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
+  $declVar(declL err, TY_VAR_INPUT, RSIZE)
   $declVar(declL node, 0, RSIZE)  $declEnd
   dictRefMaybe(0) -> SET node; \ {slc}
-  assert(tokenEq(\slc), E_cToken)
+  assert(tokenEq(\slc), GET err)
   ret GET node
 
+\ **********
+\ * [3] if .. elif ... else
+\ We define both if and $if
 FN SLC_DO    ret |do|
 FN SLC_ELIF  ret |elif|
 FN SLC_ELSE  ret |else|
+FN SLC_PAREN ret |(|
 
+\ TODO: I can remove recursion here and use a loop instead
 FN _if \ [] recursive fn of `if`
   $declVar(declL h,    0, RSIZE) $declEnd
   scan; single(FALSE) \ compile token after `if`
   xx:IF(FALSE\asNow) -> SET h \ compile IF
-  expectToken(SLC_DO) -> drp;
+  expectToken(SLC_DO, E_cToken) -> drp;
   scan; single(FALSE); \ compile token after `do`
   IF(scan; tokenEq(SLC_ELIF))
     xx:ELSE(GET h, FALSE\asNow) -> SET h;
@@ -93,7 +110,29 @@ FN _if \ [] recursive fn of `if`
   END END 
   ret _END(GET h, dup)
 
-syn FN if  notNow; ret _if;
+pre FN _ifNowLogic \ [done -> done]
+  IF(dup\done) 
+    _comment; expectToken(SLC_DO, E_cToken) -> drp; 
+    _comment; ret _\done; END
+  drp\done;  scan; single(TRUE) -> \ifChk;
+  expectToken(SLC_DO, E_cToken) -> drp;
+  expectToken(SLC_PAREN, E_needParen) -> drp;
+  IF(\ifChk) singleNotNow; ret TRUE; END
+  tokenPlcSet(0); \ comment calls scan
+  _comment; ret FALSE;
+
+FN _ifNow \ [] fn of `if` for the asNow case
+  _ifNowLogic(FALSE) \ {done}
+  LOOP l0
+  IF(scan; tokenEq(SLC_ELIF))
+    _ifNowLogic(_\done); AGAIN l0
+  ELSE IF(tokenEq(SLC_ELSE))
+    IF(\done) _comment;
+    ELSE      scan; singleNotNow;  END
+  ELSE drp\done; tokenPlcSet(0); \ reset token (peeking)
+  END END ret;
+
+syn FN if  IF(\asNow) _ifNow; ELSE _if; END ret;
 
 $STORE_PRIV
 pre FN testIf2 \ [a -> b] converts 1->4, 2->7, else: 13
@@ -111,11 +150,29 @@ pre FN testManyElif \ [a -> b]
   elif (GET a < 0x40) do    (0x4000 + GET a) \ note: fallthrough
   else ret(0x10 + GET a)
   ret inc(_)
-$tAssertEq(testManyElif(0x5),  0x1005)
-$tAssertEq(testManyElif(0x17), 0x2017)
-$tAssertEq(testManyElif(0x22), 0x3022)
-$tAssertEq(testManyElif(0x33), 0x4034)
+$tAssertEq(testManyElif(0x5),  0x1005)  $tAssertEq(testManyElif(0x17), 0x2017)
+$tAssertEq(testManyElif(0x22), 0x3022)  $tAssertEq(testManyElif(0x33), 0x4034)
 $tAssertEq(testManyElif(0x55), 0x65)
 
+$assertNoWs
+$if(1) do ($0x42)
+$tAssertEq(_, 0x42)
+$if(1) do ($0x42) else ($7)    $tAssertEq(_, 0x42)
+$if 0  do ($0x42) else ($7)    $tAssertEq(_, 7)
+
+$tAssertEq(if(1) do ($42) else ($3), 42)
+
+$if 0 do ($0x42) elif(0) do ($3) elif(1) do ($0x44) else ($0x77)
+$tAssertEq(_, 0x44)
+
+FN testIfNow ret($if(0) do (4) else (0x3F + 3))  $assertNoWs
+$tAssertEq(testIfNow, 0x42)
+
+\ **********
+\ * [4] ufn
+
+syn FN ufn
+
+  ret;
 
 $assertNoWs

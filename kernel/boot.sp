@@ -621,6 +621,10 @@ $syn $FN REF
   $ELSE   #0$L @SZ2$L @GR$L $END
   $xx:instrLitImpl %RET
 
+$syn $FN fnRef
+  $xx:colonRef %DUP $xx:isTyFn @E_cNotFn$L $xx:assert
+  $d_vGet %SWP $IF %RET $END  $xx:L %RET
+
 $large $FN testSetRefGet \ [-> 0x42 0x42]
   @RSIZE$h1 $declL a  #0  @RSIZE $declVar
   #42$L  $SET a   $REF a .R%FT   $GET a  %RET
@@ -856,6 +860,7 @@ $number notNum   $tAssertNot ^DRP \ not a number
 $NEW_BLOCK_PRIV
 
 $FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
+  %OVR %OVR #F0$L #3$L #10$L $dv_log
   %SWP $retIf $jmp:L \ if now leave on stack, else compile
 
 \ Attempt to compile current token as const, else return a node of TY_FN
@@ -883,9 +888,8 @@ $pre $FN single
   $declL asNow #0 #1     $declVar
   $declL node  #0 @RSIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
-  $SET asNow $LOOP l0
+  $SET asNow
   $GET asNow $xx:_compConstant %DUP $SET node %RETZ
-  $GET node $xx:isFnComment $IF $GET node $xx:execute $xx:scan  $AGAIN l0 $END
 
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
   $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
