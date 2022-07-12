@@ -13,9 +13,8 @@ pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&dst &src len] "dst = src
 pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&a &b len -> cmp]
 pub pre        FN memClr  0 swp; jmp:memSet(_, _) \ [&a len] clear
 
-pub pre FN dictRefMaybe
-  scan;  DV_comp_dGet -> dv:DV_comp; ret; \ {&root -> &node}
-
+pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
+  scan;  DV_comp_dGet -> dv:DV_comp; ret; 
 
 syn FN =  panic(E_cToken)    \ prevent hanging =
 syn FN )  panic(E_cParen)    \ prevent hanging )
@@ -34,7 +33,7 @@ $tAssert(le_s(neg 1, 100))
 pub syn FN |  notNow; \ [-> dat len] Define a string slice
   h1(SZ1 + SLC); heap; h1(0); \ {start}
   LOOP l0  charNextEsc; \ {start, char, unknownEscape
-    \ dv_log(0x1000, 1, 0x10)
+    \ IF (\unknownEscape) assert(dup\char == 0c|, E_cStr);
     IF (\unknownEscape) assert(dup\char == 0c|, E_cStr);
     ELSE IF (dup\char == 0c|)
       drp\char; (heap - ovr\start) -> dec; \ {start len}
@@ -45,7 +44,7 @@ pub syn FN |  notNow; \ [-> dat len] Define a string slice
 $STORE_PRIV
 FN helloWorld  ret |Hello World!|  \ [-> dat len]
 $tAssertEq(helloWorld, 12); \ len == 12
-$tAssertEq(ft1(dup\dat), 0cH);  $tAssertEq(ft1(inc\dat), 0ce); \ start == "He"
+$tAssertEq(ft1(dup\dat), 0cH);  $tAssertEq(ft1(inc(\dat)), 0ce); \ "He"
 
 $STORE_PUB
 pub pre FN slcCmp \ [&a aLen &b bLen -> cmp]
@@ -55,8 +54,8 @@ pub pre FN slcCmp \ [&a aLen &b bLen -> cmp]
   IF(dup\aLen < GET bLen) drp; drp; ret(neg 1); END
   IF(   \aLen > GET bLen)      drp; ret(    1); END
   ret memCmp(\a, GET b, GET bLen)
-pub pre FN slcEq  ret(slcCmp\(...) == 0)
-pub pre FN tokenEq ret(slcEq(tokenDat, tokenPlc))
+pub pre FN slcEq  ret(slcCmp(_) == 0)
+pub pre FN tokenEq ret(slcEq(_, tokenDat, tokenPlc))
 
 $STORE_PRIV
 FN helloBobby  ret |Hello Bobby!|  \ [-> dat len]
@@ -67,24 +66,12 @@ $tAssert(  slcCmp(helloWorld, 0, 42)      lt_s 0) \ different lengths
 $tAssert(  slcCmp(helloWorld, helloBobby) gt_s 0) \ different contents
 
 $STORE_PUB
-\ Return the next non-syn node. Any syn nodes are executed asNow=FALSE
-FN nextNonSyn  \ [<token/s> -> &node(nullable)]
-  LOOP l0
-    dictRefMaybe(0) -> retIfNot(dup\node) \ {&node}
-    IF(isTyFn(dup\node) and isFnSyn(ovr\node))
-      drp\node; single(FALSE\asNow); \ compile the token
-    ELSE   ret(\node)  END
-  AGAIN l0
-$tAssertEq(nextNonSyn (_) , ; ->  answer,  dictRef(0) answer)
 
 pre FN expectToken \ [<token/s> slc -> &node(nullable)]
   $declVar(declL node, 0, RSIZE)  $declEnd
-  nextNonSyn -> SET node; \ {slc}
+  dictRefMaybe(0) -> SET node; \ {slc}
   assert(tokenEq(\slc), E_cToken)
   ret GET node
-
-FN singleNonSyn  \ compile single non-sync token
-  nextNonSyn -> drp; single(FALSE); ret;
 
 FN SLC_DO    ret |do|
 FN SLC_ELIF  ret |elif|
@@ -121,7 +108,7 @@ pre FN testManyElif \ [a -> b]
   if   (GET a < 0x10) do ret(0x1000 + GET a)
   elif (GET a < 0x20) do ret(0x2000 + GET a)
   elif (GET a < 0x30) do ret(0x3000 + GET a)
-  elif (GET a < 0x40) do    (0x4000 + GET a)
+  elif (GET a < 0x40) do    (0x4000 + GET a) \ note: fallthrough
   else ret(0x10 + GET a)
   ret inc(_)
 $tAssertEq(testManyElif(0x5),  0x1005)

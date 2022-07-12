@@ -7,13 +7,18 @@
 \ # Table of Contents
 \ Search for these headings to find information
 \
-\ [1] Bootstrap Macros: necessary functionality for the rest of the language.
-\ [2] Core functions and macros: bread and butter of spor assembly
-\ [3] ASM Flow Control (IF, LOOP, etc)
-\ [4] xx, jmpl, Scanning and Alignment
-\ [5] globals and locals
-\ [6] Zoa strings and logging zoab
-\ [7] Fngi compile loop
+\ * [1] Core functions and macros
+\ * [2] Spor syntax
+\ * [3] ASM (initial) flow Control
+\ * [4] Utilities: xx, jmp, reading and alignment
+\ * [5] Globals and locals
+\   * [5.a] Define locals
+\   * [5.b] Work with variables
+\   * [5.c] Compiling locals
+\ * [6] Fngi compile loop
+\   * [6.a] Parse numbers and string characters
+\   * [6.b] Compile tokens
+\ * [7] Core fngi functions
 
 \ **********
 \ * [1] Core functions and macros
@@ -37,7 +42,7 @@
 \   fn L0 [U1] -> []                : compile a small literal  [#0 - #3F]
 \   fn L1 [U1] -> []                : compile a 1 byte literal [#0 - #FF]
 \   fn L2 [U1] -> []                : compile a 2 byte literal [#0 - #FFFF]
-\   fn scan     [<token>]           : scan the next token in src
+\   fn scan    [<token>]            : scan the next token in src
 \   fn $dictRef [<token> &r -> &n]  : get node of token, root can be null.
 \   fn $dictAdd [<token> v m2 -> &D]: set dict@token
 \
@@ -128,11 +133,12 @@ $answer2  #4242 $tAssertEq  #42 $tAssertEq
 
 $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :dnodeLast #3$h1 @DV_comp_last$L0 %DV@DV_comp$h1 %RET
-@_FP@TY_FN_INLINE^JN :scan      #3$h1 @DV_comp_scan$L0 %DV@DV_comp$h1 %RET
+@_FP@TY_FN_INLINE^JN :_scan      #3$h1 @DV_comp_scan$L0 %DV@DV_comp$h1 %RET
+\ TODO: need to replace MOST scans with scanExecuteIfComment
 
-@_FP :dictAdd   $scan @DV_comp_dAdd$L0 %DV@DV_comp$h1 %RET \ {m v -> &Node}
-@_FP :dictRef \ {<token> &root -> &Node}
-  $scan @DV_comp_dGet$L0 %DV@DV_comp$h1
+@_FP :dictAdd   $_scan @DV_comp_dAdd$L0 %DV@DV_comp$h1 %RET \ {m v -> &Node}
+@_FP :_dictRef \ {<token> &root -> &Node}
+  @DV_comp_dGet$L0 %DV@DV_comp$h1
   %DUP @E_cNoKey$L2 .2%JMPL@assert$h2
 
 $STORE_PRIV       $NEW_BLOCK_PRIV
@@ -141,11 +147,11 @@ $STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP@TY_FN_INLINE^JN :d_vGet   #2$h1 .R%FTO@DN_v $h1 %RET \ {&DNode -> v}
 @_FP@TY_FN_INLINE^JN :d_vSet   #2$h1 .R%SRO@DN_v $h1 %RET \ {v &DNode}
 
-@_FP :tDictRef #0$L0 .2%XSL@dictRef,  %RET \ get dict ref for testing
+@_FP :tDictRef $_scan #0$L0 .2%XSL@_dictRef,  %RET \ get dict ref for testing
 @_FP :assertDictV \ {<token> v} assert the value of token
-  #0$L0 .2%XSL@dictRef, $d_vGet .2%JMPL@tAssertEq,
+  $_scan #0$L0 .2%XSL@_dictRef, $d_vGet .2%JMPL@tAssertEq,
 @_FP :assertDictM \ {<token> m} assert the meta of token
-  #0$L0 .2%XSL@dictRef, $d_mGet .2%JMPL@tAssertEq,
+  $_scan #0$L0 .2%XSL@_dictRef, $d_mGet .2%JMPL@tAssertEq,
 
 #42 #0 $dictAdd answerV   ^DRP    #42 $assertDictV answerV
 
@@ -176,10 +182,10 @@ $STORE_PRIV
 @_FP :_j2 .2%XSL@h1, .2%JMPL@h2, \ {ref instr} compile a context switch
 
 @TY_FN :_xsl \ $_xsl <token> : compile unchecked xsl
-  #0$L0 .2%XSL@dictRef, $d_vGet    .1%LIT@XSL2,   .2%JMPL@_j2,
+  $_scan #0$L0 .2%XSL@_dictRef, $d_vGet    .1%LIT@XSL2,   .2%JMPL@_j2,
 
 @TY_FN :_jmp \ $_jmp <token> : compile unchecked jmpl
-  #0$L0 .2%XSL@dictRef, $d_vGet    .1%LIT@JMPL2,  .2%JMPL@_j2,
+  $_scan #0$L0 .2%XSL@_dictRef, $d_vGet    .1%LIT@JMPL2,  .2%JMPL@_j2,
 
 @_FP@TY_FN_NOW^JN :c1 \ {instr} compile "compile instr" into function
   $_xsl L1
@@ -225,11 +231,12 @@ $pub @_FP :notNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
   %SWP $_xsl notNow \ {meta}
   .2%FTGL@G_metaNext$h2  %JN  .2%SRGL@G_metaNext$h2  %RET
 
-$pub @TY_FN@TY_FN_SYN^JN :syn    @TY_FN_SYN   $L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :now    @TY_FN_NOW   $L1 $_jmp _implFnTy
-     @TY_FN@TY_FN_SYN^JN :pre    @TY_FN_PRE   $L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :inline @TY_FN_INLINE$L1 $_jmp _implFnTy
-     @TY_FN@TY_FN_SYN^JN :large  @TY_FN_LARGE $L1 $_jmp _implFnTy
+     @TY_FN@TY_FN_SYN^JN :pre     @TY_FN_PRE    $L1 $_jmp _implFnTy
+     @TY_FN@TY_FN_SYN^JN :large   @TY_FN_LARGE  $L1 $_jmp _implFnTy
+$pub @TY_FN@TY_FN_SYN^JN :now     @TY_FN_NOW    $L1 $_jmp _implFnTy
+$pub @TY_FN@TY_FN_SYN^JN :syn     @TY_FN_SYN    $L1 $_jmp _implFnTy
+$pub @TY_FN@TY_FN_SYN^JN :inline  @TY_FN_INLINE $L1 $_jmp _implFnTy
+$pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implFnTy
 
 @TY_FN :clearLocals
   %GR@G_bbaLocal$h2 $BBA_drop   #0$L0 .R%SRGL@G_dictLocal$h2 \ drop everything
@@ -245,13 +252,14 @@ $pub @TY_FN@TY_FN_SYN^JN :inline @TY_FN_INLINE$L1 $_jmp _implFnTy
 $assertNoWs
 
 \ These tell something about a &DNode. Type: [&DNode -> bool]
-$pre $FN isFnPre     $d_mGet  @TY_FN_PRE$L1     %MSK %RET
-$pre $FN isVarInput  $d_mGet  @TY_VAR_INPUT$L1  %MSK %RET
-$pre $FN isFnNormal  $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NORMAL$L1 %EQ %RET
-$pre $FN isFnNow     $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_NOW$L1    %EQ %RET
-$pre $FN isFnSyn     $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_SYN$L1    %EQ %RET
-$pre $FN isFnInline  $d_mGet  @TY_FN_TY_MASK$L1 %MSK  @TY_FN_INLINE$L1 %EQ %RET
-$pre $FN isTyVar     $d_mGet  @META_TY_MASK$L1  %MSK  @TY_VAR$L1       %EQ %RET
+$pre $FN isFnPre     $d_mGet @TY_FN_PRE$L1     %MSK %RET
+$pre $FN isVarInput  $d_mGet @TY_VAR_INPUT$L1  %MSK %RET
+$pre $FN isFnNormal  $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_NORMAL$L1 %EQ %RET
+$pre $FN isFnNow     $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_NOW$L1    %EQ %RET
+$pre $FN isFnSyn     $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN$L1    %EQ %RET
+$pre $FN isFnInline  $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_INLINE$L1 %EQ %RET
+$pre $FN isFnComment $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_COMMENT$L1%EQ %RET
+$pre $FN isTyVar     $d_mGet @META_TY_MASK$L1  %MSK @TY_VAR$L1       %EQ %RET
 $pre $FN assertTyVar $_xsl isTyVar  @E_cNotVar$L2 $_jmp assert
 
 $tDictRef assert    ^DUP $isFnPre $tAssert $isFnNormal $tAssert
@@ -268,7 +276,7 @@ $now $pre $FN ftoN \ {offset szI} compile FTO szI w/offset
   %DUP $_xsl assertSzI  @FTO$L1 %ADD  $_xsl h1 $_jmp h1
 
 \ **********
-\ * [7] ASM (initial) Flow Control
+\ * [3] ASM (initial) flow Control
 \ Flow control either pushes the current heap on the WS or uses a local
 \ constant. END/AGAIN uses this heap-val/local to do the right thing.
 \
@@ -277,12 +285,6 @@ $now $pre $FN ftoN \ {offset szI} compile FTO szI w/offset
 
 \ @_FP :assertJmpL1  #80$L1 %LT_U  @E_cJmpL1$L2 $_jmp assert
 $FN assertJmpL1 #80$L1 %LT_U @E_cJmpL1$L2 $_jmp assert \ {&jmpTo} assert valid
-
-\ Switch to non/local storage
-$FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
-$FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
-$FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
-$FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
 
 $pub $pre $syn $FN IF $_xsl notNow \ {} -> {&jmpTo} : start an if block
   @SZ1@JZL^JN $c1 \ compile .1%JZL instr
@@ -300,6 +302,30 @@ $syn $FN ELSE $_xsl notNow \ {&ifNotJmpTo} -> {&elseBlockJmpTo}
   $heap %SWP      \ {&elseBlockJmpTo &ifNotJmpTo}
   #0$L0 $_xsl h1  \ compile jmp lit for &elseBlockJmpTo
   %DUP $_jmp _END \ end of IF block (beginning of ELSE)
+
+$FN execute \ {&key} -> {...}: execute a dictionary key
+  %DUP $_xsl isFnInline $IF \ if inline, assert not large and jmp to addr+1
+    %DUP $_xsl isFnLarge @E_cInlineLarge$L2 $_xsl assertNot
+    $d_vGet %INC %JMPW
+  $END
+  %DUP $_xsl isFnLarge  $IF $d_vGet %XLW %RET $END
+  $d_vGet %JMPW
+
+$FN scan
+  $_scan  #0$L0 @DV_comp_dGet$L0 %DV@DV_comp$h1 \ {&node}
+  %DUPN $IF %DRP %RET $END \ node is null, exit
+  %DUP $_xsl isTyFn %OVR $_xsl isFnComment %AND $IF
+    #30$L0 #1$L0 #10$L0 $dv_log
+    $_xsl execute .2%JMPL@scan$h2 $END \ note: we could use JMP1 here to save a byte
+  %DRP %RET
+
+$pre $FN dictRef  $_xsl scan $_jmp _dictRef \ TODO: need to use scan... but for that need IF
+
+\ Switch to non/local storage
+$FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
+$FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
+$FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
+$FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
      $syn $FN LOOP   $_xsl notNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
@@ -330,7 +356,7 @@ $FN testIfElse
 $STORE_PUB $assertNoWs
 
 \ **********
-\ * [8] xx, jmpl, Scanning and Alignment Utilities
+\ * [4] Utilities: xx, jmp, reading and alignment
 \ Reading, peeking and szI alignment
 \
 \ fn xx:<token> [...]             : compile an execute to a token
@@ -441,10 +467,10 @@ $STORE_PUB
      $FN assertToken $tokenPlc @E_cNeedToken$L $_jmp assert
 $pre $FN assertNoEof @E_eof$L $_jmp assert \ {numRead}
 
-$FN scanNoEof  $scan  $_xsl isEof  @E_eof$L $_jmp assertNot
+$FN scanNoEof  $_xsl scan $_xsl isEof  @E_eof$L $_jmp assertNot
 
 $FN peekChr \ {} -> {c} peek at a character
-  $scan   $_xsl isEof $IF  #0$L %RET  $END
+  $_xsl scan  $_xsl isEof $IF  #0$L %RET  $END
   $tokenDat .1%FT \ {c}
   #0$L $tokenPlcSet %RET \ reset scanner for next scan
 
@@ -476,7 +502,7 @@ $pre $FN c_fn \ {&key}: compile a function of any type
   .2%XLL @instrLitImpl$h2 %RET
 
 $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
-  $scan $tokenPlc #1$L  %EQ @E_cColon$L $_xsl assert \ assert len=1
+  $_xsl scan$tokenPlc #1$L  %EQ @E_cColon$L $_xsl assert \ assert len=1
   $tokenDat .1%FT #3A$L %EQ @E_cColon$L $_jmp assert \ assert ":"
 
 $FN colonRef $_xsl colon  #0$L $_jmp dictRef
@@ -498,7 +524,7 @@ $syn $FN jmp
   $d_vGet @JMPL2$L $_jmp _j2
 
 \ **********
-\ * [9] Globals and Locals
+\ * [5] Globals and locals
 \
 \ fn GET <token>            SYN : compile a FT of token (local or global)
 \ fn SET <token>            SYN : compile a SR of token (local or global)
@@ -509,7 +535,7 @@ $syn $FN jmp
 
 
 \ **********
-\   * [9.a] Define locals
+\   * [5.a] Define locals
 \ This allows us to declar globals and locals. declEnd (handling actually writing local data)
 \ will not happen until later.
 $STORE_PUB
@@ -546,7 +572,7 @@ $declL b  #0 #1 $declVar         @b #2 $tAssertEq
 $declL c  #0 #4 $declVar         @c #4 $tAssertEq
 
 \ **********
-\   * [9.b] work with variables
+\   * [5.b] Work with variables
 \ These compile GET, SET and REF to work with globals and locals.
 
 \ Compile a get or set instruction.
@@ -603,7 +629,7 @@ $testSetRefGet  #42 $tAssertEq  #42 $tAssertEq
 $STORE_PUB $assertNoWs
 
 \ **********
-\   * [9.c] Compiling Locals
+\   * [5.c] Compiling locals
 \ Compile (i.e. write to local stack) inputs in the reverse order they were
 \ declared. Since each input increments the local offset, this means we need to
 \ compile the largest offset first, then largest less than that, etc. The last
@@ -686,8 +712,8 @@ $pre $FN testDeclEnd \ { a b c -> a - c + b }
 
 
 \ **********
-\ * [11] Fngi compile loop
-\ The fngi compile loop is implemented in spore. In addition to the compile loop itself,
+\ * [6] Fngi compile loop
+\ The fngi compile loop is implemented in spor. In addition to the compile loop itself,
 \ this section implements several essential parsing functions that can be used
 \ in other areas of fngi.
 \
@@ -701,23 +727,23 @@ $pre $FN testDeclEnd \ { a b c -> a - c + b }
 \ fn betweenIncl [value a b -> bool]  : return whether value between [a,b]
 \ fn charToInt [c -> U8]          : convert ascii -> hex
 \
-\ fngi []                         : fngi compile loop
+\ fn fngi []                      : fngi compile loop
 \ fn baseCompFn [ -> ...]         : starting (base) compFn
-\ fn single [asNow -> ...]        : compile/execute a single token (compFn).
-\ fn fn [&key]                    : compile a function (small or large)
-\ fn execute [&key]               : execute a function (small or large)
-\ fn parseNumber [ -> value isNum]: parse token as number
-\ fn lit [U4]                     : compile literal
-\ fn xSzI [&key -> szI]           : return szI of the fn
+\ fn single [asNow -> ...]        : compile/execute current token
+\ fn c_fn [&node]                 : compile a function (small or large)
+\ fn execute [&node]              : execute a function (small or large)
+\ fn parseNumber [ -> value isNum]: parse current token as number
+\ fn lit [asNow U4 -> ?U4]        : compile literal
+\ fn xSzI [&node -> szI]          : return szI requirements of the fn
 \
-\ fn charNext [ -> c]           : read next character (WARN: AFTER tokenPlc)
-\ fn charNextEsc [ -> c unkEsc] : read an escapeable character (string).
+\ fn charNext [ -> c]             : read next character (WARN: AFTER tokenPlc)
+\ fn charNextEsc [ -> c unkEsc]   : read an escapeable character (string).
 \ fn updateCompFn [newComp -> prevComp] : update compFn + ret old
 \ fn number <number> -> [value isNum]   : parse next token (parseNumber).
 $STORE_PUB $assertNoWs
 
 \ **********
-\   * [11.a] Parse Numbers and String Characters
+\   * [6.a] Parse numbers and string characters
 
 $pre $FN betweenIncl \ {value a b} -> a <= value <= b
   $declL b  @TY_VAR_INPUT  @RSIZE  $declVar $declEnd \ {value a}
@@ -807,7 +833,7 @@ $FN parseBase \ {i base -> value isNumber} parse from token
   $GET i %NOT $IF  #0$L @FALSE$L %RET  $END \ no token
   $GET value @TRUE$L %RET
 
-$FN parseNumber \ {} -> {value isNumber} parse token as number
+$FN parseNumber \ {} -> {value isNumber} parse current token as number
   #0$L #A$L \ {i=0 base=0xA}. Next: if (token len>=2 and starts with '0')
   $tokenPlc #2$L %GE_U $tokenDat .1%FT #30$L %EQ %AND $IF
     %DRP $tokenDat %INC .1%FT $xx:numBase %DUPN $IF \ {i base}
@@ -816,7 +842,7 @@ $FN parseNumber \ {} -> {value isNumber} parse token as number
   $END
   $xx:parseBase %RET
 
-$FN number $scan $xx:parseNumber %RET \ {<token> -> value isNumber}
+$FN number $xx:scan $xx:parseNumber %RET \ {<token> -> value isNumber}
 
 $number 1234     $tAssert    #4D2   $tAssertEq
 $number 0x1234   $tAssert    #1234  $tAssertEq
@@ -826,7 +852,7 @@ $number 0b11102  $tAssertNot ^DRP \ not valid binary
 $number notNum   $tAssertNot ^DRP \ not a number
 
 \ **********
-\   * [11.b] Compile Tokens
+\   * [6.b] Compile tokens
 $NEW_BLOCK_PRIV
 
 $FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
@@ -845,27 +871,21 @@ $pre $FN _compConstant \ [asNow -> &nodeFn(nullable)}
   %DUP $xx:isTyLocal  @E_cLocalNotConst$L $xx:assertNot
   %SWP %DRP %DUP $jmp:assertFn \ {-> &key}
 
-$FN execute \ {&key} -> {...}: execute a dictionary key
-  %DUP $xx:isFnInline $IF \ if inline, assert not large and jmp to addr+1
-    %DUP $xx:isFnLarge @E_cInlineLarge$L $xx:assertNot
-    $d_vGet %INC %JMPW
-  $END
-  %DUP $xx:isFnLarge  $IF $d_vGet %XLW %RET $END
-  $d_vGet %JMPW
-
 $STORE_PRIV
 $FN executeIt #0$L $xx:dictRef $jmp:execute
 $executeIt answer  #42 $tAssertEq
 
 $STORE_PUB
-\ {asNow} -> {}: compile the current token.
+\ [asNow]: compile the current token.
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
 $pre $FN single
   $declL asNow #0 #1     $declVar
   $declL node  #0 @RSIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
-  %DUP $SET asNow $xx:_compConstant %DUP $SET node %RETZ
+  $SET asNow $LOOP l0
+  $GET asNow $xx:_compConstant %DUP $SET node %RETZ
+  $GET node $xx:isFnComment $IF $GET node $xx:execute $xx:scan  $AGAIN l0 $END
 
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
   $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
@@ -887,7 +907,7 @@ $pub$syn $FN $ $xx:notNow $xx:_now %RET \ make NOW
 $pub$syn $FN (  %DRP  \ parens ()
   $LOOP l0
     $xx:assertToken
-    $xx:peekChr #29$L %EQ $IF  $scan %RET  $END \ return if we hit ")"
+    $xx:peekChr #29$L %EQ $IF  $xx:scan %RET  $END \ return if we hit ")"
     $GET G_compFn
     %XLW
   $AGAIN l0
@@ -912,7 +932,7 @@ $FN _comment \ used in '\' to make next token ignored (i.e. a comment)
 \    \        : a line comment
 \    \foo     : an inline comment, commenting out one token
 \    \( ... ) : a block comment
-$syn $FN \  %DRP
+$comment $FN \
   \ line comment if '\' is followed by space
   $xx:peekNoScan %DUP #A$L %EQ $IF %DRP %RET $END \ newline
   #20$L %EQ $IF @DV_comp_readEol$L %DV@DV_comp$h1 %RET $END
@@ -923,9 +943,8 @@ $\token_comment
 \ $\()  $\(  )
 
 \ These do nothing and are used for more readable code.
-$syn $FN _ %DRP %RET   $syn $FN , %DRP %RET   $syn $FN ; %DRP %RET
-$syn $FN -> %DRP %RET
-
+$syn $FN _  %DRP %RET   $syn $FN , %DRP %RET   
+$syn $FN ;  %DRP %RET   $syn $FN -> %DRP %RET
 
 $FN fngi \ fngi compile loop
   $LOOP l0
@@ -933,10 +952,8 @@ $FN fngi \ fngi compile loop
     $GET G_compFn %XLW
   $AGAIN l0
 
-
-
 \ **********
-\ * [12] Core fngi functions
+\ * [7] Core fngi functions
 $NEW_BLOCK_PUB
 
 \ Stack operators. These are /not/ PRE since they directly modify the stack.
@@ -991,7 +1008,7 @@ $pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
 \ Switch to fngi syntax and test some basics
 $large $FN baseCompFn \ base compFn for fngi tokens.
   #0$h1 \ not really any locals (but called with XLW)
-  $scan $tokenPlc %RETZ
+  $xx:scan $tokenPlc %RETZ
   @FALSE$L $xx:single
   %RET
 @baseCompFn $updateCompFn ^DRP $fngi
@@ -1003,6 +1020,5 @@ pre FN testFngiSyntax \ [a -> 0x42 + a] just make sure some syntax works
   $declVar(declL a, TY_VAR_INPUT, 2) $declVar(declL out, 0, 2) $declEnd
   GET a + answer -> SET out;   ret(GET out);
 $tAssertEq(0x46, testFngiSyntax(4));
-
 
 $STORE_PUB $assertNoWs

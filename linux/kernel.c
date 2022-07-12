@@ -8,7 +8,7 @@
 //   * 1.a: Panic Handling
 //   * 1.b: Environment Setup
 //
-// * 2: Communication
+// * 2: Communication (zoab)
 //
 // * 3: Memory Managers and Data Structures
 //   * 2.a: Stacks
@@ -18,19 +18,19 @@
 //   * 2.e: Dict Binary Search Tree
 //
 // * 4: Executing Instructions
-//   * 3.a: Utilities
-//   * 3.b: Functions
-//   * 3.c: Giant Switch Statement
+//   * 4.a: Utilities
+//   * 4.b: Functions
+//   * 4.c: Giant Switch Statement
 //
-// * 5: Source Code
-//   * 4.a: Opening and Closing Files
-//   * 4.b: Reading Files
+// * 5: Files
+//   * 5.a: Opening and Closing Files
+//   * 5.b: Reading Files
 //
 // * 6: Compiler
-//   * 5.a: Scan
-//   * 5.b: Spor Token Functions
-//   * 5.c: Spor Compiler
-//   * 5.d: Compile Constants
+//   * 6.a: Scan
+//   * 6.b: Spor Token Functions
+//   * 6.c: Spor Compiler
+//   * 6.d: Compile Constants
 //
 // * 7: Device Operations (DV)
 //

@@ -1,5 +1,24 @@
 # Code Dump: where code goes to die
 
+## Next nonSyn
+
+```
+\ Return the next non-syn node. Any syn nodes are executed asNow=FALSE
+FN nextNonSyn  \ [<token/s> -> &node(nullable)]
+  LOOP l0
+    dictRefMaybe(0) -> retIfNot(dup\node) \ {&node}
+    IF(isTyFn(dup\node) and isFnSyn(ovr\node))
+      drp\node; single(FALSE\asNow); \ compile the token
+    ELSE   ret(\node)  END
+  AGAIN l0
+$tAssertEq(nextNonSyn (_) , ; ->  answer,  dictRef(0) answer)
+
+FN singleNonSyn  \ compile single non-sync token
+  nextNonSyn -> drp; single(FALSE); ret;
+
+```
+
+
 ## Use as test
 ```
 \ Note: we need to add 3 here to reserve the cdata "_h"

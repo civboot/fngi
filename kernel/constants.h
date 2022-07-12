@@ -119,11 +119,12 @@
 #define MOD_MASK             0xFF0000
 #define TY_FN_PRE            0x20
 #define TY_FN_LARGE          0x10
-#define TY_FN_TY_MASK        0xC
+#define TY_FN_TY_MASK        0x7
 #define TY_FN_NORMAL         0x0
-#define TY_FN_NOW            0x4
-#define TY_FN_SYN            0x8
-#define TY_FN_INLINE         0xC
+#define TY_FN_NOW            0x1
+#define TY_FN_SYN            0x2
+#define TY_FN_INLINE         0x3
+#define TY_FN_COMMENT        0x4
 #define TY_VAR_INPUT         0x1
 #define TY_VAR_REF           0xC
 #define ZOAB_TY              0xC0

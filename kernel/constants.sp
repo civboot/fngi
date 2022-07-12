@@ -240,15 +240,17 @@
 #FF_FFFF #0=REF_MASK
 #FF_0000 #0=MOD_MASK
 
-\ FN meta bits [TTPL FF--] L=locals F=fnTy P=pre
+\ FN meta bits [TTPL -FFF] P=pre L=locals F=fnTy
 #20 #0=TY_FN_PRE     \ Compile next token first. Creates pre-order arguments.
 #10 #0=TY_FN_LARGE   \ large, has locals (called with XLL or XLW)
 
-#0C #0=TY_FN_TY_MASK \ 4 function types
+#07 #0=TY_FN_TY_MASK \ 4 function types
 #00 #0=TY_FN_NORMAL  \ Normally compiled, can use $ to make NOW
-#04 #0=TY_FN_NOW     \ Required to be run as NOW (must use $)
-#08 #0=TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
-#0C #0=TY_FN_INLINE  \ Inline function, copies bytes when compiled.
+#01 #0=TY_FN_NOW     \ Required to be run as NOW (must use $)
+#02 #0=TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
+#03 #0=TY_FN_INLINE  \ Inline function, copies bytes when compiled.
+#04 #0=TY_FN_COMMENT \ Comment function. Executed immediately.
+
 
 @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
 
