@@ -210,6 +210,7 @@
 #define E_cFnSyn             0xE0F8
 #define E_newBlock           0xE0F9
 #define E_needParen          0xE0FA
+#define E_needEqual          0xE0FA
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2

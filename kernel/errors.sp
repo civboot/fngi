@@ -78,6 +78,7 @@
 #E0F8  #0=E_cFnSyn      \ Invalid use of SYN function
 #E0F9  #0=E_newBlock    \ Require a NEW_BLOCK for code.
 #E0FA  #0=E_needParen   \ Requires a '('
+#E0FA  #0=E_needEqual   \ Requires a '='
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

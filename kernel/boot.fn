@@ -32,12 +32,11 @@ $tAssert(gt_s(2, neg 7))
 $tAssert(le_s(neg 2, neg 2)) $tAssert(le_s(neg 3, neg 2))
 $tAssert(le_s(neg 1, 100))
 
-pre FN singleComp \ [asNow]
-  $declVar(declL compFn,    0, RSIZE) $declEnd
-  dup; updateCompFn(
-   IF(\asNow) fnRef:_now  ELSE fnRef:baseCompFn END
-  ) -> SET compFn;
-  single(\asNow); GET compFn -> SET G_compFn; ret;
+pre FN compNext \ [asNow]
+  $declVar(declL compFn,           0, RSIZE) $declEnd
+  IF(\asNow) fnRef:_now;  ELSE  fnRef:baseCompFn;  END
+  dup\fnRef -> updateCompFn(\fnRef) -> SET compFn \ {fnRef}
+  xlw(\fnRef);  ret(GET compFn -> SET G_compFn)
 
 \ **********
 \ * [2] Inline slices: strings and tokens
@@ -77,6 +76,12 @@ $tAssert(  slcCmp(helloWorld, 0, 42)      lt_s 0) \ different lengths
 $tAssert(  slcCmp(helloWorld, helloBobby) gt_s 0) \ different contents
 
 $STORE_PUB
+FN SLC_EQUAL  ret |=|
+FN SLC_DO     ret |do|
+FN SLC_ELIF   ret |elif|
+FN SLC_ELSE   ret |else|
+FN SLC_PAREN  ret |(|
+
 pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   $declVar(declL err, TY_VAR_INPUT, RSIZE)
   $declVar(declL node, 0, RSIZE)  $declEnd
@@ -84,11 +89,19 @@ pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   assert(tokenEq(\slc), GET err)
   ret GET node
 
-FN SLC_EQUAL    ret |=|
 
-pub syn FN const  \ const <token> = <value>
-  dictAdd(0, 0) \ {&DNode}
-  expectToken(SLC_EQUAL) -> drp;
+\ pub syn FN const  \ const <token> = <value>
+\   $declVar(declL node, 0, RSIZE)  $declEnd
+\   notNow; dictAdd(0, 0) -> SET node;
+\   expectToken(SLC_EQUAL, E_needEqual) -> drp;
+\   dv_log(0x1000, 1, 0x10)
+\   d_vSet(compNext(TRUE), GET node);
+\   ret;
+
+$STORE_PRIV
+\ const constAnswer = 0x42;
+\ $tAssertEq(constAnswer, 0x42)
+$STORE_PUB
 
 
 \ **********
@@ -103,19 +116,15 @@ pub syn FN const  \ const <token> = <value>
 \ Find slice in BST, starting at node. Set result to node.
 \ returns 0 if node==NULL
 \ The return value is the result of `Slc_cmp(node.ckey, out.ckey)`
-pre FN BstSlc_find
-  $declVar(declL node, TY_VAR_INPUT, RSIZE) \ &&SlcNode
-  $declVar(declL slcDat, 0, RSIZE) \ slc.dat
-  $declVar(declL slcLen, 0, 2)     \ slc.len
+\ pre FN BstSlc_find
+\   $declVar(declL node, TY_VAR_INPUT, RSIZE) \ &&SlcNode
+\   $declVar(declL slcDat, 0, RSIZE) \ slc.dat
+\   $declVar(declL slcLen, 0, 2)     \ slc.len
 
 
 \ **********
 \ * [3] if .. elif ... else
 \ We define both if and $if
-FN SLC_DO    ret |do|
-FN SLC_ELIF  ret |elif|
-FN SLC_ELSE  ret |else|
-FN SLC_PAREN ret |(|
 
 \ TODO: I can remove recursion here and use a loop instead
 FN _if \ [] recursive fn of `if`
@@ -140,9 +149,8 @@ pre FN _ifNowLogic \ [done -> done]
     _comment; ret _\done; END
   drp\done;  scan; single(TRUE) -> \ifChk;
   expectToken(SLC_DO, E_cToken) -> drp;
-  expectToken(SLC_PAREN, E_needParen) -> drp;
-  IF(\ifChk) singleComp(FALSE); ret TRUE; END
-  tokenPlcSet(0); \ comment calls scan
+  expectToken(SLC_PAREN, E_needParen) -> drp; tokenPlcSet(0);
+  IF(\ifChk) compNext(FALSE); ret TRUE; END
   _comment; ret FALSE;
 
 FN _ifNow \ [] fn of `if` for the asNow case
@@ -152,7 +160,7 @@ FN _ifNow \ [] fn of `if` for the asNow case
     _ifNowLogic(_\done); AGAIN l0
   ELSE IF(tokenEq(SLC_ELSE))
     IF(\done) _comment;
-    ELSE      scan; singleComp(FALSE)  END
+    ELSE      compNext(FALSE)  END
   ELSE drp\done; tokenPlcSet(0); \ reset token (peeking)
   END END ret;
 
