@@ -626,7 +626,6 @@ TEST_END
 // Find slice in BST, starting at node. Set result to node.
 // returns 0 if node==NULL
 // The return value is the result of `Slc_cmp(node.ckey, out.ckey)`
-
 I4 Dict_find(DNode** node, Slc slc) {
   if(!*node) return 0;
   while(true) {

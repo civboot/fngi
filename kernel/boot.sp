@@ -272,9 +272,6 @@ $pre $FN assertSzI \ {szI}
   %DUP #CF$L1 %MSK @E_sz$L2 $_xsl assertNot \ non-sz bits empty
   #4$L0 %SHR #3$L1 %LT_U @E_sz$L2 $_jmp assert \ sz bits < 3
 
-$now $pre $FN ftoN \ {offset szI} compile FTO szI w/offset
-  %DUP $_xsl assertSzI  @FTO$L1 %ADD  $_xsl h1 $_jmp h1
-
 \ **********
 \ * [3] ASM (initial) flow Control
 \ Flow control either pushes the current heap on the WS or uses a local
@@ -889,7 +886,9 @@ $pre $FN single
   $declL node  #0 @RSIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
   $SET asNow
-  $GET asNow $xx:_compConstant %DUP $SET node %RETZ
+  $GET asNow $xx:_compConstant %DUP 
+  %DUP #40$L #2$L #10$L $dv_log
+  $SET node %RETZ
 
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
   $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
@@ -1009,14 +1008,40 @@ $pub $pre $inline $FN sr1   #1$h1 .1%SR   %RET
 $pub $pre $inline $FN sr2   #1$h1 .2%SR   %RET
 $pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
 
+
+\ [addr]: Fetching or Storing offset, i.e. fto1:DN_v(addr)
+$pre $FN _opOffset  \ {instr szI}
+  $declL instr   @TY_VAR_INPUT  #1 $declVar
+  $declL offset  #0             #1 $declVar $declEnd
+  $xx:colon $xx:scan @TRUE$L $xx:single $SET offset
+  $GET offset #20$L #2$L #10$L $dv_log
+  $GET G_compFn %XLW
+  #21$L #1$L #10$L $dv_log
+  $GET instr $xx:h1  $GET offset $jmp:h1
+
+$pub $syn $FN fto1  $xx:notNow @SZ1@FTO^JN$L $xx:_opOffset %RET
+$pub $syn $FN fto2  $xx:notNow @SZ2@FTO^JN$L $xx:_opOffset %RET
+$pub $syn $FN fto4  $xx:notNow @SZ4@FTO^JN$L $xx:_opOffset %RET
+$pub $syn $FN ftoR  $xx:notNow @SZR@FTO^JN$L $xx:_opOffset %RET
+
+\ [addr]: Store offset, i.e. fto1:DN_v(addr)
+$pub $syn $FN sro1  $xx:notNow @SZ1@SRO^JN$L $xx:_opOffset %RET
+$pub $syn $FN sro2  $xx:notNow @SZ2@SRO^JN$L $xx:_opOffset %RET
+$pub $syn $FN sro4  $xx:notNow @SZ4@SRO^JN$L $xx:_opOffset %RET
+$pub $syn $FN sroR  $xx:notNow @SZR@SRO^JN$L $xx:_opOffset %RET
+
+$STORE_PRIV
+
+
+
 \ Switch to fngi syntax and test some basics
 $large $FN baseCompFn \ base compFn for fngi tokens.
   #0$h1 \ not really any locals (but called with XLW)
   $xx:scan $tokenPlc %RETZ
   @FALSE$L $xx:single
   %RET
-@baseCompFn $updateCompFn ^DRP $fngi
 
+@baseCompFn $updateCompFn ^DRP $fngi
 $STORE_PRIV $assertNoWs
 $tAssert 1;  $tAssert(1);   $tAssertNot(FALSE);
 $tAssertEq(0x42, 0x42);
@@ -1024,5 +1049,16 @@ pre FN testFngiSyntax \ [a -> 0x42 + a] just make sure some syntax works
   $declVar(declL a, TY_VAR_INPUT, 2) $declVar(declL out, 0, 2) $declEnd
   GET a + answer -> SET out;   ret(GET out);
 $tAssertEq(0x46, testFngiSyntax(4));
+
+FN two  ret 2
+
+FN testSrFtOffset
+  $declVar(declL a, 0, 1) $declVar(declL b, 0, 1)
+  $declVar(declL c, 0, 2) $declEnd
+  sro1:1(42,       REF a)          tAssertEq(GET b, 42)
+  sro2:two(0x1234, REF a)          tAssertEq(GET c, 0x1234)
+  tAssertEq(fto1:1(REF a), GET b)  tAssertEq(fto2:2(REF a), GET c)
+  ret;
+$testSrFtOffset
 
 $STORE_PUB $assertNoWs

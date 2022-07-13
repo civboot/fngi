@@ -32,13 +32,12 @@ $tAssert(gt_s(2, neg 7))
 $tAssert(le_s(neg 2, neg 2)) $tAssert(le_s(neg 3, neg 2))
 $tAssert(le_s(neg 1, 100))
 
-\ $if: the basic principle is to treat everything as a comment once
-\ a true branch has been found.
-pre FN singleNotNow
+pre FN singleComp \ [asNow]
   $declVar(declL compFn,    0, RSIZE) $declEnd
-  updateCompFn(fnRef:baseCompFn) -> SET compFn;
-  single(FALSE);
-  GET compFn -> SET G_compFn; ret;
+  dup; updateCompFn(
+   IF(\asNow) fnRef:_now  ELSE fnRef:baseCompFn END
+  ) -> SET compFn;
+  single(\asNow); GET compFn -> SET G_compFn; ret;
 
 \ **********
 \ * [2] Inline slices: strings and tokens
@@ -85,6 +84,31 @@ pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   assert(tokenEq(\slc), GET err)
   ret GET node
 
+FN SLC_EQUAL    ret |=|
+
+pub syn FN const  \ const <token> = <value>
+  dictAdd(0, 0) \ {&DNode}
+  expectToken(SLC_EQUAL) -> drp;
+
+
+\ **********
+\ * [XX] type stuff
+
+\ struct SlcNode [
+\   key: Slc,
+\   ... data
+\ ]
+
+
+\ Find slice in BST, starting at node. Set result to node.
+\ returns 0 if node==NULL
+\ The return value is the result of `Slc_cmp(node.ckey, out.ckey)`
+pre FN BstSlc_find
+  $declVar(declL node, TY_VAR_INPUT, RSIZE) \ &&SlcNode
+  $declVar(declL slcDat, 0, RSIZE) \ slc.dat
+  $declVar(declL slcLen, 0, 2)     \ slc.len
+
+
 \ **********
 \ * [3] if .. elif ... else
 \ We define both if and $if
@@ -117,7 +141,7 @@ pre FN _ifNowLogic \ [done -> done]
   drp\done;  scan; single(TRUE) -> \ifChk;
   expectToken(SLC_DO, E_cToken) -> drp;
   expectToken(SLC_PAREN, E_needParen) -> drp;
-  IF(\ifChk) singleNotNow; ret TRUE; END
+  IF(\ifChk) singleComp(FALSE); ret TRUE; END
   tokenPlcSet(0); \ comment calls scan
   _comment; ret FALSE;
 
@@ -128,7 +152,7 @@ FN _ifNow \ [] fn of `if` for the asNow case
     _ifNowLogic(_\done); AGAIN l0
   ELSE IF(tokenEq(SLC_ELSE))
     IF(\done) _comment;
-    ELSE      scan; singleNotNow;  END
+    ELSE      scan; singleComp(FALSE)  END
   ELSE drp\done; tokenPlcSet(0); \ reset token (peeking)
   END END ret;
 
