@@ -1,3 +1,5 @@
+\ TODO: see notes/ufn.md for current thoughts
+
 \ Bootstraps the fngi language.
 \ Requires: boot.sp
 \
@@ -105,21 +107,38 @@ $STORE_PUB
 
 \ **********
 \ * [XX] type stuff
+\ TODO: move to code dump?
 
-\ struct SlcNode [
-\   key: Slc,
-\   ... data
-\ ]
-
+\ SlcNode struct
+const SN_left = 0;                 \ &SlcNode: .left
+const SN_right = RSIZE;            \ &SlcNode: .right
+const SN_dat = (SN_right + RSIZE); \ Ref:      .key.dat
+const SN_len = (SN_dat + RSIZE);   \ U2:       .key.len
 
 \ Find slice in BST, starting at node. Set result to node.
 \ returns 0 if node==NULL
-\ The return value is the result of `Slc_cmp(node.ckey, out.ckey)`
-\ pre FN BstSlc_find
-\   $declVar(declL node, TY_VAR_INPUT, RSIZE) \ &&SlcNode
-\   $declVar(declL slcDat, 0, RSIZE) \ slc.dat
-\   $declVar(declL slcLen, 0, 2)     \ slc.len
-
+\ The return value is the result of `slcCmp(node.key, out.key)`
+pre FN SN_find
+  $declVar(declL node,   TY_VAR_INPUT, RSIZE) \ &&SlcNode
+  $declVar(declL slcDat, TY_VAR_INPUT, RSIZE) \ slc.dat
+  $declVar(declL slcLen, TY_VAR_INPUT, 2)     \ slc.len
+  $declVar(declL cmp, 0, RSIZE)
+  $declEnd
+  IF(not ftoR:0(GET node)) ret 0; END \ if (&SlcNode == NULL) ret 0
+  LOOP l0
+    slcCmp(ftoR:SN_dat(GET node), fto2:SN_len(GET node),
+           GET slcDat,            GET slcLen) -> SET cmp;
+    IF(not GET cmp) ret 0; END \ found exact match
+    IF(GET cmp < 0)
+      ftoR:SN_left(ftR(GET node)) \ node.left
+      IF(dup) srR(\(node.left), GET node)
+      ELSE    drp; ret GET cmp;  END
+    ELSE \ cmp > 0
+      ftoR:SN_right(ftR(GET node)) \ node.right
+      IF(dup) srR(\(node.right), GET node)
+      ELSE    drp; ret GET cmp;  END
+    END
+  AGAIN l0
 
 \ **********
 \ * [3] if .. elif ... else
@@ -200,26 +219,9 @@ FN testIfNow ret($if(0) do (4) else (0x3F + 3))  $assertNoWs
 $tAssertEq(testIfNow, 0x42)
 
 \ **********
-\ * [4] ufn
-
-\ What I still need:
-\ - Define how types are represented and stored (probably BST using them as a key)
-\ - Read types and sizes, for input compiling
-\ - Role method: push types
-\ - Role method: register current types (get hard pointer)
-\ - stk: SYN function that checks it's part of a function types and adds input
-\   types.
-\ - inp: SYN function that checks it's part of a function types and adds input
-\   types AND local variables which get compiled (current declEnd)
-\ - out: SYN function that checks it's part of a function types and adds output
-\   types. Doesn't affect local variables.
-\
-\ Add later:
-\ - var: SYN function which can be used either on function input or body.
-\   Adds space to locals size but doesn't automatically do anything. Can be used
-\   like dot compiler to auto-assign (i.e. `var x = 7;`)
-
-\ ufn myFn stk(a:U1 b:U2) inp c:U2; var i:U2; inp d:Ref -> out(x:Ref y:Ref)
+\ * [4] fn
+\ fn myFn stk(a:U1 b:U2) inp c:U2; var i:U2; inp d:Ref
+\ -> out(x:Ref y:Ref) do (
 \   var i:U2 = 7;
 \   ... code
 \   var j:U2 = 10;

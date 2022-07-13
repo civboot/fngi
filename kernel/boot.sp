@@ -1002,11 +1002,13 @@ $pub $pre $inline $FN xlw   #1$h1 %XLW    %RET
 $pub $pre $inline $FN ft1   #1$h1 .1%FT   %RET
 $pub $pre $inline $FN ft2   #1$h1 .2%FT   %RET
 $pub $pre $inline $FN ft4   #1$h1 .4%FT   %RET
+$pub $pre $inline $FN ftR   #1$h1 .R%FT   %RET
 
 \ srN(value, addr): store a value of sz N to address.
 $pub $pre $inline $FN sr1   #1$h1 .1%SR   %RET
 $pub $pre $inline $FN sr2   #1$h1 .2%SR   %RET
 $pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
+$pub $pre $inline $FN srR   #1$h1 .R%SR   %RET
 
 
 \ [addr]: Fetching or Storing offset, i.e. fto1:DN_v(addr)

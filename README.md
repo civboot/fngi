@@ -1,8 +1,8 @@
 # fngi: a readable language that grows from the silicone
 
-> **UPDATE:** After making significant progress, I am currently in the process
-> of rewriting the kernel to allow for modules and temporary code. I am taking a
-> month break. Many things are currently broken. See "Helping / Hacking" for details on how to run.
+> **UPDATE:** the kernel rewrite is complete, fngi works again! I'm now
+> implementing `fn` syntax (without type checking) in `kernel/fngi.fn`. See
+> `notes/fn.md` for more details.
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -43,28 +43,26 @@ fngi's goal is to evolve into nothing less than the primary programming language
 and operating system for [Civboot](http://civboot.org). There are many steps
 along the way, some of them complete.
 
-- [ ] rewrite the kernel to allow for modules/etc
 - [X] create an assembly. Done, see [spor.c](./spor.c)
 - [X] bootstrap the assembly into fngi. Mostly done, see [spor.sp](./spor.sp)
 - [x] Write zoab in fngi (see [zoa][zoa] project).
 - [X] boostrap fngi into a _more_ full-featured language. This will be in
   [fngi.fn](./fngi.fn). This is mostly adding core operators (`+`, `-`, `*`,
   etc), along with several other expected pieces.
-- [ ] Create a 4k block allocator and arena-buddy-allocator.
+- [X] rewrite the kernel to allow for modules/etc
+  - [X] Create a 4k block allocator and arena-buddy-allocator.
 - [ ] Write initial way to define namespaces, structs and enums. (`STRUCT`,
       ENUM`, etc)
 - [ ] Write an initial "untyped" version of `fn`, `if`, etc. This might be
       something like `uty.fn`, `uty.if` or something else.
+- [ ] Create an ultra-basic text-editor.
+- [ ] Create an ultra-basic CLI built on the text-editor.
+- [ ] Implement a tyStk (type checking)
+- [ ] Write `fn`, `if`, `while` using tyStk to and aquire type safety.
 - [ ] Implement core OS functions to move and modify files and implement a
       standardized way to communicate user-input and display info with the
       harness.
-- [ ] Create an ultra-basic text-editor.
-- [ ] Create an ultra-basic CLI built on the text-editor.
-- [ ] Create a tyStk (type stack) and hijack compiler to emit/consume types
-      while compiling tokens.
-- [ ] Write `fn`, `if`, `while` using tyStk to and aquire type safety.
 - [ ] Write zoat in fngi (see [zoa][zoa] project).
-- [ ] Write `struct`, allowing for zoa serializable types from the beginning.
 - [ ] Implement zoac (see [zoa][zoa] project).
 - [ ] Implement zosh (see [zoa][zoa] project).
 - [ ] Write a glorious text editor, zat
@@ -73,16 +71,15 @@ along the way, some of them complete.
 
 ## Helping / Hacking
 
-Previously, fngi was a working language. I am currently rewriting the kernel to
-enable bootstrapping modules and remove boilerplate code (auto-generate things
-like offsets, only specify constants once, etc), as well as prepare for 16bit
-fngi.
-
 The current command I use to run/test is:
 
 ```
 $ python3 etc/make.py --build --test
 ```
+
+There is not yet a way to compile a file outside of `kernel/fngi.fn`,
+and there won't be until modules are implemented. See `linux/kernel.c` for
+implementation details.
 
 ## Contributing
 
