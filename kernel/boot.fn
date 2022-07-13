@@ -171,8 +171,28 @@ $tAssertEq(testIfNow, 0x42)
 \ **********
 \ * [4] ufn
 
-syn FN ufn
+\ What I still need:
+\ - Define how types are represented and stored (probably BST using them as a key)
+\ - Read types and sizes, for input compiling
+\ - Role method: push types
+\ - Role method: register current types (get hard pointer)
+\ - stk: SYN function that checks it's part of a function types and adds input
+\   types.
+\ - inp: SYN function that checks it's part of a function types and adds input
+\   types AND local variables which get compiled (current declEnd)
+\ - out: SYN function that checks it's part of a function types and adds output
+\   types. Doesn't affect local variables.
+\
+\ Add later:
+\ - var: SYN function which can be used either on function input or body.
+\   Adds space to locals size but doesn't automatically do anything. Can be used
+\   like dot compiler to auto-assign (i.e. `var x = 7;`)
 
-  ret;
+\ ufn myFn stk(a:U1 b:U2) inp c:U2; var i:U2; inp d:Ref -> out(x:Ref y:Ref)
+\   var i:U2 = 7;
+\   ... code
+\   var j:U2 = 10;
+\   ... code
+\ )
 
 $assertNoWs
