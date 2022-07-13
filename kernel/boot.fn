@@ -89,20 +89,19 @@ pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   assert(tokenEq(\slc), GET err)
   ret GET node
 
+pre pub FN equals \ [`= token` asNow -> ?value]
+  expectToken(SLC_EQUAL, E_needEqual) -> drp;
+  ret compNext(\asNow)
 
-pub syn FN const  \ const <token> = <value>
+pub syn FN const  \ `const token = token`
   $declVar(declL node, 0, RSIZE)  $declEnd
   notNow; dictAdd(0, 0) -> SET node;
-  expectToken(SLC_EQUAL, E_needEqual) -> drp;
-  dv_log(0x1000, 1, 0x10)
-  d_vSet(compNext(TRUE), GET node);
-  ret;
+  ret d_vSet(equals(TRUE), GET node)
 
 $STORE_PRIV
-const constAnswer = 0x42;
-$tAssertEq(constAnswer, 0x42)
+const const42 = 0x42;         $tAssertEq(const42, 0x42)
+const const49 = (0x42 + 7);   $tAssertEq(const49, 0x49)
 $STORE_PUB
-
 
 \ **********
 \ * [XX] type stuff
