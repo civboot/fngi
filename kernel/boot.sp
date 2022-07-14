@@ -111,7 +111,7 @@ $pub @_FP@TY_FN_INLINE^JN :bump \ {size align -> &dat} bump some memory
   .1%LIT@SLIT, %JN  \ {jn(U1, SLIT) get full instr
   .2%JMPL@h1, \ made into SLIT instr and stored.
 
-$STORE_PRIV
+$STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP :answer #30$L0 #12$L0 %ADD %RET \ { -> 0x42}
 $answer #42 $tAssertEq
 $STORE_PUB   $assertNoWs
@@ -141,7 +141,7 @@ $STORE_PUB   $assertNoWs
   @DV_comp_dGet$L0 %DV@DV_comp$h1
   %DUP @E_cNoKey$L2 .2%JMPL@assert$h2
 
-$STORE_PRIV       $NEW_BLOCK_PRIV
+$STORE_PRIV
 @_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m$h1 %RET \ {&DNode -> m}
 @_FP@TY_FN_INLINE^JN :d_mSet   #2$h1 .2%SRO@DN_m$h1 %RET \ {m &DNode}
 @_FP@TY_FN_INLINE^JN :d_vGet   #2$h1 .R%FTO@DN_v $h1 %RET \ {&DNode -> v}
@@ -619,7 +619,9 @@ $syn $FN REF
   $ELSE   #0$L @SZ2$L @GR$L $END
   $xx:instrLitImpl %RET
 
-$syn $FN fnRef
+$now $FN dnode $jmp:colonRef \ [`dnode:token` -> &DNode]
+
+$syn $FN fnRef \ [`fnRef:token` -> &fn]
   $xx:colonRef %DUP $xx:isTyFn @E_cNotFn$L $xx:assert
   $d_vGet %SWP $IF %RET $END  $xx:L %RET
 
@@ -743,6 +745,7 @@ $pre $FN testDeclEnd \ { a b c -> a - c + b }
 \ fn updateCompFn [newComp -> prevComp] : update compFn + ret old
 \ fn number <number> -> [value isNum]   : parse next token (parseNumber).
 $STORE_PUB $assertNoWs
+$NEW_BLOCK_PRIV
 
 \ **********
 \   * [6.a] Parse numbers and string characters
@@ -855,7 +858,6 @@ $number notNum   $tAssertNot ^DRP \ not a number
 
 \ **********
 \   * [6.b] Compile tokens
-$NEW_BLOCK_PRIV
 
 $FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
   %OVR %OVR #F0$L #3$L #10$L $dv_log
@@ -910,8 +912,8 @@ $pub$syn $FN $ $xx:notNow $xx:_now %RET \ make NOW
 
 $pub$syn $FN (  %DRP  \ parens ()
   $LOOP l0
-    $xx:assertToken
-    $xx:peekChr #29$L %EQ $IF  $xx:scan %RET  $END \ return if we hit ")"
+    $xx:peekChr %DUP $xx:assertNoEof
+    #29$L %EQ $IF  $xx:scan %RET  $END \ return if we hit ")"
     $GET G_compFn
     %XLW
   $AGAIN l0

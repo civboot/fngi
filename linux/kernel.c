@@ -1637,9 +1637,12 @@ static inline void executeDV(U1 dv) {
         case DV_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
         case DV_comp_dGet: {
           DNode* n = asPtrNull(DNode, WS_POP()); if(n) {
-            ASM_ASSERT(!Dict_find(&n, Tslc), E_cNoKey); ASM_ASSERT(n, E_cNoKey);
-            WS_PUSH(asRef(n));
-          } else { WS_PUSH(asRef(dictGetAny(Tslc))); } RV
+            if(Dict_find(&n, Tslc)) n = NULL;
+          } else {
+            n = dictGetAny(Tslc);
+          }
+          eprintf("?? dGet: %X\n", asRef(n));
+          WS_PUSH(asRef(n)); RV;
         }
         case DV_comp_dAdd: {
           U2 meta = WS_POP(); WS_PUSH(asRef(dictAddMut(meta, WS_POP(), Tslc))); RV

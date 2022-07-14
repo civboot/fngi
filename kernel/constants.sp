@@ -45,14 +45,14 @@
 \ **********
 \ * [1] Instructions: these are constants that can be used directly by: % ^
 \ Spor uses 8 bit instructions with the following bit layout (S=size bit):
-\   00XX XXXX: operation
-\   01SS XXXX: mem
-\   10SS XXXX: jmp
-\   11XX XXXX: small literal value [0x00 - 0x3F]
+\   00-- ----: operation
+\   01SS ----: mem
+\   10SS ----: jmp
+\   11-- ----: small literal value [0x00 - 0x3F]
 #40 #0=I_MEM
 #80 #0=I_JMP
 
-\ # [1.a] Sizes
+\ # [1.a] Sizes: --SS ----
 #00 #0=SZ1
 #10 #0=SZ2
 #20 #0=SZ4
