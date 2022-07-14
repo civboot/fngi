@@ -1307,10 +1307,9 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   BBA* bba = nameBBA();  Ref ckey = bump(bba, false, s.len + 1);
   *(mem + ckey) = s.len; // Note: unsafe write, memory already checked.
   _memmove(ckey + 1, s.dat, s.len);
-
-  DNode* add = (DNode*) (mem + bump(bba, true, sizeof(DNode)));
+  U4 nodeSz = sizeof(DNode);  if(C_TYPED & meta) { nodeSz += RSIZE; }
+  DNode* add = (DNode*) (mem + bump(bba, true, nodeSz));
   *add = (DNode) {.ckey = ckey, .v = value, .m = meta};
-
   DNode* root = nameDict(); Dict_add(&root, add);
   Ref r = asRef(root);
   if(!nameDict()) switch (nameLoc()) {

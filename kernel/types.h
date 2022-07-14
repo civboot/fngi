@@ -17,6 +17,7 @@ typedef int16_t              I2;
 typedef int32_t              I4;
 typedef uint32_t             APtr;
 typedef uint32_t             Ref;
+typedef Ref                  Slot;
 
 typedef struct { Ref dat; U2 len; }                         Slc;
 typedef struct { Ref dat; U2 len; U2 cap; }                 Buf;

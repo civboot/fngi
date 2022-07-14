@@ -105,40 +105,49 @@ const const42 = 0x42;         $tAssertEq(const42, 0x42)
 const const49 = (0x42 + 7);   $tAssertEq(const49, 0x49)
 $STORE_PUB
 
+pub syn FN decl \ decl:token(meta, value) manually declare a dictionary entry
+  $declVar(declL node, 0, RSIZE) $declEnd
+  notNow; colon; xx:dictAdd(0, 0) -> SET node;
+  compNext(TRUE) -> d_vSet(\value, GET node) -> d_mSet(\meta, GET node);
+  ret;
+
 \ **********
-\ * [XX] type stuff
-\ TODO: move to code dump?
+\ * [XX] Types
+\ Types are a reference on the end of DNodes iff the C_TYPED bit is set.
+\ Depending on the type, they point to either (for CONST, VAR) a single type item
+\ or (for FN, STRUCT, etc) a "typestream" which is a stream of type items.
+\
+\ All type items start with a byte:
+\    C--- ----   C=constructed
+\
+\ If C=0, it is not constructed, meaning it is a native type. In this case:
+\    0RRR -VVV   V=variant  R=reference depth
+\ - The variants are in order: Slot, ISlot, U1, I1, U2, I2, U4, I4
+\ - The reference depth is the number of `&` of the type.
+\
+\ If C=1 it is constructed, the meta is:
+\     1-SS -RRR   S=size of big-endian pointer to the Node,  R=reference depth
+\
+\ Below we just implement a few of the native types necessary for bootstrapping fn.
+\ In general, these will be stored with the fn definition.
 
-\ SlcNode struct
-const SN_left = 0;                 \ &SlcNode: .left
-const SN_right = RSIZE;            \ &SlcNode: .right
-const SN_dat = (SN_right + RSIZE); \ Ref:      .key.dat
-const SN_len = (SN_dat + RSIZE);   \ U2:       .key.len
+const TY_DICT_NATIVE = 0x00;
+const TY_DICT_BITMAP = 0x01;
+const TY_DICT_STRUCT = 0x02;
+const TY_DICT_ENUM   = 0x03;
+const TY_DICT_MOD    = 0x04;
+const TY_DICT_SUBMOD = 0x04;
 
-\ Find slice in BST, starting at node. Set result to node.
-\ returns 0 if node==NULL
-\ The return value is the result of `slcCmp(node.key, out.key)`
-pre FN SN_find
-  $declVar(declL node,   TY_VAR_INPUT, RSIZE) \ &&SlcNode
-  $declVar(declL slcDat, TY_VAR_INPUT, RSIZE) \ slc.dat
-  $declVar(declL slcLen, TY_VAR_INPUT, 2)     \ slc.len
-  $declVar(declL cmp, 0, RSIZE)
-  $declEnd
-  IF(not ftoR:0(GET node)) ret 0; END \ if (&SlcNode == NULL) ret 0
-  LOOP l0
-    slcCmp(ftoR:SN_dat(GET node), fto2:SN_len(GET node),
-           GET slcDat,            GET slcLen) -> SET cmp;
-    IF(not GET cmp) ret 0; END \ found exact match
-    IF(GET cmp < 0)
-      ftoR:SN_left(ftR(GET node)) \ node.left
-      IF(dup) srR(\(node.left), GET node)
-      ELSE    drp; ret GET cmp;  END
-    ELSE \ cmp > 0
-      ftoR:SN_right(ftR(GET node)) \ node.right
-      IF(dup) srR(\(node.right), GET node)
-      ELSE    drp; ret GET cmp;  END
-    END
-  AGAIN l0
+decl:Slot (TY_DICT jn TY_DICT_NATIVE, 0x00);
+decl:ISlot(TY_DICT jn TY_DICT_NATIVE, 0x01);
+decl:U1   (TY_DICT jn TY_DICT_NATIVE, 0x02);
+decl:I1   (TY_DICT jn TY_DICT_NATIVE, 0x03);
+decl:U2   (TY_DICT jn TY_DICT_NATIVE, 0x04);
+decl:I2   (TY_DICT jn TY_DICT_NATIVE, 0x05);
+decl:U4   (TY_DICT jn TY_DICT_NATIVE, 0x06);
+decl:I4   (TY_DICT jn TY_DICT_NATIVE, 0x07);
+$assertDictV 0x00  Slot    $assertDictM(TY_DICT + TY_DICT_NATIVE) Slot
+$assertDictV 0x01  ISlot
 
 \ **********
 \ * [3] if .. elif ... else

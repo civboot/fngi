@@ -44,7 +44,7 @@
 \   fn L2 [U1] -> []                : compile a 2 byte literal [#0 - #FFFF]
 \   fn scan    [<token>]            : scan the next token in src
 \   fn $dictRef [<token> &r -> &n]  : get node of token, root can be null.
-\   fn $dictAdd [<token> v m2 -> &D]: set dict@token
+\   fn $dictAdd [<token> m v -> &D] : set dict@token
 \
 \ Inline functions:
 \   fn xCatch [... &fn]       : execute a large function and catch error.
@@ -227,16 +227,17 @@ $STORE_PUB      $assertNoWs
 
 $pub @TY_FN@TY_FN_INLINE^JN :heap #3$h1 @DV_comp_heap$L0 %DV@DV_comp$h1 %RET
 $pub @_FP :notNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
-@TY_FN :_implFnTy \ {meta asNow}
+@TY_FN :_implTy \ {asNow meta}
   %SWP $_xsl notNow \ {meta}
   .2%FTGL@G_metaNext$h2  %JN  .2%SRGL@G_metaNext$h2  %RET
 
-     @TY_FN@TY_FN_SYN^JN :pre     @TY_FN_PRE    $L1 $_jmp _implFnTy
-     @TY_FN@TY_FN_SYN^JN :large   @TY_FN_LARGE  $L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :now     @TY_FN_NOW    $L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :syn     @TY_FN_SYN    $L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :inline  @TY_FN_INLINE $L1 $_jmp _implFnTy
-$pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implFnTy
+     @TY_FN@TY_FN_SYN^JN :typed   @C_TYPED      $L2 $_jmp _implTy
+     @TY_FN@TY_FN_SYN^JN :pre     @TY_FN_PRE    $L1 $_jmp _implTy
+     @TY_FN@TY_FN_SYN^JN :large   @TY_FN_LARGE  $L1 $_jmp _implTy
+$pub @TY_FN@TY_FN_SYN^JN :now     @TY_FN_NOW    $L1 $_jmp _implTy
+$pub @TY_FN@TY_FN_SYN^JN :syn     @TY_FN_SYN    $L1 $_jmp _implTy
+$pub @TY_FN@TY_FN_SYN^JN :inline  @TY_FN_INLINE $L1 $_jmp _implTy
+$pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTy
 
 @TY_FN :clearLocals
   %GR@G_bbaLocal$h2 $BBA_drop   #0$L0 .R%SRGL@G_dictLocal$h2 \ drop everything
@@ -967,36 +968,36 @@ $pub      $inline $FN dup   #1$h1 %DUP    %RET
 $pub      $inline $FN dupn  #1$h1 %DUPN   %RET
 
 \ Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
-$pub $pre $inline $FN ret   #1$h1 %RET
-$pub $pre $inline $FN inc   #1$h1 %INC    %RET
-$pub $pre $inline $FN inc2  #1$h1 %INC2   %RET
-$pub $pre $inline $FN inc4  #1$h1 %INC4   %RET
-$pub $pre $inline $FN dec   #1$h1 %DEC    %RET
-$pub $pre $inline $FN inv   #1$h1 %INV    %RET
-$pub $pre $inline $FN neg   #1$h1 %NEG    %RET
-$pub $pre $inline $FN not   #1$h1 %NOT    %RET
-$pub $pre $inline $FN i1to4 #1$h1 %CI1    %RET
-$pub $pre $inline $FN i2to4 #1$h1 %CI2    %RET
-$pub $pre $inline $FN +     #1$h1 %ADD    %RET
-$pub $pre $inline $FN -     #1$h1 %SUB    %RET
-$pub $pre $inline $FN %     #1$h1 %MOD    %RET
-$pub $pre $inline $FN <<    #1$h1 %SHL    %RET
-$pub $pre $inline $FN >>    #1$h1 %SHR    %RET
-$pub $pre $inline $FN msk   #1$h1 %MSK    %RET
-$pub $pre $inline $FN jn    #1$h1 %JN     %RET
-$pub $pre $inline $FN xor   #1$h1 %XOR    %RET
-$pub $pre $inline $FN and   #1$h1 %AND    %RET
-$pub $pre $inline $FN or    #1$h1 %OR     %RET
-$pub $pre $inline $FN ==    #1$h1 %EQ     %RET
-$pub $pre $inline $FN !=    #1$h1 %NEQ    %RET
-$pub $pre $inline $FN >=    #1$h1 %GE_U   %RET
-$pub $pre $inline $FN <     #1$h1 %LT_U   %RET
-$pub $pre $inline $FN ge_s  #1$h1 %GE_S   %RET
-$pub $pre $inline $FN lt_s  #1$h1 %LT_S   %RET
-$pub $pre $inline $FN *     #1$h1 %MUL    %RET
-$pub $pre $inline $FN /     #1$h1 %DIV_U  %RET
-$pub $pre $inline $FN xsw   #1$h1 %XSW    %RET
-$pub $pre $inline $FN xlw   #1$h1 %XLW    %RET
+$typed $pub $pre $inline $FN ret   #1$h1 %RET
+$typed $pub $pre $inline $FN inc   #1$h1 %INC    %RET
+$typed $pub $pre $inline $FN inc2  #1$h1 %INC2   %RET
+$typed $pub $pre $inline $FN inc4  #1$h1 %INC4   %RET
+$typed $pub $pre $inline $FN dec   #1$h1 %DEC    %RET
+$typed $pub $pre $inline $FN inv   #1$h1 %INV    %RET
+$typed $pub $pre $inline $FN neg   #1$h1 %NEG    %RET
+$typed $pub $pre $inline $FN not   #1$h1 %NOT    %RET
+$typed $pub $pre $inline $FN i1to4 #1$h1 %CI1    %RET
+$typed $pub $pre $inline $FN i2to4 #1$h1 %CI2    %RET
+$typed $pub $pre $inline $FN +     #1$h1 %ADD    %RET
+$typed $pub $pre $inline $FN -     #1$h1 %SUB    %RET
+$typed $pub $pre $inline $FN %     #1$h1 %MOD    %RET
+$typed $pub $pre $inline $FN <<    #1$h1 %SHL    %RET
+$typed $pub $pre $inline $FN >>    #1$h1 %SHR    %RET
+$typed $pub $pre $inline $FN msk   #1$h1 %MSK    %RET
+$typed $pub $pre $inline $FN jn    #1$h1 %JN     %RET
+$typed $pub $pre $inline $FN xor   #1$h1 %XOR    %RET
+$typed $pub $pre $inline $FN and   #1$h1 %AND    %RET
+$typed $pub $pre $inline $FN or    #1$h1 %OR     %RET
+$typed $pub $pre $inline $FN ==    #1$h1 %EQ     %RET
+$typed $pub $pre $inline $FN !=    #1$h1 %NEQ    %RET
+$typed $pub $pre $inline $FN >=    #1$h1 %GE_U   %RET
+$typed $pub $pre $inline $FN <     #1$h1 %LT_U   %RET
+$typed $pub $pre $inline $FN ge_s  #1$h1 %GE_S   %RET
+$typed $pub $pre $inline $FN lt_s  #1$h1 %LT_S   %RET
+$typed $pub $pre $inline $FN *     #1$h1 %MUL    %RET
+$typed $pub $pre $inline $FN /     #1$h1 %DIV_U  %RET
+$typed $pub $pre $inline $FN xsw   #1$h1 %XSW    %RET
+$typed $pub $pre $inline $FN xlw   #1$h1 %XLW    %RET
 
 \ ftN(addr): fetch a value of sz N from address.
 $pub $pre $inline $FN ft1   #1$h1 .1%FT   %RET

@@ -58,7 +58,14 @@ typedef struct { U1 previ; U1 nexti; }                      BANode;
 typedef struct { Ref nodes; Ref blocks; U1 rooti; U1 cap; } BA;
 typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
 typedef struct { Ref root; Ref free; }                      Dict;
-typedef struct { Ref l; Ref r; Ref ckey; U2 m; U4 v; }      DNode;
+typedef struct {
+  Ref l;
+  Ref r;
+  Ref ckey;
+  U2 m;
+  Slot v;
+  // ?Ref: type,
+}      DNode;
 
 typedef struct {
   Ref bump;

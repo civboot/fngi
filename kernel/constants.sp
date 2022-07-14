@@ -226,10 +226,11 @@
 
 #30 #0=SZ_MASK \ size bit mask (for instr and meta)
 
-#4000 #0=C_PUB_NAME   \ G_cstate: make next name public
-#2000 #0=C_LOCAL      \ G_cstate AND meta: store as locals (func and name)
-#1000 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
+#4000 #0=C_LOCAL      \ G_cstate AND meta: store as locals (func and name)
+#2000 #0=C_TYPED      \ G_cstate AND meta: store as typed (dict)
+#0080 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
 #0040 #0=C_PUB        \ G_cstate: store as public (function data)
+#0020 #0=C_PUB_NAME   \ G_cstate: make next name public
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
 #C0 #0=META_TY_MASK \ upper three bits determine type

@@ -64,4 +64,5 @@
 #08   #0=DN_ckey               \ Ref: counted data key
 #0C   #0=DN_m                  \ U2: meta
 #10   #0=DN_v                  \ Ref: value, which may be a constant
+#14   #0=DN_type               \ Ref?: only exists if C_TYPED
 

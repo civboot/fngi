@@ -44,7 +44,7 @@ The first byte of a type is a meta byte: `TTT- ----`
 
 Each type item starts with a byte: `R--- ----`
 
-- If R=0 this is a builtin type, the meta is: `0EEE -DDD`
+- If C=0 this is a non-constructed (builtin) type, the meta is: `0EEE -DDD`
   - `E` is an enum of which one: `Any, Slot, U1, I1, U2, I2, U4, I4`
   - `D` contains the reference depth, meaning the physical size (in the struct,
     local, etc) is a Ref but the data (final FTO size) is the one selected by
@@ -52,7 +52,7 @@ Each type item starts with a byte: `R--- ----`
   - `Any` types can never be materialized: you can only have a reference to them,
     you can never perform an operation (i.e. FT, ADD, etc) on them. They enable
     generic references (i.e. List[U4], BstU4[MyStruct])
-- If R=1 this is a reference type, the meta is: `1--- --SS` 
+- If C=1 this is a constructed type, the meta is: `1--- --SS` 
   - It is followed by a big-endian pointer of size `SS` which is an `&DNode`
 
 The type stack will unpack these into the following structs:

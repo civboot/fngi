@@ -21,17 +21,18 @@ int writeto(U1* path) {
   int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 00600); assert(fd); return fd;
 }
 
-#define WRITE_FIELD(META, TYPE, PRE, FIELD, COMMENT) \
+#define WRITE_DIRECT(META, VALUE, NAME, COMMENT) \
     assert(dprintf(fd,                         \
         "#%.2X   #%X=%-20s  \\ %s\n",          \
-        offsetof(TYPE, FIELD), META,           \
-                PRE #FIELD, COMMENT))
+        VALUE,    META,  \
+                     NAME,     COMMENT))
+
+#define WRITE_FIELD(META, TYPE, PRE, FIELD, COMMENT) \
+    WRITE_DIRECT( \
+      META, offsetof(TYPE, FIELD), PRE #FIELD, COMMENT)
 
 #define WRITE_INDEX(TYPE, PRE, FIELD, COMMENT) \
-    assert(dprintf(fd,                         \
-        "#%.2X   #0=%-20s  \\ %s\n",           \
-        offsetof(TYPE, FIELD) / RSIZE,         \
-                PRE #FIELD, COMMENT))
+  WRITE_DIRECT(0, offsetof(TYPE, FIELD) / RSIZE, PRE #FIELD, COMMENT)
 
 void main() {
   int fd = writeto("kernel/offsets.sp");
@@ -99,6 +100,7 @@ void main() {
   WRITE_FIELD(0, DNode, "DN_", ckey, "Ref: counted data key");
   WRITE_FIELD(0, DNode, "DN_", m, "U2: meta");
   WRITE_FIELD(0, DNode, "DN_", v, "Ref: value, which may be a constant");
+  WRITE_DIRECT(0, sizeof(DNode), "DN_type", "Ref?: only exists if C_TYPED");
 
   assert(dprintf(fd, "\n") > 0); close(fd);
 }

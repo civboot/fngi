@@ -106,10 +106,11 @@
 #define T_SYMBOL             0x4
 #define T_WHITE              0x5
 #define SZ_MASK              0x30
-#define C_PUB_NAME           0x4000
-#define C_LOCAL              0x2000
-#define C_EXPECT_ERR         0x1000
+#define C_LOCAL              0x4000
+#define C_TYPED              0x2000
+#define C_EXPECT_ERR         0x80
 #define C_PUB                0x40
+#define C_PUB_NAME           0x20
 #define META_TY_MASK         0xC0
 #define TY_CONST             0x0
 #define TY_FN                0x40
