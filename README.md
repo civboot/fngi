@@ -37,6 +37,35 @@ Read more:
 > Fngi and civboot should be considred an
 > [Obsolete Technology](http://xkcd.com/1891)
 
+## Motivation
+Fngi is a "macro first" language. Why? So that it can evolve to be whatever is
+needed of it.  To understand this better, go back to early programming
+languages: unix had sh and C.
+
+Sh is barely a lanugage. It has only a single type, the string.
+It has an extremely obtuse syntax who's sole method of operation is to
+dynamically execute scripts and modify strings. In truth, the shell "syntax"
+depends on a host of of other complex syntaxes: awk, grep, regexes, individual
+command lines, formats of system files (`/proc/`), etc.
+
+By contrast, C has a rigid syntax, a complex macro system, a complex build and
+linking system and and no dynamic features. You could never use C as a
+scripting language, since it has no way to execute a function you just defined.
+
+What if there could be only one _base_ language, and you could use it as a seed
+for more application-specific instances? It would have to be dynamic, but also
+compile to a VM bytecode which can be executed immediately, but can also be
+built into a native executable. If we are following in the footsteps of sh, it
+should also be extremely small and simple in it's beginninings.
+
+The first thing to note about fngi is that it has a **concrete syntax**. This
+means there is no (inherent) abstract syntax tree -- every token is simply
+compiled or executed immediately. In fngi, any function can declare itself as
+`syn` (syntactical) and take control of its own destiny, reading tokens and
+doing with them whatever it wishes. With great power comes great
+responsibility. This leads to a radical "macro first" language, where language
+features can be added by modules and imported as-needed.
+
 ## Goals
 
 fngi's goal is to evolve into nothing less than the primary programming language
