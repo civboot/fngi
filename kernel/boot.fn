@@ -25,7 +25,7 @@ syn FN )  panic(E_cParen)    \ prevent hanging )
 
 inline pre FN >     $h1(2) swp -> (_ < _)  ret;     \ [a b -> a > b]
 inline pre FN <=    $h1(2) swp -> (_ >= _) ret;     \ [a b -> a <= b]
-$tAssert(2 > 1) $tAssertNot(2 > 2) $tAssert(2 <= 2) $tAssertNot(2 <= 1)
+$(tAssert(2 > 1)  tAssertNot(2 > 2)  tAssert(2 <= 2)  tAssertNot(2 <= 1))
 
 inline pre FN le_s  $h1(2) swp -> (_ ge_s _)  ret;  \ [a b -> a <= b]
 inline pre FN gt_s  $h1(2) swp -> (_ lt_s _)  ret;  \ [a b -> a >= b]
@@ -187,61 +187,59 @@ pre FN isFnAndSyn \ &node
 \ inp, x:U1, y: &U2
 \ inp(x: U1, y: &U2)
 
-pre FN skipAllSyn \ [asNow] execute all syn tokens, "skipping" them
-  LOOP l0
-    IF(isFnAndSyn(dictRefMaybe(0))) single(dup\asNow);
-    ELSE  drp\asNow; tokenPlcSet(0); ret;  END
-  AGAIN l0
+pre FN _varImpl \ [meta]
+  $declVar(declL meta, TY_VAR_INPUT, 2) $declEnd
+  IF(isFnAndSyn(dictRefMaybe(0))) 
+    ret single(FALSE) \ next token is syn, run it (it may run us)
+  END
+  tokenPlcSet(0); \ revert dictRefMaybe
+  declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
+  \ TODO: register type
+  IF(swp\numRefs) drp; RSIZE \ {&Local isLocal szBytes}
+  ELSE  _typeSz(\type);  END
+  \(&Local isLocal szBytes) -> GET meta -> swp -> declVar;
+  ret;
 
-FN _inp \ inp x:&U2
+FN cstateInFnBody ret(C_FN_BODY msk GET G_cstate)
+
+FN _inp
   $declVar(declL compFn,  0, RSIZE)  $declEnd
   updateCompFn(fnRef:_inp) -> SET compFn;
-  IF(isFnAndSyn(dictRefMaybe(0))) single(FALSE)
-  ELSE
-    tokenPlcSet(0); \ revert dictRefMaybe
-    declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
-    \ TODO: register type
-    IF(swp\numRefs) drp; RSIZE \ {&Local isLocal szBytes}
-    ELSE  _typeSz(\type);  END
-    dv_log(dup, 0x2001, 2, 0x10)
-    \(&Local isLocal szBytes) -> TY_VAR_INPUT -> swp -> declVar;
-  END
+  _varImpl(TY_VAR_INPUT)
   GET compFn -> SET G_compFn; ret;
-pub syn FN inp  notNow; _inp; ret;
+pub syn FN inp
+  notNow; assert(not cstateInFnBody, E_inp);
+  _inp; ret;
 
-$STORE_PRIV
-\ Test inp by truncating values
-
+$STORE_PRIV \ test input by truncating values
 pre FN testInp  inp x:U1 $declEnd  ret(GET x)
 $tAssertEq(testInp(0x101), 1)
 
-pre FN testInp3  inp (
-  $assertNoWs;
-  x:U1  y:U2  z: &U1
-
-)  $declEnd
-\ pre FN testInp3 inp x:U1  $declEnd
-
-\ $tAssertEq(0x888)
-\   \ Note: some values will be truncated
-\   ret(GET x, GET y, GET z)
-\ $testInp3(0x101\1, 0x12345\1000, 0x6789ABC)
-\ $tAssertEq(0x6789ABC)  $tAssertEq(0x2345)  $tAssertEq(0x01)
-
-\ $tAssertEq(
-\   testInp(0x101\1, 0x11000\1000, 0x2000),
-\   0x3001)
-
+pre FN testInp3  inp (x:U1  y:U2  z: &U1)  $declEnd
+  ret(GET x, GET y, GET z)
+$testInp3(0x101\1, 0x12345\1000, 0x6789ABC)
+$tAssertEq(0x6789ABC)  $tAssertEq(0x2345)  $tAssertEq(0x01)
 
 $STORE_PUB
+FN _var
+  $declVar(declL compFn,  0, RSIZE)  $declEnd
+  updateCompFn(fnRef:_inp) -> SET compFn;
+  _varImpl(0)
+  GET compFn -> SET G_compFn; ret;
+pub syn FN var  notNow; assert(not cstateInFnBody, E_unimpl); _var; ret;
+
+$STORE_PRIV
+pre FN testVar \ x -> x + 1
+  var x: U1 $declEnd  \x -> SET x; ret inc(GET x)
+$tAssertEq(testVar(0x101), 2)
 
 \ **********
-\ * [3] if .. elif ... else
-\ We define both if and $if
+\ * [3] if elif else, also $if ...
+$STORE_PUB
 
 \ TODO: I can remove recursion here and use a loop instead
 FN _if \ [] recursive fn of `if`
-  $declVar(declL h,    0, RSIZE) $declEnd
+  var h: &U1  $declEnd
   scan; single(FALSE) \ compile token after `if`
   xx:IF(FALSE\asNow) -> SET h \ compile IF
   expectToken(SLC_DO, E_cToken) -> drp;
@@ -288,7 +286,7 @@ $tAssertEq(testIf2(1), 4)      $tAssertEq(testIf2(2), 7)
 $tAssertEq(testIf2(12), 0x99)  $assertNoWs
 
 pre FN testManyElif \ [a -> b]
-  $declVar(declL a,    TY_VAR_INPUT, RSIZE) $declEnd
+  inp a: Slot  $declEnd
   if   (GET a < 0x10) do ret(0x1000 + GET a)
   elif (GET a < 0x20) do ret(0x2000 + GET a)
   elif (GET a < 0x30) do ret(0x3000 + GET a)
@@ -322,5 +320,24 @@ $tAssertEq(testIfNow, 0x42)
 \   var j:U2 = 10;
 \   ... code
 \ )
+$STORE_PUB
+
+pub syn FN fn  notNow;
+  xx:FN(FALSE)
+  LOOP l0
+    dictRefMaybe(0) \ {&Node}
+    if(tokenEq(SLC_DO)) do ( \ function body
+      drp\node; declInpEnd; scan; ret single(FALSE);
+    )
+    assert(isFnAndSyn(\node), E_fnSyn); single(FALSE) \ compile syn fns
+  AGAIN l0
+
+$STORE_PRIV
+pre fn testFn inp(a:U1 b:U2) do ( GET b;  GET a;  ret; )
+$(testFn(0x1234, 0x12345) -> tAssertEq(0x34) -> tAssertEq(0x2345))
+$STORE_PUB
+
+
+
 
 $assertNoWs

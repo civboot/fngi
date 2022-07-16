@@ -894,7 +894,6 @@ bool dbgExecute(Instr instr) {
 }
 
 void dbgInstr(Instr instr) {
-  // eprintf("??? instr: %X  ep=%X\n", instr, cfb->ep);
   if(LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))  {
     if(isExecute(instr)) dbgExecute(instr);
   }
@@ -1196,7 +1195,7 @@ void F_open(FileMethods* m, File* f) {
 
 void F_close(FileMethods* m, File* f) {
   handleFMethods(close, m, f);
-  if(!close(F_FD(*f))) { f->code = F_error; g->syserr = errno; }
+  if(close(F_FD(*f))) { f->code = F_error; g->syserr = errno; }
   else { f->code = F_done; }
 }
 
@@ -1271,6 +1270,7 @@ BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
   readAtLeast(NULL, f, 128); ASSERT_EQ(F_eof, f->code);
   ASSERT_EQ(strlen(TEST_expectedTxt), f->buf.len);
   assert(!memcmp(TEST_expectedTxt, asU1(f->buf.dat), f->buf.len));
+  F_close(NULL, f); assert(f->code == F_done);
 TEST_END
 
 
@@ -1383,8 +1383,9 @@ void _scan(FileMethods* m, File* f) {
   }
 }
 
-void scan(FileMethods* m, File* f) { _scan(m, f); 
-  eprintf("??? scan: %.*s\n", Tplc, Tdat);
+void scan(FileMethods* m, File* f) {
+  _scan(m, f);
+  eprintf("??? scan: %.*s  line=%u\n", Tplc, Tdat, line);
 }
 
 bool usesSzI(U1 instr) {
@@ -1427,7 +1428,7 @@ BARE_TEST(testScan, 3)  BA_init(&k->ba);
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("Kernel"); ASSERT_TOKEN("Constants");
   ASSERT_TOKEN("\\");
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("Note"); ASSERT_TOKEN(":"); ASSERT_TOKEN("this");
-  assert(!close(F_FD(g->src)));
+  F_close(NULL, SRC); assert(SRC->code == F_done);
 TEST_END
 
 //   *******
@@ -1480,14 +1481,12 @@ void cComma() { // `,`, aka write heap
 
 void cForwardSlash(FileMethods* m, File* f) { // `\`, aka line comment
   U1* dat = Tdat;
-  eprint("??? cForwardSlash start\n");
   while(true) {
     if (Tplc >= Tlen) readNewAtLeast(m, f, 1);
     if (Tlen == 0) break;
     if (dat[Tplc] == '\n') break;
     Tplc += 1;
   }
-  eprintf("??? cForwardSlash end Tlen=%u\n", Tlen);
 }
 
 void cColon() { // `:`, aka define function
@@ -1569,6 +1568,7 @@ void compileLoop() { // compile source code
 void compileFile(char* s) {
   zoab_file(strlen(s), s);
   line = 1; openUnix(SRC, s); compileLoop(); ASSERT_NO_ERR();
+  F_close(NULL, SRC); assert(SRC->code == F_done);
 }
 
 void compileConstants() {
@@ -1636,12 +1636,9 @@ static inline void executeDV(U1 dv) {
         case DV_comp_last: WS_PUSH(compiler.lastUpdate); RV
         case DV_comp_wsLen: WS_PUSH(Stk_len(WS));           RV
         case DV_comp_dGet: {
-          DNode* n = asPtrNull(DNode, WS_POP()); if(n) {
-            if(Dict_find(&n, Tslc)) n = NULL;
-          } else {
-            n = dictGetAny(Tslc);
-          }
-          eprintf("?? dGet: %X\n", asRef(n));
+          DNode* n = asPtrNull(DNode, WS_POP());
+          if(n) { if(Dict_find(&n, Tslc)) n = NULL; }
+          else n = dictGetAny(Tslc);
           WS_PUSH(asRef(n)); RV;
         }
         case DV_comp_dAdd: {
@@ -1733,10 +1730,10 @@ void tests() {
   testReadMock();
   testReadUnix();
   testScan();
-  // * 6: Compiler
+  // // * 6: Compiler
   testSporBasics();
   testConstants();
-  // * 7: Main Function and Running Tests
+  // // * 7: Main Function and Running Tests
   testBootSpor();
   testBoot();
   eprint("# Tests DONE\n");

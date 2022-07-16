@@ -231,6 +231,7 @@
 #0080 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
 #0040 #0=C_PUB        \ G_cstate: store as public (function data)
 #0020 #0=C_PUB_NAME   \ G_cstate: make next name public
+#0010 #0=C_FN_BODY    \ G_cstate: currently compiling FN body
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
 #C0 #0=META_TY_MASK \ upper three bits determine type

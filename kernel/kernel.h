@@ -8,7 +8,7 @@ typedef U2 FErr;
 
 // If F_INDEX is set, fid is a file descriptor.
 // Else it is a "mock" BufPlc
-#define F_INDEX    (1 << (RSIZE * 4 - 1))
+#define F_INDEX    (1 << (RSIZE * 8 - 1))
 #define F_FD(F)    ((~F_INDEX) & (F).fid)
 const U2 F_seeking  = 0x00;
 const U2 F_reading  = 0x01;

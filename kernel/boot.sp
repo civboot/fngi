@@ -227,21 +227,24 @@ $STORE_PUB      $assertNoWs
 
 $pub @TY_FN@TY_FN_INLINE^JN :heap #3$h1 @DV_comp_heap$L0 %DV@DV_comp$h1 %RET
 $pub @_FP :notNow  @E_cNoNow$L2  $_jmp assertNot  \ {now}
-@TY_FN :_implTy \ {asNow meta}
+@TY_FN :_implTyMeta \ {asNow meta}
   %SWP $_xsl notNow \ {meta}
   .2%FTGL@G_metaNext$h2  %JN  .2%SRGL@G_metaNext$h2  %RET
 
-     @TY_FN@TY_FN_SYN^JN :typed   @C_TYPED      $L2 $_jmp _implTy
-     @TY_FN@TY_FN_SYN^JN :pre     @TY_FN_PRE    $L1 $_jmp _implTy
-     @TY_FN@TY_FN_SYN^JN :large   @TY_FN_LARGE  $L1 $_jmp _implTy
-$pub @TY_FN@TY_FN_SYN^JN :now     @TY_FN_NOW    $L1 $_jmp _implTy
-$pub @TY_FN@TY_FN_SYN^JN :syn     @TY_FN_SYN    $L1 $_jmp _implTy
-$pub @TY_FN@TY_FN_SYN^JN :inline  @TY_FN_INLINE $L1 $_jmp _implTy
-$pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTy
+     @TY_FN@TY_FN_SYN^JN :typed   @C_TYPED      $L2 $_jmp _implTyMeta
+     @TY_FN@TY_FN_SYN^JN :pre     @TY_FN_PRE    $L1 $_jmp _implTyMeta
+     @TY_FN@TY_FN_SYN^JN :large   @TY_FN_LARGE  $L1 $_jmp _implTyMeta
+$pub @TY_FN@TY_FN_SYN^JN :now     @TY_FN_NOW    $L1 $_jmp _implTyMeta
+$pub @TY_FN@TY_FN_SYN^JN :syn     @TY_FN_SYN    $L1 $_jmp _implTyMeta
+$pub @TY_FN@TY_FN_SYN^JN :inline  @TY_FN_INLINE $L1 $_jmp _implTyMeta
+$pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTyMeta
 
 @TY_FN :clearLocals
   %GR@G_bbaLocal$h2 $BBA_drop   #0$L0 .R%SRGL@G_dictLocal$h2 \ drop everything
   %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L0 .1%SRGL@G_localOffset$h2 %RET
+
+@_FP :clrCState  %INV .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
+@_FP :setCState       .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
 
 \ example: $syn $large $FN <token>: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
@@ -249,7 +252,8 @@ $pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTy
   %DUP .R%SRGL@G_curFn$h2 \ update currently compiling fn
   $heap %SWP $d_vSet \ dnodeLast.v = heap
   #0$L0 .2%SRGL@G_metaNext$h2 \ clear metaNext
-  $_xsl clearLocals $_jmp assertNoWs
+  $_xsl clearLocals   @C_FN_BODY$L2 $_xsl clrCState
+  $_jmp assertNoWs
 $assertNoWs
 
 \ These tell something about a &DNode. Type: [&DNode -> bool]
@@ -320,10 +324,16 @@ $FN scan
 $pre $FN dictRef  $_xsl scan $_jmp _dictRef \ TODO: need to use scan... but for that need IF
 
 \ Switch to non/local storage
-$FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
-$FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
-$FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
-$FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
+\ $FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
+\ $FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
+
+\ $FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
+\ $FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
+
+$FN ldictRef  \ { -> &Node}
+  @C_LOCAL$L2 $_xsl setCState #0$L0 $_xsl dictRef @C_LOCAL$L2 $_jmp clrCState
+$FN ldictAdd  \ {m v -> &Node}
+  @C_LOCAL$L2 $_xsl setCState       $_xsl dictAdd @C_LOCAL$L2 $_jmp clrCState
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
      $syn $FN LOOP   $_xsl notNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
@@ -693,15 +703,25 @@ $large $FN compileInputs
   $AGAIN l0
   %RET
 
-$STORE_PRIV
-$FN declEnd \ Compile local inputs update locals space for large fn.
-  $GET G_localOffset $retIfNot               \ noop if no locals
-  $GET G_localOffset $xx:alignR $xx:h1       \ store locals space
-  $xx:compileInputs
-  $GET G_curFn @TY_FN_LARGE$L $jmp:keyJnMeta \ update curFn to large
+$FN declInpEnd
+  $GET G_localOffset $IF \ if there are locals, make fn large
+    $GET G_curFn @TY_FN_LARGE$L $xx:keyJnMeta
+  $END 
+  $GET G_curFn $xx:isFnLarge $retIfNot \ noop if no locals
+  #0$L $xx:alignR $xx:h1 \ reserve space for locals
+  $xx:compileInputs 
+  @C_FN_BODY$L $jmp:setCState \ begin FN body
 
-$STORE_PRIV
-$pre $FN setNow #1$L $jmp:SET \ TODO: test this and get it to work
+$FN declFnEnd
+  $GET G_curFn $xx:isFnLarge %NOT $IF
+    \ If not large, assert no locals and return
+    $GET G_localOffset @E_cNotFnLarge$L $jmp:assertNot
+  $END \ next: store local size at fn pointer
+  $GET G_localOffset $xx:alignR $GET G_curFn $d_vGet .1%SR %RET
+
+$STORE_PRIV   $NEW_BLOCK_PRIV
+$FN declEnd  $xx:declInpEnd $jmp:declFnEnd
+
 $pre $FN setLogLvlSys .2%SRGL@G_logLvlSys$h2 %RET
 $FN getDictLocal $GET G_dictLocal %RET \ TODO: use getNow
 
@@ -713,7 +733,6 @@ $pre $FN testDeclEnd \ { a b c -> a - c + b }
 @_FP@TY_FN_LARGE^JN $assertDictM testDeclEnd
 
 #10 #4 #8 $testDeclEnd   #C $tAssertEq
-
 
 \ **********
 \ * [6] Fngi compile loop
@@ -1038,11 +1057,8 @@ $pub $syn $FN sroR  $xx:notNow @SZR@SRO^JN$L $xx:_opOffset %RET
 
 $STORE_PRIV
 
-
-
 \ Switch to fngi syntax and test some basics
-$large $FN baseCompFn \ base compFn for fngi tokens.
-  #0$h1 \ not really any locals (but called with XLW)
+$large $FN baseCompFn $declEnd \ base compFn for fngi tokens.
   $xx:scan $tokenPlc %RETZ
   @FALSE$L $xx:single
   %RET

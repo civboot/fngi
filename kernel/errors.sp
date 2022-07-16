@@ -48,7 +48,7 @@
 #E0D0  #0=E_cKeyLen \ Key len too large
 #E0D1  #0=E_cReg    \ Register error
 #E0D2  #0=E_cStr    \ Str invalid
-#E0D3  #0=E_cState  \ compiler state invalid
+#E0D3  #0=E_cState  \ compiler state invalid, use STORE_PUB?
 #E0D4  #0=E_cNotFit \ constant/str is too large
 
 #E0E0  #0=E_cNotGlobal \ using a non-global as global
@@ -80,6 +80,8 @@
 #E0FA  #0=E_needParen   \ Requires a '('
 #E0FB  #0=E_needEqual   \ Requires a '='
 #E0FC  #0=E_needType    \ Requires a type
+#E0FD  #0=E_inp         \ inp in wrong place
+#E0FD  #0=E_fnSyn       \ fn inputs syntax must all be syn
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

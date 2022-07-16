@@ -111,6 +111,7 @@
 #define C_EXPECT_ERR         0x80
 #define C_PUB                0x40
 #define C_PUB_NAME           0x20
+#define C_FN_BODY            0x10
 #define META_TY_MASK         0xC0
 #define TY_CONST             0x0
 #define TY_FN                0x40
@@ -213,6 +214,8 @@
 #define E_needParen          0xE0FA
 #define E_needEqual          0xE0FB
 #define E_needType           0xE0FC
+#define E_inp                0xE0FD
+#define E_fnSyn              0xE0FD
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2
