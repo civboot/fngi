@@ -327,8 +327,8 @@ $FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&N
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
      $syn $FN LOOP   $_xsl notNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
-$pre $syn $FN BREAK0                 $_xsl IF  #0$L0 $_xsl ldictAdd %DRP %RET
-$syn $FN ENDV_BREAK  $_xsl notNow $_xsl ldictRef $d_vGet %DUP $_jmp _END
+     $syn $FN BREAK0            $_xsl IF  #0$L0 $_xsl ldictAdd %DRP %RET
+$syn $FN END_BREAK  $_xsl notNow $_xsl ldictRef $d_vGet %DUP $_jmp _END
 $pre $syn $FN BREAK_IF  @NOT$c1  $_jmp BREAK0 \ break if true
 $pre $syn $FN BREAK_EQ  @NEQ$c1  $_jmp BREAK0 \ break if equal
 $pre $syn $FN BREAK_NEQ @EQ$c1   $_jmp BREAK0 \ break if not equal
@@ -833,7 +833,7 @@ $FN parseBase \ {i base -> value isNumber} parse from token
     $GET base  $GET value %MUL \ {base * value}
     %ADD $SET value \ value = v + value*10
     $GET i %INC $SET i \ i += 1
-  $AGAIN l0  $ENDV_BREAK b0
+  $AGAIN l0  $END_BREAK b0
 
   $GET i %NOT $IF  #0$L @FALSE$L %RET  $END \ no token
   $GET value @TRUE$L %RET
@@ -970,6 +970,7 @@ $pub      $inline $FN dup   #1$h1 %DUP    %RET
 $pub      $inline $FN dupn  #1$h1 %DUPN   %RET
 
 \ Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
+$typed $pub $pre $inline $FN nop   #1$h1 %NOP    %RET
 $typed $pub $pre $inline $FN ret   #1$h1 %RET
 $typed $pub $pre $inline $FN inc   #1$h1 %INC    %RET
 $typed $pub $pre $inline $FN inc2  #1$h1 %INC2   %RET

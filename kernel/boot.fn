@@ -179,32 +179,54 @@ pre FN _typeSz \ [&Type -> szBytes]
   assert(isDictNative(dup\type), E_intern)
   ret szIToSz(d_mGet(\type) msk SZ_MASK)
 
+pre FN isFnAndSyn \ &node
+  retIfNot(dup)
+  IF(not isTyFn(dup)) drp; ret FALSE END
+  ret isFnSyn(\node);
+
+\ inp, x:U1, y: &U2
+\ inp(x: U1, y: &U2)
+
+pre FN skipAllSyn \ [asNow] execute all syn tokens, "skipping" them
+  LOOP l0
+    IF(isFnAndSyn(dictRefMaybe(0))) single(dup\asNow);
+    ELSE  drp\asNow; tokenPlcSet(0); ret;  END
+  AGAIN l0
+
 FN _inp \ inp x:&U2
   $declVar(declL compFn,  0, RSIZE)  $declEnd
-  updateCompFn(fnRef:_inp) -> SET compFn
-  declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
-  dv_log(dup, 0x2000, 2, 0x10)
-  \ TODO: register type
-  IF(swp\numRefs) drp; RSIZE \ {&Local isLocal szBytes}
-  ELSE  _typeSz(\type);  END
-  dv_log(dup, 0x2001, 2, 0x10)
-  \(&Local isLocal szBytes) -> TY_VAR_INPUT -> swp -> declVar;
+  updateCompFn(fnRef:_inp) -> SET compFn;
+  IF(isFnAndSyn(dictRefMaybe(0))) single(FALSE)
+  ELSE
+    tokenPlcSet(0); \ revert dictRefMaybe
+    declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
+    \ TODO: register type
+    IF(swp\numRefs) drp; RSIZE \ {&Local isLocal szBytes}
+    ELSE  _typeSz(\type);  END
+    dv_log(dup, 0x2001, 2, 0x10)
+    \(&Local isLocal szBytes) -> TY_VAR_INPUT -> swp -> declVar;
+  END
   GET compFn -> SET G_compFn; ret;
 pub syn FN inp  notNow; _inp; ret;
 
 $STORE_PRIV
-pre FN testInp
-  inp x:U1 
-  inp y:U2
-  inp z: &U1
-  $declEnd
-  \ Note: some values will be truncated
-  ret(GET x, GET y, GET z)
+\ Test inp by truncating values
 
-$testInp(0x101\1, 0x12345\1000, 0x6789ABC)
-$tAssertEq(0x6789ABC)
-$tAssertEq(0x2345)
-$tAssertEq(0x01)
+pre FN testInp  inp x:U1 $declEnd  ret(GET x)
+$tAssertEq(testInp(0x101), 1)
+
+pre FN testInp3  inp (
+  $assertNoWs;
+  x:U1  y:U2  z: &U1
+
+)  $declEnd
+\ pre FN testInp3 inp x:U1  $declEnd
+
+\ $tAssertEq(0x888)
+\   \ Note: some values will be truncated
+\   ret(GET x, GET y, GET z)
+\ $testInp3(0x101\1, 0x12345\1000, 0x6789ABC)
+\ $tAssertEq(0x6789ABC)  $tAssertEq(0x2345)  $tAssertEq(0x01)
 
 \ $tAssertEq(
 \   testInp(0x101\1, 0x11000\1000, 0x2000),
