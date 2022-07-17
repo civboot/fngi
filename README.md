@@ -80,10 +80,10 @@ along the way, some of them complete.
   etc), along with several other expected pieces.
 - [X] rewrite the kernel to allow for modules/etc
   - [X] Create a 4k block allocator and arena-buddy-allocator.
+- [X] Write an initial "untyped" version of `fn` and `if`
 - [ ] Write initial way to define namespaces, structs and enums. (`STRUCT`,
       ENUM`, etc)
-- [ ] Write an initial "untyped" version of `fn`, `if`, etc. This might be
-      something like `uty.fn`, `uty.if` or something else.
+- [ ] Write dot compiler (variable modifier).
 - [ ] Create an ultra-basic text-editor.
 - [ ] Create an ultra-basic CLI built on the text-editor.
 - [ ] Implement a tyStk (type checking)
