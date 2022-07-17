@@ -397,6 +397,7 @@ large fn _dot inp(root: &DNode, asNow:U1) do (
   countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
   (countChr(0c&) + GET refs) -> SET refs;
   if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
+  assert(GET refs < 2, E_dot);
   dictRef(GET root) -> SET node;
   if(isTyConst(GET node)) do ret single(GET asNow);
   if(isTyDict(GET node)) do (
@@ -404,10 +405,7 @@ large fn _dot inp(root: &DNode, asNow:U1) do (
   )
   \ Else: get the value
   if(GET refs) do (
-    if(GET asNow) do (
-      assert(isTyVar(GET node) and not isTyLocal(GET node), E_dot);
-
-    )
+    if(GET asNow) do ret _globalRefNow(GET node);
   )
 )
 
