@@ -623,8 +623,13 @@ $syn $FN SET
   #0$L $xx:dictRef %SWP $IF $xx:_getSetNow $jmp:srSzI $END
   $jmp:_setImpl
 
+$pre $FN _globalRefNow \ [&Node -> &global]
+  %DUP $xx:isTyVar  %OVR $xx:isTyLocal %AND
+  @E_cNotGlobal$L $xx:assert
+  $d_vGet %GR#0$h2 %ADD %RET
+
 $syn $FN REF
-  #0$L $xx:dictRef %SWP $IF $d_vGet %GR#0$h2 %ADD %RET $END
+  #0$L $xx:dictRef %SWP $IF $jmp:_globalRefNow $END
   %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
           #0$L @SZ1$L @LR$L
   $ELSE   #0$L @SZ2$L @GR$L $END

@@ -78,10 +78,11 @@ $tAssert(  slcCmp(helloWorld, 0, 42)      lt_s 0) \ different lengths
 $tAssert(  slcCmp(helloWorld, helloBobby) gt_s 0) \ different contents
 
 $STORE_PUB
-FN SLC_EQUAL  ret |=|
 FN SLC_DO     ret |do|
+FN SLC_DOT    ret |.|
 FN SLC_ELIF   ret |elif|
 FN SLC_ELSE   ret |else|
+FN SLC_EQUAL  ret |=|
 FN SLC_PAREN  ret |(|
 
 pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
@@ -160,16 +161,17 @@ pre FN isDictNative ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_NATIVE)
 
 decl:DNode(TY_DICT jn TY_DICT_STRUCT, 0)
 
-FN countRefs \ [-> numRefs] and advance past them
-  0\count -> LOOP l0
-    IF(peekChr == 0c&) inc(\count); tokenPlcSet(1);
-    ELSE         ret; END
+pre FN countChr \ [chr -> numChr] and advance past them
+  0\(chr, count) -> LOOP l0; 
+    swp \ {count chr}
+    IF(dup\chr == peekChr) swp; inc(\count); tokenPlcSet(1);
+    ELSE         drp\chr; ret \count; END
   AGAIN l0
-$tAssertEq(countRefs & &&, 3)   $tAssertEq(countRefs 0)
+$tAssertEq(countChr(0c&) & &&, 3)   $tAssertEq(countChr(0c&) 0)
 
 FN readTy \ [-> numRefs &DNode]
   $declVar(declL node,    0, RSIZE) $declEnd
-  countRefs; ret assert(isTyDict(dictRef(0) -> dup), E_needType)
+  countChr(0c&); ret assert(isTyDict(dictRef(0) -> dup), E_needType)
 $tAssertEq(readTy &&U1, dnode:U1)   -> $tAssertEq(\numRefs, 2)
 $tAssertEq(readTy Slot, dnode:Slot) -> $tAssertEq(\numRefs, 0)
 
@@ -363,6 +365,53 @@ $tAssertEq(testIfNow, 0x42)
 $STORE_PUB
 
 \ **********
-\ * [5] structs? enums?
+\ * [5] dot compiler
+\
+\ There are a few variations on the dot compiler:
+\  - dot compiler: for accessing locals, globals, fnrefs, ec
+\  - hash compiler: for fields and methods of types on the stack
+\
+\ Rule: Dot compiler syntax, as long as there are dots, it will consume them:
+\
+\ .a            \ get locals, globals, constants
+\ .a.b          \ get local/global "field" (struct, module)
+\ .a      = ()  \ set locals, globals
+\ .a.b    = ()  \ set local/global "field"
+\
+\ .&a           \ reference to local/global
+\ .&a.b         \ reference to local/global "field"
+\ .@@a          \ de-reference local/global
+\ .@a     = ()  \ de-reference and asign local/global
+\
+\ Hash compiler syntax uses the type on the typestack. It has the same syntax.
+\ The above examples with a single item are invalid. Otherwise:
+\
+\ \(.a) #b      \ get stk field (struct)
+\ \(.a) #&b     \ get ref to stk field (struct)
+\ \(.a) #@b     \ dereference stk field (struct)
+
+
+large fn _dot inp(root: &DNode, asNow:U1) do (
+  var refs: U1;  var ats: U1;
+  var node: &DNode;
+  countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
+  (countChr(0c&) + GET refs) -> SET refs;
+  if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
+  dictRef(GET root) -> SET node;
+  if(isTyConst(GET node)) do ret single(GET asNow);
+  if(isTyDict(GET node)) do (
+    if(scan; tokenEq(SLC_DOT)) do ret _dot(GET node, GET asNow);
+  )
+  \ Else: get the value
+  if(GET refs) do (
+    if(GET asNow) do (
+      assert(isTyVar(GET node) and not isTyLocal(GET node), E_dot);
+
+    )
+  )
+)
+
+\ pub syn large fn . inp asNow:U1 do (
+\ )
 
 $assertNoWs

@@ -86,6 +86,7 @@
 #E0FF  #0=E_fnStateInp  \ inp not in fn inputs
 #E100  #0=E_fnStateOut  \ var not in fn inputs
 #E101  #0=E_fnStateVar  \ var not in fn
+#E102  #0=E_dot
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr
