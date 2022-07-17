@@ -55,10 +55,11 @@ void main() {
   WRITE_FIELD(TY_VAR | SZ2, Globals, "G_", gcap, "U2");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", fb, "&Fiber: current fiber");
   WRITE_FIELD(TY_VAR | SZ2, Globals, "G_", cstate, "U2: compiler state");
+  WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", fnState, "U1: function compilation state");
+  WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", localOffset, "U1: current offset of locals");
   WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", logLvlSys, "U1");
   WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", logLvlUsr, "U1");
   WRITE_FIELD(TY_VAR | SZ2, Globals, "G_", metaNext, "U2: next function's meta");
-  WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", localOffset, "U1: current offset of locals");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", curFn, "Ref: current compiling fn");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", compFn, "Ref: function used for compiling");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", bbaLocal, "BBA: local BBA");

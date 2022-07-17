@@ -231,7 +231,12 @@
 #0080 #0=C_EXPECT_ERR \ G_cstate: expeting error (for testing)
 #0040 #0=C_PUB        \ G_cstate: store as public (function data)
 #0020 #0=C_PUB_NAME   \ G_cstate: make next name public
-#0010 #0=C_FN_BODY    \ G_cstate: currently compiling FN body
+
+#0003 #0=C_FN_STATE    \ G_cstate: mask of current FN position
+#0000 #0=FN_STATE_NO   \ not compiling a fn
+#0001 #0=FN_STATE_BODY \ compiling FN body
+#0002 #0=FN_STATE_STK  \ can declare stk inputs
+#0003 #0=FN_STATE_INP  \ can declare inp inputs
 
 \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
 #C0 #0=META_TY_MASK \ upper three bits determine type

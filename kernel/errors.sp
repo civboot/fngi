@@ -82,6 +82,10 @@
 #E0FC  #0=E_needType    \ Requires a type
 #E0FD  #0=E_inp         \ inp in wrong place
 #E0FD  #0=E_fnSyn       \ fn inputs syntax must all be syn
+#E0FE  #0=E_fnStateStk  \ stk not in fn stk inputs or body
+#E0FF  #0=E_fnStateInp  \ inp not in fn inputs
+#E100  #0=E_fnStateOut  \ var not in fn inputs
+#E101  #0=E_fnStateVar  \ var not in fn
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

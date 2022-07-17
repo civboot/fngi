@@ -15,7 +15,7 @@ pub syn        FN dv      notNow; $c1(DV); jmp:h1(d_vGet(colonRef))
 pub pre inline FN memSet  $h1(2) dv:DV_memSet  ret; \ [&dst v len]   "dst = v"
 pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&dst &src len] "dst = src"
 pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&a &b len -> cmp]
-pub pre        FN memClr  0 swp; jmp:memSet(_, _)   \ [&a len] clear
+pub pre        FN memClr  0 swp; jmp:memSet(\a, \len)   \ [&a len] clear
 
 pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
   scan;  DV_comp_dGet -> dv:DV_comp; ret; 
@@ -23,12 +23,12 @@ pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
 syn FN =  panic(E_cToken)    \ prevent hanging =
 syn FN )  panic(E_cParen)    \ prevent hanging )
 
-inline pre FN >     $h1(2) swp -> (_ < _)  ret;     \ [a b -> a > b]
-inline pre FN <=    $h1(2) swp -> (_ >= _) ret;     \ [a b -> a <= b]
+inline pre FN >     $h1(2) swp -> (\a < \b;)  ret;     \ [a b -> a > b]
+inline pre FN <=    $h1(2) swp -> (\a >= \b;) ret;     \ [a b -> a <= b]
 $(tAssert(2 > 1)  tAssertNot(2 > 2)  tAssert(2 <= 2)  tAssertNot(2 <= 1))
 
-inline pre FN le_s  $h1(2) swp -> (_ ge_s _)  ret;  \ [a b -> a <= b]
-inline pre FN gt_s  $h1(2) swp -> (_ lt_s _)  ret;  \ [a b -> a >= b]
+inline pre FN le_s  $h1(2) swp -> (\a ge_s \b;)  ret;  \ [a b -> a <= b]
+inline pre FN gt_s  $h1(2) swp -> (\a lt_s \b;)  ret;  \ [a b -> a >= b]
 $tAssert(gt_s(neg 1, neg 2)) $tAssertNot(gt_s(neg 2, neg 2))
 $tAssert(gt_s(2, neg 7))
 $tAssert(le_s(neg 2, neg 2)) $tAssert(le_s(neg 3, neg 2))
@@ -66,8 +66,8 @@ pub pre FN slcCmp \ [&a aLen &b bLen -> cmp]
   IF(dup\aLen < GET bLen) drp; drp; ret(neg 1); END
   IF(   \aLen > GET bLen)      drp; ret(    1); END
   ret memCmp(\a, GET b, GET bLen)
-pub pre FN slcEq  ret(slcCmp(_) == 0)
-pub pre FN tokenEq ret(slcEq(_, tokenDat, tokenPlc))
+pub pre FN slcEq  ret(slcCmp() == 0)
+pub pre FN tokenEq ret(slcEq(\(...), tokenDat, tokenPlc))
 
 $STORE_PRIV
 FN helloBobby  ret |Hello Bobby!|  \ [-> dat len]
@@ -188,27 +188,32 @@ pre FN isFnAndSyn \ &node
 \ inp(x: U1, y: &U2)
 
 pre FN _varImpl \ [meta]
-  $declVar(declL meta, TY_VAR_INPUT, 2) $declEnd
+  $declVar(declL meta, TY_VAR_INPUT, 1) $declEnd
   IF(isFnAndSyn(dictRefMaybe(0))) 
     ret single(FALSE) \ next token is syn, run it (it may run us)
   END
   tokenPlcSet(0); \ revert dictRefMaybe
-  declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
+  IF(GET meta)
+    declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
+  ELSE
+    0, 1 -> _comment -> colon -> readTy; \ {NULL, isLocal=1, numRefs, &Type}
+  END
   \ TODO: register type
-  IF(swp\numRefs) drp; RSIZE \ {&Local isLocal szBytes}
-  ELSE  _typeSz(\type);  END
-  \(&Local isLocal szBytes) -> GET meta -> swp -> declVar;
-  ret;
+  IF(swp\numRefs) drp; RSIZE
+  ELSE  _typeSz(\type);  END \ {&Local isLocal szBytes}
 
-FN cstateInFnBody ret(C_FN_BODY msk GET G_cstate)
+  IF(GET meta)  GET meta -> swp -> declVar;
+  ELSE \stk     drp; drp; drp; END
+  ret;
 
 FN _inp
   $declVar(declL compFn,  0, RSIZE)  $declEnd
   updateCompFn(fnRef:_inp) -> SET compFn;
-  _varImpl(TY_VAR_INPUT)
+  _varImpl($L(TY_VAR jn TY_VAR_INPUT))
   GET compFn -> SET G_compFn; ret;
 pub syn FN inp
-  notNow; assert(not cstateInFnBody, E_inp);
+  notNow; assert(getCState(C_FN_STATE) >= FN_STATE_STK, E_fnStateInp)
+  setCState(FN_STATE_INP, C_FN_STATE) \ start inp state
   _inp; ret;
 
 $STORE_PRIV \ test input by truncating values
@@ -223,10 +228,28 @@ $tAssertEq(0x6789ABC)  $tAssertEq(0x2345)  $tAssertEq(0x01)
 $STORE_PUB
 FN _var
   $declVar(declL compFn,  0, RSIZE)  $declEnd
-  updateCompFn(fnRef:_inp) -> SET compFn;
-  _varImpl(0)
-  GET compFn -> SET G_compFn; ret;
-pub syn FN var  notNow; assert(not cstateInFnBody, E_unimpl); _var; ret;
+  updateCompFn(fnRef:_var) -> SET compFn;
+  _varImpl(TY_VAR);  GET compFn -> SET G_compFn; ret;
+pub syn FN var  notNow;
+  assert(getCState(C_FN_STATE) != FN_STATE_NO, E_fnStateVar); 
+  ret _var;
+
+FN _stk
+  $declVar(declL compFn,  0, RSIZE)  $declEnd
+  updateCompFn(fnRef:_stk) -> SET compFn;
+  _varImpl(0);       GET compFn -> SET G_compFn; ret;
+pub syn FN stk  notNow; 
+  assertEq(getCState(C_FN_STATE), FN_STATE_STK, E_fnStateStk); 
+  ret _stk;
+
+FN _out
+  $declVar(declL compFn,  0, RSIZE)  $declEnd
+  updateCompFn(fnRef:_out) -> SET compFn;
+  _varImpl(0);       GET compFn -> SET G_compFn; ret;
+pub syn FN out  notNow; 
+  assert(getCState(C_FN_STATE) >= FN_STATE_STK, E_fnStateOut);
+  setCState(FN_STATE_INP, C_FN_STATE) \ start inp state
+  ret _out;
 
 $STORE_PRIV
 pre FN testVar \ x -> x + 1
@@ -234,11 +257,35 @@ pre FN testVar \ x -> x + 1
 $tAssertEq(testVar(0x101), 2)
 
 \ **********
-\ * [3] if elif else, also $if ...
+\ * [3] fn
+\ fn myFn stk(a:U1 b:U2) inp c:U2; var i:U2; inp d:Ref
+\ -> out(x:Ref y:Ref) do (
+\   var i:U2 = 7;
+\   ... code
+\   var j:U2 = 10;
+\   ... code
+\ )
+$STORE_PUB
+pub syn FN fn  notNow;
+  xx:FN(FALSE)
+  LOOP l0
+    dictRefMaybe(0) \ {&Node}
+    IF(tokenEq(SLC_DO)) \ function body
+      drp\node; declInpEnd; scan; ret single(FALSE);
+    END
+    assert(isFnAndSyn(\node), E_fnSyn); single(FALSE) \ compile syn fns
+  AGAIN l0
+
+$STORE_PRIV
+pre fn testFn stk(a:Slot) inp(b:U2) do ( GET b ->  swp ->  ret; )
+$(testFn(0x1234, 0x12345) -> tAssertEq(0x1234) -> tAssertEq(0x2345))
+
+\ **********
+\ * [4] if elif else, also $if ...
 $STORE_PUB
 
 \ TODO: I can remove recursion here and use a loop instead
-FN _if \ [] recursive fn of `if`
+fn _if do ( \ [] recursive fn of `if`
   var h: &U1  $declEnd
   scan; single(FALSE) \ compile token after `if`
   xx:IF(FALSE\asNow) -> SET h \ compile IF
@@ -253,91 +300,69 @@ FN _if \ [] recursive fn of `if`
   ELSE tokenPlcSet(0); \ reset token (peeking)
   END END 
   ret _END(GET h, dup)
+)
 
-pre FN _ifNowLogic \ [done -> done]
+pre fn _ifNowLogic stk(done: Slot) -> out(a: Slot) do (
   IF(dup\done) 
     _comment; expectToken(SLC_DO, E_cToken) -> drp; 
-    _comment; ret _\done; END
+    _comment; ret \done; END
   drp\done;  scan; single(TRUE) -> \ifChk;
   expectToken(SLC_DO, E_cToken) -> drp;
   expectToken(SLC_PAREN, E_needParen) -> drp; tokenPlcSet(0);
   IF(\ifChk) compNext(FALSE); ret TRUE; END
   _comment; ret FALSE;
+)
 
 FN _ifNow \ [] fn of `if` for the asNow case
   _ifNowLogic(FALSE) \ {done}
   LOOP l0
   IF(scan; tokenEq(SLC_ELIF))
-    _ifNowLogic(_\done); AGAIN l0
+    _ifNowLogic(\done); AGAIN l0
   ELSE IF(tokenEq(SLC_ELSE))
     IF(\done) _comment;
     ELSE      compNext(FALSE)  END
   ELSE drp\done; tokenPlcSet(0); \ reset token (peeking)
   END END ret;
 
-syn FN if  IF(\asNow) _ifNow; ELSE _if; END ret;
+syn fn if do (IF(\asNow) _ifNow; ELSE _if; END ret;)
 
 $STORE_PRIV
-pre FN testIf2 \ [a -> b] converts 1->4, 2->7, else: 13
+pre fn testIf2 stk(a:Slot) -> out(b:Slot) do ( \ converts 1->4, 2->7, else: 13
   if(dup == 1)  do (drp; ret 4)
   elif(\a == 2) do (     ret 7)
   ret (0x99)
+)
 $tAssertEq(testIf2(1), 4)      $tAssertEq(testIf2(2), 7)
 $tAssertEq(testIf2(12), 0x99)  $assertNoWs
 
-pre FN testManyElif \ [a -> b]
-  inp a: Slot  $declEnd
+pre fn testManyElif inp(a:Slot) -> out(b:Slot) do ( \ [a -> b] ...
   if   (GET a < 0x10) do ret(0x1000 + GET a)
   elif (GET a < 0x20) do ret(0x2000 + GET a)
   elif (GET a < 0x30) do ret(0x3000 + GET a)
   elif (GET a < 0x40) do    (0x4000 + GET a) \ note: fallthrough
-  else ret(0x10 + GET a)
-  ret inc(_)
+  else ret(0x10 + GET a);
+  ret inc(\fallthrough);
+)
 $tAssertEq(testManyElif(0x5),  0x1005)  $tAssertEq(testManyElif(0x17), 0x2017)
 $tAssertEq(testManyElif(0x22), 0x3022)  $tAssertEq(testManyElif(0x33), 0x4034)
 $tAssertEq(testManyElif(0x55), 0x65)
 
 $assertNoWs
-$if(1) do ($0x42)
-$tAssertEq(_, 0x42)
-$if(1) do ($0x42) else ($7)    $tAssertEq(_, 0x42)
-$if 0  do ($0x42) else ($7)    $tAssertEq(_, 7)
+$if(1) do ($0x42)           -> $tAssertEq(0x42)
+$if(1) do ($0x42) else ($7) -> $tAssertEq(0x42)
+$if 0  do ($0x42) else ($7) -> $tAssertEq(7)
 
 $tAssertEq(if(1) do ($42) else ($3), 42)
 
 $if 0 do ($0x42) elif(0) do ($3) elif(1) do ($0x44) else ($0x77)
-$tAssertEq(_, 0x44)
+$tAssertEq(0x44)
 
-FN testIfNow ret($if(0) do (4) else (0x3F + 3))  $assertNoWs
+fn testIfNow do (ret($if(0) do (4) else (0x3F + 3)))  $assertNoWs
 $tAssertEq(testIfNow, 0x42)
 
+$STORE_PUB
+
 \ **********
-\ * [4] fn
-\ fn myFn stk(a:U1 b:U2) inp c:U2; var i:U2; inp d:Ref
-\ -> out(x:Ref y:Ref) do (
-\   var i:U2 = 7;
-\   ... code
-\   var j:U2 = 10;
-\   ... code
-\ )
-$STORE_PUB
-
-pub syn FN fn  notNow;
-  xx:FN(FALSE)
-  LOOP l0
-    dictRefMaybe(0) \ {&Node}
-    if(tokenEq(SLC_DO)) do ( \ function body
-      drp\node; declInpEnd; scan; ret single(FALSE);
-    )
-    assert(isFnAndSyn(\node), E_fnSyn); single(FALSE) \ compile syn fns
-  AGAIN l0
-
-$STORE_PRIV
-pre fn testFn inp(a:U1 b:U2) do ( GET b;  GET a;  ret; )
-$(testFn(0x1234, 0x12345) -> tAssertEq(0x34) -> tAssertEq(0x2345))
-$STORE_PUB
-
-
-
+\ * [5] structs? enums?
 
 $assertNoWs

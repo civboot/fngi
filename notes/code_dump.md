@@ -1,5 +1,41 @@
 # Code Dump: where code goes to die
 
+## SlcNode
+
+```
+\ SlcNode struct
+const SN_left = 0;                 \ &SlcNode: .left
+const SN_right = RSIZE;            \ &SlcNode: .right
+const SN_dat = (SN_right + RSIZE); \ Ref:      .key.dat
+const SN_len = (SN_dat + RSIZE);   \ U2:       .key.len
+
+\ Find slice in BST, starting at node. Set result to node.
+\ returns 0 if node==NULL
+\ The return value is the result of `slcCmp(node.key, out.key)`
+pre FN SN_find
+  $declVar(declL node,   TY_VAR_INPUT, RSIZE) \ &&SlcNode
+  $declVar(declL slcDat, TY_VAR_INPUT, RSIZE) \ slc.dat
+  $declVar(declL slcLen, TY_VAR_INPUT, 2)     \ slc.len
+  $declVar(declL cmp, 0, RSIZE)
+  $declEnd
+  IF(not ftoR:0(GET node)) ret 0; END \ if (&SlcNode == NULL) ret 0
+  LOOP l0
+    slcCmp(ftoR:SN_dat(GET node), fto2:SN_len(GET node),
+           GET slcDat,            GET slcLen) -> SET cmp;
+    IF(not GET cmp) ret 0; END \ found exact match
+    IF(GET cmp < 0)
+      ftoR:SN_left(ftR(GET node)) \ node.left
+      IF(dup) srR(\(node.left), GET node)
+      ELSE    drp; ret GET cmp;  END
+    ELSE \ cmp > 0
+      ftoR:SN_right(ftR(GET node)) \ node.right
+      IF(dup) srR(\(node.right), GET node)
+      ELSE    drp; ret GET cmp;  END
+    END
+  AGAIN l0
+```
+
+
 ## Next nonSyn
 
 ```

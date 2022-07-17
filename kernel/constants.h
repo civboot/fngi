@@ -111,7 +111,11 @@
 #define C_EXPECT_ERR         0x80
 #define C_PUB                0x40
 #define C_PUB_NAME           0x20
-#define C_FN_BODY            0x10
+#define C_FN_STATE           0x3
+#define FN_STATE_NO          0x0
+#define FN_STATE_BODY        0x1
+#define FN_STATE_STK         0x2
+#define FN_STATE_INP         0x3
 #define META_TY_MASK         0xC0
 #define TY_CONST             0x0
 #define TY_FN                0x40
@@ -216,6 +220,10 @@
 #define E_needType           0xE0FC
 #define E_inp                0xE0FD
 #define E_fnSyn              0xE0FD
+#define E_fnStateStk         0xE0FE
+#define E_fnStateInp         0xE0FF
+#define E_fnStateOut         0xE100
+#define E_fnStateVar         0xE101
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2

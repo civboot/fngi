@@ -84,21 +84,22 @@ $pub @_FP :assertNotNull .2%LIT@E_null, .2%JMPL@assert,
 $pub @_FP :tAssertEq     .2%LIT@E_test, $assertEq %RET \ {chk} test assert
 $pub @_FP :tAssertNot       %SLIT .2%JMPL@tAssertEq, \ tAssertEq(_, 0)
 $pub @_FP :tAssert
-  %DUP .1%LIT#A0, %LIT#2, %LIT#10, $dv_log
   %NOT %SLIT .2%JMPL@tAssertEq, \ tAssertEq(not _, 0)
 #55 #54^INC $tAssertEq     #0    $tAssertNot    #1 $tAssert
 #0 #1       $assertNot     #1 #1 $assert        #1 $assertNotNull
 
 $STORE_PRIV \ Note: everything until STORE_PUB is in the private space.
 
-@TY_FN :getCState .2%FTGL@G_cstate, %RET  \ for assertions
-$getCState@C_PUB^MSK $tAssertNot
+\ fn getCState: {msk -> state}   fn setCState: {setBits msk}
+@_FP :getCState  .2%FTGL@G_cstate, %MSK %RET
+@_FP :setCState  %INV .2%FTGL@G_cstate, %MSK %JN .2%SRGL@G_cstate, %RET
+@C_PUB$getCState $tAssertNot
 
 @TY_FN :wsLen      .1@SLIT@DV_comp_wsLen^JN, %DV@DV_comp, %RET
 @TY_FN :assertNoWs .2%XSL@wsLen,  .2%JMPL@tAssertNot,
 $assertNoWs
 
-$STORE_PUB  $getCState@C_PUB^MSK $tAssert
+$STORE_PUB  @C_PUB$getCState $tAssert
 $pub @_FP@TY_FN_INLINE^JN :bump \ {size align -> &dat} bump some memory
   .1#4, @SLIT, $BBA_bump %RET \ {&U1} Note: #3 is size of INLINE
 
@@ -243,16 +244,13 @@ $pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTyMeta
   %GR@G_bbaLocal$h2 $BBA_drop   #0$L0 .R%SRGL@G_dictLocal$h2 \ drop everything
   %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L0 .1%SRGL@G_localOffset$h2 %RET
 
-@_FP :clrCState  %INV .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
-@_FP :setCState       .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
-
 \ example: $syn $large $FN <token>: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
   #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
   %DUP .R%SRGL@G_curFn$h2 \ update currently compiling fn
   $heap %SWP $d_vSet \ dnodeLast.v = heap
   #0$L0 .2%SRGL@G_metaNext$h2 \ clear metaNext
-  $_xsl clearLocals   @C_FN_BODY$L2 $_xsl clrCState
+  $_xsl clearLocals  @FN_STATE_STK$L1 @C_FN_STATE$L1 $_xsl setCState
   $_jmp assertNoWs
 $assertNoWs
 
@@ -317,7 +315,6 @@ $FN scan
   $_scan  #0$L0 @DV_comp_dGet$L0 %DV@DV_comp$h1 \ {&node}
   %DUPN $IF %DRP %RET $END \ node is null, exit
   %DUP $_xsl isTyFn %OVR $_xsl isFnComment %AND $IF
-    #30$L0 #1$L0 #10$L0 $dv_log
     $_xsl execute .2%JMPL@scan$h2 $END \ note: we could use JMP1 here to save a byte
   %DRP %RET
 
@@ -330,10 +327,15 @@ $pre $FN dictRef  $_xsl scan $_jmp _dictRef \ TODO: need to use scan... but for 
 \ $FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
 \ $FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
 
+\ TODO: have dict input for dictAdd and remove absurd setCState here
 $FN ldictRef  \ { -> &Node}
-  @C_LOCAL$L2 $_xsl setCState #0$L0 $_xsl dictRef @C_LOCAL$L2 $_jmp clrCState
+  @C_LOCAL$L2 %DUP $_xsl setCState 
+  #0$L0 $_xsl dictRef
+  #0$L0 @C_LOCAL$L2 $_jmp setCState
 $FN ldictAdd  \ {m v -> &Node}
-  @C_LOCAL$L2 $_xsl setCState       $_xsl dictAdd @C_LOCAL$L2 $_jmp clrCState
+  @C_LOCAL$L2 %DUP $_xsl setCState
+  $_xsl dictAdd 
+  #0$L0 @C_LOCAL$L2 $_jmp setCState
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
      $syn $FN LOOP   $_xsl notNow  $heap  #0$L0 $_xsl ldictAdd %DRP %RET
@@ -497,7 +499,6 @@ $pre $large $FN instrLitImpl
 $pre $FN c_fn \ {&key}: compile a function of any type
   %DUP $_xsl assertFn \ {&key}
   %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
-    %DUP #F0$L  #2$L #10$L $dv_log
     %DUP $_xsl isFnLarge @E_cInlineLarge$L $_xsl assertNot
     $d_vGet  $heap %SWP      \ {&heap &inlineFn}
     %DUP %INC %SWP .1%FT     \ {&heap &inlineFn+1 inlineLen}
@@ -561,8 +562,8 @@ $large $pre $FN declVar \ {&Node isLocal meta szBytes} declare a variable
 
   .1%FTLL#2$h1 $IF \ if(isLocal)
     %DUP @C_LOCAL$L $xx:keyJnMeta \ {&Node} add C_LOCAL to meta
-    .2%FTGL@G_localOffset$h2  .1%FTLL#0$h1  $xx:alignReq \ {&Node offsetAligned}
-    %DUP .1%FTLL#0$h1 %ADD .2%SRGL@G_localOffset$h2    \ {..} update localOffset
+    .1%FTGL@G_localOffset$h2  .1%FTLL#0$h1  $xx:alignReq \ {&Node offsetAligned}
+    %DUP .1%FTLL#0$h1 %ADD .1%SRGL@G_localOffset$h2    \ {..} update localOffset
 
   $ELSE
     .R%FTGL@G_glen$h2       .1%FTLL#0$h1  $xx:alignReq \ {&Node gheapAligned}
@@ -710,7 +711,7 @@ $FN declInpEnd
   $GET G_curFn $xx:isFnLarge $retIfNot \ noop if no locals
   #0$L $xx:alignR $xx:h1 \ reserve space for locals
   $xx:compileInputs 
-  @C_FN_BODY$L $jmp:setCState \ begin FN body
+  @FN_STATE_BODY$L @C_FN_STATE$L $jmp:setCState \ begin FN body
 
 $FN declFnEnd
   $GET G_curFn $xx:isFnLarge %NOT $IF
@@ -879,7 +880,6 @@ $number notNum   $tAssertNot ^DRP \ not a number
 \   * [6.b] Compile tokens
 
 $FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
-  %OVR %OVR #F0$L #3$L #10$L $dv_log
   %SWP $retIf $jmp:L \ if now leave on stack, else compile
 
 \ Attempt to compile current token as const, else return a node of TY_FN
@@ -909,7 +909,6 @@ $pre $FN single
   \ Handle constants, return if it compiled the token.
   $SET asNow
   $GET asNow $xx:_compConstant %DUP 
-  %DUP #40$L #2$L #10$L $dv_log
   $SET node %RETZ
 
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
@@ -968,7 +967,7 @@ $\token_comment
 \ $\()  $\(  )
 
 \ These do nothing and are used for more readable code.
-$syn $FN _  %DRP %RET   $syn $FN , %DRP %RET   
+$syn $FN , %DRP %RET   
 $syn $FN ;  %DRP %RET   $syn $FN -> %DRP %RET
 
 $FN fngi \ fngi compile loop
@@ -1039,9 +1038,7 @@ $pre $FN _opOffset  \ {instr szI}
   $declL instr   @TY_VAR_INPUT  #1 $declVar
   $declL offset  #0             #1 $declVar $declEnd
   $xx:colon $xx:scan @TRUE$L $xx:single $SET offset
-  $GET offset #20$L #2$L #10$L $dv_log
   $GET G_compFn %XLW
-  #21$L #1$L #10$L $dv_log
   $GET instr $xx:h1  $GET offset $jmp:h1
 
 $pub $syn $FN fto1  $xx:notNow @SZ1@FTO^JN$L $xx:_opOffset %RET

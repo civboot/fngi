@@ -103,12 +103,12 @@ typedef struct {
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   Ref fb; // current fiber
+  U2 metaNext; // meta of next fn
   U2 cstate;
+  U1 fnState;
+  U1 localOffset;
   U1 logLvlSys;
   U1 logLvlUsr;
-  U2 metaNext; // meta of next fn
-  U1 localOffset;
-  U1 _unused;
   Ref curFn; // current function being compiled
   Ref compFn; // current compiler function
   BBA bbaLocal;  Ref dictLocal;

@@ -19,11 +19,12 @@
 #00   #90=G_glen                \ U2
 #02   #90=G_gcap                \ U2
 #04   #A0=G_fb                  \ &Fiber: current fiber
-#08   #90=G_cstate              \ U2: compiler state
-#0A   #80=G_logLvlSys           \ U1
-#0B   #80=G_logLvlUsr           \ U1
-#0C   #90=G_metaNext            \ U2: next function's meta
-#0E   #80=G_localOffset         \ U1: current offset of locals
+#0A   #90=G_cstate              \ U2: compiler state
+#0C   #80=G_fnState             \ U1: function compilation state
+#0D   #80=G_localOffset         \ U1: current offset of locals
+#0E   #80=G_logLvlSys           \ U1
+#0F   #80=G_logLvlUsr           \ U1
+#08   #90=G_metaNext            \ U2: next function's meta
 #10   #A0=G_curFn               \ Ref: current compiling fn
 #14   #A0=G_compFn              \ Ref: function used for compiling
 #18   #A0=G_bbaLocal            \ BBA: local BBA

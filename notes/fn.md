@@ -42,7 +42,7 @@ The first byte of a type is a meta byte: `TTT- ----`
 - If the type is FN, the next two bytes specify the number of inputs + outputs
 - If the type is CONST, only one type item follows.
 
-Each type item starts with a byte: `R--- ----`
+Each type item starts with a byte: `C--- ----`
 
 - If C=0 this is a non-constructed (builtin) type, the meta is: `0EEE -DDD`
   - `E` is an enum of which one: `Any, Slot, U1, I1, U2, I2, U4, I4`

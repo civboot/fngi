@@ -1670,7 +1670,7 @@ static inline void executeDV(U1 dv) {
 // * 8: Main Function and Running Tests
 
 void compileBootSpor() {
-  compileConstants();
+  compileConstants(); newBlock(g->bbaPriv);
   g->cstate |= C_PUB | C_PUB_NAME; // full public
   newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, IEND});
   compileFile("kernel/boot.sp");
@@ -1680,7 +1680,7 @@ void compileStr(const U1* s) {
   line = 1; openMock(SRC, s); compileLoop(); ASSERT_NO_ERR();
 }
 
-SPOR_TEST(testBootSpor, 10)
+SPOR_TEST(testBootSpor, 16)
   compileBootSpor();
   assert(LOC_PUB == codeLoc()); assert(LOC_PRIV == nameLoc());
   Ref r = heap;
@@ -1693,7 +1693,7 @@ void compileBoot() {
   compileFile("kernel/boot.fn");
 }
 
-SPOR_TEST(testBoot, 10)
+SPOR_TEST(testBoot, 16)
   compileBoot();
   eprintf("??? remaining PUB=:%X PRIV=%X\n",
           _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
