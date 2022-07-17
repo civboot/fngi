@@ -60,7 +60,7 @@ void main() {
   WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", logLvlSys, "U1");
   WRITE_FIELD(TY_VAR | SZ1, Globals, "G_", logLvlUsr, "U1");
   WRITE_FIELD(TY_VAR | SZ2, Globals, "G_", metaNext, "U2: next function's meta");
-  WRITE_FIELD(TY_VAR | SZR, Globals, "G_", curFn, "Ref: current compiling fn");
+  WRITE_FIELD(TY_VAR | SZR, Globals, "G_", curNode, "Ref: current compiling dict node");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", compFn, "Ref: function used for compiling");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", bbaLocal, "BBA: local BBA");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", dictLocal, "&DNode: local dict");
@@ -101,7 +101,7 @@ void main() {
   WRITE_FIELD(0, DNode, "DN_", ckey, "Ref: counted data key");
   WRITE_FIELD(0, DNode, "DN_", m, "U2: meta");
   WRITE_FIELD(0, DNode, "DN_", v, "Ref: value, which may be a constant");
-  WRITE_DIRECT(0, sizeof(DNode), "DN_type", "Ref?: only exists if C_TYPED");
+  WRITE_DIRECT(0, sizeof(DNode), "DN_ty", "Ref?: only exists if C_TYPED");
 
   assert(dprintf(fd, "\n") > 0); close(fd);
 }

@@ -62,10 +62,10 @@ typedef struct {
   Ref l;
   Ref r;
   Ref ckey;
-  U2 m;
   Slot v;
+  U2 m;
   // ?Ref: type,
-}      DNode;
+} DNode;
 
 typedef struct {
   Ref bump;
@@ -109,8 +109,8 @@ typedef struct {
   U1 localOffset;
   U1 logLvlSys;
   U1 logLvlUsr;
-  Ref curFn; // current function being compiled
-  Ref compFn; // current compiler function
+  Ref curNode; // current node (fn, struct) being compiled
+  Ref compFn;  // current function that does compilation
   BBA bbaLocal;  Ref dictLocal;
   Ref bbaPub;    Ref dictPub;
   Ref bbaPriv;   Ref dictPriv;

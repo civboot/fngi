@@ -213,9 +213,6 @@
 
 \ **********
 \ * [3] Constants
-#0  #0=FALSE
-#1  #0=TRUE
-
 \ Token Groups
 #0  #0=T_NUM
 #1  #0=T_HEX
@@ -257,6 +254,7 @@
 #02 #0=TY_FN_SYN     \ (syntactical) always run now (knowing asNow)
 #03 #0=TY_FN_INLINE  \ Inline function, copies bytes when compiled.
 #04 #0=TY_FN_COMMENT \ Comment function. Executed immediately.
+#05 #0=TY_FN_DECLARE \ Declare function, compile later.
 
 
 @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args

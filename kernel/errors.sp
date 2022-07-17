@@ -19,6 +19,7 @@
 #E005  #0=E_wsEmpty \ the WS was expected empty
 #E006  #0=E_unimpl  \ unimplemented error
 #E007  #0=E_dv      \ unknown device op
+#E007  #0=E_type    \ generic type error
 
 #E0A1  #0=E_null    \ null access
 #E0A2  #0=E_oob     \ out of bounds access
@@ -86,6 +87,7 @@
 #E0FF  #0=E_fnStateInp  \ inp not in fn inputs
 #E100  #0=E_fnStateOut  \ var not in fn inputs
 #E101  #0=E_fnStateVar  \ var not in fn
+#E102  #0=E_dot
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

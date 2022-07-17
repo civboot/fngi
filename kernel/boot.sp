@@ -44,7 +44,7 @@
 \   fn L2 [U1] -> []                : compile a 2 byte literal [#0 - #FFFF]
 \   fn scan    [<token>]            : scan the next token in src
 \   fn $dictRef [<token> &r -> &n]  : get node of token, root can be null.
-\   fn $dictAdd [<token> m v -> &D] : set dict@token
+\   fn $dictAdd [<token> v m -> &D] : set dict@token
 \
 \ Inline functions:
 \   fn xCatch [... &fn]       : execute a large function and catch error.
@@ -52,6 +52,9 @@
 \   fn retIf [a]              : return immediately if a      (%NOT %RETZ)
 \   fn reteq [a b]            : return immediately if a == b (%NEQ %RETZ)
 
+#0  #0=NULL
+#0  #0=FALSE
+#1  #0=TRUE
 
 @TY_FN@TY_FN_SYN^JN :pub %DRP \ make next name public
   .2%LIT@C_PUB_NAME, %FTGL@G_cstate, %JN  %SRGL@G_cstate, %RET
@@ -137,16 +140,18 @@ $STORE_PUB   $assertNoWs
 @_FP@TY_FN_INLINE^JN :_scan      #3$h1 @DV_comp_scan$L0 %DV@DV_comp$h1 %RET
 \ TODO: need to replace MOST scans with scanExecuteIfComment
 
-@_FP :dictAdd   $_scan @DV_comp_dAdd$L0 %DV@DV_comp$h1 %RET \ {m v -> &Node}
+@_FP :dictAdd   $_scan @DV_comp_dAdd$L0 %DV@DV_comp$h1 %RET \ {v m -> &Node}
 @_FP :_dictRef \ {<token> &root -> &Node}
   @DV_comp_dGet$L0 %DV@DV_comp$h1
   %DUP @E_cNoKey$L2 .2%JMPL@assert$h2
 
 $STORE_PRIV
-@_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m$h1 %RET \ {&DNode -> m}
-@_FP@TY_FN_INLINE^JN :d_mSet   #2$h1 .2%SRO@DN_m$h1 %RET \ {m &DNode}
+@_FP@TY_FN_INLINE^JN :d_mGet   #2$h1 .2%FTO@DN_m $h1 %RET \ {&DNode -> m}
+@_FP@TY_FN_INLINE^JN :d_mSet   #2$h1 .2%SRO@DN_m $h1 %RET \ {m &DNode}
 @_FP@TY_FN_INLINE^JN :d_vGet   #2$h1 .R%FTO@DN_v $h1 %RET \ {&DNode -> v}
 @_FP@TY_FN_INLINE^JN :d_vSet   #2$h1 .R%SRO@DN_v $h1 %RET \ {v &DNode}
+@_FP@TY_FN_INLINE^JN :d_tyGet  #2$h1 .R%FTO@DN_ty$h1 %RET \ {&DNode -> &ty}
+@_FP@TY_FN_INLINE^JN :d_tySet  #2$h1 .R%SRO@DN_ty$h1 %RET \ {&ty &DNode}
 
 @_FP :tDictRef $_scan #0$L0 .2%XSL@_dictRef,  %RET \ get dict ref for testing
 @_FP :assertDictV \ {<token> v} assert the value of token
@@ -247,7 +252,7 @@ $pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTyMeta
 \ example: $syn $large $FN <token>: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
   #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
-  %DUP .R%SRGL@G_curFn$h2 \ update currently compiling fn
+  %DUP .R%SRGL@G_curNode$h2 \ update currently compiling fn
   $heap %SWP $d_vSet \ dnodeLast.v = heap
   #0$L0 .2%SRGL@G_metaNext$h2 \ clear metaNext
   $_xsl clearLocals  @FN_STATE_STK$L1 @C_FN_STATE$L1 $_xsl setCState
@@ -262,6 +267,7 @@ $pre $FN isFnNow     $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_NOW$L1    %EQ %RET
 $pre $FN isFnSyn     $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN$L1    %EQ %RET
 $pre $FN isFnInline  $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_INLINE$L1 %EQ %RET
 $pre $FN isFnComment $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_COMMENT$L1%EQ %RET
+$pre $FN isFnDeclare $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_DECLARE$L1%EQ %RET
 $pre $FN isTyVar     $d_mGet @META_TY_MASK$L1  %MSK @TY_VAR$L1       %EQ %RET
 $pre $FN assertTyVar $_xsl isTyVar  @E_cNotVar$L2 $_jmp assert
 
@@ -496,8 +502,20 @@ $pre $large $FN instrLitImpl
   .1%FTLL #1$h1 %JN  $_xsl h1 \ compile jn(szInstr, instr) {&key}
   $d_vGet  .1%FTLL#0$h1  $_jmp heapSzI \ compile literal of proper instrSz
 
-$pre $FN c_fn \ {&key}: compile a function of any type
+$pre $large $FN c_fn \ {&key}: compile a function of any type
+  @RSIZE$h1 \ 1 slot [0=&newSll]
   %DUP $_xsl assertFn \ {&key}
+  %DUP $_xsl isFnDeclare $IF
+    %DUP $d_vGet  \ {&key &declSll}
+    @RSIZE^DUP^ADD$L @FALSE$L $BBA_bump \ {&key &declSll &newSll}
+    %DUP .R%SRLL#0$h1 \ cache newSll {&key &declSll &newSll}
+    $heap %OVR .R%SRO@RSIZE$h1 \ newSll.fn = heap {&key &declSll &newSll}
+    .R%SRO#0$h1 \ newSll.next = declSll {&key}
+    \ TODO: perhaps this should be an UNUSED jmp code with special error?
+    \ I think that makes more sense. Note: it NEEDS the sz data.
+    #0$L %SWP $d_vSet \ set to zero so error happens if called early.
+  $END
+
   %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
     %DUP $_xsl isFnLarge @E_cInlineLarge$L $_xsl assertNot
     $d_vGet  $heap %SWP      \ {&heap &inlineFn}
@@ -505,10 +523,12 @@ $pre $FN c_fn \ {&key}: compile a function of any type
     %DUP @FALSE$L $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
     %DV@DV_memMove$h1 %RET   \ {&inlineFn}
   $END
-  %DUP $_xsl xSzI     \ {&key szLit}
-  %OVR $_xsl isFnLarge  $IF @XLL$L $ELSE @XSL$L $END \ {&key instrSzI instr}
-  %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
-  .2%XLL @instrLitImpl$h2 %RET
+  %DUP %DUP $_xsl xSzI     \ {&key &key szLit}
+  %OVR $_xsl isFnLarge  $IF @XLL$L $ELSE @XSL$L $END \ {&key &key instrSzI instr}
+  %OVR %SWP \ {&key &key instrSzI litSzI instr} instr & lit are same sz
+  .2%XLL @instrLitImpl$h2
+  %DUP $_xsl isFnDeclare $IF .R%FTLL#0$h1 %SWP $d_vSet
+                         $ELSE %DRP $END %RET
 
 $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
   $_xsl scan$tokenPlc #1$L  %EQ @E_cColon$L $_xsl assert \ assert len=1
@@ -527,7 +547,7 @@ $large $FN _xxPre \ { -> &node} prepare for execute or jmp
     $END
   $END  .R%FTLL#0$h1 %RET
 
-$syn $FN xx .2%XLL@_xxPre$h2 $_jmp c_fn
+$syn $FN xx .2%XLL@_xxPre$h2 .2%XLL@c_fn$h2 %RET
 $syn $FN jmp
   $xx:_xxPre %DUP $xx:isFnLarge @E_cXHasL$L $xx:assertNot
   $d_vGet @JMPL2$L $_jmp _j2
@@ -623,12 +643,20 @@ $syn $FN SET
   #0$L $xx:dictRef %SWP $IF $xx:_getSetNow $jmp:srSzI $END
   $jmp:_setImpl
 
-$syn $FN REF
-  #0$L $xx:dictRef %SWP $IF $d_vGet %GR#0$h2 %ADD %RET $END
+$pre $FN _globalRefNow \ [&Node -> &global]
+
+$pre $FN _ref \ [&Node asNow]
+  $IF 
+    %DUP $xx:isTyVar  %OVR $xx:isTyLocal %AND
+    @E_cNotGlobal$L $xx:assert
+    $d_vGet %GR#0$h2 %ADD %RET
+  $END
   %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
           #0$L @SZ1$L @LR$L
   $ELSE   #0$L @SZ2$L @GR$L $END
   $xx:instrLitImpl %RET
+
+$syn $FN REF #0$L $xx:dictRef %SWP $jmp:_ref
 
 $now $FN dnode $jmp:colonRef \ [`dnode:token` -> &DNode]
 
@@ -706,19 +734,19 @@ $large $FN compileInputs
 
 $FN declInpEnd
   $GET G_localOffset $IF \ if there are locals, make fn large
-    $GET G_curFn @TY_FN_LARGE$L $xx:keyJnMeta
+    $GET G_curNode @TY_FN_LARGE$L $xx:keyJnMeta
   $END 
-  $GET G_curFn $xx:isFnLarge $retIfNot \ noop if no locals
+  $GET G_curNode $xx:isFnLarge $retIfNot \ noop if no locals
   #0$L $xx:alignR $xx:h1 \ reserve space for locals
   $xx:compileInputs 
   @FN_STATE_BODY$L @C_FN_STATE$L $jmp:setCState \ begin FN body
 
 $FN declFnEnd
-  $GET G_curFn $xx:isFnLarge %NOT $IF
+  $GET G_curNode $xx:isFnLarge %NOT $IF
     \ If not large, assert no locals and return
     $GET G_localOffset @E_cNotFnLarge$L $jmp:assertNot
   $END \ next: store local size at fn pointer
-  $GET G_localOffset $xx:alignR $GET G_curFn $d_vGet .1%SR %RET
+  $GET G_localOffset $xx:alignR $GET G_curNode $d_vGet .1%SR %RET
 
 $STORE_PRIV   $NEW_BLOCK_PRIV
 $FN declEnd  $xx:declInpEnd $jmp:declFnEnd
@@ -914,7 +942,7 @@ $pre $FN single
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
   $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
   $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END
-  $GET node $GET asNow $IF $xx:execute %RET $END  $jmp:c_fn
+  $GET node $GET asNow $IF $xx:execute %RET $END  $xx:c_fn %RET
 
 $pre $FN updateCompFn \ {&newCompFn -> &prevCompFn}
   $GET G_compFn %SWP $SET G_compFn %RET
@@ -1002,8 +1030,8 @@ $typed $pub $pre $inline $FN i2to4 #1$h1 %CI2    %RET
 $typed $pub $pre $inline $FN +     #1$h1 %ADD    %RET
 $typed $pub $pre $inline $FN -     #1$h1 %SUB    %RET
 $typed $pub $pre $inline $FN %     #1$h1 %MOD    %RET
-$typed $pub $pre $inline $FN <<    #1$h1 %SHL    %RET
-$typed $pub $pre $inline $FN >>    #1$h1 %SHR    %RET
+$typed $pub $pre $inline $FN shl   #1$h1 %SHL    %RET
+$typed $pub $pre $inline $FN shr   #1$h1 %SHR    %RET
 $typed $pub $pre $inline $FN msk   #1$h1 %MSK    %RET
 $typed $pub $pre $inline $FN jn    #1$h1 %JN     %RET
 $typed $pub $pre $inline $FN xor   #1$h1 %XOR    %RET
@@ -1031,6 +1059,17 @@ $pub $pre $inline $FN sr1   #1$h1 .1%SR   %RET
 $pub $pre $inline $FN sr2   #1$h1 .2%SR   %RET
 $pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
 $pub $pre $inline $FN srR   #1$h1 .R%SR   %RET
+
+$pub $pre $inline $FN ftBe1   #1$h1 .1%FTBE %RET
+$pub $pre $inline $FN ftBe2   #1$h1 .2%FTBE %RET
+$pub $pre $inline $FN ftBe4   #1$h1 .4%FTBE %RET
+$pub $pre $inline $FN ftBeR   #1$h1 .R%FTBE %RET
+
+$pub $pre $inline $FN srBe1   #1$h1 .1%SRBE %RET
+$pub $pre $inline $FN srBe2   #1$h1 .2%SRBE %RET
+$pub $pre $inline $FN srBe4   #1$h1 .4%SRBE %RET
+$pub $pre $inline $FN srBeR   #1$h1 .R%SRBE %RET
+
 
 
 \ [addr]: Fetching or Storing offset, i.e. fto1:DN_v(addr)

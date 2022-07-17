@@ -81,6 +81,7 @@ along the way, some of them complete.
 - [X] rewrite the kernel to allow for modules/etc
   - [X] Create a 4k block allocator and arena-buddy-allocator.
 - [X] Write an initial "untyped" version of `fn` and `if`
+  - [ ] Implement forward declaration of functions
 - [ ] Write initial way to define namespaces, structs and enums. (`STRUCT`,
       ENUM`, etc)
 - [ ] Write dot compiler (variable modifier).

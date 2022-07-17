@@ -25,7 +25,7 @@
 #0E   #80=G_logLvlSys           \ U1
 #0F   #80=G_logLvlUsr           \ U1
 #08   #90=G_metaNext            \ U2: next function's meta
-#10   #A0=G_curFn               \ Ref: current compiling fn
+#10   #A0=G_curNode             \ Ref: current compiling dict node
 #14   #A0=G_compFn              \ Ref: function used for compiling
 #18   #A0=G_bbaLocal            \ BBA: local BBA
 #24   #A0=G_dictLocal           \ &DNode: local dict
@@ -63,7 +63,7 @@
 #00   #0=DN_l                  \ Ref: left
 #04   #0=DN_r                  \ Ref: right
 #08   #0=DN_ckey               \ Ref: counted data key
-#0C   #0=DN_m                  \ U2: meta
-#10   #0=DN_v                  \ Ref: value, which may be a constant
-#14   #0=DN_type               \ Ref?: only exists if C_TYPED
+#10   #0=DN_m                  \ U2: meta
+#0C   #0=DN_v                  \ Ref: value, which may be a constant
+#14   #0=DN_ty                 \ Ref?: only exists if C_TYPED
 

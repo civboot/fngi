@@ -11,17 +11,21 @@ $fngi  $STORE_PUB
 
 \ **********
 \ * [1] Extra core functions
+syn FN =  panic(E_cToken)    \ prevent hanging =
+syn FN )  panic(E_cParen)    \ prevent hanging )
 pub syn        FN dv      notNow; $c1(DV); jmp:h1(d_vGet(colonRef))
 pub pre inline FN memSet  $h1(2) dv:DV_memSet  ret; \ [&dst v len]   "dst = v"
-pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&dst &src len] "dst = src"
-pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&a &b len -> cmp]
+pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&a &b len -> cmp]
+pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&dst &src len] "dst = src"
 pub pre        FN memClr  0 swp; jmp:memSet(\a, \len)   \ [&a len] clear
+
+FN ftBeN \ [addr: &U1, sz: U1 -> v]
+  IF(dup\sz == 1) drp\sz; ret ftBe1(\addr); END
+  IF(   \sz == 2)         ret ftBe2(\addr); END
+  ret ftBe4(\addr)
 
 pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
   scan;  DV_comp_dGet -> dv:DV_comp; ret; 
-
-syn FN =  panic(E_cToken)    \ prevent hanging =
-syn FN )  panic(E_cParen)    \ prevent hanging )
 
 inline pre FN >     $h1(2) swp -> (\a < \b;)  ret;     \ [a b -> a > b]
 inline pre FN <=    $h1(2) swp -> (\a >= \b;) ret;     \ [a b -> a <= b]
@@ -78,10 +82,11 @@ $tAssert(  slcCmp(helloWorld, 0, 42)      lt_s 0) \ different lengths
 $tAssert(  slcCmp(helloWorld, helloBobby) gt_s 0) \ different contents
 
 $STORE_PUB
-FN SLC_EQUAL  ret |=|
 FN SLC_DO     ret |do|
+FN SLC_DOT    ret |.|
 FN SLC_ELIF   ret |elif|
 FN SLC_ELSE   ret |else|
+FN SLC_EQUAL  ret |=|
 FN SLC_PAREN  ret |(|
 
 pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
@@ -114,23 +119,32 @@ pub syn FN decl \ decl:token(meta, value) manually declare a dictionary entry
 \ **********
 \ * [XX] Types
 \ Types are a reference on the end of DNodes iff the C_TYPED bit is set.
-\ Depending on the type, they point to either (for CONST, VAR) a single type item
-\ or (for FN, STRUCT, etc) a "typestream" which is a stream of type items.
+\ Depending on the type, they point to either (for CONST, VAR) a single tyitem
+\ or (for FN, STRUCT, etc) a "typestream" which is a stream of tyitems.
 \
-\ All type items start with a byte:
-\    C--- ----   C=constructed
+\ All tyitems start with a byte:
+\    CN-- ----   C=constructed  N=named
+\
+\ If N=1, then the next bytes are the counted name (U1 count followed by data)
 \
 \ If C=0, it is not constructed, meaning it is a native type. In this case:
-\    0-SS VRRR  S=size  R=reference depth  V=variant 
+\    0NSS VRRR  N=named  S=size  R=reference depth  V=variant
 \ - The variants are either 0=unsigned 1=signed
 \ - The sizes are the same as instructions
 \ - The reference depth is a count of the number of `&` in the type.
 \
 \ If C=1 it is constructed, the meta is:
-\     1-SS -RRR   S=size of big-endian pointer to the Node,  R=reference depth
+\     1NTT -RRR
+\ N=named  T=size of type reference  R=reference depth
+\
+\ Then there is T size bytes of the type reference. R is the reference depth
 \
 \ Below we just implement a few of the native types necessary for bootstrapping fn.
 \ In general, these will be stored with the fn definition.
+const META_CONSTRUCTED = 0x80;
+const META_NAME        = 0x40;
+const META_TSZ_MSK     = 0x30;
+const META_TSZ_SHIFT   = 4;   \ T needs to be shifted by 4 to get value
 
 const TY_DICT_MSK    = 0x07;
 const TY_DICT_NATIVE = 0x00;
@@ -157,19 +171,19 @@ $assertDictM(_native jn SZR) Slot
 
 pre FN isTyDict     ret((d_mGet(\node) msk META_TY_MASK) == TY_DICT)
 pre FN isDictNative ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_NATIVE)
+pre FN isDictStruct ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_STRUCT)
 
-decl:DNode(TY_DICT jn TY_DICT_STRUCT, 0)
-
-FN countRefs \ [-> numRefs] and advance past them
-  0\count -> LOOP l0
-    IF(peekChr == 0c&) inc(\count); tokenPlcSet(1);
-    ELSE         ret; END
+pre FN countChr \ [chr -> numChr] and advance past them
+  0\(chr, count) -> LOOP l0; 
+    swp \ {count chr}
+    IF(dup\chr == peekChr) swp; inc(\count); tokenPlcSet(1);
+    ELSE         drp\chr; ret \count; END
   AGAIN l0
-$tAssertEq(countRefs & &&, 3)   $tAssertEq(countRefs 0)
+$tAssertEq(countChr(0c&) & &&, 3)   $tAssertEq(countChr(0c&) 0)
 
 FN readTy \ [-> numRefs &DNode]
   $declVar(declL node,    0, RSIZE) $declEnd
-  countRefs; ret assert(isTyDict(dictRef(0) -> dup), E_needType)
+  countChr(0c&); ret assert(isTyDict(dictRef(0) -> dup), E_needType)
 $tAssertEq(readTy &&U1, dnode:U1)   -> $tAssertEq(\numRefs, 2)
 $tAssertEq(readTy Slot, dnode:Slot) -> $tAssertEq(\numRefs, 0)
 
@@ -189,7 +203,7 @@ pre FN isFnAndSyn \ &node
 
 pre FN _varImpl \ [meta]
   $declVar(declL meta, TY_VAR_INPUT, 1) $declEnd
-  IF(isFnAndSyn(dictRefMaybe(0))) 
+  IF(isFnAndSyn(dictRefMaybe(0)))
     ret single(FALSE) \ next token is syn, run it (it may run us)
   END
   tokenPlcSet(0); \ revert dictRefMaybe
@@ -271,7 +285,7 @@ pub syn FN fn  notNow;
   LOOP l0
     dictRefMaybe(0) \ {&Node}
     IF(tokenEq(SLC_DO)) \ function body
-      drp\node; declInpEnd; scan; ret single(FALSE);
+      drp\node; declInpEnd; scan; single(FALSE); ret declFnEnd;
     END
     assert(isFnAndSyn(\node), E_fnSyn); single(FALSE) \ compile syn fns
   AGAIN l0
@@ -283,6 +297,10 @@ $(testFn(0x1234, 0x12345) -> tAssertEq(0x1234) -> tAssertEq(0x2345))
 \ **********
 \ * [4] if elif else, also $if ...
 $STORE_PUB
+
+fn cToSlc stk(cdat: &U1) -> out(dat: &U1, len: U2) do (
+  ret (inc(dup\cdat) \(cdat, dat) -> swp -> ft1(\cdat))
+)
 
 \ TODO: I can remove recursion here and use a loop instead
 fn _if do ( \ [] recursive fn of `if`
@@ -363,6 +381,272 @@ $tAssertEq(testIfNow, 0x42)
 $STORE_PUB
 
 \ **********
-\ * [5] structs? enums?
+\ * [5] struct
+\ Structs are a dict node with a value to a root node, and type to a typestream
+\ of the struct fields. The byte structure is:
+\
+\   numFields:U1 | ... fields
+\
+\ struct Foo (
+\   a: U2,
+\   b: &U1,
+\ )
+
+\ **********
+\ *   [5.a] utilities
+const LOC_LOCAL = 0;
+const LOC_PRIV  = 1;
+const LOC_PUB   = 2;
+
+pre fn locBBA stk(l:U1) do (
+  if(dup\l == LOC_LOCAL) do (drp; ret REF G_bbaLocal)
+  elif(\l == LOC_PRIV  ) do (     ret GET G_bbaPriv)
+  ret GET G_bbaPub;
+)
+
+fn nameLoc -> out(loc:U1) do ( \ location names are stored
+  if(C_LOCAL    msk GET G_cstate) do ret LOC_LOCAL
+  if(C_PUB_NAME msk GET G_cstate) do ret LOC_PUB else ret LOC_PRIV;
+)
+
+pre fn bumpName \ stk(size:U2, aligned:U1) -> out(_:&U1) 
+do (
+  ret BBA_bump(\size, \aligned, locBBA(nameLoc));
+)
+
+pre fn needUnalignedSz stk(ref:Slot) -> out(sz:U1) do (
+  if(dup\ref < 0x100)      do (drp; ret 1;)
+  if(dup\ref < inc 0xFFFF) do (drp; ret 2;)
+  ret 4;
+)
+
+\ **********
+\ *   [5.a] struct declaration
+
+pre large fn _field do ( \ compile a struct field
+  dv_log(0x3000, 1, 0x10);
+  var compFn: &Slot; updateCompFn(fnRef:_field) -> SET compFn;
+  dv_log(0x3001, 1, 0x10);
+  IF(isFnAndSyn(dictRefMaybe(0)))
+    dv_log(0x30E0, 1, 0x10);
+    single(FALSE) \ next token is syn, run it (it may run us)
+    dv_log(0x30E1, 1, 0x10);
+  ELSE
+    dv_log(0x3002, 1, 0x10);
+    var ref: &U1; d_tyGet(GET G_curNode) -> SET ref;
+      sr1(inc ft1(GET ref), GET ref) \ struct.ty.numFields += 1
+    dv_log(0x3001, 1, 0x10);
+    \ Reserve then move cfield name
+    bumpName(1, FALSE) -> SET ref; bumpName(tokenPlc + 1, FALSE) \ {&cname}
+    memMove(inc(\cname), tokenDat, tokenPlc); \ move cfield name
+    sr1(tokenPlc, inc GET ref);               \ set cfield count
+    colon; var tyNode: &Slot; readTy -> SET tyNode; \ {numRefs}
+    sr1(\numRefs jn META_NAME  \ store the ty meta
+        jn (needUnalignedSz(GET tyNode) shl META_TSZ_SHIFT),
+        GET ref)
+  END
+  GET compFn -> SET G_compFn; ret;
+)
+
+\ Then do BBA_bump INLINE
+syn large fn struct do (  notNow;
+  dv_log(0x1000, 1, 0x10);
+  dictAdd(NULL, $L(C_TYPED jn TY_DICT jn TY_DICT_STRUCT)) -> SET G_curNode;
+  var ty: &U1; bumpName(1, FALSE\aligned) -> SET ty;
+  d_tySet(GET ty, GET G_curNode);
+  sr1(0\numFields, GET ty);
+  dv_log(0x1001, 1, 0x10);
+  _field;
+  dv_log(0x10FF, 1, 0x10);
+  ret;
+)
+
+\ **********
+\ *   [5.c] tyitem utilities
+
+struct DNode (
+  l: &DNode;  r: &DNode
+  ckey: &U1;  v: Slot;    m: U2;
+)
+
+fn isTyped stk(n: &DNode) -> out(_:U1) do ret(d_mGet(\n) msk C_TYPED)
+
+fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
+  isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
+)
+
+
+fn tyitem_cname stk(ty: &U1) -> out(cname: &U1) do (
+  if(ft1(dup\ty) msk META_NAME) do ( ret inc\ty; )
+  else                             ( drp\ty; ret NULL; )
+)
+
+\ Return reference to the data (either ref or native byte)
+fn tyitem_dat stk(ty: &U1) -> out(dat: &U1) do (
+  if(ft1(dup\ty) msk META_NAME) do ( \ skip name
+    ret (dup\ty + inc2 ft1(inc\ty;)) \ ty + nameCount+2
+  ) ret inc\ty;
+)
+
+fn tyitem_node stk(ty: &U1) -> out(node: &DNode) do (
+  assert(dup\ty msk META_CONSTRUCTED, E_intern);
+  ft1(dup\ty) -> msk META_TSZ_MSK -> shr META_TSZ_SHIFT \ {ty tsz}
+  ret(swp -> tyitem_dat(\ty) -> swp -> jmp:ftBeN(\tdat, \tsz))
+)
+
+fn tyitem_sz stk(ty: &U1) -> out(sz: U2) do (
+  if(ft1(dup\tyitem) msk META_CONSTRUCTED) do (
+    \ FIXME: ... I need forward references for this
+    \ ret struct_sz(tyitem_node(\ty));
+  )  ret szIToSz(ft1(tyitem_dat(\ty)));
+)
+
+fn tyitemNext inp(ty: &U1) -> out(_: &U1) do (
+  GET ty; \ {&out}
+  if(not (ft1(GET ty) msk META_CONSTRUCTED)) do (
+    \out + ((META_TSZ_MSK msk ft1(GET ty)) shr META_TSZ_SHIFT)
+  )
+  if(ft1(GET ty) msk META_NAME) do ( \out + ft1(inc GET ty) )
+  ret \out;
+)
+
+\ **********
+\ *   [5.d] struct field walker
+
+fn walkTy stk(ty: &U1) inp(ctx: &Slot, f: &Slot) do (
+  \ type of fn: [&tyitem &ctx -> ]
+  var numFields: U2; ft1(dup\ty) -> SET numFields;
+  inc\ty; LOOP l0  \ {&tyitem}
+    if(not GET numFields) do ( drp\tyitem; ret; )
+    (dec GET numFields) -> SET numFields;
+    xlw(dup\tyitem, GET ctx, GET f)
+    tyitemNext(\ty);
+  AGAIN l0
+)
+
+fn _structSzWalker inp(tyitem: &U1, sz: &U2) do (
+  tyitem_sz(GET tyitem) -> align(reqAlign(dup\sz)) \ {sz aligned}
+  sr2(\sz + \aligned, GET sz)
+)
+
+large fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
+  var sz: U2; 0 -> SET sz;
+  assert(isTyStruct(dup\s, E_type));
+  walkTy(d_tyGet(\s), REF sz, fnRef:_structSzWalker);
+  ret align(GET sz, reqAlign(GET sz));
+)
+
+
+\ struct Ctx ( offset: u2 )
+\ fn structSz inp(struct: &DNode) -> out(sz:U2) do (
+\   var numFields: U2; ft1(d_tyGet(GET struct)) -> SET numFields;
+\   0; LOOP l0 \ {sz}
+\     retIfNot(GET numFields);
+\   AGAIN l0
+\ )
+
+
+\ struct Ctx ( offset: U2, done: U1, tyitem: &U1 )
+\ fn _fieldNameWalker inp(tyitem: &U1, ctx: &U2) do (
+\   if(tokenEq(cToSlc(tyitemCName(GET tyitem)))) do (
+\     assert(fto:2(GET ctx), E_struct) \ field not yet found
+\ 
+\     \ 1. align current type and set as offset
+\     \ 2. update done=true
+\     \ 3. update ctx.tyitem
+\     fto:RSIZE(GET ctx) 
+\ 
+\     ft2(GET ctx) jn 0x8000 
+\ 
+\     if(ft2(dup\ctx) msk 0x8000) do ( drp; drp; ret; )
+\     
+\   ) drp\tyitem; drp\ctx; ret;
+\ 
+\ )
+\ 
+\ fn _fieldNameWalker stk(tyitem: &U1, ctx: &U1) do (
+\   swp;
+\   if(tokenEq(cToSlc(tyitemCName(dup\tyitem)))) do (
+\     swp -> srR(\tyitem, \ctx); ret;
+\   ) drp\tyitem; drp\ctx;       ret;
+\ )
+\ 
+\ 
+\ \ offsetOf:MyStruct.myField
+\ syn fn offsetOf do ( notNow;
+\   colon; dictRef(NULL) \ {&Struct}
+\   assert(isTyStruct(dup, E_type)); expectToken(SLC_DOT);
+\   scan; structField(\struct)
+\ )
+
+\ **********
+\ * [6] dot compiler
+\
+\ There are a few variations on the dot compiler:
+\  - dot compiler: for accessing locals, globals, fnrefs, ec
+\  - hash compiler: for fields and methods of types on the stack
+\
+\ Rule: Dot compiler syntax, as long as there are dots, it will consume them:
+\
+\ .a            \ get locals, globals, constants
+\ .a.b          \ get local/global "field" (struct, module)
+\ .a      = ()  \ set locals, globals
+\ .a.b    = ()  \ set local/global "field"
+\
+\ .&a           \ reference to local/global
+\ .&a.b         \ reference to local/global "field"
+\ .@@a          \ de-reference local/global
+\ .@a     = ()  \ de-reference and asign local/global
+\
+\ Hash compiler syntax uses the type on the typestack. It has the same syntax.
+\ The above examples with a single item are invalid. Otherwise:
+\
+\ \(.a) #b      \ get stk field (struct)
+\ \(.a) #&b     \ get ref to stk field (struct)
+\ \(.a) #@b     \ dereference stk field (struct)
+
+
+\ decl:DotMeta(TY_DICT jn TY_DICT_STRUCT, 0)
+\ \ The strategy is to use recursion to build up DotMeta
+\ \   offset: U2, \ current built-up offset from the base.
+\ \   refs: U1,   \ number of `&`
+\ \   ats: U1,    \ number of `@`
+\ \   \ the starting node, which has the base type (local, global, etc)
+\ \   base: &DNode,
+\ const DM_offset = 0;
+\ const DM_refs = 2;
+\ const DM_ats = 3;
+\ const DM_base = 4;
+
+\ This is quickly exploding in complexity... use the strategy mentioned above.
+\ large fn _dot inp(root: &DNode, offset: U2, asNow:U1) do (
+\   var refs: U1;  var ats: U1;
+\   var node: &DNode;
+\   countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
+\   (countChr(0c&) + GET refs) -> SET refs;
+\   if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
+\   assert(GET refs < 2, E_dot);
+\   dictRef(GET root) -> SET node;
+\ 
+\   \ TODO: this isn't quite right... the single needs to get
+\   \ from the root I give it!
+\   if(isTyConst(GET node)) do ret single(GET asNow);
+\ 
+\   if(isTyDict(GET node)) do (
+\     GET offset + 
+\     if(scan; tokenEq(SLC_DOT)) do ret _dot(GET node, GET asNow);
+\     \ Else: struct value
+\     tokenPlcSet(0) \ reset scan
+\     if(isDictStruct(
+\     unimpl; \ struct value, aka an offset.
+\   )
+\ 
+\   \ Else: get the value
+\   if(GET refs) do jmp:_ref(GET node, GET asNow)
+\ 
+\ )
+
+\ pub syn large fn . inp asNow:U1 do (
+\ )
 
 $assertNoWs

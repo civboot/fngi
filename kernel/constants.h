@@ -97,8 +97,6 @@
 #define R_LP                 0x80
 #define R_EP                 0x0
 #define R_GB                 0x1
-#define FALSE                0x0
-#define TRUE                 0x1
 #define T_NUM                0x0
 #define T_HEX                0x1
 #define T_ALPHA              0x2
@@ -131,6 +129,7 @@
 #define TY_FN_SYN            0x2
 #define TY_FN_INLINE         0x3
 #define TY_FN_COMMENT        0x4
+#define TY_FN_DECLARE        0x5
 #define TY_VAR_INPUT         0x1
 #define TY_VAR_REF           0xC
 #define ZOAB_TY              0xC0
@@ -160,6 +159,7 @@
 #define E_wsEmpty            0xE005
 #define E_unimpl             0xE006
 #define E_dv                 0xE007
+#define E_type               0xE007
 #define E_null               0xE0A1
 #define E_oob                0xE0A2
 #define E_stkUnd             0xE0A3
@@ -224,6 +224,7 @@
 #define E_fnStateInp         0xE0FF
 #define E_fnStateOut         0xE100
 #define E_fnStateVar         0xE101
+#define E_dot                0xE102
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2
