@@ -158,6 +158,8 @@ $assertDictM(_native jn SZR) Slot
 
 pre FN isTyDict     ret((d_mGet(\node) msk META_TY_MASK) == TY_DICT)
 pre FN isDictNative ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_NATIVE)
+pre FN isDictStruct ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_STRUCT)
+pre FN isDictStruct ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_ENUM)
 
 decl:DNode(TY_DICT jn TY_DICT_STRUCT, 0)
 
@@ -391,23 +393,45 @@ $STORE_PUB
 \ \(.a) #@b     \ dereference stk field (struct)
 
 
-large fn _dot inp(root: &DNode, asNow:U1) do (
-  var refs: U1;  var ats: U1;
-  var node: &DNode;
-  countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
-  (countChr(0c&) + GET refs) -> SET refs;
-  if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
-  assert(GET refs < 2, E_dot);
-  dictRef(GET root) -> SET node;
-  if(isTyConst(GET node)) do ret single(GET asNow);
-  if(isTyDict(GET node)) do (
-    if(scan; tokenEq(SLC_DOT)) do ret _dot(GET node, GET asNow);
-  )
-  \ Else: get the value
-  if(GET refs) do (
-    if(GET asNow) do ret _globalRefNow(GET node);
-  )
-)
+decl:DotMeta(TY_DICT jn TY_DICT_STRUCT, 0)
+\ The strategy is to use recursion to build up DotMeta
+\   offset: U2, \ current built-up offset from the base.
+\   refs: U1,   \ number of `&`
+\   ats: U1,    \ number of `@`
+\   \ the starting node, which has the base type (local, global, etc)
+\   base: &DNode,
+const DM_offset = 0;
+const DM_refs = 2;
+const DM_ats = 3;
+const DM_base = 4;
+
+\ This is quickly exploding in complexity... use the strategy mentioned above.
+\ large fn _dot inp(root: &DNode, offset: U2, asNow:U1) do (
+\   var refs: U1;  var ats: U1;
+\   var node: &DNode;
+\   countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
+\   (countChr(0c&) + GET refs) -> SET refs;
+\   if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
+\   assert(GET refs < 2, E_dot);
+\   dictRef(GET root) -> SET node;
+\ 
+\   \ TODO: this isn't quite right... the single needs to get
+\   \ from the root I give it!
+\   if(isTyConst(GET node)) do ret single(GET asNow);
+\ 
+\   if(isTyDict(GET node)) do (
+\     GET offset + 
+\     if(scan; tokenEq(SLC_DOT)) do ret _dot(GET node, GET asNow);
+\     \ Else: struct value
+\     tokenPlcSet(0) \ reset scan
+\     if(isDictStruct(
+\     unimpl; \ struct value, aka an offset.
+\   )
+\ 
+\   \ Else: get the value
+\   if(GET refs) do jmp:_ref(GET node, GET asNow)
+\ 
+\ )
 
 \ pub syn large fn . inp asNow:U1 do (
 \ )

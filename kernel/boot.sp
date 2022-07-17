@@ -624,16 +624,19 @@ $syn $FN SET
   $jmp:_setImpl
 
 $pre $FN _globalRefNow \ [&Node -> &global]
-  %DUP $xx:isTyVar  %OVR $xx:isTyLocal %AND
-  @E_cNotGlobal$L $xx:assert
-  $d_vGet %GR#0$h2 %ADD %RET
 
-$syn $FN REF
-  #0$L $xx:dictRef %SWP $IF $jmp:_globalRefNow $END
+$pre $FN _ref \ [&Node asNow]
+  $IF 
+    %DUP $xx:isTyVar  %OVR $xx:isTyLocal %AND
+    @E_cNotGlobal$L $xx:assert
+    $d_vGet %GR#0$h2 %ADD %RET
+  $END
   %DUP $xx:assertTyVar %DUP $xx:isTyLocal $IF \ {&key}
           #0$L @SZ1$L @LR$L
   $ELSE   #0$L @SZ2$L @GR$L $END
   $xx:instrLitImpl %RET
+
+$syn $FN REF #0$L $xx:dictRef %SWP $jmp:_ref
 
 $now $FN dnode $jmp:colonRef \ [`dnode:token` -> &DNode]
 
