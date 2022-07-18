@@ -25,7 +25,7 @@
 #0E   #80=G_logLvlSys           \ U1
 #0F   #80=G_logLvlUsr           \ U1
 #08   #90=G_metaNext            \ U2: next function's meta
-#10   #A0=G_curFn               \ Ref: current compiling fn
+#10   #A0=G_curNode             \ Ref: current compiling dict node
 #14   #A0=G_compFn              \ Ref: function used for compiling
 #18   #A0=G_bbaLocal            \ BBA: local BBA
 #24   #A0=G_dictLocal           \ &DNode: local dict

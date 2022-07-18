@@ -247,7 +247,7 @@ $pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTyMeta
 \ example: $syn $large $FN <token>: declare a function with attributes.
 @TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
   #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
-  %DUP .R%SRGL@G_curFn$h2 \ update currently compiling fn
+  %DUP .R%SRGL@G_curNode$h2 \ update currently compiling fn
   $heap %SWP $d_vSet \ dnodeLast.v = heap
   #0$L0 .2%SRGL@G_metaNext$h2 \ clear metaNext
   $_xsl clearLocals  @FN_STATE_STK$L1 @C_FN_STATE$L1 $_xsl setCState
@@ -714,19 +714,19 @@ $large $FN compileInputs
 
 $FN declInpEnd
   $GET G_localOffset $IF \ if there are locals, make fn large
-    $GET G_curFn @TY_FN_LARGE$L $xx:keyJnMeta
+    $GET G_curNode @TY_FN_LARGE$L $xx:keyJnMeta
   $END 
-  $GET G_curFn $xx:isFnLarge $retIfNot \ noop if no locals
+  $GET G_curNode $xx:isFnLarge $retIfNot \ noop if no locals
   #0$L $xx:alignR $xx:h1 \ reserve space for locals
   $xx:compileInputs 
   @FN_STATE_BODY$L @C_FN_STATE$L $jmp:setCState \ begin FN body
 
 $FN declFnEnd
-  $GET G_curFn $xx:isFnLarge %NOT $IF
+  $GET G_curNode $xx:isFnLarge %NOT $IF
     \ If not large, assert no locals and return
     $GET G_localOffset @E_cNotFnLarge$L $jmp:assertNot
   $END \ next: store local size at fn pointer
-  $GET G_localOffset $xx:alignR $GET G_curFn $d_vGet .1%SR %RET
+  $GET G_localOffset $xx:alignR $GET G_curNode $d_vGet .1%SR %RET
 
 $STORE_PRIV   $NEW_BLOCK_PRIV
 $FN declEnd  $xx:declInpEnd $jmp:declFnEnd
@@ -1010,8 +1010,8 @@ $typed $pub $pre $inline $FN i2to4 #1$h1 %CI2    %RET
 $typed $pub $pre $inline $FN +     #1$h1 %ADD    %RET
 $typed $pub $pre $inline $FN -     #1$h1 %SUB    %RET
 $typed $pub $pre $inline $FN %     #1$h1 %MOD    %RET
-$typed $pub $pre $inline $FN <<    #1$h1 %SHL    %RET
-$typed $pub $pre $inline $FN >>    #1$h1 %SHR    %RET
+$typed $pub $pre $inline $FN shl   #1$h1 %SHL    %RET
+$typed $pub $pre $inline $FN shr   #1$h1 %SHR    %RET
 $typed $pub $pre $inline $FN msk   #1$h1 %MSK    %RET
 $typed $pub $pre $inline $FN jn    #1$h1 %JN     %RET
 $typed $pub $pre $inline $FN xor   #1$h1 %XOR    %RET
@@ -1039,6 +1039,17 @@ $pub $pre $inline $FN sr1   #1$h1 .1%SR   %RET
 $pub $pre $inline $FN sr2   #1$h1 .2%SR   %RET
 $pub $pre $inline $FN sr4   #1$h1 .4%SR   %RET
 $pub $pre $inline $FN srR   #1$h1 .R%SR   %RET
+
+$pub $pre $inline $FN ftBe1   #1$h1 .1%FTBE %RET
+$pub $pre $inline $FN ftBe2   #1$h1 .2%FTBE %RET
+$pub $pre $inline $FN ftBe4   #1$h1 .4%FTBE %RET
+$pub $pre $inline $FN ftBeR   #1$h1 .R%FTBE %RET
+
+$pub $pre $inline $FN srBe1   #1$h1 .1%SRBE %RET
+$pub $pre $inline $FN srBe2   #1$h1 .2%SRBE %RET
+$pub $pre $inline $FN srBe4   #1$h1 .4%SRBE %RET
+$pub $pre $inline $FN srBeR   #1$h1 .R%SRBE %RET
+
 
 
 \ [addr]: Fetching or Storing offset, i.e. fto1:DN_v(addr)
