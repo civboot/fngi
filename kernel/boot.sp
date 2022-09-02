@@ -244,20 +244,26 @@ $pub @TY_FN@TY_FN_SYN^JN :now     @TY_FN_NOW    $L1 $_jmp _implTyMeta
 $pub @TY_FN@TY_FN_SYN^JN :syn     @TY_FN_SYN    $L1 $_jmp _implTyMeta
 $pub @TY_FN@TY_FN_SYN^JN :inline  @TY_FN_INLINE $L1 $_jmp _implTyMeta
 $pub @TY_FN@TY_FN_SYN^JN :comment @TY_FN_COMMENT$L1 $_jmp _implTyMeta
+$pub @TY_FN@TY_FN_SYN^JN :declare @TY_FN_DECLARE$L1 $_jmp _implTyMeta
 
 @TY_FN :clearLocals
   %GR@G_bbaLocal$h2 $BBA_drop   #0$L0 .R%SRGL@G_dictLocal$h2 \ drop everything
   %GR@G_bbaLocal$h2 $BBA_newBlock    #0$L0 .1%SRGL@G_localOffset$h2 %RET
 
-\ example: $syn $large $FN <token>: declare a function with attributes.
-@TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
-  #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
+@_FP :_FN \ {v meta &key} define function
   %DUP .R%SRGL@G_curNode$h2 \ update currently compiling fn
   $heap %SWP $d_vSet \ dnodeLast.v = heap
   #0$L0 .2%SRGL@G_metaNext$h2 \ clear metaNext
   $_xsl clearLocals  @FN_STATE_STK$L1 @C_FN_STATE$L1 $_xsl setCState
   $_jmp assertNoWs
+
+\ example: $syn $large $FN <token>: declare a function with attributes.
+@TY_FN@TY_FN_SYN^JN :FN   $_xsl notNow \ {}
+  #0$L0 @TY_FN$L1 .2%FTGL@G_metaNext$h2 %JN $_xsl dictAdd \ new dict with metaNext
+  $_jmp _FN
 $assertNoWs
+
+$pre $FN isMetaFnDeclare     @TY_FN_TY_MASK$L1 %MSK @TY_FN_DECLARE$L1%EQ %RET
 
 \ These tell something about a &DNode. Type: [&DNode -> bool]
 $pre $FN isFnPre     $d_mGet @TY_FN_PRE$L1     %MSK %RET
@@ -267,7 +273,7 @@ $pre $FN isFnNow     $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_NOW$L1    %EQ %RET
 $pre $FN isFnSyn     $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_SYN$L1    %EQ %RET
 $pre $FN isFnInline  $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_INLINE$L1 %EQ %RET
 $pre $FN isFnComment $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_COMMENT$L1%EQ %RET
-$pre $FN isFnDeclare $d_mGet @TY_FN_TY_MASK$L1 %MSK @TY_FN_DECLARE$L1%EQ %RET
+$pre $FN isFnDeclare $d_mGet $_jmp isMetaFnDeclare
 $pre $FN isTyVar     $d_mGet @META_TY_MASK$L1  %MSK @TY_VAR$L1       %EQ %RET
 $pre $FN assertTyVar $_xsl isTyVar  @E_cNotVar$L2 $_jmp assert
 
@@ -503,19 +509,13 @@ $pre $large $FN instrLitImpl
   $d_vGet  .1%FTLL#0$h1  $_jmp heapSzI \ compile literal of proper instrSz
 
 $pre $large $FN c_fn \ {&key}: compile a function of any type
-  @RSIZE$h1 \ 1 slot [0=&newSll]
+  @RSIZE$h1 \ 1 slot [0=&declSll]
   %DUP $_xsl assertFn \ {&key}
   %DUP $_xsl isFnDeclare $IF
-    %DUP $d_vGet  \ {&key &declSll}
-    @RSIZE^DUP^ADD$L @FALSE$L $BBA_bump \ {&key &declSll &newSll}
-    %DUP .R%SRLL#0$h1 \ cache newSll {&key &declSll &newSll}
-    $heap %OVR .R%SRO@RSIZE$h1 \ newSll.fn = heap {&key &declSll &newSll}
-    .R%SRO#0$h1 \ newSll.next = declSll {&key}
-    \ TODO: perhaps this should be an UNUSED jmp code with special error?
-    \ I think that makes more sense. Note: it NEEDS the sz data.
-    #0$L %SWP $d_vSet \ set to zero so error happens if called early.
+    %DUP $d_vGet $_xsl L \ store location as literal {&key}
+    @SZR@FTBE^JN $c1     \ compile .R%FTBE           {&key}
+    $_xsl isFnLarge $IF @XLW$L $ELSE @XSW$L $END $_jmp h1
   $END
-
   %DUP $_xsl isFnInline $IF \ Inline compilation {&key}
     %DUP $_xsl isFnLarge @E_cInlineLarge$L $_xsl assertNot
     $d_vGet  $heap %SWP      \ {&heap &inlineFn}
@@ -523,12 +523,10 @@ $pre $large $FN c_fn \ {&key}: compile a function of any type
     %DUP @FALSE$L $bump %DRP \ {&heap &inlineFn+1 inlineLen} update heap
     %DV@DV_memMove$h1 %RET   \ {&inlineFn}
   $END
-  %DUP %DUP $_xsl xSzI     \ {&key &key szLit}
-  %OVR $_xsl isFnLarge  $IF @XLL$L $ELSE @XSL$L $END \ {&key &key instrSzI instr}
-  %OVR %SWP \ {&key &key instrSzI litSzI instr} instr & lit are same sz
-  .2%XLL @instrLitImpl$h2
-  %DUP $_xsl isFnDeclare $IF .R%FTLL#0$h1 %SWP $d_vSet
-                         $ELSE %DRP $END %RET
+  %DUP $_xsl xSzI     \ {&key szLit}
+  %OVR $_xsl isFnLarge  $IF @XLL$L $ELSE @XSL$L $END \ {&key instrSzI instr}
+  %OVR %SWP \ {&key instrSzI litSzI instr} instr & lit are same sz
+  .2%XLL @instrLitImpl$h2 %RET
 
 $FN colon \ consume a colon token as syntactic surgar, i.e. xx:foo
   $_xsl scan$tokenPlc #1$L  %EQ @E_cColon$L $_xsl assert \ assert len=1
@@ -995,8 +993,8 @@ $\token_comment
 \ $\()  $\(  )
 
 \ These do nothing and are used for more readable code.
-$syn $FN , %DRP %RET   
-$syn $FN ;  %DRP %RET   $syn $FN -> %DRP %RET
+$syn $FN , %DRP %RET
+$syn $FN ; %DRP %RET   $syn $FN -> %DRP %RET
 
 $FN fngi \ fngi compile loop
   $LOOP l0

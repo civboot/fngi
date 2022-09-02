@@ -144,13 +144,13 @@
 \ Unsized jumps:
 #80 #0=JMPW  \ Jmp to WS
 #90 #0=XSW   \ Execute Small WS (no LS update)
-#A0 #0=XLW   \ Execute WS (aPtr)
+#A0 #0=XLW   \ Execute Large WS
 
 \   Jmp      Description
 #81 #0=JMPL  \ Jmp to Literal
 #82 #0=JZL   \ Jmp to Literal if store==0
 #83 #0=JTBL  \ Jump to Table index using size=Literal
-#84 #0=XLL   \ Execute Literal (mPtr)
+#84 #0=XLL   \ Execute Large Literal (mPtr)
 #85 #0=XSL   \ Execute Small Literal (no LS update)
 #86 #0=SLC   \ Inline Slc, jmp sz and push {ref, len}
 
@@ -255,7 +255,6 @@
 #03 #0=TY_FN_INLINE  \ Inline function, copies bytes when compiled.
 #04 #0=TY_FN_COMMENT \ Comment function. Executed immediately.
 #05 #0=TY_FN_DECLARE \ Declare function, compile later.
-
 
 @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
 

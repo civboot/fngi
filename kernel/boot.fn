@@ -24,6 +24,11 @@ FN ftBeN \ [addr: &U1, sz: U1 -> v]
   IF(   \sz == 2)         ret ftBe2(\addr); END
   ret ftBe4(\addr)
 
+FN srBeN \ [value:UN addr:&U1 sz:U1]
+  IF(dup\sz == 1) drp\sz; ret srBe1(\value, \addr); END
+  IF(   \sz == 2)         ret srBe2(\value, \addr); END
+  ret srBe4(\value \addr)
+
 pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
   scan;  DV_comp_dGet -> dv:DV_comp; ret; 
 
@@ -110,7 +115,8 @@ const const42 = 0x42;         $tAssertEq(const42, 0x42)
 const const49 = (0x42 + 7);   $tAssertEq(const49, 0x49)
 $STORE_PUB
 
-pub syn FN decl \ decl:token(meta, value) manually declare a dictionary entry
+\ declDict:token(meta, value) manually declare a dictionary entry
+pub syn FN declDict
   $declVar(declL node, 0, RSIZE) $declEnd
   notNow; colon; xx:dictAdd(0, 0) -> SET node;
   compNext(TRUE) -> d_vSet(\value, GET node) -> d_mSet(\meta, GET node);
@@ -159,14 +165,14 @@ const TY_NATIVE_REF    = 0x07; \ mask
 
 const _native = (TY_DICT jn TY_DICT_NATIVE)
 
-decl:U1    (_native jn                     SZ1, 0)
-decl:U2    (_native jn                     SZ2, 0)
-decl:U4    (_native jn                     SZ4, 0)
-decl:Slot  (_native jn                     SZR, 0)
-decl:I1    (_native jn TY_NATIVE_SIGNED jn SZ1, 0)
-decl:I2    (_native jn TY_NATIVE_SIGNED jn SZ2, 0)
-decl:I4    (_native jn TY_NATIVE_SIGNED jn SZ4, 0)
-decl:ISlot (_native jn TY_NATIVE_SIGNED jn SZR, 0)
+declDict:U1    (_native jn                     SZ1, 0)
+declDict:U2    (_native jn                     SZ2, 0)
+declDict:U4    (_native jn                     SZ4, 0)
+declDict:Slot  (_native jn                     SZR, 0)
+declDict:I1    (_native jn TY_NATIVE_SIGNED jn SZ1, 0)
+declDict:I2    (_native jn TY_NATIVE_SIGNED jn SZ2, 0)
+declDict:I4    (_native jn TY_NATIVE_SIGNED jn SZ4, 0)
+declDict:ISlot (_native jn TY_NATIVE_SIGNED jn SZR, 0)
 $assertDictM(_native jn SZR) Slot
 
 pre FN isTyDict     ret((d_mGet(\node) msk META_TY_MASK) == TY_DICT)
@@ -193,7 +199,7 @@ pre FN _typeSz \ [&Type -> szBytes]
   assert(isDictNative(dup\type), E_intern)
   ret szIToSz(d_mGet(\type) msk SZ_MASK)
 
-pre FN isFnAndSyn \ &node
+pre FN isFnAndSyn \ {&node}
   retIfNot(dup)
   IF(not isTyFn(dup)) drp; ret FALSE END
   ret isFnSyn(\node);
@@ -280,8 +286,43 @@ $tAssertEq(testVar(0x101), 2)
 \   ... code
 \ )
 $STORE_PUB
-pub syn FN fn  notNow;
-  xx:FN(FALSE)
+
+\ pub syn FN fn
+\   $declVar(declL meta, 0, RSIZE)
+\   $declVar(declL declKey, 0, RSIZE) $declEnd
+\   GET G_metaNext -> SET meta;
+\   0              -> SET declKey;
+\   \ Handle function declare case
+\   \ notNow; dictRefMaybe(0) -> IF(dup\key) \ fn already exists
+\   \   assert(isFnDeclare(dup\key), E_cKey); \ {&key}
+\   \   dup -> SET declKey;
+\   \ ELSE
+\   \   drp\key; tokenPlcSet(0); \ clear token
+\     dictAdd(0, GET G_metaNext jn TY_FN)
+\   \ END
+\   -> _FN(\key)
+\   \ IF(GET declKey) \ we are defining a declared function
+\   \   assertNot(isMetaFnDeclare(GET meta), E_cKey);
+\   \   d_mSet(
+\   \     d_mGet(GET declKey) msk $L(inv TY_FN_TY_MASK) jn TY_FN_NORMAL,
+\   \     GET declKey)
+\   \ END
+\   \ \ Reserve space for declared pointer
+\   \ IF(isMetaFnDeclare(GET meta))  srBeR(0, bump(RSIZE, FALSE));  END
+
+
+pub syn FN fn
+  $declVar(declL meta,    0, RSIZE) $declEnd notNow;
+  GET G_metaNext -> SET meta;
+  dictRefMaybe(0) -> IF(dup\key) \ fn already exists
+    assert(isFnDeclare(dup\key), E_cKey); \ {&key}
+    d_vGet(dup\key) -> heap -> swp \ {&key heap &declFn}
+    srBeR(\heap, \declFn) \ {&key}
+  ELSE
+    drp\key; tokenPlcSet(0); \ clear token
+    dictAdd(0, GET G_metaNext jn TY_FN)
+  END -> _FN(\key)
+  IF(isMetaFnDeclare(GET meta))  srBeR(0, bump(RSIZE, FALSE))  END
   LOOP l0
     dictRefMaybe(0) \ {&Node}
     IF(tokenEq(SLC_DO)) \ function body
@@ -293,6 +334,17 @@ pub syn FN fn  notNow;
 $STORE_PRIV
 pre fn testFn stk(a:Slot) inp(b:U2) do ( GET b ->  swp ->  ret; )
 $(testFn(0x1234, 0x12345) -> tAssertEq(0x1234) -> tAssertEq(0x2345))
+
+declare fn testDeclared do ()                    \ [-> U1]
+$dv_log(fnRef:testDeclared,        1, 0x10);
+$dv_log(ftBeR(fnRef:testDeclared), 1, 0x10);
+fn testDeclaredUsed do ( ret testDeclared; ) \ [-> U1]
+fn testDeclared do ( ret 3; )               \ [-> U1]
+$dv_log(fnRef:testDeclared,        1, 0x10);
+
+$tAssertEq(3, testDeclared;);
+$tAssertEq(3, testDeclaredUsed;);
+
 
 \ **********
 \ * [4] if elif else, also $if ...
@@ -424,18 +476,12 @@ pre fn needUnalignedSz stk(ref:Slot) -> out(sz:U1) do (
 \ *   [5.a] struct declaration
 
 pre large fn _field do ( \ compile a struct field
-  dv_log(0x3000, 1, 0x10);
   var compFn: &Slot; updateCompFn(fnRef:_field) -> SET compFn;
-  dv_log(0x3001, 1, 0x10);
   IF(isFnAndSyn(dictRefMaybe(0)))
-    dv_log(0x30E0, 1, 0x10);
     single(FALSE) \ next token is syn, run it (it may run us)
-    dv_log(0x30E1, 1, 0x10);
   ELSE
-    dv_log(0x3002, 1, 0x10);
     var ref: &U1; d_tyGet(GET G_curNode) -> SET ref;
       sr1(inc ft1(GET ref), GET ref) \ struct.ty.numFields += 1
-    dv_log(0x3001, 1, 0x10);
     \ Reserve then move cfield name
     bumpName(1, FALSE) -> SET ref; bumpName(tokenPlc + 1, FALSE) \ {&cname}
     memMove(inc(\cname), tokenDat, tokenPlc); \ move cfield name
@@ -450,14 +496,11 @@ pre large fn _field do ( \ compile a struct field
 
 \ Then do BBA_bump INLINE
 syn large fn struct do (  notNow;
-  dv_log(0x1000, 1, 0x10);
   dictAdd(NULL, $L(C_TYPED jn TY_DICT jn TY_DICT_STRUCT)) -> SET G_curNode;
   var ty: &U1; bumpName(1, FALSE\aligned) -> SET ty;
   d_tySet(GET ty, GET G_curNode);
   sr1(0\numFields, GET ty);
-  dv_log(0x1001, 1, 0x10);
   _field;
-  dv_log(0x10FF, 1, 0x10);
   ret;
 )
 
@@ -606,7 +649,7 @@ large fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
 \ \(.a) #@b     \ dereference stk field (struct)
 
 
-\ decl:DotMeta(TY_DICT jn TY_DICT_STRUCT, 0)
+\ declDict:DotMeta(TY_DICT jn TY_DICT_STRUCT, 0)
 \ \ The strategy is to use recursion to build up DotMeta
 \ \   offset: U2, \ current built-up offset from the base.
 \ \   refs: U1,   \ number of `&`

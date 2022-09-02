@@ -189,6 +189,7 @@
 #define E_cStr               0xE0D2
 #define E_cState             0xE0D3
 #define E_cNotFit            0xE0D4
+#define E_cNotDecl           0xE0D5
 #define E_cNotGlobal         0xE0E0
 #define E_cIsX               0xE0E1
 #define E_cIsXS              0xE0E2

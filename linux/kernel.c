@@ -1029,8 +1029,8 @@ inline static Instr executeInstr(Instr instr) {
 
     // Jmp Cases
     case JMPW: cfb->ep = WS_POP(); R0;
-    case XLW: xlImpl(WS_POP()); R0;
-    case XSW: xImpl(0, WS_POP()); R0;
+    case XLW: xlImpl(WS_POP());    R0;
+    case XSW: xImpl(0, WS_POP());  R0;
 
     case SZ1 + JMPL: r = popLit(1); cfb->ep += (I1)r - 1; R0
     case SZ2 + JMPL: r = popLit(2); cfb->ep = sectorRef(r); R0
@@ -1040,8 +1040,8 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + JZL: r = popLit(2); if(!WS_POP()) { cfb->ep = sectorRef(r); } R0
     case SZ4 + JZL: r = popLit(4); if(!WS_POP()) { cfb->ep = r; } R0
 
-    case SZ1 + JTBL:
-    case SZ2 + JTBL:
+    case SZ1 + JTBL: assert(false);
+    case SZ2 + JTBL: assert(false);
     case SZ4 + JTBL: assert(false); // TODO: not impl
 
     case SZ1 + XLL: xlImpl(cfb->ep + (I1)popLit(1)); R0;
@@ -1385,7 +1385,7 @@ void _scan(FileMethods* m, File* f) {
 
 void scan(FileMethods* m, File* f) {
   _scan(m, f);
-  eprintf("??? scan: %.*s  line=%u\n", Tplc, Tdat, line);
+  // eprintf("??? scan: %.*s  line=%u\n", Tplc, Tdat, line);
 }
 
 bool usesSzI(U1 instr) {

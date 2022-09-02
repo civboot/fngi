@@ -51,6 +51,7 @@
 #E0D2  #0=E_cStr    \ Str invalid
 #E0D3  #0=E_cState  \ compiler state invalid, use STORE_PUB?
 #E0D4  #0=E_cNotFit \ constant/str is too large
+#E0D5  #0=E_cNotDecl \ fn is not declare
 
 #E0E0  #0=E_cNotGlobal \ using a non-global as global
 #E0E1  #0=E_cIsX       \ using an XS for an X
