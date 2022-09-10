@@ -409,6 +409,8 @@ $pre $FN L \ {v} compile literal of appropriate size
 $pre $FN keySzI $d_mGet @SZ_MASK$L %MSK %RET \ {&dnode -> szI}
 
 $pub $pre $FN szIToSz \ {szI} -> {sz}
+  %DUP #2000$L #2$L #10$L $dv_log
+
   %DUP @SZ1$L %EQ $IF  %DRP #1$L %RET  $END
   %DUP @SZ2$L %EQ $IF  %DRP #2$L %RET  $END
        @SZ4$L %EQ $IF       #4$L %RET  $END
@@ -474,6 +476,8 @@ $FN testXlw  @answerL$L %XLW %RET     $testXlw   #42 $tAssertEq
 #20 #1 $alignReq #20 $tAssertEq   #21 #1  $alignReq #21 $tAssertEq
 #20 #2 $alignReq #20 $tAssertEq   #21 #2  $alignReq #22 $tAssertEq
 #21 #4 $alignReq #24 $tAssertEq   #21 #11 $alignReq #24 $tAssertEq
+
+#0 #4 $align  #0 $tAssertEq   #2 #4 $align  #4 $tAssertEq
 
 $STORE_PRIV
 \ Inline helper functions for src and token
@@ -563,8 +567,8 @@ $syn $FN jmp
 
 \ **********
 \   * [5.a] Define locals
-\ This allows us to declar globals and locals. declEnd (handling actually writing local data)
-\ will not happen until later.
+\ This allows us to declar globals and locals. declEnd (handling actually
+\ writing local data).  will not happen until later.
 $STORE_PUB
 $FN declG #0$L %DUP $xx:dictAdd  #0$L %RET  \ [<token> -> &key isLocal=false]
 $FN declL #0$L %DUP $xx:ldictAdd #1$L %RET  \ [<token> -> &key isLocal=true]
@@ -733,10 +737,10 @@ $large $FN compileInputs
 $FN declInpEnd
   $GET G_localOffset $IF \ if there are locals, make fn large
     $GET G_curNode @TY_FN_LARGE$L $xx:keyJnMeta
-  $END 
+  $END
   $GET G_curNode $xx:isFnLarge $retIfNot \ noop if no locals
   #0$L $xx:alignR $xx:h1 \ reserve space for locals
-  $xx:compileInputs 
+  $xx:compileInputs
   @FN_STATE_BODY$L @C_FN_STATE$L $jmp:setCState \ begin FN body
 
 $FN declFnEnd
