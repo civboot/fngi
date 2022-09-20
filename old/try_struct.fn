@@ -1,0 +1,262 @@
+
+\ **********
+\ * [5] struct
+\ Structs are a dict node with a value to a root node, and type to a typestream
+\ of the struct fields. The byte structure is:
+\
+\   numFields:U1 | ... fields
+\
+\ struct Foo (
+\   a: U2,
+\   b: &U1,
+\ )
+
+\ **********
+\ *   [5.a] utilities
+const LOC_LOCAL = 0;
+const LOC_PRIV  = 1;
+const LOC_PUB   = 2;
+
+fn locBBA stk(l:U1) do ( \ -> out(_:&BBA)
+  if(dup\l == LOC_LOCAL) do (drp; ret REF G_bbaLocal)
+  elif(\l == LOC_PRIV  ) do (     ret GET G_bbaPriv)
+  ret GET G_bbaPub;
+)
+
+fn nameLoc -> out(loc:U1) do ( \ location names are stored
+  if(C_LOCAL    msk GET G_cstate) do ret LOC_LOCAL
+  if(C_PUB_NAME msk GET G_cstate) do ret LOC_PUB else ret LOC_PRIV;
+)
+
+fn bumpName stk(size:U2, aligned:U1) -> out(_: &U1) do (
+  ret BBA_bump(\size, \aligned, locBBA(nameLoc));
+)
+
+\ **********
+\ *   [5.a] struct declaration
+
+large fn _field do ( \ compile a struct field, which may be a block of fields.
+  var compFn: &Slot; updateCompFn(fnRef:_field) -> SET compFn;
+  IF(isFnAndSyn(dictRefMaybe(0)))
+    single(FALSE) \ next token is syn, run it (it may run us)
+  ELSE
+    var ref: &U1; d_tyGet(GET G_curNode) -> SET ref;
+    sr1(inc ft1(GET ref), GET ref) \ struct.ty.numFields += 1
+    \ Reserve then move cfield name
+    bumpName(1, FALSE) -> SET ref; bumpName(tokenPlc + 1, FALSE) \ {&cname}
+    memMove(inc(\cname), tokenDat, tokenPlc); \ move cfield name
+    sr1(tokenPlc, inc GET ref);               \ set cfield count
+    colon; var tyNode: &Slot; readTy -> SET tyNode; \ {numRefs}
+    \ TODO: this isn't quite right... this doesn't handle destructuring other structs.
+    sr1(\numRefs jn META_NAME  \ store the ty meta
+        jn (d_mGet(GET tyNode) msk SZ_MASK)
+        GET ref)
+  END
+  GET compFn -> SET G_compFn; ret;
+)
+
+large syn fn struct do (  notNow;
+  dictAdd(NULL, $L(C_TYPED jn TY_DICT jn TY_DICT_STRUCT)) -> SET G_curNode;
+  var ty: &U1; bumpName(1, FALSE\aligned) -> SET ty;
+  d_tySet(GET ty, GET G_curNode);
+  sr1(0\numFields, GET ty);
+  _field;
+  ret;
+)
+
+\ **********
+\ *   [5.c] tyitem utilities
+
+struct DNode (
+  l: &DNode;  r: &DNode
+  ckey: &U1;  v: Slot;    m: U2;
+)
+
+fn isTyped stk(n: &DNode) -> out(_:U1) do ret(d_mGet(\n) msk C_TYPED)
+
+fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
+  isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
+)
+$tAssert(isTyStruct(dnode:DNode))
+
+
+fn tyitem_cname stk(ty: &U1) -> out(cname: &U1) do (
+  if(ft1(dup\ty) msk META_NAME) do ( ret inc\ty; )
+  else                             ( drp\ty; ret NULL; )
+)
+
+\ Return reference to the data (either ref or native byte)
+fn tyitem_dat stk(ty: &U1) -> out(dat: &U1) do (
+  if(ft1(dup\ty) msk META_NAME) do ( \ skip name
+    ret (dup\ty + inc2 ft1(inc\ty;)) \ ty + nameCount+2
+  ) ret inc\ty;
+)
+
+fn tyitem_node stk(ty: &U1) -> out(node: &DNode) do (
+  assert(dup\ty msk META_CONSTRUCTED, E_intern);
+  ft1(dup\ty) msk META_TSZ_MSK shr META_TSZ_SHIFT \ {ty tsz}
+  ret(swp -> tyitem_dat(\ty) -> swp -> jmp:ftBeN(\tdat, \tsz))
+)
+
+declare large fn struct_sz stk(s: &DNode) -> out(sz:U2) do;
+
+\ Get the size of a type item (native or struct).
+fn tyitem_sz stk(ty: &U1) -> out(sz: U2) do (
+  if(ft1(dup\tyitem) msk META_CONSTRUCTED) do
+    ( ret struct_sz(tyitem_node(\ty)) )
+  ft1(tyitem_dat(\ty))
+  -> dv_log(dup, 0x1050, 2, 0x10);
+  ret szIToSz(\dat msk SZ_MASK);
+)
+
+\ Point to the next tyitem in the tystream.
+fn tyitemNext inp(ty: &U1) -> out(_: &U1) do (
+  GET ty; \ {&out}
+  if(not (ft1(GET ty) msk META_CONSTRUCTED)) do (
+    \out + ((META_TSZ_MSK msk ft1(GET ty)) shr META_TSZ_SHIFT)
+  )
+  if(ft1(GET ty) msk META_NAME) do ( \out + ft1(inc GET ty) )
+  ret \out;
+)
+
+\ **********
+\ *   [5.d] struct field walker
+fn walkTy stk(ty: &U1) inp(ctx: &Slot, f: &Slot) do (
+  \ type of f: fn [&tyitem &ctx -> stop:Bool]
+  var numFields: U2; ft1(dup\ty) -> SET numFields;
+  inc\ty; LOOP l0  \ {&tyitem}
+    if(not GET numFields) do ( drp\tyitem; ret; )
+    (dec GET numFields) -> SET numFields;
+    if(xlw(dup\tyitem, GET ctx, GET f)) do ( drp\tyitem; ret; )
+    tyitemNext(\ty);
+  AGAIN l0
+)
+
+\ Bump the size by the field size
+fn bumpField inp(curSz: U2, fieldSz: U2) do (
+  ret (align(GET curSz, reqAlign(GET fieldSz)) + GET fieldSz);
+)
+
+\ Walk a struct, updating the outSz for each tyitem.
+fn _structSzWalker inp(tyitem: &U1, outSz: &U2) do (
+  dv_log(tyitem_sz(GET tyitem), 0x1040, 2, 0x10)
+  sr2(bumpField(ft2(GET outSz), tyitem_sz(GET tyitem)), GET outSz);
+  dv_log(ft2(GET outSz), 0x1042, 2, 0x10)
+  ret FALSE;
+)
+
+fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
+  var sz: U2; 0 -> SET sz;
+  assert(isTyStruct(dup\s, E_type));
+  dv_log(0x1000, 1, 0x10);
+  walkTy(d_tyGet(\s), REF sz, fnRef:_structSzWalker);
+  ret align(GET sz, reqAlign(GET sz));
+)
+
+struct Ctx ( offset: U2, done: U1, tyitem: &U1 )
+
+$tAssertEq(8, struct_sz(dnode:Ctx));
+
+\ fn _fieldNameWalker inp(tyitem: &U1, ctx: &U2) do (
+\   if(tokenEq(cToSlc(tyitemCName(GET tyitem)))) do (
+\     assert(fto:2(GET ctx), E_struct) \ field not yet found
+\ 
+\     \ 1. align current type and set as offset
+\     \ 2. update done=true
+\     \ 3. update ctx.tyitem
+\     fto:RSIZE(GET ctx) 
+\ 
+\     ft2(GET ctx) jn 0x8000 
+\ 
+\     if(ft2(dup\ctx) msk 0x8000) do ( drp; drp; ret; )
+\     
+\   ) drp\tyitem; drp\ctx; ret;
+\ 
+\ )
+
+\ fn _fieldNameWalker stk(tyitem: &U1, ctx: &U1) do (
+\   swp;
+\   if(tokenEq(cToSlc(tyitemCName(dup\tyitem)))) do (
+\     swp -> srR(\tyitem, \ctx); ret;
+\   ) drp\tyitem; drp\ctx;       ret;
+\ )
+\ 
+\ 
+\ \ offsetOf:MyStruct.myField
+\ syn fn offsetOf do ( notNow;
+\   colon; dictRef(NULL) \ {&Struct}
+\   assert(isTyStruct(dup, E_type)); expectToken(SLC_DOT);
+\   scan; structField(\struct)
+\ )
+
+\ **********
+\ * [6] dot compiler
+\
+\ There are a few variations on the dot compiler:
+\  - dot compiler: for accessing locals, globals, fnrefs, ec
+\  - hash compiler: for fields and methods of types on the stack
+\
+\ Rule: Dot compiler syntax, as long as there are dots, it will consume them:
+\
+\ .a            \ get locals, globals, constants
+\ .a.b          \ get local/global "field" (struct, module)
+\ .a      = ()  \ set locals, globals
+\ .a.b    = ()  \ set local/global "field"
+\
+\ .&a           \ reference to local/global
+\ .&a.b         \ reference to local/global "field"
+\ .@@a          \ de-reference local/global
+\ .@a     = ()  \ de-reference and asign local/global
+\
+\ Hash compiler syntax uses the type on the typestack. It has the same syntax.
+\ The above examples with a single item are invalid. Otherwise:
+\
+\ \(.a) #b      \ get stk field (struct)
+\ \(.a) #&b     \ get ref to stk field (struct)
+\ \(.a) #@b     \ dereference stk field (struct)
+
+
+\ declDict:DotMeta(TY_DICT jn TY_DICT_STRUCT, 0)
+\ \ The strategy is to use recursion to build up DotMeta
+\ \   offset: U2, \ current built-up offset from the base.
+\ \   refs: U1,   \ number of `&`
+\ \   ats: U1,    \ number of `@`
+\ \   \ the starting node, which has the base type (local, global, etc)
+\ \   base: &DNode,
+\ const DM_offset = 0;
+\ const DM_refs = 2;
+\ const DM_ats = 3;
+\ const DM_base = 4;
+
+\ This is quickly exploding in complexity... use the strategy mentioned above.
+\ large fn _dot inp(root: &DNode, offset: U2, asNow:U1) do (
+\   var refs: U1;  var ats: U1;
+\   var node: &DNode;
+\   countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
+\   (countChr(0c&) + GET refs) -> SET refs;
+\   if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
+\   assert(GET refs < 2, E_dot);
+\   dictRef(GET root) -> SET node;
+\ 
+\   \ TODO: this isn't quite right... the single needs to get
+\   \ from the root I give it!
+\   if(isTyConst(GET node)) do ret single(GET asNow);
+\ 
+\   if(isTyDict(GET node)) do (
+\     GET offset + 
+\     if(scan; tokenEq(SLC_DOT)) do ret _dot(GET node, GET asNow);
+\     \ Else: struct value
+\     tokenPlcSet(0) \ reset scan
+\     if(isDictStruct(
+\     unimpl; \ struct value, aka an offset.
+\   )
+\ 
+\   \ Else: get the value
+\   if(GET refs) do jmp:_ref(GET node, GET asNow)
+\ 
+\ )
+
+\ pub syn large fn . inp asNow:U1 do (
+\ )
+
+$assertNoWs

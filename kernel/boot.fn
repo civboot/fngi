@@ -17,7 +17,11 @@ pub syn        FN dv      notNow; $c1(DV); jmp:h1(d_vGet(colonRef))
 pub pre inline FN memSet  $h1(2) dv:DV_memSet  ret; \ [&dst v len]   "dst = v"
 pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&a &b len -> cmp]
 pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&dst &src len] "dst = src"
+\ pub pre        FN memMove        dv:DV_memMove ret; \ [&dst &src len] "dst = src"
 pub pre        FN memClr  0 swp; jmp:memSet(\a, \len)   \ [&a len] clear
+
+$tAssert(isFnPre(dnode:memMove))  $tAssert(isFnInline(dnode:memMove))
+
 
 FN ftBeN \ [addr: &U1, sz: U1 -> v]
   IF(dup\sz == 1) drp\sz; ret ftBe1(\addr); END
@@ -71,6 +75,8 @@ pub pre FN slcCmp \ [&a aLen &b bLen -> cmp]
   $declVar(declL b,    TY_VAR_INPUT, RSIZE)
   $declVar(declL bLen, TY_VAR_INPUT, RSIZE)
   $declEnd
+  dv_log(dup\aLen, GET bLen, 0x333, 3, 0x10)
+
   IF(dup\aLen < GET bLen) drp; drp; ret(neg 1); END
   IF(   \aLen > GET bLen)      drp; ret(    1); END
   ret memCmp(\a, GET b, GET bLen)
@@ -122,35 +128,34 @@ pub syn FN declDict
   ret;
 
 \ **********
-\ * [XX] Types
-\ Types are a reference to a bytestream on the end of DNodes iff the C_TYPED bit is set.
-\ Depending on the type, they point to either a single tyitem (for CONST, VAR)
-\ or a "typestream" (for FN, STRUCT, etc) which is a stream of tyitems.
+\ * [XX] Type Scafolding and Native Type Implementation
+\ Types are implemented from TY_DICT Dictionary Nodes. They have the following meta:
 \
-\ All tyitems start with a byte:
+\ 11-- -CCC C=category (Native, Bitmap, Struct, etc)
+\
+\ The "value" in the DNode is then:
+\ * MOD / SUBMOD: pointer to the root of the sub-dictionary.
+\ * NATIVE: a single tyItem byte (with C=0 N=0)
+\ * else: a pointer to a tyStream
+\
+\ A tyStream is a single byte specifying the number of tyItems, followed by
+\ the tyItems (unaligned).
+\
+\ All tyItems start with a byte:
 \    CN-- ----   C=constructed  N=named
 \
-\ If N=1, then the next bytes are the counted name (U1 count followed by data)
+\ If N=1, then the next bytes are the counted name (U1 length followed by data)
 \
 \ If C=0, it is not constructed, meaning it is a native type. In this case:
-\    0NSS VRRR  N=named  S=size  R=reference depth  V=variant
-\ - The variants are either 0=unsigned 1=signed
-\ - The sizes are the same as instructions
-\ - The reference depth is a count of the number of `&` in the type.
+\    0NZZ SRRR  N=named  Z=size  R=reference depth  S=signed
+\ - (Z) The sizes are the same as instructions
+\ - (R) The reference depth is a count of the number of `&` in the type.
 \
 \ If C=1 it is constructed, the meta is:
 \     1NTT -RRR
 \ N=named  T=size of type reference (pointer)  R=reference depth
 \
-\ Then there is T size bytes of the type reference. R is the reference depth
-\
-\ Below we just implement a few of the native types necessary for bootstrapping fn.
-\ In general, these will be stored with the fn definition.
-const META_CONSTRUCTED = 0x80;
-const META_NAME        = 0x40;
-const META_TSZ_MSK     = 0x30;
-const META_TSZ_SHIFT   = 4;   \ T needs to be shifted by 4 to get value
-
+\ Then there is T size bytes of the type reference.
 const TY_DICT_MSK    = 0x07;
 const TY_DICT_NATIVE = 0x00;
 const TY_DICT_BITMAP = 0x01;
@@ -159,24 +164,49 @@ const TY_DICT_ENUM   = 0x03;
 const TY_DICT_MOD    = 0x04;
 const TY_DICT_SUBMOD = 0x05;
 
-const TY_NATIVE_SIGNED = 0x08;
-const TY_NATIVE_REF    = 0x07; \ mask
+const META_CONSTRUCTED = 0x80;
+const META_NAME        = 0x40;
+const META_REF_MSK     = 0x07;
+const META_CONSTRUCTED_TSZ_MSK = 0x30
+const META_CONSTRUCTED_TSZ_SHIFT = 4 \ TSZ needs to be shifted by 4 to get value
+const META_NATIVE_SIGNED = 0x08;
 
-const _native = (TY_DICT jn TY_DICT_NATIVE)
-
-declDict:U1    (_native jn                     SZ1, 0)
-declDict:U2    (_native jn                     SZ2, 0)
-declDict:U4    (_native jn                     SZ4, 0)
-declDict:Slot  (_native jn                     SZR, 0)
-declDict:I1    (_native jn TY_NATIVE_SIGNED jn SZ1, 0)
-declDict:I2    (_native jn TY_NATIVE_SIGNED jn SZ2, 0)
-declDict:I4    (_native jn TY_NATIVE_SIGNED jn SZ4, 0)
-declDict:ISlot (_native jn TY_NATIVE_SIGNED jn SZR, 0)
-$assertDictM(_native jn SZR) Slot
+declDict:U1    (TY_DICT jn TY_DICT_NATIVE,                       SZ1)
+declDict:U2    (TY_DICT jn TY_DICT_NATIVE,                       SZ2)
+declDict:U4    (TY_DICT jn TY_DICT_NATIVE,                       SZ4)
+declDict:Slot  (TY_DICT jn TY_DICT_NATIVE,                       SZR)
+declDict:I1    (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZ1)
+declDict:I2    (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZ2)
+declDict:I4    (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZ4)
+declDict:ISlot (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZR)
+$assertDictV(SZ1) U1
+$assertDictV(SZR) Slot
 
 pre FN isTyDict     ret((d_mGet(\node) msk META_TY_MASK) == TY_DICT)
 pre FN isDictNative ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_NATIVE)
 pre FN isDictStruct ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_STRUCT)
+$tAssert(isTyDict(dnode:U1))
+$tAssert(isDictNative(dnode:U1))
+
+pre FN tySz \ {key:&DNode -> szBytes}
+  assert(isTyDict(dup), E_intern)
+  IF(isDictNative(dup))
+    ret szIToSz(d_vGet(\key) msk SZ_MASK)
+  END
+  panic(E_unimpl) \ TODO: forward declaration struct sz, etc.
+$tAssertEq(1,     tySz(dnode:U1))
+$tAssertEq(2,     tySz(dnode:I2))
+$tAssertEq(RSIZE, tySz(dnode:ISlot))
+
+\ **********
+\ * [XX] function declaration syntax (var, inp, out)
+
+pre FN isFnAndSyn \ {&node}
+  retIfNot(dup)
+  IF(not isTyFn(dup)) drp; ret FALSE END
+  ret isFnSyn(\node);
+$tAssertNot(isFnAndSyn(dnode:isFnAndSyn))
+$tAssert   (isFnAndSyn(dnode:FN))
 
 pre FN countChr \ [chr -> numChr] and advance past them
   0\(chr, count) -> LOOP l0; 
@@ -186,22 +216,11 @@ pre FN countChr \ [chr -> numChr] and advance past them
   AGAIN l0
 $tAssertEq(countChr(0c&) & &&, 3)   $tAssertEq(countChr(0c&) 0)
 
-FN readTy \ [-> numRefs &DNode]
+FN parseTy \ [-> numRefs &DNode]
   $declVar(declL node,    0, RSIZE) $declEnd
   countChr(0c&); ret assert(isTyDict(dictRef(0) -> dup), E_needType)
-$tAssertEq(readTy &&U1, dnode:U1)   -> $tAssertEq(\numRefs, 2)
-$tAssertEq(readTy Slot, dnode:Slot) -> $tAssertEq(\numRefs, 0)
-
-\ TODO: callers need to instead get a reference to _typeSz
-\ Initial typesize implementation, will be replaced
-pre FN _typeSz \ [&Type -> szBytes]
-  assert(isDictNative(dup\type), E_intern)
-  ret szIToSz(d_mGet(\type) msk SZ_MASK)
-
-pre FN isFnAndSyn \ {&node}
-  retIfNot(dup)
-  IF(not isTyFn(dup)) drp; ret FALSE END
-  ret isFnSyn(\node);
+$tAssertEq(parseTy &&U1, dnode:U1)   -> $tAssertEq(\numRefs, 2)
+$tAssertEq(parseTy Slot, dnode:Slot) -> $tAssertEq(\numRefs, 0)
 
 pre FN _varImpl \ [meta]
   $declVar(declL meta, TY_VAR_INPUT, 1) $declEnd
@@ -210,13 +229,13 @@ pre FN _varImpl \ [meta]
   END
   tokenPlcSet(0); \ make dictRefMaybe a peek
   IF(GET meta)
-    declL -> colon -> readTy; \ {&Local isLocal=1 numRefs &Type}
+    declL -> colon -> parseTy; \ {&Local isLocal=1 numRefs &Type}
   ELSE
-    0, 1 -> _comment -> colon -> readTy; \ {NULL, isLocal=1, numRefs, &Type}
+    0, 1 -> _comment -> colon -> parseTy; \ {NULL, isLocal=1, numRefs, &Type}
   END
   \ TODO: register type
   IF(swp\numRefs) drp; RSIZE
-  ELSE  _typeSz(\type);  END \ {&Local isLocal szBytes}
+  ELSE  tySz(\type);  END \ {&Local isLocal szBytes}
 
   IF(GET meta)  GET meta -> swp -> declVar;
   ELSE \stk     drp; drp; drp; END
@@ -320,6 +339,7 @@ $tAssertEq(3, testDeclaredUsed;);
 \ * [4] if elif else, also $if ...
 $STORE_PUB
 
+\ cDat to Slc
 fn cToSlc stk(cdat: &U1) -> out(dat: &U1, len: U2) do (
   ret (inc(dup\cdat) \(cdat, dat) -> swp -> ft1(\cdat))
 )
@@ -400,11 +420,10 @@ $tAssertEq(0x44)
 fn testIfNow do (ret($if(0) do (4) else (0x3F + 3)))  $assertNoWs
 $tAssertEq(testIfNow, 0x42)
 
-$STORE_PUB
 
 \ **********
 \ * [5] struct
-\ Structs are a dict node with a value to a root node, and type to a typestream
+\ Structs are a dict node with a value to a root node, and type to a tyStream
 \ of the struct fields. The byte structure is:
 \
 \   numFields:U1 | ... fields
@@ -416,6 +435,7 @@ $STORE_PUB
 
 \ **********
 \ *   [5.a] utilities
+$STORE_PUB
 const LOC_LOCAL = 0;
 const LOC_PRIV  = 1;
 const LOC_PUB   = 2;
@@ -426,7 +446,7 @@ fn locBBA stk(l:U1) do ( \ -> out(_:&BBA)
   ret GET G_bbaPub;
 )
 
-fn nameLoc -> out(loc:U1) do ( \ location names are stored
+fn nameLoc -> out(loc:U1) do ( \ where location names are stored
   if(C_LOCAL    msk GET G_cstate) do ret LOC_LOCAL
   if(C_PUB_NAME msk GET G_cstate) do ret LOC_PUB else ret LOC_PRIV;
 )
@@ -435,238 +455,110 @@ fn bumpName stk(size:U2, aligned:U1) -> out(_: &U1) do (
   ret BBA_bump(\size, \aligned, locBBA(nameLoc));
 )
 
-fn needUnalignedSz stk(ref:Slot) -> out(sz:U1) do (
-
-  \ if(dup\ref < 0x100)      do (drp; ret 1;)
-  \ if(   \ref < inc 0xFFFF) do (     ret 2;)
-  \ ret 4;
-)
 
 \ **********
 \ *   [5.a] struct declaration
+pre fn needSzI do ( \ (value -> neededSzI)
+  IF(dup\value < 0x100  ) drp; ret SZ1; END
+  IF(   \value <= 0xFFFF)      ret SZ2; END
+                               ret SZ4;
+)
+$tAssertEq(SZ1, needSzI(0))      $tAssertEq(SZ1, needSzI(1))
+$tAssertEq(SZ2, needSzI(0x100))  $tAssertEq(SZ2, needSzI(0xFFFF))
+$tAssertEq(SZ4, needSzI(0x10000))
 
-large fn _field do ( \ compile a struct field, which may be a block of fields.
+pre fn _constructedMeta stk(numRefs:U1) inp(key:Slot) -> out(m:U1) do (
+  \numRefs
+  jn META_CONSTRUCTED
+  jn (szIToSz(needSzI(GET key)) shl META_CONSTRUCTED_TSZ_SHIFT) \ TSZ
+  -> ret;
+)
+
+\ Store current token to name memory
+fn storeToken -> out(cname: &U1) do (
+  bumpName(tokenPlc + 1, FALSE) \ {&cDat}
+  memMove(inc(dup;\cDat), tokenDat, tokenPlc) \ {&cDat}
+  sr1(tokenPlc, ovr\cDat)
+  ret \cDat;
+)
+
+$STORE_PRIV
+fn testStoreToken do (
+  scan; storeToken -> tAssertEq(ft1(dup\name), 7)
+  ret tAssert(slcEq(cToSlc(\name), |testing|))
+)
+$testStoreToken testing
+
+$STORE_PUB
+
+\ Compile a struct field, which may be a block of fields.
+large fn _field do (
   var compFn: &Slot; updateCompFn(fnRef:_field) -> SET compFn;
   IF(isFnAndSyn(dictRefMaybe(0)))
     single(FALSE) \ next token is syn, run it (it may run us)
   ELSE
-    var ref: &U1; d_tyGet(GET G_curNode) -> SET ref;
+    var ref: &U1; d_vGet(GET G_curNode) -> SET ref;
     sr1(inc ft1(GET ref), GET ref) \ struct.ty.numFields += 1
     \ Reserve then move cfield name
     bumpName(1, FALSE) -> SET ref; bumpName(tokenPlc + 1, FALSE) \ {&cname}
     memMove(inc(\cname), tokenDat, tokenPlc); \ move cfield name
     sr1(tokenPlc, inc GET ref);               \ set cfield count
-    colon; var tyNode: &Slot; readTy -> SET tyNode; \ {numRefs}
-    \ TODO: this isn't quite right... this doesn't handle destructuring other structs.
-    sr1(\numRefs jn META_NAME  \ store the ty meta
-        jn (d_mGet(GET tyNode) msk SZ_MASK)
-        GET ref)
+    colon; var tyNode: &Slot; parseTy -> SET tyNode; \ {numRefs}
+
+    \ store the tyItem meta, then the tyNode reference
+    sr1(_constructedMeta(\numRefs, GET tyNode) jn META_NAME, GET ref)
+    GET tyNode -> needSzI(GET tyNode) -> bumpName(szIToSz(dup\szI), FALSE)
+    -> swp -> srBeSzI(\tyNode, \(&tyNode), \szI)
   END
   GET compFn -> SET G_compFn; ret;
 )
 
-large syn fn struct do (  notNow;
-  dictAdd(NULL, $L(C_TYPED jn TY_DICT jn TY_DICT_STRUCT)) -> SET G_curNode;
-  var ty: &U1; bumpName(1, FALSE\aligned) -> SET ty;
-  d_tySet(GET ty, GET G_curNode);
-  sr1(0\numFields, GET ty);
-  _field;
-  ret;
-)
-
-\ **********
-\ *   [5.c] tyitem utilities
-
-struct DNode (
-  l: &DNode;  r: &DNode
-  ckey: &U1;  v: Slot;    m: U2;
-)
-
-fn isTyped stk(n: &DNode) -> out(_:U1) do ret(d_mGet(\n) msk C_TYPED)
-
-fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
-  isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
-)
-$tAssert(isTyStruct(dnode:DNode))
-
-
-fn tyitem_cname stk(ty: &U1) -> out(cname: &U1) do (
-  if(ft1(dup\ty) msk META_NAME) do ( ret inc\ty; )
-  else                             ( drp\ty; ret NULL; )
-)
-
-\ Return reference to the data (either ref or native byte)
-fn tyitem_dat stk(ty: &U1) -> out(dat: &U1) do (
-  if(ft1(dup\ty) msk META_NAME) do ( \ skip name
-    ret (dup\ty + inc2 ft1(inc\ty;)) \ ty + nameCount+2
-  ) ret inc\ty;
-)
-
-fn tyitem_node stk(ty: &U1) -> out(node: &DNode) do (
-  assert(dup\ty msk META_CONSTRUCTED, E_intern);
-  ft1(dup\ty) msk META_TSZ_MSK shr META_TSZ_SHIFT \ {ty tsz}
-  ret(swp -> tyitem_dat(\ty) -> swp -> jmp:ftBeN(\tdat, \tsz))
-)
-
-declare large fn struct_sz stk(s: &DNode) -> out(sz:U2) do;
-
-\ Get the size of a type item (native or struct).
-fn tyitem_sz stk(ty: &U1) -> out(sz: U2) do (
-  if(ft1(dup\tyitem) msk META_CONSTRUCTED) do
-    ( ret struct_sz(tyitem_node(\ty)) )
-  ft1(tyitem_dat(\ty))
-  -> dv_log(dup, 0x1050, 2, 0x10);
-  ret szIToSz(\dat msk SZ_MASK);
-)
-
-\ Point to the next tyitem in the tystream.
-fn tyitemNext inp(ty: &U1) -> out(_: &U1) do (
-  GET ty; \ {&out}
-  if(not (ft1(GET ty) msk META_CONSTRUCTED)) do (
-    \out + ((META_TSZ_MSK msk ft1(GET ty)) shr META_TSZ_SHIFT)
-  )
-  if(ft1(GET ty) msk META_NAME) do ( \out + ft1(inc GET ty) )
-  ret \out;
-)
-
-\ **********
-\ *   [5.d] struct field walker
-fn walkTy stk(ty: &U1) inp(ctx: &Slot, f: &Slot) do (
-  \ type of f: fn [&tyitem &ctx -> stop:Bool]
-  var numFields: U2; ft1(dup\ty) -> SET numFields;
-  inc\ty; LOOP l0  \ {&tyitem}
-    if(not GET numFields) do ( drp\tyitem; ret; )
-    (dec GET numFields) -> SET numFields;
-    if(xlw(dup\tyitem, GET ctx, GET f)) do ( drp\tyitem; ret; )
-    tyitemNext(\ty);
-  AGAIN l0
-)
-
-\ Bump the size by the field size
-fn bumpField inp(curSz: U2, fieldSz: U2) do (
-  ret (align(GET curSz, reqAlign(GET fieldSz)) + GET fieldSz);
-)
-
-\ Walk a struct, updating the outSz for each tyitem.
-fn _structSzWalker inp(tyitem: &U1, outSz: &U2) do (
-  dv_log(tyitem_sz(GET tyitem), 0x1040, 2, 0x10)
-  sr2(bumpField(ft2(GET outSz), tyitem_sz(GET tyitem)), GET outSz);
-  dv_log(ft2(GET outSz), 0x1042, 2, 0x10)
-  ret FALSE;
-)
-
-fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
-  var sz: U2; 0 -> SET sz;
-  assert(isTyStruct(dup\s, E_type));
-  dv_log(0x1000, 1, 0x10);
-  walkTy(d_tyGet(\s), REF sz, fnRef:_structSzWalker);
-  ret align(GET sz, reqAlign(GET sz));
-)
-
-struct Ctx ( offset: U2, done: U1, tyitem: &U1 )
-
-$tAssertEq(8, struct_sz(dnode:Ctx));
-
-\ fn _fieldNameWalker inp(tyitem: &U1, ctx: &U2) do (
-\   if(tokenEq(cToSlc(tyitemCName(GET tyitem)))) do (
-\     assert(fto:2(GET ctx), E_struct) \ field not yet found
-\ 
-\     \ 1. align current type and set as offset
-\     \ 2. update done=true
-\     \ 3. update ctx.tyitem
-\     fto:RSIZE(GET ctx) 
-\ 
-\     ft2(GET ctx) jn 0x8000 
-\ 
-\     if(ft2(dup\ctx) msk 0x8000) do ( drp; drp; ret; )
-\     
-\   ) drp\tyitem; drp\ctx; ret;
-\ 
-\ )
-
-\ fn _fieldNameWalker stk(tyitem: &U1, ctx: &U1) do (
-\   swp;
-\   if(tokenEq(cToSlc(tyitemCName(dup\tyitem)))) do (
-\     swp -> srR(\tyitem, \ctx); ret;
-\   ) drp\tyitem; drp\ctx;       ret;
+\ large syn fn struct do (  notNow;
+\   dictAdd(NULL, $L(C_TYPED jn TY_DICT jn TY_DICT_STRUCT)) -> SET G_curNode;
+\   var ty: &U1; bumpName(1, FALSE\aligned) -> SET ty;
+\   d_vSet(GET ty, GET G_curNode);
+\   sr1(0\numFields, GET ty);
+\   _field;
+\   ret;
 \ )
 \ 
+\ pub struct DNode (
+\   l: &DNode;
+\   r: &DNode;
+\   ckey: &U1;  v: Slot;    m: U2;
+\ )
 \ 
-\ \ offsetOf:MyStruct.myField
-\ syn fn offsetOf do ( notNow;
-\   colon; dictRef(NULL) \ {&Struct}
-\   assert(isTyStruct(dup, E_type)); expectToken(SLC_DOT);
-\   scan; structField(\struct)
+\ fn isTyped stk(n: &DNode) -> out(_:U1) do ret(d_mGet(\n) msk C_TYPED)
+\ fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
+\   isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
+\ )
+\ $tAssertNot(isTyStruct(dnode:U1))
+\ $tAssert   (isTyStruct(dnode:DNode))
+\ 
+\ \ **********
+\ \ *   [5.b] Working with a tystream
+\ 
+\ \ Return reference to the data (either ref or native byte)
+\ fn tyItem_dat stk(ty: &U1) -> out(dat: &U1) do (
+\   if(ft1(dup\ty) msk META_NAME) do ( \ skip name
+\     ret (dup\ty + inc2 ft1(inc\ty;)) \ ty + nameCount+2
+\   ) ret inc\ty;
 \ )
 
-\ **********
-\ * [6] dot compiler
-\
-\ There are a few variations on the dot compiler:
-\  - dot compiler: for accessing locals, globals, fnrefs, ec
-\  - hash compiler: for fields and methods of types on the stack
-\
-\ Rule: Dot compiler syntax, as long as there are dots, it will consume them:
-\
-\ .a            \ get locals, globals, constants
-\ .a.b          \ get local/global "field" (struct, module)
-\ .a      = ()  \ set locals, globals
-\ .a.b    = ()  \ set local/global "field"
-\
-\ .&a           \ reference to local/global
-\ .&a.b         \ reference to local/global "field"
-\ .@@a          \ de-reference local/global
-\ .@a     = ()  \ de-reference and asign local/global
-\
-\ Hash compiler syntax uses the type on the typestack. It has the same syntax.
-\ The above examples with a single item are invalid. Otherwise:
-\
-\ \(.a) #b      \ get stk field (struct)
-\ \(.a) #&b     \ get ref to stk field (struct)
-\ \(.a) #@b     \ dereference stk field (struct)
-
-
-\ declDict:DotMeta(TY_DICT jn TY_DICT_STRUCT, 0)
-\ \ The strategy is to use recursion to build up DotMeta
-\ \   offset: U2, \ current built-up offset from the base.
-\ \   refs: U1,   \ number of `&`
-\ \   ats: U1,    \ number of `@`
-\ \   \ the starting node, which has the base type (local, global, etc)
-\ \   base: &DNode,
-\ const DM_offset = 0;
-\ const DM_refs = 2;
-\ const DM_ats = 3;
-\ const DM_base = 4;
-
-\ This is quickly exploding in complexity... use the strategy mentioned above.
-\ large fn _dot inp(root: &DNode, offset: U2, asNow:U1) do (
-\   var refs: U1;  var ats: U1;
-\   var node: &DNode;
-\   countChr(0c&) -> SET refs;  countChr(0c@) -> SET ats;
-\   (countChr(0c&) + GET refs) -> SET refs;
-\   if((GET refs > 0) and (GET ats > 0)) do panic(E_dot);
-\   assert(GET refs < 2, E_dot);
-\   dictRef(GET root) -> SET node;
-\ 
-\   \ TODO: this isn't quite right... the single needs to get
-\   \ from the root I give it!
-\   if(isTyConst(GET node)) do ret single(GET asNow);
-\ 
-\   if(isTyDict(GET node)) do (
-\     GET offset + 
-\     if(scan; tokenEq(SLC_DOT)) do ret _dot(GET node, GET asNow);
-\     \ Else: struct value
-\     tokenPlcSet(0) \ reset scan
-\     if(isDictStruct(
-\     unimpl; \ struct value, aka an offset.
-\   )
-\ 
-\   \ Else: get the value
-\   if(GET refs) do jmp:_ref(GET node, GET asNow)
-\ 
+\ \ Return the dictionary node for the tyItem
+\ fn tyItem_node stk(ty: &U1) -> out(node: &DNode) do (
+\   ft1(dup) \ tyMeta
+\   assert(dup\tyMeta msk META_CONSTRUCTED, E_intern);
+\   dup\tyMeta msk META_TSZ_MSK shr META_TSZ_SHIFT \ {ty tsz}
+\   ret(swp -> tyItem_dat(\ty) -> swp -> jmp:ftBeN(\tdat, \tsz))
 \ )
 
-\ pub syn large fn . inp asNow:U1 do (
-\ )
 
-$assertNoWs
+\ $STORE_PRIV
+\ 
+\ $tAssert(isTyStruct(dnode:DNode));
+\ $tAssertNot(ft1(d_tyGet(dnode:U1)) msk META_CONSTRUCTED)
+\ $tAssert(ft1(d_tyGet(dnode:DNode)) msk META_CONSTRUCTED)
+\ \ $testStruct;
+\ 
+\ $STORE_PUB

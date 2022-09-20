@@ -79,8 +79,8 @@ $pub @TY_FN@TY_FN_NOW^JN :NEW_BLOCK_PRIV \ start new private block
   .R%FTGL@G_bbaPriv.2, $BBA_newBlock %RET
 
 \ Using DV instr, we define a way to make assertions for tests.
-     @_FP@TY_FN_INLINE^JN :dv_log    .1#2, %DV@DV_log,    %RET
-$pub @_FP@TY_FN_INLINE^JN  :assertEq .1#2, %DV@DV_assert, %RET \ {l r err}
+     @_FP@TY_FN_INLINE^JN :dv_log   .1#2, %DV@DV_log,    %RET
+$pub @_FP@TY_FN_INLINE^JN :assertEq .1#2, %DV@DV_assert, %RET \ {l r err}
 $pub @_FP :assertNot %SLIT %SWP $assertEq %RET \ { l err} assert l == 0
 $pub @_FP :assert %SWP %NOT %SWP %SLIT %SWP $assertEq %RET \ { l err} assert l != 0
 $pub @_FP :assertNotNull .2%LIT@E_null, .2%JMPL@assert,
@@ -459,6 +459,12 @@ $pre $FN srSzI \ {value &addr szI}
        @SZ4$L %EQ $IF      .4%SR %RET $END
   @E_sz$L $_xsl panic
 
+$pre $FN srBeSzI \ {value &addr szI}
+  %DUP @SZ1$L %EQ $IF %DRP .1%SRBE %RET $END
+  %DUP @SZ2$L %EQ $IF %DRP .2%SRBE %RET $END
+       @SZ4$L %EQ $IF      .4%SRBE %RET $END
+  @E_sz$L $_xsl panic
+
 $pre $FN xSzI \ {&DNode -> szI}: size requirement of calling DNode
   $d_vGet $_xsl isCurMod $IF  @SZ2$L %RET  $END  @SZR$L %RET
 
@@ -716,7 +722,7 @@ $large $FN bstWalk
   $declL ctx  #0 @RSIZE $declVar
   $declL node #0 @RSIZE $declVar
   %SWP $SET ctx  %DUP  $SET node $retIfNot
-  \\ perform DFS preorder
+  \ perform DFS preorder
   $GET ctx $GET node  $xx:_walker
   $GET ctx $GET node  .R%FTO@DN_l$h1  $xx:bstWalk
   $GET ctx $GET node  .R%FTO@DN_r$h1  $xx:bstWalk  %RET
@@ -938,7 +944,7 @@ $pre $FN single
   $declL node  #0 @RSIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
   $SET asNow
-  $GET asNow $xx:_compConstant %DUP 
+  $GET asNow $xx:_compConstant %DUP
   $SET node %RETZ
 
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
@@ -977,9 +983,7 @@ $FN _comment \ used in '\' to make next token ignored (i.e. a comment)
   $declL compFn  #0  @RSIZE $declVar $declEnd
   @_comment$L  $xx:updateCompFn $SET compFn
   $xx:scanNoEof \ ignore token, unless it's an open parenthesis
-  $tokenDat .1%FT #28$L %EQ $IF
-    @TRUE$L $xx:single
-  $END
+  $tokenDat .1%FT #28$L %EQ $IF @TRUE$L $xx:single $END
   $GET compFn $SET G_compFn %RET
 
 \ Comment, of which there are three forms.

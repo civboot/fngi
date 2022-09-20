@@ -54,7 +54,7 @@
 #define usrLog(lvl, format, args...) if(g->logLvlUsr & lvl) { fprintf (stderr, format, args); }
 
 #define R0   return 0;
-#define RV  return;
+#define RV   return;
 #define UNREACH   if(1) { eprint("!!! unreachable\n"); assert(false); }
 #define ASSERT_EQ(E, CODE) if(1) { \
   U4 __result = CODE; \
@@ -1609,9 +1609,13 @@ static inline void executeDV(U1 dv) {
     } case DV_memCmp: {
         U2 len = WS_POP();
         void* r = bndsChk(len, WS_POP()); void* l = bndsChk(len, WS_POP());
+        eprintf("??? memCmp: %.*s == %.*s\n", len, l, len, r);
         return WS_PUSH(memcmp(l, r, len));
     } case DV_memMove: { // {dst src len}
-        U2 len = WS_POP(); Ref src = WS_POP(); return _memmove(WS_POP(), src, len);
+        U2 len = WS_POP(); Ref src = WS_POP(); Ref dst = WS_POP();
+        eprintf("??? memMove: %X = %X [len=%u]\n", dst, src, len);
+        _memmove(dst, src, len);
+        return;
     } case DV_log: {
       U1 lvl = WS_POP(); U2 len = WS_POP();
       if(g->logLvlUsr & lvl) {
