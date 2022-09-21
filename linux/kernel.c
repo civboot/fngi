@@ -1609,11 +1609,9 @@ static inline void executeDV(U1 dv) {
     } case DV_memCmp: {
         U2 len = WS_POP();
         void* r = bndsChk(len, WS_POP()); void* l = bndsChk(len, WS_POP());
-        eprintf("??? memCmp: %.*s == %.*s\n", len, l, len, r);
         return WS_PUSH(memcmp(l, r, len));
     } case DV_memMove: { // {dst src len}
         U2 len = WS_POP(); Ref src = WS_POP(); Ref dst = WS_POP();
-        eprintf("??? memMove: %X = %X [len=%u]\n", dst, src, len);
         _memmove(dst, src, len);
         return;
     } case DV_log: {
