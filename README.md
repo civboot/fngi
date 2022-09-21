@@ -80,22 +80,27 @@ along the way, some of them complete.
   etc), along with several other expected pieces.
 - [X] rewrite the kernel to allow for modules/etc
   - [X] Create a 4k block allocator and arena-buddy-allocator.
-- [X] Write an initial "untyped" version of `fn` and `if`
-  - [ ] Implement forward declaration of functions
-- [ ] Write initial way to define namespaces, structs and enums. (`STRUCT`,
-      ENUM`, etc)
-- [ ] Write dot compiler (variable modifier).
-- [ ] Create an ultra-basic text-editor.
-- [ ] Create an ultra-basic CLI built on the text-editor.
-- [ ] Implement a tyStk (type checking)
-- [ ] Write `fn`, `if`, `while` using tyStk to and aquire type safety.
-- [ ] Implement core OS functions to move and modify files and implement a
-      standardized way to communicate user-input and display info with the
-      harness.
-- [ ] Write zoat in fngi (see [zoa][zoa] project).
-- [ ] Implement zoac (see [zoa][zoa] project).
-- [ ] Implement zosh (see [zoa][zoa] project).
-- [ ] Write a glorious text editor, zat
+- [X] Write `fn`, `if`, `while` (untyped
+  - [X] Implement forward declaration of functions
+- [X] define struct and native types
+- [ ] Write dot compiler (variable modifier)
+- [ ] Create core modules
+  - [ ] String formatting
+  - [ ] String printing
+  - [ ] Regex
+  - [ ] File modification
+- [ ] Create an ultra-basic text-editor (zat)
+- [ ] Extend zat to create an ultra-basic CLI
+- [ ] Implement a tyStk (type checking) and hook into `fn`, `if`, etc
+- [ ] Write zoat in fngi (see [zoa][zoa] project)
+- [ ] Implement zoac (see [zoa][zoa] project)
+- [ ] Implement zosh (see [zoa][zoa] project)
+- [ ] Extend zat to make it usable and glorious
+- [ ] Design and build a cross-compiler to compile spor -> IR -> native assembly
+- [ ] Create an embedded operating system (RISC-V, ARM, etc)
+- [ ] Create custom (stack-based) hardware and port the operating system
+
+See [civboot.org](http://civboot.org) for future goals.
 
 [zoa]: http://github.com/vitiral/zoa
 
