@@ -125,24 +125,23 @@ pub syn FN declTy ret (
 
 \ **********
 \ * [XX] Type Scafolding and Native Type Implementation
-\ Types are implemented from TY_DICT Dictionary Nodes. They have the following meta:
+\ Types are implemented from TY_DICT Dictionary Nodes, with meta:
 \
 \ 11-- -CCC C=category (Native, Bitmap, Struct, etc)
 \
-\ The "value" in the DNode is then:
-\ * MOD / SUBMOD: pointer to the root of the sub-dictionary.
+\ They also have C_TYPED set, which means they have a "ty" value:
+\ * MOD / SUBMOD: C_TYPED must be 0. Value is the pointer to the sub-dictionary.
 \ * NATIVE: a single tyItem byte (with C=0 N=0)
 \ * else: a pointer to a tyStream
 \
-\ A tyStream is a single byte specifying the number of tyItems, followed by
-\ the tyItems (unaligned).
-\
-\ All tyItems start with a byte:
-\    CN-- ----   C=constructed  N=named
+\ A tyStream starts with a single byte specifying the number of tyItems,
+\ followed by tyItem elements (unaligned):
+\    CN-- ----   C=constructed  N=named   \ first tyItem byte
 \
 \ If N=1, then the next bytes are the counted name (U1 length followed by data)
 \
-\ If C=0, it is not constructed, meaning it is a native type. In this case:
+\ If C=0, it is not constructed, meaning it is a native type. In this case
+\ the byte is:
 \    0NZZ SRRR  N=named  Z=size  R=reference depth  S=signed
 \ - (Z) The sizes are the same as instructions
 \ - (R) The reference depth is a count of the number of `&` in the type.
@@ -214,7 +213,8 @@ pub syn FN fn
   LOOP l0
     dictRefMaybe(0) \ {&Node}
     IF(tokenEq(SLC_DO)) \ function body
-      drp\node; declInpEnd; scan; single(FALSE); ret declFnEnd;
+      drp\node; declInpEnd; scan; single(FALSE);
+      ret declFnEnd;
     END
     assert(isFnAndSyn(\node), E_fnSyn); single(FALSE) \ compile syn fns
   AGAIN l0
@@ -557,25 +557,34 @@ $tAssertEq(ft1(3 + d_tyGet(dnode:DNode)), 0cl)
 \ **********
 \ *   [5.b] Working with a tystream
 
+inline fn tyItem_refs stk(tyItem: &U1) -> out(refs:U1) do ret
+  ( $h1(3) ft1(\tyItem) msk META_REF_MSK )
+
+inline fn tyItem_isConstructed stk(tyItem: &U1) -> out(_:U1) do ret
+  ( $h1(4) ft1(\tyItem) msk META_CONSTRUCTED )
+
+inline fn tyItem_isNamed stk(tyItem: &U1) -> out(_:U1) do ret
+  ( $h1(4) ft1(\tyItem) msk META_NAMED )
+
 \ Skip a name to get the type reference
 fn tyItem_skipName stk(tyItem: &U1) -> out(dat: &U1) do (
-  if(ft1(dup\tyItem) msk META_NAMED) do ( \ skip name
+  if tyItem_isNamed(dup\tyItem) do ( \ skip name
     ret (dup\tyItem + inc2 ft1(inc\tyItem;)) \ tyItem + nameCount+2
   ) ret inc\tyItem;
 )
 
 \ Return the dictionary node for the tyItem
 fn tyItem_node inp(tyItem: &U1) -> out(node: &DNode) do ret (
-  assert(ft1(GET tyItem) msk META_CONSTRUCTED, 0xB002\E_intern);
+  assert(tyItem_isConstructed(GET tyItem), 0xB002\E_intern);
   ftBeSzI(tyItem_skipName(GET tyItem), ft1(GET tyItem) msk SZ_MASK)
 )
 $tAssertEq(tyItem_node(inc d_tyGet(dnode:DNode)), dnode:DNode)
 
 \ Get the size of a type item (native or struct).
 fn tyItem_sz stk(tyItem: &U1) -> out(sz: U2) do ret (
-  if(ft1(dup\tyItem) msk META_REF_MSK) do
+  if(tyItem_refs(dup\tyItem)) do
     ( drp -> ret RSIZE; )
-  if (ft1(dup\tyItem) msk META_CONSTRUCTED) do
+  if tyItem_isConstructed(dup\tyItem) do
     ret tySz(tyItem_node(\tyItem))
   szIToSz(ft1(\tyItem) msk SZ_MASK)
 )
@@ -584,7 +593,7 @@ fn tyItem_sz stk(tyItem: &U1) -> out(sz: U2) do ret (
 \ Point to the next tyItem in the tyItems.
 fn tyItem_next inp(tyItem: &U1) -> out(_: &U1) do ret (
   tyItem_skipName(GET tyItem) \ {&out}
-  if(ft1(GET tyItem) msk META_CONSTRUCTED) do (
+  if tyItem_isConstructed(GET tyItem) do (
     \out + szIToSz(ft1(GET tyItem) msk SZ_MASK) \ skip ref
   )
 )
@@ -658,7 +667,7 @@ $tAssertEq(8,       struct_sz(dnode:Ctx));
 \ *   [XX.e] struct field name offsets
 $NEW_BLOCK_PUB
 fn tyItem_cName stk(tyItem: &U1) -> out(cName: &U1) do ret (
-  assert(ft1(dup\tyItem) msk META_NAMED, 0xB004\E_intern) -> inc\tyItem;
+  assert(tyItem_isNamed(dup\tyItem), 0xB004\E_intern) -> inc\tyItem;
 )
 
 \ Called by tyItems_walk for walking struct fields.
@@ -676,57 +685,320 @@ large fn _fieldNameWalker inp(tyItem: &U1, ctx: &Ctx) -> out(done:U1) do (
   ret FALSE\done;
 )
 
-large fn struct_fieldCtx stk(dnode: &DNode) -> out(offset:U2, tyItem: &U1) do (
+\ Get information about a struct field
+large fn struct_fieldCtx stk(dnode: &DNode) inp(ctx: &Ctx) do ret (
   assert(isTyStruct(dup\dnode), E_type); scan;
-  var ctx: Ctx; memClr(REF ctx, $L(tySz(dnode:Ctx)));
   assert(
-    tyItems_walk(d_tyGet(\node), REF ctx, fnRef:_fieldNameWalker),
+    tyItems_walk(d_tyGet(\node), GET ctx, fnRef:_fieldNameWalker),
     E_cNoKey);
-  ret (ft2(REF ctx), ftoR:RSIZE(REF ctx));
 )
 
-\ large fn struct_fieldOffset stk(dnode: &DNode) -> out(offset:U2) do (
-\   assert(isTyStruct(dup\dnode), E_type); scan;
-\   var ctx: Ctx; memClr(REF ctx, $L(tySz(dnode:Ctx)));
-\   assert(
-\     tyItems_walk(d_tyGet(\node), REF ctx, fnRef:_fieldNameWalker),
-\     E_cNoKey);
-\   ret ft2(REF ctx); \ offset
-\ )
+fn consumeDot -> out(hasDot:U1) do (
+  if(scan; not tokenEq(SLC_DOT)) do
+    ( tokenPlcSet(0); ret FALSE; )
+  ret TRUE;
+)
 
-$tAssertEq(0,       struct_fieldCtx(dnode:DNode) l -> drp\tyItem)
-$tAssertEq(16\0x10, struct_fieldCtx(dnode:DNode) m -> drp\tyItem)
+\ Return the node from the ctx and clear it (for safety)
+large fn _ctxPopNode inp(ctx: &Ctx) -> out(_: &DNode) do ret (
+  tyItem_node(ftoR:RSIZE(GET ctx)) \ {&Node}
+  sroR:RSIZE(0, GET ctx)
+)
 
-\ Walk a series of dots (a.foo.bar.baz), returning the last found node and
-\ whether there are unrecognized symbols after the dot (i.e. struct field)
-fn walkDots -> out(n: &DNode, isLast:U1) do (
-  NULL\curNode
+\ Follow dots to find a field's offset and type
+large fn struct_ctx inp(node: &DNode) -> out(offset:U2, tyItem: &U1) do (
+  var ctxOffset: U2;  var ctxTyItem: &U1;
+  0 -> SET ctxOffset; 0 -> SET ctxTyItem;
+  if(not consumeDot) do ret (0, NULL); \ no dots, no offset or field
+  struct_fieldCtx(GET node, REF ctxOffset) \ find first field
   LOOP l0
-    dictRefMaybe(dup\curNode)  \ {prevNode curNode}
-    if(not dup\curNode) do (
-      drp\curNode; tokenPlcSet(0);
-      ret(\prevNode, FALSE\isLast);
-    )
-    swp -> drp\prevNode; \ {curNode}
-    if(scan; not tokenEq(SLC_DOT)) do ( \ check if next symbol is '.'
-      tokenPlcSet(0);
-      ret(\curNode, TRUE\isLast);
-    )
-    assert(isTyDict(dup\curNode), E_dot);
+    \ Loop until there are no more dots. That field + offset is returned.
+    if(not consumeDot) do ret (GET ctxOffset, GET ctxTyItem)
+    tyItem_node(GET ctxTyItem) -> SET node;
+    0 -> SET ctxTyItem;
+    struct_fieldCtx(GET node, REF ctxOffset) \ find first field
   AGAIN l0
 )
-
-fn bracketO do ret ( expectToken(SLC_BRACK_O, E_bracket) -> drp; )
-fn bracketC do ret ( expectToken(SLC_BRACK_C, E_bracket) -> drp; )
-
-\ offsetOf[MyStruct.myField]
-syn fn offsetOf do ret (
-  bracketO; walkDots -> assertNot(\isLast, E_type); \ {asNow &DNodeStruct}
-  struct_fieldCtx(\dnode) -> drp\tyItem; bracketC;
-  swp -> retIf(\asNow) -> jmp:L;
-)
-$tAssertEq(0, offsetOf[DNode.l])  $tAssertEq(16, offsetOf[DNode.m])
+$tAssertEq(0,    struct_ctx(dnode:DNode).l -> drp\tyItem)
+$tAssertEq(0x10, struct_ctx(dnode:DNode).m -> drp\tyItem)
 
 $NEW_BLOCK_PRIV
 
-\ TODO: szOf[any.type]
+\ **********
+\ *   [XX] The dot compiler
+\ The dot compiler allows us to use simpler syntax for (primarily) local
+\ variables. It is the PRIMARY "syntax tree" of fngi, with the rest
+\ being almost trivial concrete syntax around single tokens.
+\
+\ The dot compiler is invoked with the '.' token. For example:
+\
+\   .var          \ variable fetch
+\   .var = (...)  \ variable store
+\   .&var         \ variable reference (also function reference)
+\   .@var         \ variable dereference
+\   .@var = (...) \ variable dereference store
+\
+\   .var.field           \ variable field fetch
+\   .var.field = (...)   \ variable field store
+\   .&var.field          \ variable field reference
+\   .@var.field = (...)  \ variable field dereference store
+
+\ Okay here's what we do. The first token decides everything.
+\ 1. If it's a local/global then it's just a lookup of field offset
+\    (offset+type+references)
+\ 2. Anything else, it's a dictionary lookup (NEVER a field)
+
+\ IGNORE BELOW (probably)
+\ Agh... I don't know how to do this.
+\ WHAT exactly do I need to do? There are so many damn requirements here...
+\ it is the OPPOSITE of simple!
+\
+\ Here's the first problem: I'm overloading this to do:
+\ 1. local value and local field lookup (deep-struct as well!)
+\ 2. local value and field setting (deep-struct as well!). I really don't think
+\    this is even POSSIBLE without a syntax tree. If it is possible, it would be
+\    such an enourmous pain I can't even begin!
+\ 3. dictionary lookup, finding a function in a module (or struct!)
+\ 4. god knows what else I wanted to do. Method lookup? Variant lookup?
+\
+\ This is WAY too much. A few notes:
+\ 1. Following a bunch of dots on a TY_DICT is TRIVIAL. I could do that in
+\    the base compiler whenever it encounters a dict type, and that is exactly what I
+\    SHOULD do. It would effectively only find functions and constants.
+\    - Alternatively: if the first item is a TY_DICT I could do that, otherwise
+\      do locals/etc. But meh, I don't like that!
+\ 2. '.' should just lookup value. Setting a value NEEDS to be done some other way,
+\    other
+
+\ Remove refs until there are 0 or 1. This allows FTO/FTLL/FTGL to work.
+\ if/when a reference is fetched, offset will be set to 0
+fn autoDeref stk(offset:U1, refs:U1) -> out(offset:U1, newRefs:U1) do (
+  LOOP l0
+    retIf(dup\refs < 2)
+    if(swp -> dup\offset) do (
+      h1($L(SZR + FTO)) -> h1(\offset) -> 0\offset
+    ) else (
+      h1($L(SZR + FT))
+    ) -> swp -> dec;\refs
+  AGAIN l0
+)
+
+$STORE_PRIV
+$(
+  autoDeref(4, 0) -> swp -> tAssertEq(4) -> tAssertEq(0)
+  autoDeref(4, 1) -> swp -> tAssertEq(4) -> tAssertEq(1)
+  autoDeref(4, 2) -> swp -> tAssertEq(0) -> tAssertEq(1)
+  autoDeref(4, 3) -> swp -> tAssertEq(0) -> tAssertEq(1)
+)
+$STORE_PUB
+
+\ Compile a deref. The final deref will use tySzI
+fn fullDeref inp(tySzI:U1, tyRefs:U1, offset:U1, derefs:U1) do (
+  assert(GET derefs <= GET tyRefs, E_cBadRefs)
+  LOOP l0
+    retIfNot(GET derefs)
+    if(GET tyRefs == 1) do (
+      assert(GET tySzI != 0xFF, E_cBadRefs)
+      GET tySzI
+    ) else SZR \ {szI}
+
+    if(GET offset) do (
+      h1(\szI + FTO); h1(GET offset);
+    ) else h1(\szI + FT);
+    dec GET derefs -> SET derefs;
+    dec GET tyRefs -> SET tyRefs;
+  AGAIN l0
+)
+
+\ Walk the struct dots, i.e: .myStruct.fieldStruct.field
+\ - Continue to add local offset (in Ctx) until a reference type is
+\   encountered.
+\ - When a reference is encountered, it needs to be auto-derefed UNLESS it is
+\   the last field.
+\ - The final field needs to be handled appropriately depending on it's type
+\   - If it's a reference, just return the local offset OR increment the
+\     reference (depending on whether references were followed)
+\   - If it's a value, perform an appropriate fetch
+\ - Once that is done, perform explicit derefs
+large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
+  var ctxOffset: U2;  var ctxTyItem: &U1;
+  0 -> SET ctxOffset; 0 -> SET ctxTyItem;
+
+  var varRefs: U1; d_vGet(GET node) msk TY_VAR_REF -> SET varRefs;
+  var isLocal: U1; TRUE -> SET isLocal;
+
+  consumeDot -> BREAK0 b0
+  struct_fieldCtx(GET node, REF ctxOffset) \ find first field
+  LOOP l0
+    \ At this point there is either a local or a single-reference value.
+    \ We need to get the next field. There are a few possibilities:
+    \  1. There is no next field -> we break to handle the value.
+    \  2. The next field item is an embedded struct -> we increment offset.
+    \     This works whether isLocal is true/false
+    \  3. The next field item is a reference. We update the number of
+    \     references appropriately.
+    consumeDot -> BREAK0 b1
+
+    \ If it's a local variable to a reference then we need to get the local
+    \ offset to "convert" the value to a reference on the stack.
+    \ Note: We don't decrement varRefs since the type on the stack has that
+    \   number of references in front of it.
+    \ Note2: the varRefs can become non-zero either from a local that is
+    \   a reference `var s: &MyStruct` or from a field which is a reference
+    \   `nonRef.aRef.b`
+    if(GET isLocal and GET varRefs) do (
+      h1($L(SZR + FTLL)) h1(GET ctxOffset)
+      0 -> SET ctxOffset; FALSE -> SET isLocal;
+    )
+    autoDeref(GET ctxOffset, GET varRefs) -> SET varRefs -> SET ctxOffset;
+    tyItem_node(GET ctxTyItem) -> SET node;
+    0 -> SET ctxTyItem;
+    struct_fieldCtx(GET node, REF ctxOffset) \ updates ctx offset and tyItem
+    tyItem_refs(GET ctxTyItem) -> SET varRefs
+  AGAIN l0  END_BREAK b0  END_BREAK b1
+
+  \ We are now at the "final" field in a struct (no more dots) or have a direct
+  \ local value. We need to:
+  \ - apply any refs. This is only valid if isLocal is still true!
+  \ - apply any derefs. We must assert the type has a suitable number of refs!
+  \ - simply fetch a native value.
+  if(GET synRefs) do (
+    assert(GET isLocal, E_type)
+    h1(LR) h1(GET ctxOffset)
+    ret;
+  )
+
+  \ Find the "native size" of the final type
+  if(GET ctxTyItem) do (
+    if(tyItem_isConstructed(GET ctxTyItem)) do 0xFF \ invalid szI
+    else tyItem_sz(GET ctxTyItem)
+  ) else (
+    d_tyGet(GET node) \ {nodeTy}
+    \ TODO: assert is type, handle functions
+    if(isDictNative(dup\nodeTy)) do (
+      d_tyGet(\nodeTy) msk SZ_MASK
+    ) else 0xFF \ invalid szI
+  ) \ {tySzI}
+
+  \ If the variable is still "local" we need to actually fetch it
+  if(GET isLocal) do (
+    if(GET varRefs) do ( h1($L(SZR + FTLL)) h1(GET ctxOffset) )
+    else (
+      \ The variable is local and not a reference. Derefs are illegal
+      assert(dup\tySzI != 0xFF, E_cBadRefs)
+      assertEq(0, GET synDerefs, E_cBadRefs)
+      h1(\tySzI + FTLL) h1(GET ctxOffset)
+      ret;
+    )
+  )
+
+  ret fullDeref(\tySzI, GET varRefs, GET ctxOffset, GET synDerefs)
+)
+
+\ large fn _dotLocal inp(root: &DNode, numRefs: U1, numDerefs: U1) do (
+\   var loffset: U2;  var tyItem: &U1;
+\   var tySzI; SZ1 -> SET tySzI
+\   struct_ctx(GET root) -> SET tyItem
+\   -> \loffset + d_vGet(GET root) -> SET loffset;
+\   assert(GET loffset < 128, E_unimpl);
+\ 
+\   \ References are easy: just LR of the loffset
+\   if(GET numRefs) do ret (
+\     h1(LR); h1(d_vGet(GET root) + GET loffset);
+\   )
+\ 
+\   \ Otherwise, we need to figure out a few things:
+\   \ - the instruction to get the (initial) value
+\   \ - the size to get the (initial) value
+\   \ - dereference the value appropriately
+\   \   - including the size if/when final dereference
+\ 
+\   var instr: U1; NOP -> SET instr;
+\   var instrSz: U1;
+\   var finalSz: U1; 0xFF -> SET finalSz;
+\   if(not GET tyItem) do ( \ There is no field.
+\     FTLL -> SET instr;
+\     d_mGet(d_tyGet(GET root)) msk SZ_MASK -> SET finalSz
+\   ) elif(ft1(GET tyItem) msk META_CONSTRUCTED) do (
+\     \ "final" field is a struct. Keep finalSz=0xFF (invalid)
+\     FTLL -> SET instr;
+\   )
+\ 
+\ 
+\ )
+
+\ large fn _dotLocal inp(root: &DNode, numRefs: U1, numAts: U1) do (
+\   var loffset: U2;  var tyItem: &U1;
+\   var tySzI; SZ1 -> SET tySzI
+\   struct_ctx(GET root) -> SET tyItem
+\   -> \loffset + d_vGet(GET root) -> SET loffset;
+\   assert(GET loffset < 128, E_unimpl);
+\ 
+\   \ References are easy: just LR of the loffset
+\   if(GET numRefs) do ret (
+\     h1(LR); h1(d_vGet(GET root) + GET loffset);
+\   )
+\ 
+\   var tyRefs: U2; 0 -> SET tyRefs;
+\   \ Direct GET (no field)
+\   if(not GET tyItem) do (
+\     \ FIXME: first check if the local var has refs and compare to the derefs
+\     if(isTyped(GET root)) do (
+\       assert(isDictNative(d_tyGet(GET root)), E_type);
+\     )
+\     _getImpl(GET root);
+\     d_mGet(GET root) msk SZ_MASK -> SET tySzI;
+\   ) else (
+\     if(ft1(GET tyItem) msk META_CONSTRUCTED) do (   \ constructed
+\       assert(ft1(GET tyItem) msk META_REF_MSK, E_type)
+\       h1($L(FTLL jn SZR))
+\       SZR -> SET tySzI;
+\     ) else (                                        \ native
+\       ft1(GET tyItem) msk SZ_MASK -> dup -> SET tySI;
+\       h1(\szI jn FTLL)
+\     )
+\     h1(GET loffset);
+\   )
+\   \ Now handle any derefs
+\   LOOP l0
+\     retIfNot(GET numAts)
+\ 
+\   AGAIN l0
+\ 
+\ )
+
+large fn _dot do ret (
+  var numRefs: U1; countChr(0c&) -> SET numRefs;
+  var numAts:  U1; countChr(0c@) -> SET numAts;
+  if(GET numRefs) do assertNot(GET numAts, E_type);
+  assert(GET numRefs < 2, E_type);
+
+  dictRef(NULL) \ {&root}
+
+  if(isTyLocal(dup\root)) do _dotLocal(\root)
+  else panic E_unimpl
+
+  \ assert(isTyLocal(GET root) or isTyGlobal(GET root), E_type);
+  \ var rootTy: &DNode;
+
+  \ if(isTyped(GET root)) do (
+  \   d_tyGet(GET root) -> SET rootTy;
+  \ )
+
+\   var rootTy: &DNode;
+\ 
+\   if (isTyLocal(GET root) or isTyGlobal(GET root)) do (
+\     d_tyGet(GET root) -> SET rootTy;
+\     assert(isTyDict(GET rootTy), E_type);
+\   ) else (
+\     panic E_unimpl;
+\   )
+\ 
+\   if(isDictNative(GET rootTy)) do (
+\     _getImpl(GET root)
+\   ) else (
+\     panic E_unimpl;
+\   )
+\ 
+)
+

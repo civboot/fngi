@@ -130,8 +130,8 @@
 #define TY_FN_INLINE         0x3
 #define TY_FN_COMMENT        0x4
 #define TY_FN_DECLARE        0x5
-#define TY_VAR_INPUT         0x1
-#define TY_VAR_REF           0xC
+#define TY_VAR_INPUT         0x8
+#define TY_VAR_REF           0x3
 #define ZOAB_TY              0xC0
 #define ZOAB_JOIN            0x80
 #define ZOAB_ARR             0x40
@@ -227,6 +227,7 @@
 #define E_fnStateVar         0xE101
 #define E_dot                0xE102
 #define E_bracket            0xE103
+#define E_cBadDeRefs         0xE104
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2

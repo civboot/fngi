@@ -1,5 +1,41 @@
 # Code Dump: where code goes to die
 
+
+## Walking some dots I guess
+
+```
+\ Walk a series of dots (a.foo.bar.baz), returning the last found node and
+\ whether there are unrecognized symbols after the dot (i.e. struct field)
+fn walkDots -> out(n: &DNode, isLast:U1) do (
+  NULL\curNode
+  LOOP l0
+    dictRefMaybe(dup\curNode)  \ {prevNode curNode}
+    if(not dup\curNode) do (
+      drp\curNode; tokenPlcSet(0);
+      ret(\prevNode, FALSE\isLast);
+    )
+    swp -> drp\prevNode; \ {curNode}
+    if(scan; not tokenEq(SLC_DOT)) do ( \ check if next symbol is '.'
+      tokenPlcSet(0);
+      ret(\curNode, TRUE\isLast);
+    )
+    assert(isTyDict(dup\curNode), E_dot);
+  AGAIN l0
+)
+
+fn bracketO do ret ( expectToken(SLC_BRACK_O, E_bracket) -> drp; )
+fn bracketC do ret ( expectToken(SLC_BRACK_C, E_bracket) -> drp; )
+
+\ \ offsetOf[MyStruct.myField]
+\ syn fn offsetOf do ret (
+\   bracketO; walkDots -> assertNot(\isLast, E_type); \ {asNow &DNodeStruct}
+\   struct_fieldCtx(\dnode) -> drp\tyItem; bracketC;
+\   swp -> retIf(\asNow) -> jmp:L;
+\ )
+\ $tAssertEq(0, offsetOf[DNode.l])  $tAssertEq(16, offsetOf[DNode.m])
+```
+
+
 ## SlcNode
 
 ```

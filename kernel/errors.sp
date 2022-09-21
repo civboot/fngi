@@ -90,6 +90,7 @@
 #E101  #0=E_fnStateVar  \ var not in fn
 #E102  #0=E_dot
 #E103  #0=E_bracket     \ expected backet
+#E104  #0=E_cBadDeRefs  \ too many de/refs
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

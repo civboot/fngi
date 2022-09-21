@@ -64,7 +64,7 @@ typedef struct {
   Ref ckey;
   Slot v;
   U2 m;
-  // ?Ref: type,
+  // ?Ref: ty, // iff C_TYPED then this exists.
 } DNode;
 
 typedef struct {

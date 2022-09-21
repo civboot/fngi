@@ -656,7 +656,7 @@ $syn $FN SET
 $pre $FN _globalRefNow \ [&Node -> &global]
 
 $pre $FN _ref \ [&Node asNow]
-  $IF 
+  $IF
     %DUP $xx:isTyVar  %OVR $xx:isTyLocal %AND
     @E_cNotGlobal$L $xx:assert
     $d_vGet %GR#0$h2 %ADD %RET

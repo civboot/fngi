@@ -258,11 +258,10 @@
 
 @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
 
-\ Local meta bits  [TTTI RRSS] I=input R=ref S=szI
-\ Local meta bits  [TTSS RR-I] I=input R=ref S=szI
-\ Global meta bits [TTSS RR--]         R=ref S=szI
-#01 #0=TY_VAR_INPUT
-#0C #0=TY_VAR_REF
+\ Local meta bits  [TTSS I-RR] I=input R=ref S=szI
+\ Global meta bits [TTSS --RR]         R=ref S=szI
+#08 #0=TY_VAR_INPUT
+#03 #0=TY_VAR_REF
 
 \ \ * [3.b] Zoab
 \ #C0 #0=ZOAB_TY   \ bitmask: all types
