@@ -409,8 +409,6 @@ $pre $FN L \ {v} compile literal of appropriate size
 $pre $FN keySzI $d_mGet @SZ_MASK$L %MSK %RET \ {&dnode -> szI}
 
 $pub $pre $FN szIToSz \ {szI} -> {sz}
-  %DUP #2000$L #2$L #10$L $dv_log
-
   %DUP @SZ1$L %EQ $IF  %DRP #1$L %RET  $END
   %DUP @SZ2$L %EQ $IF  %DRP #2$L %RET  $END
        @SZ4$L %EQ $IF       #4$L %RET  $END
