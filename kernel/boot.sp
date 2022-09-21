@@ -150,8 +150,6 @@ $STORE_PRIV
 @_FP@TY_FN_INLINE^JN :d_mSet   #2$h1 .2%SRO@DN_m $h1 %RET \ {m &DNode}
 @_FP@TY_FN_INLINE^JN :d_vGet   #2$h1 .R%FTO@DN_v $h1 %RET \ {&DNode -> v}
 @_FP@TY_FN_INLINE^JN :d_vSet   #2$h1 .R%SRO@DN_v $h1 %RET \ {v &DNode}
-@_FP@TY_FN_INLINE^JN :d_tyGet  #2$h1 .R%FTO@DN_ty$h1 %RET \ {&DNode -> &ty}
-@_FP@TY_FN_INLINE^JN :d_tySet  #2$h1 .R%SRO@DN_ty$h1 %RET \ {&ty &DNode}
 
 @_FP :tDictRef $_scan #0$L0 .2%XSL@_dictRef,  %RET \ get dict ref for testing
 @_FP :assertDictV \ {<token> v} assert the value of token

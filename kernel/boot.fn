@@ -18,13 +18,12 @@ pub pre inline FN memSet  $h1(2) dv:DV_memSet  ret; \ [&dst v len]   "dst = v"
 pub pre inline FN memCmp  $h1(2) dv:DV_memCmp  ret; \ [&a &b len -> cmp]
 pub pre inline FN memMove $h1(2) dv:DV_memMove ret; \ [&dst &src len] "dst = src"
 \ pub pre        FN memMove        dv:DV_memMove ret; \ [&dst &src len] "dst = src"
-pub pre        FN memClr  0 swp; jmp:memSet(\a, \len)   \ [&a len] clear
+pub pre        FN memClr 0 -> swp -> ret memSet(\a, \0, \len); \ [&a len] clear
 
 $tAssert(isFnPre(dnode:memMove))  $tAssert(isFnInline(dnode:memMove))
 
-
 pub pre FN dictRefMaybe \ [&root -> &node(nullable)]
-  scan;  DV_comp_dGet -> dv:DV_comp; ret; 
+  scan;  DV_comp_dGet -> dv:DV_comp; ret;
 
 inline pre FN >     $h1(2) swp -> (\b < \a;)  ret;     \ [a b -> a > b]
 inline pre FN <=    $h1(2) swp -> (\b >= \a;) ret;     \ [a b -> a <= b]
@@ -86,6 +85,8 @@ FN SLC_ELIF   ret |elif|
 FN SLC_ELSE   ret |else|
 FN SLC_EQUAL  ret |=|
 FN SLC_PAREN  ret |(|
+FN SLC_BRACK_O ret |[|
+FN SLC_BRACK_C ret |]|
 
 pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   $declVar(declL err, TY_VAR_INPUT, RSIZE)
@@ -108,12 +109,19 @@ const const42 = 0x42;         $tAssertEq(const42, 0x42)
 const const49 = (0x42 + 7);   $tAssertEq(const49, 0x49)
 $STORE_PUB
 
-\ declDict:token(meta, value) manually declare a dictionary entry
-pub syn FN declDict
+pre FN isTyped      ret( d_mGet(\node) msk C_TYPED )
+pre FN d_tyGet \ {&DNode -> ty}
+  assert(isTyped(dup\dnode), E_intern) -> ret ftoR:DN_ty;
+
+pre FN d_tySet \ {&ty &DNode}
+  assert(isTyped(dup\dnode), E_intern) -> ret sroR:DN_ty;
+
+\ declTy:token(meta, ty) manually declare a dictionary entry
+pub syn FN declTy ret (
   $declVar(declL node, 0, RSIZE) $declEnd
-  notNow; colon; xx:dictAdd(0, 0) -> SET node;
-  compNext(TRUE) -> d_vSet(\value, GET node) -> d_mSet(\meta, GET node);
-  ret;
+  notNow; colon; xx:dictAdd(0\v, C_TYPED\m) -> SET node;
+  compNext(TRUE) -> swp -> d_mSet(\meta, GET node) -> d_tySet(\ty, GET node);
+)
 
 \ **********
 \ * [XX] Type Scafolding and Native Type Implementation
@@ -152,23 +160,22 @@ const TY_DICT_ENUM   = 0x03;
 const TY_DICT_MOD    = 0x04;
 const TY_DICT_SUBMOD = 0x05;
 
-const META_CONSTRUCTED = 0x80;
-const META_NAME        = 0x40;
-const META_REF_MSK     = 0x07;
+const META_CONSTRUCTED   = 0x80;
+const META_NAMED         = 0x40;
+const META_REF_MSK       = 0x07;
 const META_NATIVE_SIGNED = 0x08;
+const _native = (C_TYPED jn TY_DICT jn TY_DICT_NATIVE)
 
-declDict:U1    (TY_DICT jn TY_DICT_NATIVE,                       SZ1)
-declDict:U2    (TY_DICT jn TY_DICT_NATIVE,                       SZ2)
-declDict:U4    (TY_DICT jn TY_DICT_NATIVE,                       SZ4)
-declDict:Slot  (TY_DICT jn TY_DICT_NATIVE,                       SZR)
-declDict:I1    (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZ1)
-declDict:I2    (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZ2)
-declDict:I4    (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZ4)
-declDict:ISlot (TY_DICT jn TY_DICT_NATIVE, META_NATIVE_SIGNED jn SZR)
-$assertDictV(SZ1) U1
-$assertDictV(SZR) Slot
+declTy:U1    (_native,                       SZ1)
+declTy:U2    (_native,                       SZ2)
+declTy:U4    (_native,                       SZ4)
+declTy:Slot  (_native,                       SZR)
+declTy:I1    (_native, META_NATIVE_SIGNED jn SZ1)
+declTy:I2    (_native, META_NATIVE_SIGNED jn SZ2)
+declTy:I4    (_native, META_NATIVE_SIGNED jn SZ4)
+declTy:ISlot (_native, META_NATIVE_SIGNED jn SZR)
 
-pre FN isTyDict     ret((d_mGet(\node) msk META_TY_MASK) == TY_DICT)
+pre FN isTyDict     ret((d_mGet(\node) msk META_TY_MASK) == TY_DICT      )
 pre FN isDictNative ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_NATIVE)
 pre FN isDictStruct ret((d_mGet(\node) msk TY_DICT_MSK) == TY_DICT_STRUCT)
 $tAssert(isTyDict(dnode:U1))
@@ -226,8 +233,8 @@ $STORE_PUB
 declare large pre fn struct_sz \(s: &DNode -> sz:U2) do;
 
 pre FN tySz \ {node:&DNode -> szBytes}
-  assert(isTyDict(dup), E_intern)
-  IF(isDictNative(dup)) ret szIToSz(d_vGet(\node) msk SZ_MASK) END
+  assert(isTyDict(dup), 0xB001\E_intern)
+  IF(isDictNative(dup)) ret szIToSz(d_tyGet(\node) msk SZ_MASK) END
   IF(isDictStruct(dup)) ret struct_sz(\node)                   END
   panic(E_unimpl) \ TODO: other types
 $tAssertEq(1,     tySz(dnode:U1))
@@ -261,7 +268,7 @@ pre FN _varImpl \ [meta]
   END
   \ TODO: register type
   IF(swp\numRefs) drp; RSIZE
-  ELSE  tySz(\type);  END \ {&Local isLocal szBytes}
+  ELSE            tySz(\type);  END \ {&Local isLocal szBytes}
 
   IF(GET meta)  GET meta -> swp -> declVar;
   ELSE \stk     drp; drp; drp; END
@@ -496,19 +503,19 @@ large fn _field do ret (
   IF(isFnAndSyn(dictRefMaybe(0)))
     single(FALSE) \ next token is syn, run it (it may run us)
   ELSE
-    var r\tyItems: &U1; d_vGet(GET G_curNode) -> SET r\tyItems;
+    var r\tyItems: &U1; d_tyGet(GET G_curNode) -> SET r\tyItems;
     sr1(inc ft1(GET r\tyItems), GET r\tyItems) \ struct.ty.numFields += 1
     bumpName(1, FALSE) -> SET r\tyItem;
     storeToken -> drp;
     colon; var tyNode: &Slot; parseTy -> SET tyNode; \ {numRefs}
     assert(dup\numRefs < 8, E_cBadRefs)  assert(isTyDict(GET tyNode), E_cNotType)
     if isDictNative(GET tyNode) do (
-      assert(dup\numRefs + (d_vGet(GET tyNode) msk META_REF_MSK)
+      assert(dup\numRefs + (d_tyGet(GET tyNode) msk META_REF_MSK)
              < 8, E_cBadRefs)
-      sr1(\numRefs + d_vGet(GET tyNode) jn META_NAME, GET r\tyItem)
+      sr1(\numRefs + d_tyGet(GET tyNode) jn META_NAMED, GET r\tyItem)
     ) else (
       \ store the tyItem meta, then the tyNode reference
-      sr1(_constructedMeta(\numRefs, GET tyNode) jn META_NAME, GET r\tyItem)
+      sr1(_constructedMeta(\numRefs, GET tyNode) jn META_NAMED, GET r\tyItem)
       storeNodeBe(GET tyNode) -> drp;
     )
   END
@@ -518,47 +525,51 @@ large fn _field do ret (
 \ Define a struct
 large syn fn struct do (  notNow;
   dictAdd(NULL, $L(C_TYPED jn TY_DICT jn TY_DICT_STRUCT)) -> SET G_curNode;
-  var ty: &U1; bumpName(1, FALSE\aligned) -> SET ty;
-  d_vSet(GET ty, GET G_curNode);
-  sr1(0\numFields, GET ty);
+  var tyItems: &U1; bumpName(1, FALSE\aligned) -> SET tyItems;
+  d_tySet(GET tyItems, GET G_curNode);
+  sr1(0\numFields, GET tyItems);
   _field;
   ret;
 )
+
+\ **********
+\ *   [5.b] Important Structs and a few struct functions
 
 pub struct DNode (
   l: &DNode;  r: &DNode;
   ckey: &U1;  v: Slot;    m: U2;
 )
 
-fn isTyped stk(n: &DNode) -> out(_:U1) do ret(d_mGet(\n) msk C_TYPED)
+struct Ctx ( offset: U2, tyItem: &U1 )
+
 fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
   isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
 )
 $tAssertNot(isTyStruct(dnode:U1))
 $tAssert   (isTyStruct(dnode:DNode))
-$tAssertEq(5, ft1(d_vGet(dnode:DNode))) \ DNode has 5 fields
+$tAssertEq(5, ft1(d_tyGet(dnode:DNode))) \ DNode has 5 fields
 $tAssertEq( \ field `l` is ref to DNode
-  ft1(inc d_vGet(dnode:DNode)),
-  META_CONSTRUCTED + META_NAME + needSzI(dnode:DNode) + 1\refs)
-$tAssertEq(ft1(2 + d_vGet(dnode:DNode)), 1)   \ "l" name has len=1
-$tAssertEq(ft1(3 + d_vGet(dnode:DNode)), 0cl)
+  ft1(inc d_tyGet(dnode:DNode)),
+  META_CONSTRUCTED + META_NAMED + needSzI(dnode:DNode) + 1\refs)
+$tAssertEq(ft1(2 + d_tyGet(dnode:DNode)), 1)   \ "l" name has len=1
+$tAssertEq(ft1(3 + d_tyGet(dnode:DNode)), 0cl)
 
 \ **********
 \ *   [5.b] Working with a tystream
 
 \ Skip a name to get the type reference
 fn tyItem_skipName stk(tyItem: &U1) -> out(dat: &U1) do (
-  if(ft1(dup\tyItem) msk META_NAME) do ( \ skip name
+  if(ft1(dup\tyItem) msk META_NAMED) do ( \ skip name
     ret (dup\tyItem + inc2 ft1(inc\tyItem;)) \ tyItem + nameCount+2
   ) ret inc\tyItem;
 )
 
 \ Return the dictionary node for the tyItem
 fn tyItem_node inp(tyItem: &U1) -> out(node: &DNode) do ret (
-  assert(ft1(GET tyItem) msk META_CONSTRUCTED, E_intern);
+  assert(ft1(GET tyItem) msk META_CONSTRUCTED, 0xB002\E_intern);
   ftBeSzI(tyItem_skipName(GET tyItem), ft1(GET tyItem) msk SZ_MASK)
 )
-$tAssertEq(tyItem_node(inc d_vGet(dnode:DNode)), dnode:DNode)
+$tAssertEq(tyItem_node(inc d_tyGet(dnode:DNode)), dnode:DNode)
 
 \ Get the size of a type item (native or struct).
 fn tyItem_sz stk(tyItem: &U1) -> out(sz: U2) do ret (
@@ -581,23 +592,23 @@ fn tyItem_next inp(tyItem: &U1) -> out(_: &U1) do ret (
 \ Manually assert all the field types in DNode, testing tyItem_(next|sz)
 \ and struct at the same time.
 $(
-  inc d_vGet(dnode:DNode) \ {tyItem0}  field l
+  inc d_tyGet(dnode:DNode) \ {tyItem0}  field l
   tAssertEq(tyItem_node(dup\tyItem0), dnode:DNode)
   tyItem_next(\tyItem0)     \ {tyItem1} field r
   tAssertEq(tyItem_node(dup\tyItem1), dnode:DNode)
   tyItem_next(\tyItem1)     \ {tyItem2} field ckey
-  tAssertEq(ft1(dup\tyItem2), META_NAME + SZ1 + 1)
+  tAssertEq(ft1(dup\tyItem2), META_NAMED + SZ1 + 1)
   tAssertEq(tyItem_sz(dup\tyItem2), RSIZE)
   tyItem_next(\tyItem2)     \ {tyItem3} field v
-  tAssertEq(ft1(dup\tyItem3), META_NAME + SZR)
+  tAssertEq(ft1(dup\tyItem3), META_NAMED + SZR)
   tAssertEq(tyItem_sz(dup\tyItem3), RSIZE)
   tyItem_next(\tyItem3)     \ {tyItem4} field m
-  tAssertEq(ft1(dup\tyItem4), META_NAME + SZ2)
+  tAssertEq(ft1(dup\tyItem4), META_NAMED + SZ2)
   tAssertEq(tyItem_sz(\tyItem4), 2)
 )
 
 \ **********
-\ *   [XX.d] struct field walker
+\ *   [XX.d] struct field walker and size
 
 \ Bump the size by the add size.
 \
@@ -609,32 +620,113 @@ $tAssertEq(bumpSz(4, 1), 5)  $tAssertEq(bumpSz(4, 2), 6)
 $tAssertEq(bumpSz(4, 3), 7)  $tAssertEq(bumpSz(5, 2), 8)
 $tAssertEq(bumpSz(5, 4), 12) $tAssertEq(bumpSz(2, 8), 12)
 
-fn tyItems_walk stk(tyItems: &U1) inp(ctx: &Slot, f: &Slot) do (
+\ Walk the tyItems, calling f for each one.
+\
+\ type of f [tyItem: &U1, ctx: &Any -> done:U1]
+\
+\ If f returns TRUE, return TRUE immediately.
+\ Else, return FALSE after f has been executed with all tyItems.
+fn tyItems_walk stk(tyItems: &U1) inp(ctx: &Slot, f: &Slot) -> out(done:U1)
+do (
   \ type of f: fn [&tyItem &ctx -> stop:Bool]
   var numFields: U2; ft1(dup\tyItems) -> SET numFields;
   inc\(tyItems -> tyItem); LOOP l0  \ {tyItem}
-    if(not GET numFields) do ( drp\tyItem; ret; )
+    if(not GET numFields) do ( drp\tyItem; ret FALSE; )
     (dec GET numFields) -> SET numFields;
-    if(xlw(dup\tyItem, GET ctx, GET f)) do ( drp\tyItem; ret; )
+    if(xlw(dup\tyItem, GET ctx, GET f)) do ( drp\tyItem; ret TRUE; )
     tyItem_next(\tyItem);
   AGAIN l0
 )
 
 \ Walk a struct, updating the outSz for each tyItem.
 fn _structSzWalker inp(tyItem: &U1, outSz: &U2) do (
-  dv_log(tyItem_sz(GET tyItem), 0x1040, 2, 0x10)
   sr2(bumpSz(ft2(GET outSz), tyItem_sz(GET tyItem)), GET outSz);
-  dv_log(ft2(GET outSz), 0x1042, 2, 0x10)
   ret FALSE;
 )
 
 \declared fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
   var sz: U2; 0 -> SET sz;
-  assert(isTyStruct(dup\s, E_intern));
-  dv_log(0x1000, 1, 0x10);
-  tyItems_walk(d_vGet(\s), REF sz, fnRef:_structSzWalker);
+  assert(isTyStruct(dup\s), 0xB003\E_intern);
+  tyItems_walk(d_tyGet(\s), REF sz, fnRef:_structSzWalker) -> drp;
   ret GET sz;
 )
-
 $tAssertEq(18\0x12, struct_sz(dnode:DNode));
+$tAssertEq(8,       struct_sz(dnode:Ctx));
 
+
+\ **********
+\ *   [XX.e] struct field name offsets
+$NEW_BLOCK_PUB
+fn tyItem_cName stk(tyItem: &U1) -> out(cName: &U1) do ret (
+  assert(ft1(dup\tyItem) msk META_NAMED, 0xB004\E_intern) -> inc\tyItem;
+)
+
+\ Called by tyItems_walk for walking struct fields.
+large fn _fieldNameWalker inp(tyItem: &U1, ctx: &Ctx) -> out(done:U1) do (
+  if(tokenEq(cToSlc(tyItem_cName(GET tyItem)))) do (
+    \ Found tyItem. Current offset is correct (after alignment)
+    sroR:RSIZE(GET tyItem, GET ctx) \ ctx.tyItem = tyItem
+    sr2( \ ctx.offset =
+      align(ft2(GET ctx)\(ctx.offset), reqAlign(tyItem_sz(GET tyItem))),
+      GET ctx)
+    ret TRUE\done;
+  )
+  \ .ctx.offset = bumpSz(.ctx.offset, tySz(.tyItem))
+  sr2(bumpSz(ft2(GET ctx), tyItem_sz(GET tyItem)), GET ctx);
+  ret FALSE\done;
+)
+
+large fn struct_fieldCtx stk(dnode: &DNode) -> out(offset:U2, tyItem: &U1) do (
+  assert(isTyStruct(dup\dnode), E_type); scan;
+  var ctx: Ctx; memClr(REF ctx, $L(tySz(dnode:Ctx)));
+  assert(
+    tyItems_walk(d_tyGet(\node), REF ctx, fnRef:_fieldNameWalker),
+    E_cNoKey);
+  ret (ft2(REF ctx), ftoR:RSIZE(REF ctx));
+)
+
+\ large fn struct_fieldOffset stk(dnode: &DNode) -> out(offset:U2) do (
+\   assert(isTyStruct(dup\dnode), E_type); scan;
+\   var ctx: Ctx; memClr(REF ctx, $L(tySz(dnode:Ctx)));
+\   assert(
+\     tyItems_walk(d_tyGet(\node), REF ctx, fnRef:_fieldNameWalker),
+\     E_cNoKey);
+\   ret ft2(REF ctx); \ offset
+\ )
+
+$tAssertEq(0,       struct_fieldCtx(dnode:DNode) l -> drp\tyItem)
+$tAssertEq(16\0x10, struct_fieldCtx(dnode:DNode) m -> drp\tyItem)
+
+\ Walk a series of dots (a.foo.bar.baz), returning the last found node and
+\ whether there are unrecognized symbols after the dot (i.e. struct field)
+fn walkDots -> out(n: &DNode, isLast:U1) do (
+  NULL\curNode
+  LOOP l0
+    dictRefMaybe(dup\curNode)  \ {prevNode curNode}
+    if(not dup\curNode) do (
+      drp\curNode; tokenPlcSet(0);
+      ret(\prevNode, FALSE\isLast);
+    )
+    swp -> drp\prevNode; \ {curNode}
+    if(scan; not tokenEq(SLC_DOT)) do ( \ check if next symbol is '.'
+      tokenPlcSet(0);
+      ret(\curNode, TRUE\isLast);
+    )
+    assert(isTyDict(dup\curNode), E_dot);
+  AGAIN l0
+)
+
+fn bracketO do ret ( expectToken(SLC_BRACK_O, E_bracket) -> drp; )
+fn bracketC do ret ( expectToken(SLC_BRACK_C, E_bracket) -> drp; )
+
+\ offsetOf[MyStruct.myField]
+syn fn offsetOf do ret (
+  bracketO; walkDots -> assertNot(\isLast, E_type); \ {asNow &DNodeStruct}
+  struct_fieldCtx(\dnode) -> drp\tyItem; bracketC;
+  swp -> retIf(\asNow) -> jmp:L;
+)
+$tAssertEq(0, offsetOf[DNode.l])  $tAssertEq(16, offsetOf[DNode.m])
+
+$NEW_BLOCK_PRIV
+
+\ TODO: szOf[any.type]

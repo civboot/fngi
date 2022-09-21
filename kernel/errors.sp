@@ -89,6 +89,7 @@
 #E100  #0=E_fnStateOut  \ var not in fn inputs
 #E101  #0=E_fnStateVar  \ var not in fn
 #E102  #0=E_dot
+#E103  #0=E_bracket     \ expected backet
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

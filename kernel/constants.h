@@ -226,6 +226,7 @@
 #define E_fnStateOut         0xE100
 #define E_fnStateVar         0xE101
 #define E_dot                0xE102
+#define E_bracket            0xE103
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2
