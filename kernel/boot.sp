@@ -453,6 +453,12 @@ $pre $FN ftSzI \ {&addr szI}
        @SZ4$L %EQ $IF      .4%FT %RET $END
   @E_sz$L $_xsl panic
 
+$pre $FN ftBeSzI \ {&addr szI}
+  %DUP @SZ1$L %EQ $IF %DRP .1%FTBE %RET $END
+  %DUP @SZ2$L %EQ $IF %DRP .2%FTBE %RET $END
+       @SZ4$L %EQ $IF      .4%FTBE %RET $END
+  @E_sz$L $_xsl panic
+
 $pre $FN srSzI \ {value &addr szI}
   %DUP @SZ1$L %EQ $IF %DRP .1%SR %RET $END
   %DUP @SZ2$L %EQ $IF %DRP .2%SR %RET $END
@@ -696,7 +702,7 @@ $STORE_PUB $assertNoWs
 \   max: U1,      \ the maximum value allowed
 \ ]
 
-$STORE_PRIV
+$STORE_PRIV   $NEW_BLOCK_PRIV
 $inline $FN Ctx_node    #2$h1 .R%FTO#0$h1     \ [&Context -> &Node]
 $inline $FN Ctx_nodeSet #2$h1 .R%SRO#0$h1     \ [&Node &Context]
 $inline $FN Ctx_max     #2$h1 .R%FTO@RSIZE$h1 \ [&Context -> maxAllowed]
@@ -756,7 +762,7 @@ $FN declFnEnd
   $END \ next: store local size at fn pointer
   $GET G_localOffset $xx:alignR $GET G_curNode $d_vGet .1%SR %RET
 
-$STORE_PRIV   $NEW_BLOCK_PRIV
+$STORE_PRIV
 $FN declEnd  $xx:declInpEnd $jmp:declFnEnd
 
 $pre $FN setLogLvlSys .2%SRGL@G_logLvlSys$h2 %RET

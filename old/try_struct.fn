@@ -65,7 +65,7 @@ large syn fn struct do (  notNow;
 )
 
 \ **********
-\ *   [5.c] tyitem utilities
+\ *   [5.c] tyItem utilities
 
 struct DNode (
   l: &DNode;  r: &DNode
@@ -80,37 +80,37 @@ fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
 $tAssert(isTyStruct(dnode:DNode))
 
 
-fn tyitem_cname stk(ty: &U1) -> out(cname: &U1) do (
+fn tyItem_cname stk(ty: &U1) -> out(cname: &U1) do (
   if(ft1(dup\ty) msk META_NAME) do ( ret inc\ty; )
   else                             ( drp\ty; ret NULL; )
 )
 
 \ Return reference to the data (either ref or native byte)
-fn tyitem_dat stk(ty: &U1) -> out(dat: &U1) do (
+fn tyItem_dat stk(ty: &U1) -> out(dat: &U1) do (
   if(ft1(dup\ty) msk META_NAME) do ( \ skip name
     ret (dup\ty + inc2 ft1(inc\ty;)) \ ty + nameCount+2
   ) ret inc\ty;
 )
 
-fn tyitem_node stk(ty: &U1) -> out(node: &DNode) do (
+fn tyItem_node stk(ty: &U1) -> out(node: &DNode) do (
   assert(dup\ty msk META_CONSTRUCTED, E_intern);
   ft1(dup\ty) msk META_TSZ_MSK shr META_TSZ_SHIFT \ {ty tsz}
-  ret(swp -> tyitem_dat(\ty) -> swp -> jmp:ftBeN(\tdat, \tsz))
+  ret(swp -> tyItem_dat(\ty) -> swp -> jmp:ftBeN(\tdat, \tsz))
 )
 
 declare large fn struct_sz stk(s: &DNode) -> out(sz:U2) do;
 
 \ Get the size of a type item (native or struct).
-fn tyitem_sz stk(ty: &U1) -> out(sz: U2) do (
-  if(ft1(dup\tyitem) msk META_CONSTRUCTED) do
-    ( ret struct_sz(tyitem_node(\ty)) )
-  ft1(tyitem_dat(\ty))
+fn tyItem_sz stk(ty: &U1) -> out(sz: U2) do (
+  if(ft1(dup\tyItem) msk META_CONSTRUCTED) do
+    ( ret struct_sz(tyItem_node(\ty)) )
+  ft1(tyItem_dat(\ty))
   -> dv_log(dup, 0x1050, 2, 0x10);
   ret szIToSz(\dat msk SZ_MASK);
 )
 
-\ Point to the next tyitem in the tystream.
-fn tyitemNext inp(ty: &U1) -> out(_: &U1) do (
+\ Point to the next tyItem in the tystream.
+fn tyItemNext inp(ty: &U1) -> out(_: &U1) do (
   GET ty; \ {&out}
   if(not (ft1(GET ty) msk META_CONSTRUCTED)) do (
     \out + ((META_TSZ_MSK msk ft1(GET ty)) shr META_TSZ_SHIFT)
@@ -122,13 +122,13 @@ fn tyitemNext inp(ty: &U1) -> out(_: &U1) do (
 \ **********
 \ *   [5.d] struct field walker
 fn walkTy stk(ty: &U1) inp(ctx: &Slot, f: &Slot) do (
-  \ type of f: fn [&tyitem &ctx -> stop:Bool]
+  \ type of f: fn [&tyItem &ctx -> stop:Bool]
   var numFields: U2; ft1(dup\ty) -> SET numFields;
-  inc\ty; LOOP l0  \ {&tyitem}
-    if(not GET numFields) do ( drp\tyitem; ret; )
+  inc\ty; LOOP l0  \ {&tyItem}
+    if(not GET numFields) do ( drp\tyItem; ret; )
     (dec GET numFields) -> SET numFields;
-    if(xlw(dup\tyitem, GET ctx, GET f)) do ( drp\tyitem; ret; )
-    tyitemNext(\ty);
+    if(xlw(dup\tyItem, GET ctx, GET f)) do ( drp\tyItem; ret; )
+    tyItemNext(\ty);
   AGAIN l0
 )
 
@@ -137,10 +137,10 @@ fn bumpField inp(curSz: U2, fieldSz: U2) do (
   ret (align(GET curSz, reqAlign(GET fieldSz)) + GET fieldSz);
 )
 
-\ Walk a struct, updating the outSz for each tyitem.
-fn _structSzWalker inp(tyitem: &U1, outSz: &U2) do (
-  dv_log(tyitem_sz(GET tyitem), 0x1040, 2, 0x10)
-  sr2(bumpField(ft2(GET outSz), tyitem_sz(GET tyitem)), GET outSz);
+\ Walk a struct, updating the outSz for each tyItem.
+fn _structSzWalker inp(tyItem: &U1, outSz: &U2) do (
+  dv_log(tyItem_sz(GET tyItem), 0x1040, 2, 0x10)
+  sr2(bumpField(ft2(GET outSz), tyItem_sz(GET tyItem)), GET outSz);
   dv_log(ft2(GET outSz), 0x1042, 2, 0x10)
   ret FALSE;
 )
@@ -153,32 +153,32 @@ fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
   ret align(GET sz, reqAlign(GET sz));
 )
 
-struct Ctx ( offset: U2, done: U1, tyitem: &U1 )
+struct Ctx ( offset: U2, done: U1, tyItem: &U1 )
 
 $tAssertEq(8, struct_sz(dnode:Ctx));
 
-\ fn _fieldNameWalker inp(tyitem: &U1, ctx: &U2) do (
-\   if(tokenEq(cToSlc(tyitemCName(GET tyitem)))) do (
+\ fn _fieldNameWalker inp(tyItem: &U1, ctx: &U2) do (
+\   if(tokenEq(cToSlc(tyItemCName(GET tyItem)))) do (
 \     assert(fto:2(GET ctx), E_struct) \ field not yet found
 \ 
 \     \ 1. align current type and set as offset
 \     \ 2. update done=true
-\     \ 3. update ctx.tyitem
+\     \ 3. update ctx.tyItem
 \     fto:RSIZE(GET ctx) 
 \ 
 \     ft2(GET ctx) jn 0x8000 
 \ 
 \     if(ft2(dup\ctx) msk 0x8000) do ( drp; drp; ret; )
 \     
-\   ) drp\tyitem; drp\ctx; ret;
+\   ) drp\tyItem; drp\ctx; ret;
 \ 
 \ )
 
-\ fn _fieldNameWalker stk(tyitem: &U1, ctx: &U1) do (
+\ fn _fieldNameWalker stk(tyItem: &U1, ctx: &U1) do (
 \   swp;
-\   if(tokenEq(cToSlc(tyitemCName(dup\tyitem)))) do (
-\     swp -> srR(\tyitem, \ctx); ret;
-\   ) drp\tyitem; drp\ctx;       ret;
+\   if(tokenEq(cToSlc(tyItemCName(dup\tyItem)))) do (
+\     swp -> srR(\tyItem, \ctx); ret;
+\   ) drp\tyItem; drp\ctx;       ret;
 \ )
 \ 
 \ 
