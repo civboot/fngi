@@ -890,12 +890,19 @@ bool dbgExecute(Instr instr) {
   }
   zoab_enumStart(Ev_jmp); zoab_struct(3);
   zoab_int(instr);  zoab_int(jloc);  zoab_int(Stk_len(CS));
+  eprintf(" $JMP %X loc=%X stkLen=%u\n", instr, jloc, Stk_len(CS));
   return true;
 }
 
 void dbgInstr(Instr instr) {
-  if(LOG_EXECUTE == (LOG_EXECUTE & g->logLvlSys))  {
-    if(isExecute(instr)) dbgExecute(instr);
+  if(LOG_COMPILER & g->logLvlSys) {
+    if (LOG_EXECUTE == (g->logLvlSys & LOG_EXECUTE)) {
+      if(isExecute(instr)) dbgExecute(instr);
+    }
+
+    if (LOG_INSTR == (g->logLvlSys & LOG_INSTR)) {
+      eprintf("   %% %X\n", instr);
+    }
   }
 }
 
