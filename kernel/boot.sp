@@ -330,21 +330,13 @@ $FN scan
 
 $pre $FN dictRef  $_xsl scan $_jmp _dictRef \ TODO: need to use scan... but for that need IF
 
-\ Switch to non/local storage
-\ $FN storeNonLocal @C_LOCAL^INV$L2 .2%FTGL@G_cstate$h2 %MSK .2%SRGL@G_cstate$h2 %RET
-\ $FN storeLocal    @C_LOCAL$L2     .2%FTGL@G_cstate$h2 %JN  .2%SRGL@G_cstate$h2 %RET
-
-\ $FN ldictRef $_xsl storeLocal #0$L0 $_xsl dictRef $_jmp storeNonLocal \ {->&Node}
-\ $FN ldictAdd $_xsl storeLocal       $_xsl dictAdd $_jmp storeNonLocal \ {m v->&Node}
-
-\ TODO: have dict input for dictAdd and remove absurd setCState here
 $FN ldictRef  \ { -> &Node}
-  @C_LOCAL$L2 %DUP $_xsl setCState 
+  @C_LOCAL$L2 %DUP $_xsl setCState
   #0$L0 $_xsl dictRef
   #0$L0 @C_LOCAL$L2 $_jmp setCState
-$FN ldictAdd  \ {m v -> &Node}
+$pre $FN ldictAdd  \ {v m -> &Node}
   @C_LOCAL$L2 %DUP $_xsl setCState
-  $_xsl dictAdd 
+  $_xsl dictAdd
   #0$L0 @C_LOCAL$L2 $_jmp setCState
 
 \ $LOOP l0 ... $BREAK0 b0 ... $AGAIN l0  $BREAK_END b0
