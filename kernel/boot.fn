@@ -123,10 +123,11 @@ pre FN d_tySet \ {&ty &DNode}
   assert(isTyped(dup\dnode), E_intern) -> ret sroR:DN_ty;
 
 \ declTy:token(meta, ty) manually declare a dictionary entry
-pub syn FN declTy ret (
+pub syn FN declTy ret ( \ {meta, ty}
   $declVar(declL node, 0, RSIZE) $declEnd
-  notNow; colon; xx:dictAdd(0\v, C_TYPED\m) -> SET node;
-  compNext(TRUE) -> swp -> d_mSet(\meta, GET node) -> d_tySet(\ty, GET node);
+  notNow; colon; xx:dictAdd(0\v, C_TYPED\initalMeta) -> SET node;
+  compNext(TRUE) -> d_tySet(\ty, GET node) -> d_mSet(\meta, GET node)
+  dv_log(d_mGet(GET node), GET node, 0x888, 3, 0x10)
 )
 
 \ **********
@@ -261,7 +262,7 @@ FN parseTy \ [-> numRefs &DNode]
 $tAssertEq(parseTy &&U1, dnode:U1)   -> $tAssertEq(\numRefs, 2)
 $tAssertEq(parseTy Slot, dnode:Slot) -> $tAssertEq(\numRefs, 0)
 
-pre FN _varImpl \ [meta]
+pre fn _varImpl do ret ( \ [meta]
   $declVar(declL meta, TY_VAR_INPUT, 2)
   $declVar(declL node,            0, RSIZE) $declEnd
   IF(isFnAndSyn(dictRefMaybe(0)))
@@ -293,18 +294,20 @@ pre FN _varImpl \ [meta]
     drp; drp; drp;
   END
   dv_log(0x930, 1, 0x10)
-  ret;
+)
 
-FN _inp
+fn _inp do ret (
   $declVar(declL compFn,  0, RSIZE)  $declEnd
   updateCompFn(fnRef:_inp) -> SET compFn;
   _varImpl($L(TY_VAR jn TY_VAR_INPUT))
-  GET compFn -> SET G_compFn; ret;
-pub syn FN inp
+  GET compFn -> SET G_compFn;
+)
+pub syn fn inp do ret (
   notNow; assert(getCState(C_FN_STATE) >= FN_STATE_STK, E_fnStateInp)
   setCState(FN_STATE_INP, C_FN_STATE) \ start inp state
   keyJnMeta(GET G_curNode, TY_FN_PRE)
-  _inp; ret;
+  _inp;
+)
 
 $STORE_PRIV
 \ test inp by truncating values
@@ -317,31 +320,37 @@ $testInp3(0x101\U1, 0x12345\U2, 0x6789ABC\reference)
 $tAssertEq(0x6789ABC)  $tAssertEq(0x2345)  $tAssertEq(0x01)
 
 $STORE_PUB
-FN _var
+fn _var do ret (
   $declVar(declL compFn,  0, RSIZE)  $declEnd
   updateCompFn(fnRef:_var) -> SET compFn;
-  _varImpl(TY_VAR);  GET compFn -> SET G_compFn; ret;
-pub syn FN var  notNow;
+  _varImpl(TY_VAR);  GET compFn -> SET G_compFn;
+)
+pub syn fn var do ret ( notNow;
   assert(getCState(C_FN_STATE) != FN_STATE_NO, E_fnStateVar); 
-  ret _var;
+  _var;
+)
 
-FN _stk
+fn _stk do ret (
   $declVar(declL compFn,  0, RSIZE)  $declEnd
   updateCompFn(fnRef:_stk) -> SET compFn;
-  _varImpl(0);       GET compFn -> SET G_compFn; ret;
-pub syn FN stk  notNow; 
+  _varImpl(0);       GET compFn -> SET G_compFn;
+)
+pub syn fn stk do ret ( notNow;
   assertEq(getCState(C_FN_STATE), FN_STATE_STK, E_fnStateStk);
   keyJnMeta(GET G_curNode, TY_FN_PRE)
-  ret _stk;
+  _stk;
+)
 
-FN _out
+fn _out do ret (
   $declVar(declL compFn,  0, RSIZE)  $declEnd
   updateCompFn(fnRef:_out) -> SET compFn;
-  _varImpl(0);       GET compFn -> SET G_compFn; ret;
-pub syn FN out  notNow; 
+  _varImpl(0);       GET compFn -> SET G_compFn;
+)
+pub syn fn out do ret ( notNow;
   assert(getCState(C_FN_STATE) >= FN_STATE_STK, E_fnStateOut);
   setCState(FN_STATE_INP, C_FN_STATE) \ start inp state
-  ret _out;
+  _out;
+)
 
 $STORE_PRIV
 pre FN testVar \ x -> x + 1
@@ -432,6 +441,27 @@ $tAssertEq(0x44)
 
 fn testIfNow do (ret($if(0) do (4) else (0x3F + 3)))  $assertNoWs
 $tAssertEq(testIfNow, 0x42)
+
+\ mskjn:MASK(a, b) set bits from a to b, clearing with MASK first.
+\ same as:     (a jn (b msk (inv MASK))
+\ compiles as: a  b  (inv MASK)  %MSK %JN
+large syn fn mskjn do ret (
+  var asNow: U1;  var mask: Slot;
+  \asNow -> SET asNow;
+  inv(colonValue;) -> SET mask;
+  dv_log(0xC01, 1, 0x10)
+  xlw(GET G_compFn) \ {a b}
+  if(GET asNow) do (\b msk GET mask -> jn \a;)
+  else             (L(GET mask) h1(MSK) h1(JN))
+)
+$STORE_PRIV
+$tAssertEq(0x71, mskjn:0x3(1, 0x73))
+$tAssertEq(0x71, mskjn:0x3(1, 0x72))
+
+fn testMskJn stk(a:U2, b:U2) do ( ret mskjn:0x0F; )
+$tAssertEq(0xF3, testMskJn(3,   0xFF))
+$tAssertEq(0xFF, testMskJn(0xF, 0xF3))
+$STORE_PUB
 
 
 \ **********
@@ -561,7 +591,10 @@ pub struct DNode (
   ckey: &U1;  v: Slot;    m: U2;
 )
 
-struct FieldCtx ( offset: U2; tyItem: &U1 )
+struct FieldCtx ( offset:U2; sgMeta:U1, szI:U1, tyItem: &U1 )
+const FC_tyItem = RSIZE;
+const FC_sgMeta = 2;
+const FC_szI = 3;
 
 fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
   isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
@@ -577,29 +610,28 @@ $tAssertEq(ft1(3 + d_tyGet(dnode:DNode)), 0cl)
 
 \ **********
 \ *   [5.b] Working with a tystream
-
-inline fn tyItem_refs stk(tyItem: &U1) -> out(refs:U1) do ret
-  ( $h1(3) ft1(\tyItem) msk META_REF_MSK )
-
-inline fn tyItem_isConstructed stk(tyItem: &U1) -> out(_:U1) do ret
-  ( $h1(4) ft1(\tyItem) msk META_CONSTRUCTED )
-
-inline fn tyItem_isNamed stk(tyItem: &U1) -> out(_:U1) do ret
-  ( $h1(4) ft1(\tyItem) msk META_NAMED )
-
-
 \ Skip a name to get the type reference
-fn tyItem_skipName stk(tyItem: &U1) -> out(dat: &U1) do (
-  if tyItem_isNamed(dup\tyItem) do ( \ skip name
+pre inline FN tyItem_refs \ {tyItem: &U1 -> refs:U1}
+  $h1(3) ft1(\tyItem) msk META_REF_MSK; ret;
+
+pre inline FN tyItem_isConstructed \ (tyItem: &U1 -> U1)
+  $h1(4) ft1(\tyItem) msk META_CONSTRUCTED; ret;
+
+pre inline FN tyItem_isNamed \ {tyItem -> U1}
+  $h1(4) ft1(\tyItem) msk META_NAMED; ret;
+
+pre FN tyItem_skipName \ {tyItem: &U1 -> &U1}
+  IF(tyItem_isNamed(dup\tyItem)) \ skip name
     ret (dup\tyItem + inc2 ft1(inc\tyItem;)) \ tyItem + nameCount+2
-  ) ret inc\tyItem;
-)
+  END ret inc\tyItem;
 
 \ Return the dictionary node for the tyItem
-fn tyItem_node inp(tyItem: &U1) -> out(node: &DNode) do ret (
+pre FN tyItem_node
+  $declVar(declL tyItem, TY_VAR_INPUT, RSIZE) $declEnd
   assert(tyItem_isConstructed(GET tyItem), 0xB002\E_intern);
-  ftBeSzI(tyItem_skipName(GET tyItem), ft1(GET tyItem) msk SZ_MASK)
-)
+  ret ftBeSzI(tyItem_skipName(GET tyItem), ft1(GET tyItem) msk SZ_MASK)
+
+
 $tAssertEq(tyItem_node(inc d_tyGet(dnode:DNode)), dnode:DNode)
 
 \ Get the szI of a native tyItem
@@ -646,6 +678,8 @@ $(
 
 \ **********
 \ *   [XX.d] struct field walker and size
+$NEW_BLOCK_PUB
+$NEW_BLOCK_PRIV
 
 \ Bump the size by the add size.
 \
@@ -693,8 +727,6 @@ $tAssertEq(8,       struct_sz(dnode:FieldCtx));
 
 \ **********
 \ *   [XX.e] struct field name offsets
-$NEW_BLOCK_PUB
-$NEW_BLOCK_PRIV
 fn tyItem_cName stk(tyItem: &U1) -> out(cName: &U1) do ret (
   assert(tyItem_isNamed(dup\tyItem), 0xB004\E_intern) -> inc\tyItem;
 )
@@ -846,16 +878,73 @@ fn fullDeref inp(tySzI:U1, tyRefs:U1, offset:U1, derefs:U1) do (
   AGAIN l0
 )
 
+const SG_SETTER = 0x80;
+const SG_FIRST  = 0x40;
+
+\ Return the szI of the field (tyItem) if native, else 0xFF (invalid).
+\ If tyItem is NULL, return szI of node if native, else 0xFF
+fn field_szI inp(node: &DNode, tyItem: &U1) -> out(szI:U1) do ret (
+  if(GET tyItem) do (
+    if(tyItem_isConstructed(GET tyItem)) do 0xFF \ invalid szI
+    else tyItem_nativeSzI(GET tyItem)
+  ) else (
+    \ TODO: assert is type, handle functions
+    if(isDictNative(GET node)) do (
+      d_tyGet(GET node) msk SZ_MASK
+    ) else 0xFF \ invalid szI
+  )
+)
+
+fn firstInstr stk(sgMeta:U1) -> out(instr:U1) do ret (
+  if(\sgMeta msk SG_SETTER) do SRLL else FTLL
+)
+
+\ Value is not yet on the stack (it's a local/global), get it on the stack.
+large fn gsetDirect inp(tyRefs:U1, derefs:U1, ctx: &FieldCtx) do ret (
+  if(GET tyRefs) do ( h1($L(SZR + FTLL)) h1(ft2(GET ctx)); )
+  else (
+    dv_log(fto1:FC_sgMeta(GET ctx), 0xD111, 2, 0x10)
+    assertSzI(fto1:FC_szI(GET ctx))
+    assertEq(0, GET derefs, E_cBadRefs)
+    h1(fto1:FC_szI(GET ctx) + firstInstr(fto1:FC_sgMeta(GET ctx)));
+    h1(ft2(GET ctx));
+  )
+)
+
+\ Perform a get or set operation utilizing ctx/etc
+large fn gsOperate inp (tyRefs: U1, derefs: U1, ctx: &FieldCtx)
+do (
+  dv_log(GET tyRefs, GET derefs, 0xD0FF, 3, 0x10)
+  doDeref(ft2(GET ctx), GET tyRefs, GET derefs)
+  -> SET derefs -> SET tyRefs -> sr2(\offset, GET ctx)
+  if(not GET derefs) do ( ret; )
+  if(SG_FIRST msk fto1:FC_sgMeta(GET ctx)) do (
+    if(SG_SETTER msk fto1:FC_sgMeta(GET ctx))
+      do SRLL else FTLL
+    h1(\op + fto1:FC_szI(GET ctx));
+    ret h1(ft2(GET ctx))
+  ) elif(ft2(GET ctx)) do (
+    if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SRO else FTO
+    h1(\instr + fto1:FC_szI(GET ctx));
+    ret h1(ft2(GET ctx));
+  )
+  if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SR else FT
+  ret h1(\instr + fto1:FC_szI(GET ctx))
+)
+
 \ Perform `.` for a local/global variable, walking the dots
 \ i.e: `.myStruct.fieldStruct.field`
 \ - Continue to add local offset (in Ctx) until a reference type is
 \   encountered.
-large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
-  \ IMPORTANT: careful about modifying alignment here. The FieldCtx
-  \ struct is MANUALLY aligned
-    var tySzI: U1;  var _align: U1;
-    var ctxOffset: U2;  var ctxTyItem: &U1;
-  \ END IMPORTANT
+large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
+  \ IMPORTANT: must be first for alignment
+  var ctxOffset: U2;  var sgMeta:U1; var ctxSzI:U1; var ctxTyItem: &U1;
+  var synDerefs: U1;  var synRefs: U1;  var node: &DNode;
+
+  \synDerefs -> SET synDerefs;
+  \synRefs -> SET synRefs;
+  \node -> SET node;
+
   dv_log(0xD000, 1, 0x10)
   $dv_log(d_vGet(dnode:ctxOffset), d_vGet(dnode:ctxTyItem), 0x999, 3, 0x10)
 
@@ -863,7 +952,7 @@ large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
   dv_log(0xD001, 1, 0x10)
   \ Extract metadata from node and use type instead.
   var varRefs: U1; d_mGet(GET node) msk TY_VAR_REF -> SET varRefs;
-  var isFirst: U1; TRUE -> SET isFirst;
+  SG_FIRST -> SET sgMeta;
   d_tyGet(GET node) -> SET node;
 
   dv_log(0xD002, 1, 0x10)
@@ -889,9 +978,9 @@ large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
     \ Note2: the varRefs can become non-zero either from a local that is
     \   a reference `var s: &MyStruct` or from a field which is a reference
     \   `nonRef.aRef.b`
-    if(GET isFirst and GET varRefs) do (
+    if((SG_FIRST msk GET sgMeta) and GET varRefs) do (
       h1($L(SZR + FTLL)) h1(GET ctxOffset)
-      0 -> SET ctxOffset; FALSE -> SET isFirst;
+      0 -> SET ctxOffset; GET sgMeta msk $L(inv SG_FIRST) -> SET sgMeta;
     )
     autoDeref(GET ctxOffset, GET varRefs) -> SET varRefs -> SET ctxOffset;
     tyItem_node(GET ctxTyItem) -> SET node;
@@ -907,58 +996,23 @@ large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
   \ - apply any refs. This is only valid if isFirst is still true!
   \ - apply any derefs. We must assert the type has a suitable number of refs!
   \ - simply fetch a native value.
-  var isSetter: U1;
   if(scan; tokenEq(SLC_EQUAL)) do
-       ( TRUE ->  SET isSetter; scan; single(FALSE) )
-  else ( FALSE -> SET isSetter; tokenPlcSet(0) )
+       ( SG_SETTER jn GET sgMeta -> SET sgMeta; scan; single(FALSE) )
+  else ( \(SG_SETTER=FALSE); tokenPlcSet(0) )
 
   if(GET synRefs) do (
-    assert(GET isFirst, E_type)
+    assert(SG_FIRST msk GET sgMeta, E_type)
     h1(LR) h1(GET ctxOffset)
     ret;
   )
   dv_log(0xD105, 1, 0x10)
-
-  \ Find the "native size" of the final type
-  if(GET ctxTyItem) do (
-    if(tyItem_isConstructed(GET ctxTyItem)) do 0xFF \ invalid szI
-    else tyItem_nativeSzI(GET ctxTyItem)
-  ) else (
-    dv_log(0xD107, 1, 0x10)
-    dv_log(GET node, 0xD108, 2, 0x10)
-    \ TODO: assert is type, handle functions
-    if(isDictNative(GET node)) do (
-      d_tyGet(GET node) msk SZ_MASK
-    ) else 0xFF \ invalid szI
-  ) -> SET tySzI;
-  dv_log(GET tySzI, GET varRefs, GET isFirst, 0xD110, 4, 0x10)
+  field_szI(GET node, GET ctxTyItem) -> SET ctxSzI;
 
   \ If the variable is still "first" we need to actually fetch it
-  if(GET isFirst) do (
-    if(GET varRefs) do ( h1($L(SZR + FTLL)) h1(GET ctxOffset) )
-    else (
-      \ The variable is local and not a reference. Derefs are illegal
-      dv_log(GET tySzI, 0xD111, 2, 0x10)
-      assertSzI(GET tySzI)
-      assertEq(0, GET synDerefs, E_cBadRefs)
-      GET tySzI + if(GET isSetter) do SRLL else FTLL \ {instr}
-      h1(\instr); h1(GET ctxOffset); ret;
-    )
+  if(SG_FIRST msk GET sgMeta) do (
+    gsetDirect(GET varRefs, GET synDerefs, REF ctxOffset);
   )
-
-  dv_log(GET varRefs, GET synDerefs, 0xD0FF, 3, 0x10)
-  doDeref(GET ctxOffset, GET varRefs, GET synDerefs)
-  -> SET synDerefs -> SET varRefs -> SET ctxOffset
-  if(not GET synDerefs) do
-    ( ret; )
-  if(GET isFirst) do (
-    h1((if(GET isSetter) do SRLL else FTLL) + GET tySzI);
-    ret h1(GET ctxOffset)
-  ) elif(GET ctxOffset) do (
-    h1((if(GET isSetter) do SRO else FTO) + GET tySzI);
-    ret h1(GET ctxOffset);
-  )
-  ret h1((if(GET isSetter) do SR else FT) + GET tySzI)
+  ret gsOperate(GET varRefs, GET synDerefs, REF ctxOffset)
 )
 
 syn large fn . do ret ( notNow;
@@ -977,7 +1031,6 @@ syn large fn . do ret ( notNow;
   panic E_unimpl
 )
 
-
 $STORE_PRIV
 fn testDotX inp(x:U1) -> out(_:U1) do ret .x
 $tAssertEq(0x42, testDotX(0x42))
@@ -988,11 +1041,8 @@ large fn testDotCtx -> out(_:U2) do
   ret ( var ctx: FieldCtx; sr2(0x7788, REF ctx); .ctx.offset )
 $tAssertEq(0x7788, testDotCtx;)
 
-large fn testDotSetCtx -> out(_:U2) do ret (
-  var ctx: FieldCtx;
-  .ctx.offset = 0x789;
-  .ctx.offset
-)
+large fn testDotSetCtx -> out(_:U2) do
+  ret ( var ctx: FieldCtx; .ctx.offset = 0x789; .ctx.offset )
 $tAssertEq(0x789, testDotSetCtx;)
 
 \ TODO: still need to do:

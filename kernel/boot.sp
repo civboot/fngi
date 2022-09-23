@@ -729,7 +729,11 @@ $large $FN compileInputs
   $LOOP l0
     $GET ctx_max %RETZ   #0$L $SET ctx_node
     $REF ctx_node $GET G_dictLocal $xx:bstWalk
-    $GET ctx_node $retIfNot   $GET ctx_node$d_vGet  $SET ctx_max
+    $GET ctx_node $retIfNot
+    $GET ctx_node$d_vGet  $SET ctx_max
+    $GET ctx_node$d_mGet @C_TYPED$L %MSK $IF
+
+    $END
     $GET ctx_node $xx:_setImpl
   $AGAIN l0
   %RET
@@ -930,6 +934,7 @@ $FN executeIt #0$L $xx:dictRef $jmp:execute
 $executeIt answer  #42 $tAssertEq
 
 $STORE_PUB
+
 \ [asNow]: compile the current token.
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
@@ -1071,12 +1076,15 @@ $pub $pre $inline $FN srBe4   #1$h1 .4%SRBE %RET
 $pub $pre $inline $FN srBeR   #1$h1 .R%SRBE %RET
 
 
+\ consume `:someVal` at compile time returning the value
+$FN colonValue
+  $xx:colon $xx:scan @TRUE$L $xx:single %RET
 
 \ [addr]: Fetching or Storing offset, i.e. fto1:DN_v(addr)
 $pre $FN _opOffset  \ {instr szI}
   $declL instr   @TY_VAR_INPUT  #1 $declVar
   $declL offset  #0             #1 $declVar $declEnd
-  $xx:colon $xx:scan @TRUE$L $xx:single $SET offset
+  $xx:colonValue $SET offset
   $GET G_compFn %XLW
   $GET instr $xx:h1  $GET offset $jmp:h1
 
