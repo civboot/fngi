@@ -815,9 +815,12 @@ TEST_END
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
+  // eprintf("??? xImpl %X\n", fn);
   CS_PUSH(cfb->ep);
   CSZ.sp -= 1; *(mem + CSZ.dat + CSZ.sp) = growSz; // push growSz onto csz
   cfb->ep = fn;
+  // eprintf("  ??? grow=%u ls=%u ls.sp=%u ls.cap=%u\n",
+  //           growSz, Stk_len(LS) * 4, LS.sp, LS.cap);
 }
 
 void xlImpl(Ref fn) { // impl for XL*

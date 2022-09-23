@@ -800,18 +800,24 @@ $tAssertEq(0x10, struct_ctx(dnode:DNode).m -> drp\tyItem)
 \ 2. '.' should just lookup value. Setting a value NEEDS to be done some other way,
 \    other
 
-\ Remove refs until there are 0 or 1. This allows FTO/FTLL/FTGL to work.
-\ if/when a reference is fetched, offset will be set to 0
-fn autoDeref stk(offset:U1, refs:U1) -> out(offset:U1, newRefs:U1) do (
+\ Remove refs until there are 0 or 1, or until derefs are exhausted.
+fn doDeref
+    inp(offset:U1 refs:U1 derefs:U1) -> out(offset:U1, refs:U1, derefs:U1)
+do (
   LOOP l0
-    retIf(dup\refs < 2)
-    if(swp -> dup\offset) do (
-      h1($L(SZR + FTO)) -> h1(\offset) -> 0\offset
+    if((GET refs < 2) or (not GET derefs)) do
+      ret (GET offset, GET refs, GET derefs)
+    if(GET offset) do (
+      h1($L(SZR + FTO)) -> h1(GET offset); 0 -> SET offset
     ) else (
       h1($L(SZR + FT))
-    ) -> swp -> dec;\refs
+    ) dec GET refs -> SET refs
   AGAIN l0
 )
+
+\ Same as doDeref except set derefs = refs, auto-removing all derefs except last.
+fn autoDeref stk(offset:U1, refs:U1) -> out(offset:U1, newRefs:U1) do
+  ret ( dup\refs -> doDeref; -> drp\derefs; )
 
 $STORE_PRIV
 $(
@@ -845,16 +851,19 @@ fn fullDeref inp(tySzI:U1, tyRefs:U1, offset:U1, derefs:U1) do (
 \ - Continue to add local offset (in Ctx) until a reference type is
 \   encountered.
 large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
+  \ IMPORTANT: careful about modifying alignment here. The FieldCtx
+  \ struct is MANUALLY aligned
+    var tySzI: U1;  var _align: U1;
+    var ctxOffset: U2;  var ctxTyItem: &U1;
+  \ END IMPORTANT
   dv_log(0xD000, 1, 0x10)
-  \ Create the local "ctx" struct from two vars. Requires manual alignment
-  var _align: U2; var ctxOffset: U2;  var ctxTyItem: &U1;
   $dv_log(d_vGet(dnode:ctxOffset), d_vGet(dnode:ctxTyItem), 0x999, 3, 0x10)
 
   0 -> SET ctxOffset; 0 -> SET ctxTyItem;
   dv_log(0xD001, 1, 0x10)
   \ Extract metadata from node and use type instead.
   var varRefs: U1; d_mGet(GET node) msk TY_VAR_REF -> SET varRefs;
-  var isLocal: U1; TRUE -> SET isLocal;
+  var isFirst: U1; TRUE -> SET isFirst;
   d_tyGet(GET node) -> SET node;
 
   dv_log(0xD002, 1, 0x10)
@@ -867,22 +876,22 @@ large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
     \ We need to get the next field. There are a few possibilities:
     \  1. There is no next field -> we break to handle the value.
     \  2. The next field item is an embedded struct -> we increment offset.
-    \     This works whether isLocal is true/false
+    \     This works whether isFirst is true/false
     \  3. The next field item is a reference. We update the number of
     \     references appropriately.
     consumeDot -> BREAK0 b1
     dv_log(0xD011, 1, 0x10)
 
-    \ If isLocal (we have field of local struct) then we need to get the local
+    \ If isFirst (we have field of local struct) then we need to get the local
     \ offset to "convert" the value to a reference on the stack.
     \ Note: We don't decrement varRefs since the type on the stack has that
     \   number of references in front of it.
     \ Note2: the varRefs can become non-zero either from a local that is
     \   a reference `var s: &MyStruct` or from a field which is a reference
     \   `nonRef.aRef.b`
-    if(GET isLocal and GET varRefs) do (
+    if(GET isFirst and GET varRefs) do (
       h1($L(SZR + FTLL)) h1(GET ctxOffset)
-      0 -> SET ctxOffset; FALSE -> SET isLocal;
+      0 -> SET ctxOffset; FALSE -> SET isFirst;
     )
     autoDeref(GET ctxOffset, GET varRefs) -> SET varRefs -> SET ctxOffset;
     tyItem_node(GET ctxTyItem) -> SET node;
@@ -894,11 +903,17 @@ large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
 
   \ We are now at the "final" field in a struct (no more dots) or have a direct
   \ local value. We need to:
-  \ - apply any refs. This is only valid if isLocal is still true!
+  \ - determine whether we are getting or setting
+  \ - apply any refs. This is only valid if isFirst is still true!
   \ - apply any derefs. We must assert the type has a suitable number of refs!
   \ - simply fetch a native value.
+  var isSetter: U1;
+  if(scan; tokenEq(SLC_EQUAL)) do
+       ( TRUE ->  SET isSetter; scan; single(FALSE) )
+  else ( FALSE -> SET isSetter; tokenPlcSet(0) )
+
   if(GET synRefs) do (
-    assert(GET isLocal, E_type)
+    assert(GET isFirst, E_type)
     h1(LR) h1(GET ctxOffset)
     ret;
   )
@@ -915,24 +930,35 @@ large fn _dotLocal inp(node: &DNode, synRefs: U1, synDerefs: U1) do (
     if(isDictNative(GET node)) do (
       d_tyGet(GET node) msk SZ_MASK
     ) else 0xFF \ invalid szI
-  ) \ {tySzI}
-  dv_log(dup\tySzI, GET varRefs, GET isLocal, 0xD110, 4, 0x10)
+  ) -> SET tySzI;
+  dv_log(GET tySzI, GET varRefs, GET isFirst, 0xD110, 4, 0x10)
 
-  \ If the variable is still "local" we need to actually fetch it
-  if(GET isLocal) do (
+  \ If the variable is still "first" we need to actually fetch it
+  if(GET isFirst) do (
     if(GET varRefs) do ( h1($L(SZR + FTLL)) h1(GET ctxOffset) )
     else (
       \ The variable is local and not a reference. Derefs are illegal
-      dv_log(dup\tySzI, 0xD111, 2, 0x10)
-      assertSzI(dup\tySzI)
+      dv_log(GET tySzI, 0xD111, 2, 0x10)
+      assertSzI(GET tySzI)
       assertEq(0, GET synDerefs, E_cBadRefs)
-      h1(\tySzI + FTLL) h1(GET ctxOffset)
-      ret;
+      GET tySzI + if(GET isSetter) do SRLL else FTLL \ {instr}
+      h1(\instr); h1(GET ctxOffset); ret;
     )
   )
 
   dv_log(GET varRefs, GET synDerefs, 0xD0FF, 3, 0x10)
-  ret fullDeref(\tySzI, GET varRefs, GET ctxOffset, GET synDerefs)
+  doDeref(GET ctxOffset, GET varRefs, GET synDerefs)
+  -> SET synDerefs -> SET varRefs -> SET ctxOffset
+  if(not GET synDerefs) do
+    ( ret; )
+  if(GET isFirst) do (
+    h1((if(GET isSetter) do SRLL else FTLL) + GET tySzI);
+    ret h1(GET ctxOffset)
+  ) elif(GET ctxOffset) do (
+    h1((if(GET isSetter) do SRO else FTO) + GET tySzI);
+    ret h1(GET ctxOffset);
+  )
+  ret h1((if(GET isSetter) do SR else FT) + GET tySzI)
 )
 
 syn large fn . do ret ( notNow;
@@ -962,10 +988,16 @@ large fn testDotCtx -> out(_:U2) do
   ret ( var ctx: FieldCtx; sr2(0x7788, REF ctx); .ctx.offset )
 $tAssertEq(0x7788, testDotCtx;)
 
+large fn testDotSetCtx -> out(_:U2) do ret (
+  var ctx: FieldCtx;
+  .ctx.offset = 0x789;
+  .ctx.offset
+)
+$tAssertEq(0x789, testDotSetCtx;)
+
 \ TODO: still need to do:
-\  1. .foo = bar
-\  2. struct inp (assign values)
-\  3. .deStruct
-\  4. namespacing
+\  - struct inp (assign values)
+\  - .deStruct
+\  - namespacing
 
 $STORE_PUB
