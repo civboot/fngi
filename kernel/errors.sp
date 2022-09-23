@@ -10,9 +10,9 @@
 #E010  #0=E_io      \ IO error class
 #E0A0  #0=E_asm     \ assembly error class (cause in asm).
 #E0C0  #0=E_comp    \ compiler error class (cause in comp).
+#7000  #0=E_intern  \ internal (undefined) error
 #A000  #0=E_test    \ [AXXX] (assert) test case error.
 
-#E001  #0=E_intern  \ internal (undefined) error
 #E002  #0=E_undef   \ undefined error
 #E003  #0=E_unreach \ unreachable code
 #E004  #0=E_todo    \ executed incomplete (to do) code
@@ -91,6 +91,7 @@
 #E102  #0=E_dot
 #E103  #0=E_bracket     \ expected backet
 #E104  #0=E_cBadDeRefs  \ too many de/refs
+#E105  #0=E_cBadConstruct  \ construct of too many fields
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

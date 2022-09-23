@@ -49,8 +49,6 @@
 \   01SS ----: mem
 \   10SS ----: jmp
 \   11-- ----: small literal value [0x00 - 0x3F]
-#40 #0=I_MEM
-#80 #0=I_JMP
 
 \ # [1.a] Sizes: --SS ----
 #00 #0=SZ1
@@ -118,7 +116,8 @@
 \ Double-arg extension commands might be:
 \ floating point: add,sub,mul,div,ge,lt
 
-\ # [1.d] Mem|Store              |Description
+\ # [1.d] Mem|Store               |Description
+#40 #0=I_MEM
 #40 #0=FT    \ {addr} -> {value}  |FeTch value from addr
 #41 #0=FTBE  \ {addr} -> {value}  |FeTch value from addr (big endian)
 #42 #0=FTO   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
@@ -140,6 +139,7 @@
 \   local stack is stored in the first bye (shifted by APO2) at the function's
 \   address, which  are loaded by the execute instr and stored in the highest
 \   byte in the  callstack (which RET uses to shrink the local stack on return).
+#80 #0=I_JMP
 
 \ Unsized jumps:
 #80 #0=JMPW  \ Jmp to WS

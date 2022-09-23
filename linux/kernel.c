@@ -114,7 +114,7 @@ static inline Ref asRef(void* ptr) {
 #define asPtr(TY, REF)       ((TY*)bndsChk(sizeof(TY), REF))
 #define asPtrNull(TY, REF)   ((TY*)bndsChkNull(sizeof(TY), REF))
 #define asPtrOr(TY, REF, OR) ((TY*)bndsChk(sizeof(TY), REF ? REF : OR)
-#define asU1(REF)       asPtr(U1, REF)
+#define asU1(REF)            asPtr(U1, REF)
 
 void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
   *fb = (Fiber) {
@@ -898,6 +898,7 @@ bool dbgExecute(Instr instr) {
 }
 
 void dbgInstr(Instr instr) {
+  // eprintf("   %% %X\n", instr);
   if(LOG_COMPILER & g->logLvlSys) {
     if (LOG_EXECUTE == (g->logLvlSys & LOG_EXECUTE)) {
       if(isExecute(instr)) dbgExecute(instr);
@@ -993,7 +994,11 @@ inline static Instr executeInstr(Instr instr) {
       R0
 
     // Mem Cases
-    case SZ1 + FT: WS_PUSH(*asU1(WS_POP())); R0
+    case SZ1 + FT: {
+      r = WS_POP();
+      // eprintf("??? .1%%FT %X\n", r);
+      WS_PUSH(*asU1(r)); R0
+    }
     case SZ2 + FT: WS_PUSH(*asPtr(U2, WS_POP())); R0
     case SZ4 + FT: WS_PUSH(*asPtr(U4, WS_POP())); R0
 
@@ -1003,8 +1008,15 @@ inline static Instr executeInstr(Instr instr) {
 
     case SZ1 + FTO: WS_PUSH(*asU1(WS_POP() + popLit(1))); R0
     case SZ2 + FTO: WS_PUSH(*asPtr(U2, WS_POP() + popLit(1))); R0
-    case SZ4 + FTO: WS_PUSH(*asPtr(U4, WS_POP() + popLit(1))); R0
+    case SZ4 + FTO: {
+      l = popLit(1);
+      U4 addr = WS_POP();
+      r = *asPtr(U4, addr + l);
+      // eprintf("??? .4%%FTO addr=%X offset=%u got=%X\n", addr, l, r);
+      WS_PUSH(r);
 
+      R0
+    };
     case SZ1 + FTLL: WS_PUSH(*asU1(LS_SP + popLit(1))); R0
     case SZ2 + FTLL: WS_PUSH(*asPtr(U2, LS_SP + popLit(1))); R0
     case SZ4 + FTLL: WS_PUSH(*asPtr(U4, LS_SP + popLit(1))); R0

@@ -722,6 +722,9 @@ $large $FN bstWalk
   $GET ctx $GET node  .R%FTO@DN_r$h1  $xx:bstWalk  %RET
   %RET
 
+$pub $FN hR  @RSIZE$L #2$L %EQ $IF $jmp:h2 $END $jmp:h4
+$declare $large $pre $FN compileTypedInput #0$hR
+
 $large $FN compileInputs
   @RSIZE@RSIZE^ADD$h1 \ local: Context struct
   $declL ctx_node #0 @RSIZE $declVar
@@ -732,9 +735,10 @@ $large $FN compileInputs
     $GET ctx_node $retIfNot
     $GET ctx_node$d_vGet  $SET ctx_max
     $GET ctx_node$d_mGet @C_TYPED$L %MSK $IF
-
+      $GET ctx_node @compileTypedInput$L .R%FTBE %XLW
+    $ELSE
+      $GET ctx_node $xx:_setImpl
     $END
-    $GET ctx_node $xx:_setImpl
   $AGAIN l0
   %RET
 

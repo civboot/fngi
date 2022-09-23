@@ -7,8 +7,6 @@
 #define __KERNEL_CONSTANTS_H
 
 
-#define I_MEM                0x40
-#define I_JMP                0x80
 #define SZ1                  0x0
 #define SZ2                  0x10
 #define SZ4                  0x20
@@ -54,6 +52,7 @@
 #define MUL                  0x30
 #define DIV_U                0x31
 #define DIV_S                0x32
+#define I_MEM                0x40
 #define FT                   0x40
 #define FTBE                 0x41
 #define FTO                  0x42
@@ -65,6 +64,7 @@
 #define SRLL                 0x48
 #define SRGL                 0x49
 #define LIT                  0x4A
+#define I_JMP                0x80
 #define JMPW                 0x80
 #define XSW                  0x90
 #define XLW                  0xA0
@@ -151,8 +151,8 @@
 #define E_io                 0xE010
 #define E_asm                0xE0A0
 #define E_comp               0xE0C0
+#define E_intern             0x7000
 #define E_test               0xA000
-#define E_intern             0xE001
 #define E_undef              0xE002
 #define E_unreach            0xE003
 #define E_todo               0xE004
@@ -228,6 +228,7 @@
 #define E_dot                0xE102
 #define E_bracket            0xE103
 #define E_cBadDeRefs         0xE104
+#define E_cBadConstruct      0xE105
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2

@@ -127,7 +127,6 @@ pub syn FN declTy ret ( \ {meta, ty}
   $declVar(declL node, 0, RSIZE) $declEnd
   notNow; colon; xx:dictAdd(0\v, C_TYPED\initalMeta) -> SET node;
   compNext(TRUE) -> d_tySet(\ty, GET node) -> d_mSet(\meta, GET node)
-  dv_log(d_mGet(GET node), GET node, 0x888, 3, 0x10)
 )
 
 \ **********
@@ -309,9 +308,28 @@ pub syn fn inp do ret (
   _inp;
 )
 
+pre inline FN tyItem_isConstructed \ (tyItem: &U1 -> U1)
+  $h1(4) ft1(\tyItem) msk META_CONSTRUCTED; ret;
+
+declare large fn compileStructInput do; \ [&Node]
+
+\ Called from compileInputs
+\declared fn compileTypedInput do ret ( \ [&Node]
+  $declVar(declL tyItem, 0, RSIZE) $declEnd
+  d_tyGet(dup\node) -> SET tyItem;
+
+  \ assert(isTyped(dup) == true)
+  IF(tyItem_isConstructed(GET tyItem))
+    compileStructInput(\node)
+  ELSE _setImpl(\node) END
+)
+
 $STORE_PRIV
 \ test inp by truncating values
-pre FN testInp  inp x:U1 $declEnd  ret(GET x)
+pre FN testInp
+  inp x:U1
+  $declEnd
+  ret(GET x)
 $tAssertEq(testInp(0x101), 1)
 
 pre FN testInp3  inp (x:U1  y:U2  z: &U1)  $declEnd
@@ -585,13 +603,13 @@ large syn fn struct do (  notNow;
 
 \ **********
 \ *   [5.b] Important Structs and a few struct functions
-
 pub struct DNode (
   l: &DNode;  r: &DNode;
   ckey: &U1;  v: Slot;    m: U2;
 )
 
 struct FieldCtx ( offset:U2; sgMeta:U1, szI:U1, tyItem: &U1 )
+
 const FC_tyItem = RSIZE;
 const FC_sgMeta = 2;
 const FC_szI = 3;
@@ -611,11 +629,10 @@ $tAssertEq(ft1(3 + d_tyGet(dnode:DNode)), 0cl)
 \ **********
 \ *   [5.b] Working with a tystream
 \ Skip a name to get the type reference
+$NEW_BLOCK_PUB
+$NEW_BLOCK_PRIV
 pre inline FN tyItem_refs \ {tyItem: &U1 -> refs:U1}
   $h1(3) ft1(\tyItem) msk META_REF_MSK; ret;
-
-pre inline FN tyItem_isConstructed \ (tyItem: &U1 -> U1)
-  $h1(4) ft1(\tyItem) msk META_CONSTRUCTED; ret;
 
 pre inline FN tyItem_isNamed \ {tyItem -> U1}
   $h1(4) ft1(\tyItem) msk META_NAMED; ret;
@@ -630,9 +647,8 @@ pre FN tyItem_node
   $declVar(declL tyItem, TY_VAR_INPUT, RSIZE) $declEnd
   assert(tyItem_isConstructed(GET tyItem), 0xB002\E_intern);
   ret ftBeSzI(tyItem_skipName(GET tyItem), ft1(GET tyItem) msk SZ_MASK)
-
-
 $tAssertEq(tyItem_node(inc d_tyGet(dnode:DNode)), dnode:DNode)
+
 
 \ Get the szI of a native tyItem
 fn tyItem_nativeSzI stk(tyItem: &U1) -> out(refs:U1) do ret (
@@ -678,8 +694,6 @@ $(
 
 \ **********
 \ *   [XX.d] struct field walker and size
-$NEW_BLOCK_PUB
-$NEW_BLOCK_PRIV
 
 \ Bump the size by the add size.
 \
@@ -735,7 +749,7 @@ fn tyItem_cName stk(tyItem: &U1) -> out(cName: &U1) do ret (
 large fn _fieldNameWalker inp(tyItem: &U1, ctx: &FieldCtx) -> out(done:U1) do (
   if(tokenEq(cToSlc(tyItem_cName(GET tyItem)))) do (
     \ Found tyItem. Current offset is correct (after alignment)
-    sroR:RSIZE(GET tyItem, GET ctx) \ ctx.tyItem = tyItem
+    sroR:FC_tyItem(GET tyItem, GET ctx) \ ctx.tyItem = tyItem
     sr2( \ ctx.offset =
       align(ft2(GET ctx)\(ctx.offset), reqAlign(tyItem_sz(GET tyItem))),
       GET ctx)
@@ -765,8 +779,8 @@ $tAssert(consumeDot.)  $tAssertNot(consumeDot)
 
 \ Return the node from the ctx and clear it (for safety)
 large fn _ctxPopNode inp(ctx: &FieldCtx) -> out(_: &DNode) do ret (
-  tyItem_node(ftoR:RSIZE(GET ctx)) \ {&Node}
-  sroR:RSIZE(0, GET ctx)
+  tyItem_node(ftoR:FC_tyItem(GET ctx)) \ {&Node}
+  sroR:FC_tyItem(0, GET ctx)
 )
 
 \ Follow dots to find a field's offset and type
@@ -837,19 +851,22 @@ fn doDeref
     inp(offset:U1 refs:U1 derefs:U1) -> out(offset:U1, refs:U1, derefs:U1)
 do (
   LOOP l0
+    dv_log(GET refs, GET derefs, 0x5100, 3, 0x10)
     if((GET refs < 2) or (not GET derefs)) do
       ret (GET offset, GET refs, GET derefs)
     if(GET offset) do (
       h1($L(SZR + FTO)) -> h1(GET offset); 0 -> SET offset
     ) else (
       h1($L(SZR + FT))
-    ) dec GET refs -> SET refs
+    )
+    dec GET refs   -> SET refs;
+    dec GET derefs -> SET derefs;
   AGAIN l0
 )
 
 \ Same as doDeref except set derefs = refs, auto-removing all derefs except last.
 fn autoDeref stk(offset:U1, refs:U1) -> out(offset:U1, newRefs:U1) do
-  ret ( dup\refs -> doDeref; -> drp\derefs; )
+  ret ( dup\(derefs=refs) -> doDeref; -> drp\derefs; )
 
 $STORE_PRIV
 $(
@@ -860,26 +877,8 @@ $(
 )
 $STORE_PUB
 
-\ Compile a deref. The final deref will use tySzI
-fn fullDeref inp(tySzI:U1, tyRefs:U1, offset:U1, derefs:U1) do (
-  assert(GET derefs <= GET tyRefs, E_cBadRefs)
-  LOOP l0
-    retIfNot(GET derefs)
-    if(GET tyRefs == 1) do (
-      assert(GET tySzI != 0xFF, E_cBadRefs)
-      GET tySzI
-    ) else SZR \ {szI}
-
-    if(GET offset) do (
-      h1(\szI + FTO); h1(GET offset);
-    ) else h1(\szI + FT);
-    dec GET derefs -> SET derefs;
-    dec GET tyRefs -> SET tyRefs;
-  AGAIN l0
-)
-
 const SG_SETTER = 0x80;
-const SG_FIRST  = 0x40;
+const SG_DIRECT  = 0x40;
 
 \ Return the szI of the field (tyItem) if native, else 0xFF (invalid).
 \ If tyItem is NULL, return szI of node if native, else 0xFF
@@ -895,41 +894,48 @@ fn field_szI inp(node: &DNode, tyItem: &U1) -> out(szI:U1) do ret (
   )
 )
 
-fn firstInstr stk(sgMeta:U1) -> out(instr:U1) do ret (
+fn directInstr stk(sgMeta:U1) -> out(instr:U1) do ret (
   if(\sgMeta msk SG_SETTER) do SRLL else FTLL
 )
+$tAssertEq(SRLL, directInstr(SG_SETTER))
+$tAssertEq(FTLL, directInstr(0))
 
 \ Value is not yet on the stack (it's a local/global), get it on the stack.
-large fn gsetDirect inp(tyRefs:U1, derefs:U1, ctx: &FieldCtx) do ret (
-  if(GET tyRefs) do ( h1($L(SZR + FTLL)) h1(ft2(GET ctx)); )
-  else (
-    dv_log(fto1:FC_sgMeta(GET ctx), 0xD111, 2, 0x10)
+large fn gsDirect inp(offset:U1, tyRefs:U1, derefs:U1, ctx: &FieldCtx) do ret (
+  if(GET tyRefs) do (
+    dv_log(GET offset, 0x2000, 2, 0x10);
+    h1($L(SZR + FTLL)) h1(GET offset);
+  ) else (
+    dv_log(fto1:FC_szI(GET ctx), 0x2002, 2, 0x10)
     assertSzI(fto1:FC_szI(GET ctx))
     assertEq(0, GET derefs, E_cBadRefs)
-    h1(fto1:FC_szI(GET ctx) + firstInstr(fto1:FC_sgMeta(GET ctx)));
-    h1(ft2(GET ctx));
+    h1(fto1:FC_szI(GET ctx) jn directInstr(fto1:FC_sgMeta(GET ctx)));
+    h1(GET offset);
   )
 )
 
-\ Perform a get or set operation utilizing ctx/etc
+\ Perform a get or set operation utilizing ctx:
+\   .ctx.offset (also updated)
+\   .ctx.sgMeta: SG_SETTER (note: ignores SG_DIRECT)
+\   .ctx.szI
+\ Note: this does NOT utilize tyItem
 large fn gsOperate inp (tyRefs: U1, derefs: U1, ctx: &FieldCtx)
 do (
-  dv_log(GET tyRefs, GET derefs, 0xD0FF, 3, 0x10)
-  doDeref(ft2(GET ctx), GET tyRefs, GET derefs)
+  dv_log(GET tyRefs, GET derefs, 0xD0F0, 3, 0x10)
+  doDeref(ft2(GET ctx)\offset, GET tyRefs, GET derefs)
   -> SET derefs -> SET tyRefs -> sr2(\offset, GET ctx)
-  if(not GET derefs) do ( ret; )
-  if(SG_FIRST msk fto1:FC_sgMeta(GET ctx)) do (
-    if(SG_SETTER msk fto1:FC_sgMeta(GET ctx))
-      do SRLL else FTLL
-    h1(\op + fto1:FC_szI(GET ctx));
-    ret h1(ft2(GET ctx))
-  ) elif(ft2(GET ctx)) do (
+  retIfNot(GET derefs)
+  dv_log(GET tyRefs, GET derefs, ft2(GET ctx), 0xD0F1, 4, 0x10)
+  if(ft2(GET ctx)\offset) do (
+    dv_log(0xD0F2, 1, 0x10)
     if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SRO else FTO
     h1(\instr + fto1:FC_szI(GET ctx));
-    ret h1(ft2(GET ctx));
+    ret h1(ft2(GET ctx)\offset);
   )
   if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SR else FT
-  ret h1(\instr + fto1:FC_szI(GET ctx))
+  \instr + fto1:FC_szI(GET ctx)
+  dv_log(dup\instr, 0xD0F3, 2, 0x10)
+  ret h1(\instr)
 )
 
 \ Perform `.` for a local/global variable, walking the dots
@@ -946,18 +952,16 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
   \node -> SET node;
 
   dv_log(0xD000, 1, 0x10)
-  $dv_log(d_vGet(dnode:ctxOffset), d_vGet(dnode:ctxTyItem), 0x999, 3, 0x10)
-
-  0 -> SET ctxOffset; 0 -> SET ctxTyItem;
-  dv_log(0xD001, 1, 0x10)
+  0 -> SET ctxOffset; NULL -> SET ctxTyItem;
   \ Extract metadata from node and use type instead.
   var varRefs: U1; d_mGet(GET node) msk TY_VAR_REF -> SET varRefs;
-  SG_FIRST -> SET sgMeta;
+  var directOffset: U1; d_vGet(GET node) -> SET directOffset;
+  SG_DIRECT -> SET sgMeta;
   d_tyGet(GET node) -> SET node;
 
-  dv_log(0xD002, 1, 0x10)
+  dv_log(GET varRefs, 0xD002, 2, 0x10)
   consumeDot -> BREAK0 b0
-  dv_log(0xD003, 1, 0x10)
+  dv_log(0xD07, 0xD003, 2, 0x10)
   struct_fieldCtx(GET node, REF ctxOffset) \ find first field
   LOOP l0
     dv_log(GET ctxTyItem, GET ctxOffset, 0xD010, 3, 0x10)
@@ -965,22 +969,22 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
     \ We need to get the next field. There are a few possibilities:
     \  1. There is no next field -> we break to handle the value.
     \  2. The next field item is an embedded struct -> we increment offset.
-    \     This works whether isFirst is true/false
+    \     This works whether isDirect is true/false
     \  3. The next field item is a reference. We update the number of
     \     references appropriately.
     consumeDot -> BREAK0 b1
     dv_log(0xD011, 1, 0x10)
 
-    \ If isFirst (we have field of local struct) then we need to get the local
+    \ If isDirect (we have field of local struct) then we need to get the local
     \ offset to "convert" the value to a reference on the stack.
     \ Note: We don't decrement varRefs since the type on the stack has that
     \   number of references in front of it.
     \ Note2: the varRefs can become non-zero either from a local that is
     \   a reference `var s: &MyStruct` or from a field which is a reference
     \   `nonRef.aRef.b`
-    if((SG_FIRST msk GET sgMeta) and GET varRefs) do (
+    if((SG_DIRECT msk GET sgMeta) and GET varRefs) do (
       h1($L(SZR + FTLL)) h1(GET ctxOffset)
-      0 -> SET ctxOffset; GET sgMeta msk $L(inv SG_FIRST) -> SET sgMeta;
+      0 -> SET ctxOffset; GET sgMeta msk $L(inv SG_DIRECT) -> SET sgMeta;
     )
     autoDeref(GET ctxOffset, GET varRefs) -> SET varRefs -> SET ctxOffset;
     tyItem_node(GET ctxTyItem) -> SET node;
@@ -988,31 +992,51 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
     struct_fieldCtx(GET node, REF ctxOffset) \ updates ctx offset and tyItem
     tyItem_refs(GET ctxTyItem) -> SET varRefs
   AGAIN l0  END_BREAK b0  END_BREAK b1
-  dv_log(0xD100, 1, 0x10)
+  dv_log(GET varRefs, 0xD100, 2, 0x10)
 
-  \ We are now at the "final" field in a struct (no more dots) or have a direct
-  \ local value. We need to:
-  \ - determine whether we are getting or setting
-  \ - apply any refs. This is only valid if isFirst is still true!
-  \ - apply any derefs. We must assert the type has a suitable number of refs!
-  \ - simply fetch a native value.
+  \ Determine whether we are getting or setting
   if(scan; tokenEq(SLC_EQUAL)) do
        ( SG_SETTER jn GET sgMeta -> SET sgMeta; scan; single(FALSE) )
   else ( \(SG_SETTER=FALSE); tokenPlcSet(0) )
 
+  \ Refs are easy, just apply them directly
   if(GET synRefs) do (
-    assert(SG_FIRST msk GET sgMeta, E_type)
+    dv_log(GET synRefs, 0xD102, 2, 0x10)
+    assert(not (SG_SETTER msk GET sgMeta), E_cBadRefs)
+    \ TODO: do "awesome compile add" if not isDirect
+    assert(SG_DIRECT msk GET sgMeta, E_type)
     h1(LR) h1(GET ctxOffset)
     ret;
   )
-  dv_log(0xD105, 1, 0x10)
   field_szI(GET node, GET ctxTyItem) -> SET ctxSzI;
+  dv_log(GET synRefs, 0xD103, 2, 0x10)
 
-  \ If the variable is still "first" we need to actually fetch it
-  if(SG_FIRST msk GET sgMeta) do (
-    gsetDirect(GET varRefs, GET synDerefs, REF ctxOffset);
+  \ If there is no field (only direct) just do it.
+  if(not GET ctxTyItem) do (
+    dv_log(GET directOffset, GET varRefs, GET synDerefs, 0xD104, 4, 0x10)
+    assert(SG_DIRECT msk GET sgMeta, E_intern);
+    gsDirect(GET directOffset, GET varRefs, GET synDerefs, REF ctxOffset)
+    ret gsOperate(GET varRefs, GET synDerefs, REF ctxOffset)
   )
-  ret gsOperate(GET varRefs, GET synDerefs, REF ctxOffset)
+
+  \ We are accessing a field.
+  \ note: varRefs is the number of references for the _parent_
+  if(SG_DIRECT msk GET sgMeta) do (
+    dv_log(GET varRefs, 0xD110, 2, 0x10)
+    \ We have a direct node and tyItem field.
+    gsDirect(GET directOffset, GET varRefs, GET synDerefs, REF ctxOffset)
+    retIfNot(GET varRefs) \ check if gsDirect finished the job
+    dv_log(GET synRefs, 0xD111, 2, 0x10)
+  ) else (
+    dv_log(GET synRefs, 0xD120, 2, 0x10)
+    assertEq(1, GET varRefs, E_intern)
+  )
+  GET varRefs + tyItem_refs(GET ctxTyItem) -> SET varRefs\tyRefs
+  inc GET synDerefs                        -> SET synDerefs
+
+  \ We now have a reference
+  dv_log(GET varRefs, GET synDerefs, GET ctxSzI, 0xD130, 4, 0x10)
+  ret gsOperate(GET varRefs\tyRefs, GET synDerefs, REF ctxOffset)
 )
 
 syn large fn . do ret ( notNow;
@@ -1036,6 +1060,15 @@ fn testDotX inp(x:U1) -> out(_:U1) do ret .x
 $tAssertEq(0x42, testDotX(0x42))
 $tAssertEq(0x21, testDotX(0x321))
 
+\ Create a memory location to store data.
+const testU1Ref = heap; $h1(0x42); $tAssertEq(0x42, ft1(testU1Ref))
+
+fn testDotDeref inp(x: &U1) -> out(_: U1) do ( ret .@x )
+$tAssertEq(0x42, testDotDeref(testU1Ref))
+
+fn testDotDerefSet inp(x: &U1) -> out(_: U1) do ( .@x = 0x33; ret .@x )
+$tAssertEq(0x33, testDotDerefSet(testU1Ref))
+
 \ manually store to ctx.offset then get it
 large fn testDotCtx -> out(_:U2) do
   ret ( var ctx: FieldCtx; sr2(0x7788, REF ctx); .ctx.offset )
@@ -1045,9 +1078,70 @@ large fn testDotSetCtx -> out(_:U2) do
   ret ( var ctx: FieldCtx; .ctx.offset = 0x789; .ctx.offset )
 $tAssertEq(0x789, testDotSetCtx;)
 
+
+\ Run a function with ctx.offset unset and ctx.tyItem = testU1Ref
+large fn runCtxRef inp(largeFn: &Slot) do ret (
+  var ctx: FieldCtx;  sroR:FC_tyItem(testU1Ref, REF ctx)
+  dv_log(ftoR:FC_tyItem(REF ctx), 0x7100, 2, 0x10)
+  xlw(REF ctx, GET largeFn)
+)
+
+large fn testCtxRef inp(ctx: &FieldCtx) -> out(_:U2) do ret (
+  sr2(0x3378, GET ctx)  .ctx.offset
+)
+$tAssertEq(0x3378, runCtxRef(fnRef:testCtxRef))
+
+large fn testCtxRefSet inp(ctx: &FieldCtx) -> out(_:U2) do ret (
+  .ctx.offset = 0x5438; .ctx.offset
+)
+$tAssertEq(0x5438, runCtxRef(fnRef:testCtxRefSet))
+
+large fn testCtxDeref inp(ctx: &FieldCtx) -> out(_:U2) do ret (
+  .@ctx.tyItem
+)
+$sr1(0x22, testU1Ref)
+$tAssertEq(0x22, runCtxRef(fnRef:testCtxDeref))
+
+$STORE_PUB
+
+\ fn _constructField
+\     var(offset:U1) \(here for packing)
+\     inp(fields: U1, ctx: &FieldCtx)
+\ do ret (
+\   retIfNot .fields;
+\   \ Cache values before recursion, then update offset and next tyItem
+\   .offset = .ctx.offset \ cache
+\   var tyItem: &U1;
+\   .tyItem = .ctx.tyItem  \ cache
+\   \ FIXME: something wrong with this
+\   \ .ctx.offset =
+\   \   bumpSz(.ctx.offset, tyItem_sz(.tyItem))
+\   \ .ctx.tyItem = tyItem_next(.tyItem)
+\   _constructField(dec .fields, .ctx) \ recurse
+\ 
+\   \ compile the value set
+\   h1(SRLL jn szToSzI(tyItem_sz(.tyItem)))
+\   h1(.offset)
+\ )
+\ 
+\ fn conStruct inp(node: &DNode) do ret (
+\   assert(isTyStruct(GET node), E_intern);
+\   assertNot(d_mGet(GET node) msk TY_VAR_REF, E_cBadConstruct)
+\   var ctx: FieldCtx;
+\     .ctx.offset = 0
+\     .ctx.sgMeta = (SG_SETTER jn SG_DIRECT)
+\     .ctx.tyItem = d_tyGet(GET node)
+\   ft1(.ctx.tyItem) -> assert(dup\numFields < 4, E_cBadConstruct)
+\   .ctx.tyItem =inc .ctx.tyItem
+\   _constructField(\numFields, .&ctx)
+\ )
+\ 
+\ \declared fn compileStructInput inp(node: &DNode) do ret (
+\   \ FIXME: walk the fields in reverse order, compiling the struct.
+\ )
+
 \ TODO: still need to do:
 \  - struct inp (assign values)
 \  - .deStruct
 \  - namespacing
 
-$STORE_PUB
