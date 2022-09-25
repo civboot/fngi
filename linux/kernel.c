@@ -114,7 +114,7 @@ static inline Ref asRef(void* ptr) {
 #define asPtr(TY, REF)       ((TY*)bndsChk(sizeof(TY), REF))
 #define asPtrNull(TY, REF)   ((TY*)bndsChkNull(sizeof(TY), REF))
 #define asPtrOr(TY, REF, OR) ((TY*)bndsChk(sizeof(TY), REF ? REF : OR)
-#define asU1(REF)            asPtr(U1, REF)
+#define asP1(REF)            asPtr(U1, REF)
 
 void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
   *fb = (Fiber) {
@@ -287,7 +287,7 @@ void zoab_file(U2 len, char* file) {
 }
 
 void zoab_dict(DNode* node) {
-  U1* ckey = asU1(node->ckey);
+  U1* ckey = asP1(node->ckey);
   zoab_enumStart(Ev_dict);
   zoab_struct(4);  zoab_data(*ckey, ckey + 1, /*join=*/ false); // key
   zoab_int(asRef(node));  zoab_int(node->m);  zoab_int(node->v);
@@ -564,7 +564,7 @@ TEST_END
 //
 // The other core type is cdata, often just represented as "c". This is counted
 // data where the first byte has the count (length).
-#define cAsSlc(CDATA)  asSlc(CDATA + 1, *asU1(CDATA))
+#define cAsSlc(CDATA)  asSlc(CDATA + 1, *asP1(CDATA))
 #define sAsTmpSlc(S)   mvAndSlc(S, strlen(S))
 #define bAsSlc(BUF)    (Slc) {.dat = (BUF).dat, .len = (BUF).len }
 
@@ -574,7 +574,7 @@ Slc asSlc(Ref ref, U2 len) {
 }
 
 Slc mvAndSlc(U1* buf, U2 len) {
-  U1* gbuf = asU1(cfb->gb + g->glen);
+  U1* gbuf = asP1(cfb->gb + g->glen);
   memmove(gbuf, buf, len);
   return (Slc) { .dat = asRef(gbuf), .len = len };
 }
@@ -596,9 +596,9 @@ I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
   Ref c_a = BLOCK_SIZE * 2; \
   Ref c_b = c_a + 4; \
   Ref c_c = c_b + 5; \
-  memmove(asU1(c_a), "\x03" "aaa", 4); \
-  memmove(asU1(c_b), "\x04" "abbd", 5); \
-  memmove(asU1(c_c), "\x03" "abc", 4); \
+  memmove(asP1(c_a), "\x03" "aaa", 4); \
+  memmove(asP1(c_b), "\x04" "abbd", 5); \
+  memmove(asP1(c_c), "\x03" "abc", 4); \
   Slc a = cAsSlc(c_a); \
   Slc b = cAsSlc(c_b); \
   Slc c = cAsSlc(c_c);
@@ -606,7 +606,7 @@ I4 Slc_cmp(Slc l, Slc r) { // return -1 if l<r, 1 if l>r, 0 if eq
 BARE_TEST(testSlc, 3)
   TEST_SLICES
   ASSERT_EQ(3, c.len); assert(c_c + 1 == c.dat);
-  ASSERT_EQ('a', *asU1(c.dat));  ASSERT_EQ('c', *asU1(c.dat + 2));
+  ASSERT_EQ('a', *asP1(c.dat));  ASSERT_EQ('c', *asP1(c.dat + 2));
   ASSERT_EQ(0,  Slc_cmp(a, a));
   ASSERT_EQ(-1, Slc_cmp(a, b));
   ASSERT_EQ(-1, Slc_cmp(a, c));
@@ -804,10 +804,10 @@ BARE_TEST(testUtilities, 3)
   ASSERT_EQ(0x01,         popLit(1));
   ASSERT_EQ(0x2345,       popLit(2));
 
-  memmove(asU1(SRC->buf.dat), "Hi there?!", 10);
+  memmove(asP1(SRC->buf.dat), "Hi there?!", 10);
   Tplc = 4; Tlen = 10; clearPlcBuf(F_plcBuf(*SRC));
   ASSERT_EQ(0, Tplc); ASSERT_EQ(6, Tlen);
-  assert(!memcmp("here?!", asU1(SRC->buf.dat), 6));
+  assert(!memcmp("here?!", asP1(SRC->buf.dat), 6));
 TEST_END
 
 //   *******
@@ -825,7 +825,7 @@ void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
 
 void xlImpl(Ref fn) { // impl for XL*
   // get amount to grow, must be multipled by APtr size .
-  U1 growSz = *asU1(fn);
+  U1 growSz = *asP1(fn);
   ASM_ASSERT(!(growSz % RSIZE), E_align4);
   ASM_ASSERT(LS.sp >= growSz, E_stkOvr);
   ASM_ASSERT(growSz < CSZ_CATCH, E_xlSz);
@@ -898,7 +898,6 @@ bool dbgExecute(Instr instr) {
 }
 
 void dbgInstr(Instr instr) {
-  // eprintf("   %% %X\n", instr);
   if(LOG_COMPILER & g->logLvlSys) {
     if (LOG_EXECUTE == (g->logLvlSys & LOG_EXECUTE)) {
       if(isExecute(instr)) dbgExecute(instr);
@@ -915,8 +914,8 @@ void dbgErr() {
   zoab_int(cfb->err); zoab_int(cfb->ep); zoab_int(line);
   zoab_arr(0, false); // err data
   zoab_stk(&CS);
-  zoab_data(CSZ.cap - CSZ.sp, asU1(CSZ.dat), false);
-  zoab_data(LS.cap - LS.sp, asU1(LS.dat), false);
+  zoab_data(CSZ.cap - CSZ.sp, asP1(CSZ.dat), false);
+  zoab_data(LS.cap - LS.sp, asP1(LS.dat), false);
   fflush(stdout);
 }
 
@@ -994,11 +993,7 @@ inline static Instr executeInstr(Instr instr) {
       R0
 
     // Mem Cases
-    case SZ1 + FT: {
-      r = WS_POP();
-      // eprintf("??? .1%%FT %X\n", r);
-      WS_PUSH(*asU1(r)); R0
-    }
+    case SZ1 + FT: WS_PUSH(*asP1(WS_POP())); R0
     case SZ2 + FT: WS_PUSH(*asPtr(U2, WS_POP())); R0
     case SZ4 + FT: WS_PUSH(*asPtr(U4, WS_POP())); R0
 
@@ -1006,26 +1001,19 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + FTBE: WS_PUSH(ftBE(WS_POP(), 2)); R0
     case SZ4 + FTBE: WS_PUSH(ftBE(WS_POP(), 4)); R0
 
-    case SZ1 + FTO: WS_PUSH(*asU1(WS_POP() + popLit(1))); R0
+    case SZ1 + FTO: WS_PUSH(*asP1(WS_POP() + popLit(1))); R0
     case SZ2 + FTO: WS_PUSH(*asPtr(U2, WS_POP() + popLit(1))); R0
-    case SZ4 + FTO: {
-      l = popLit(1);
-      U4 addr = WS_POP();
-      r = *asPtr(U4, addr + l);
-      // eprintf("??? .4%%FTO addr=%X offset=%u got=%X\n", addr, l, r);
-      WS_PUSH(r);
+    case SZ4 + FTO: WS_PUSH(*asPtr(U4, WS_POP() + popLit(1))); R0
 
-      R0
-    };
-    case SZ1 + FTLL: WS_PUSH(*asU1(LS_SP + popLit(1))); R0
+    case SZ1 + FTLL: WS_PUSH(*asP1(LS_SP + popLit(1))); R0
     case SZ2 + FTLL: WS_PUSH(*asPtr(U2, LS_SP + popLit(1))); R0
     case SZ4 + FTLL: WS_PUSH(*asPtr(U4, LS_SP + popLit(1))); R0
 
-    case SZ1 + FTGL: WS_PUSH(*asU1(cfb->gb + popLit(2))); R0
+    case SZ1 + FTGL: WS_PUSH(*asP1(cfb->gb + popLit(2))); R0
     case SZ2 + FTGL: WS_PUSH(*asPtr(U2, cfb->gb + popLit(2))); R0
     case SZ4 + FTGL: WS_PUSH(*asPtr(U4, cfb->gb + popLit(2))); R0
 
-    case SZ1 + SR: r = WS_POP(); *asU1(r) = WS_POP(); R0
+    case SZ1 + SR: r = WS_POP(); *asP1(r) = WS_POP(); R0
     case SZ2 + SR: r = WS_POP(); *asPtr(U2, r) = WS_POP(); R0
     case SZ4 + SR: r = WS_POP(); *asPtr(U4, r) = WS_POP(); R0
 
@@ -1033,15 +1021,15 @@ inline static Instr executeInstr(Instr instr) {
     case SZ2 + SRBE: r = WS_POP(); srBE(r, 2, WS_POP()); R0
     case SZ4 + SRBE: r = WS_POP(); srBE(r, 4, WS_POP()); R0
 
-    case SZ1 + SRO: r = WS_POP(); *asU1(r + popLit(1)) = WS_POP(); R0
+    case SZ1 + SRO: r = WS_POP(); *asP1(r + popLit(1)) = WS_POP(); R0
     case SZ2 + SRO: r = WS_POP(); *asPtr(U2, r + popLit(1)) = WS_POP(); R0
     case SZ4 + SRO: r = WS_POP(); *asPtr(U4, r + popLit(1)) = WS_POP(); R0
 
-    case SZ1 + SRLL: *asU1(LS_SP + popLit(1)) = WS_POP(); R0
+    case SZ1 + SRLL: *asP1(LS_SP + popLit(1)) = WS_POP(); R0
     case SZ2 + SRLL: *asPtr(U2, LS_SP + popLit(1)) = WS_POP(); R0
     case SZ4 + SRLL: *asPtr(U4, LS_SP + popLit(1)) = WS_POP(); R0
 
-    case SZ1 + SRGL: *asU1(cfb->gb + popLit(2)) = WS_POP(); R0
+    case SZ1 + SRGL: *asP1(cfb->gb + popLit(2)) = WS_POP(); R0
     case SZ2 + SRGL: *asPtr(U2, cfb->gb + popLit(2)) = WS_POP(); R0
     case SZ4 + SRGL: *asPtr(U4, cfb->gb + popLit(2)) = WS_POP(); R0
 
@@ -1224,7 +1212,7 @@ void F_close(FileMethods* m, File* f) {
 void openMock(File* f, const U1* contents) { // Used for tests
   PlcBuf* p = asPtr(PlcBuf, BBA_alloc(&k->bbaPriv, sizeof(PlcBuf)));
   U2 len = strlen(contents);
-  U1* s = asU1(BBA_allocUnaligned(&k->bbaPriv, len));
+  U1* s = asP1(BBA_allocUnaligned(&k->bbaPriv, len));
   memmove(s, contents, len);
   *p = (PlcBuf) { .dat = asRef(s), .len = len, .cap = len };
   f->fid = asRef(p); f->pos = 0;
@@ -1250,7 +1238,7 @@ void F_read(FileMethods* m, File* f) {
     _memmove(f->buf.dat, p->dat + p->plc, len); p->plc += len;
   } else {
     f->code = F_reading;
-    len = F_handleErr(f, read(F_FD(*f), asU1(f->buf.dat + f->buf.len), f->buf.cap - f->buf.len));
+    len = F_handleErr(f, read(F_FD(*f), asP1(f->buf.dat + f->buf.len), f->buf.cap - f->buf.len));
     assert(len >= 0);
   }
   f->buf.len += len; f->pos += len;
@@ -1280,9 +1268,9 @@ BARE_TEST(testReadMock, 4)  BA_init(&k->ba);
   openMock(f, TEST_expectedTxt);
   F_read(NULL, f); ASSERT_EQ(F_done, f->code);
   ASSERT_EQ(10, f->buf.len);
-  ASSERT_EQ(0, memcmp("Hi there B", asU1(f->buf.dat), 10));
-  f->buf.len = 0; F_read(NULL, f); assert(!memcmp("ob\nThis is", asU1(f->buf.dat), 10));
-  f->buf.len = 0; F_read(NULL, f); assert(!memcmp(" Jane.", asU1(f->buf.dat), 6));
+  ASSERT_EQ(0, memcmp("Hi there B", asP1(f->buf.dat), 10));
+  f->buf.len = 0; F_read(NULL, f); assert(!memcmp("ob\nThis is", asP1(f->buf.dat), 10));
+  f->buf.len = 0; F_read(NULL, f); assert(!memcmp(" Jane.", asP1(f->buf.dat), 6));
   ASSERT_EQ(F_done, f->code); F_read(NULL, f); ASSERT_EQ(F_eof, f->code);
 TEST_END
 
@@ -1291,7 +1279,7 @@ BARE_TEST(testReadUnix, 4)  BA_init(&k->ba);
   openUnix(f, "./tests/testData.txt"); f->buf.len = 0;
   readAtLeast(NULL, f, 128); ASSERT_EQ(F_eof, f->code);
   ASSERT_EQ(strlen(TEST_expectedTxt), f->buf.len);
-  assert(!memcmp(TEST_expectedTxt, asU1(f->buf.dat), f->buf.len));
+  assert(!memcmp(TEST_expectedTxt, asP1(f->buf.dat), f->buf.len));
   F_close(NULL, f); assert(f->code == F_done);
 TEST_END
 
@@ -1430,10 +1418,10 @@ U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine wi
 }
 
 #define ASSERT_TOKEN(S)  if(1) { scan(NULL, SRC); if(!Teq(S)) { \
-  eprintf("! Token: %s == %.*s\n", S, Tplc, asU1(Tref)); \
+  eprintf("! Token: %s == %.*s\n", S, Tplc, asP1(Tref)); \
   assert(false); } }
 U1 Teq(U1* s) { U2 len = strlen(s);  if(len != Tplc) return false;
-                return 0 == memcmp(s, asU1(Tref), len); }
+                return 0 == memcmp(s, asP1(Tref), len); }
 
 BARE_TEST(testScan, 3)  BA_init(&k->ba);
   openMock(SRC, "hi there$==");
@@ -1472,7 +1460,7 @@ void initSpor() {
 void cDot() { // `.`, aka "set size"
   if(Tplc >= Tlen) readAtLeast(SRCM, SRC, 1);
   ASM_ASSERT(Tlen, E_eof);
-  compiler.sz = charToSz(*asU1(Tref + Tplc));
+  compiler.sz = charToSz(*asP1(Tref + Tplc));
   Tplc += 1;
 }
 
@@ -1529,8 +1517,8 @@ void cCarrot() { // `^`, aka execute instr
 void cDollar() { // `$`, aka execute token
   scan(SRCM, SRC); DNode* n = dictGetAny(Tslc); ASM_ASSERT(n, E_cNoKey);
   if(TY_FN_INLINE == (TY_FN_TY_MASK & n->m)) {
-    U1 len = *asU1(n->v);
-    memmove(asU1(bump(codeBBA(), false, len)), asU1(n->v + 1), len);
+    U1 len = *asP1(n->v);
+    memmove(asP1(bump(codeBBA(), false, len)), asP1(n->v + 1), len);
     return;
   }
   if(TY_FN_SYN == (TY_FN_TY_MASK & n->m)) WS_PUSH(false); // pass asNow=false
@@ -1557,14 +1545,14 @@ TEST_END
 // function, which can call DV operations.
 
 void compile() {
-  Tplc = 1; U1 c = *asU1(Tref); // spor compiler only uses first character
+  Tplc = 1; U1 c = *asP1(Tref); // spor compiler only uses first character
   switch (c) {
     case '.': cDot(); RV            case '%': cPercent(); RV
     case '#': cHash(); RV           case '@': cAt(); RV
     case ',': cComma(); RV          case '\\': cForwardSlash(SRCM, SRC); RV
     case ':': cColon(); RV          case '=': cEqual(); RV
     case '^': cCarrot(); RV         case '$': cDollar(); RV
-    default: eprintf("!! Invalid ASM token: %.*s\n", Tplc, asU1(Tref));
+    default: eprintf("!! Invalid ASM token: %.*s\n", Tplc, asP1(Tref));
              SET_ERR(E_cToken);
   }
 }
@@ -1708,7 +1696,7 @@ SPOR_TEST(testBootSpor, 16)
   compileBootSpor();
   assert(LOC_PUB == codeLoc()); assert(LOC_PRIV == nameLoc());
   Ref r = heap;
-  compileStr("#97 $h1"); ASSERT_EQ(0x97, *asU1(r)); ASSERT_EQ(heap, r + 1);
+  compileStr("#97 $h1"); ASSERT_EQ(0x97, *asP1(r)); ASSERT_EQ(heap, r + 1);
   ASSERT_EQ(0x42, dictGetAny(sAsTmpSlc("answerV"))->v);
 TEST_END
 
