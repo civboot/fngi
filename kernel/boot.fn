@@ -910,36 +910,53 @@ fn directInstr stk(sgMeta:U1) -> out(instr:U1) do ret (
 $tAssertEq(SRLL, directInstr(SG_SETTER))
 $tAssertEq(FTLL, directInstr(0))
 
-\ Value is not yet on the stack (it's a local/global), get it on the stack.
-large fn gsDirect inp(offset:U1, tyRefs:U1, derefs:U1, ctx: &FieldCtx) do ret (
-  if(GET tyRefs) do (
-    dv_log(GET offset, 0x2000, 2, 0x10);
-    h1($L(SZR + FTLL)) h1(GET offset);
-  ) else (
-    dv_log(fto1:FC_szI(GET ctx), 0x2002, 2, 0x10)
-    assertSzI(fto1:FC_szI(GET ctx))
-    assertEq(0, GET derefs, E_cBadRefs)
-    h1(fto1:FC_szI(GET ctx) jn directInstr(fto1:FC_sgMeta(GET ctx)));
-    h1(GET offset);
+\ Given the type's szI and number of reference, return the correct size.
+fn szIWithRefs stk(szI:U1, tyRefs: U1) -> out(szIOut:U1) do ret (
+  if(\tyRefs) do (drp\szI; ret SZR) ret \szI;
+)
+$tAssertEq(SZ1, szIWithRefs(SZ1, 0))  $tAssertEq(SZR, szIWithRefs(SZ1, 1))
+
+\ Perform a direct operation (i.e. get/set local).
+\ - If no derefs, this finishes all get/set operations.
+\ - With derefs, this sets up for gsDeref
+\ Note: This clears ctx.offset=0 if it was used
+large fn gsDirect
+  inp(offset:U1, tyRefs:U1, hasDerefs:U1, ctx: &FieldCtx)
+do ret (
+  dv_log(GET offset, GET hasDerefs, 0x2000, 3, 0x10);
+  \ If we are going to do a deref, we only fetch.
+  \ Note: any parent refs cause an implicit deref.
+  if(GET hasDerefs) do (
+    assert(GET tyRefs, E_cBadDerefs);
+    h1($L(SZR + FTLL));
+    ret h1(GET offset);
   )
+  szIWithRefs(fto1:FC_szI(GET ctx), GET tyRefs) \ {szI}
+  assertSzI(dup\szI);
+  \szI jn directInstr(fto1:FC_sgMeta(GET ctx)) \ {instr}
+  dv_log(dup\instr, 0x2001, 2, 0x10);
+  h1(\instr)
+  h1(GET offset + ft2(GET ctx)\offset);
+  sr2(0, GET ctx\offset) \ used ctx.offset, so clear it
 )
 
-\ Perform a get or set operation utilizing ctx:
+\ Perform a get or set deref utilizing ctx:
 \   .ctx.offset (also updated)
 \   .ctx.sgMeta: SG_SETTER (note: ignores SG_DIRECT)
 \   .ctx.szI
 \ Note: this does NOT utilize tyItem
-large fn gsOperate inp (tyRefs: U1, derefs: U1, ctx: &FieldCtx)
+large fn gsDeref inp (tyRefs: U1, derefs: U1, ctx: &FieldCtx)
 do (
   dv_log(GET tyRefs, GET derefs, 0xD0F0, 3, 0x10)
   doDeref(ft2(GET ctx)\offset, GET tyRefs, GET derefs)
-  -> SET derefs -> SET tyRefs -> sr2(\offset, GET ctx)
+  -> SET derefs -> SET tyRefs -> sr2(\offset, GET ctx)\setOffset
   retIfNot(GET derefs)
   dv_log(GET tyRefs, GET derefs, ft2(GET ctx), 0xD0F1, 4, 0x10)
   if(ft2(GET ctx)\offset) do (
-    dv_log(0xD0F2, 1, 0x10)
     if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SRO else FTO
-    h1(\instr + fto1:FC_szI(GET ctx));
+    \instr + fto1:FC_szI(GET ctx)
+    dv_log(dup\instr, 0xD0F2, 2, 0x10)
+    h1(\instr);
     ret h1(ft2(GET ctx)\offset);
   )
   if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SR else FT
@@ -1019,25 +1036,29 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
     ret;
   )
   field_szI(GET node, GET ctxTyItem) -> SET ctxSzI;
-  dv_log(GET synRefs, 0xD103, 2, 0x10)
+  dv_log(GET ctxSzI, 0xD103, 2, 0x10)
 
   \ If there is no field (only direct) just do it.
   if(not GET ctxTyItem) do (
     dv_log(GET directOffset, GET varRefs, GET synDerefs, 0xD104, 4, 0x10)
     assert(SG_DIRECT msk GET sgMeta, E_intern);
     gsDirect(GET directOffset, GET varRefs, GET synDerefs, REF ctxOffset)
-    ret gsOperate(GET varRefs, GET synDerefs, REF ctxOffset)
+    ret gsDeref(GET varRefs, GET synDerefs, REF ctxOffset)
   )
 
   \ We are accessing a field.
   \ note: varRefs is the number of references for the _parent_
   if(SG_DIRECT msk GET sgMeta) do (
-    dv_log(GET varRefs, 0xD110, 2, 0x10)
+    dv_log(GET varRefs, tyItem_refs(GET ctxTyItem), GET synDerefs, 0xD110, 4, 0x10)
     \ We have a direct node and tyItem field.
-    gsDirect(GET directOffset + GET ctxOffset,
-             GET varRefs, GET synDerefs, REF ctxOffset)
-    retIfNot(GET varRefs) \ check if gsDirect finished the job
-    0 -> SET ctxOffset;
+    \ Note: we use varRefs + synDerefs to check for implicit or explicit derefs.
+    \  i.e. `var ctx: &CtxField; ctx.offset = 3` is an implicit deref of `&ctx`
+    gsDirect(
+      GET directOffset,
+      GET varRefs + tyItem_refs(GET ctxTyItem),
+      GET varRefs + GET synDerefs,
+      REF ctxOffset)
+    retIfNot(GET varRefs + GET synDerefs)
     dv_log(GET synRefs, 0xD111, 2, 0x10)
   ) else (
     dv_log(GET synRefs, 0xD120, 2, 0x10)
@@ -1048,7 +1069,7 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
 
   \ We now have a reference
   dv_log(GET varRefs, GET synDerefs, GET ctxSzI, 0xD130, 4, 0x10)
-  ret gsOperate(GET varRefs\tyRefs, GET synDerefs, REF ctxOffset)
+  ret gsDeref(GET varRefs\tyRefs, GET synDerefs, REF ctxOffset)
 )
 
 syn large fn . do ret ( notNow;
@@ -1096,9 +1117,14 @@ large fn testDotSetBoth do ret (
   var ctx: FieldCtx;
     .ctx.offset = 0x1234;
     .ctx.sgMeta = 0x56;
-  (.ctx.offset, .ctx.sgMeta)
+    .ctx.szI    = 0x78;
+    .ctx.tyItem = 0x9ABCDEF;
+  (.ctx.offset, .ctx.sgMeta, .ctx.szI, .ctx.tyItem)
+  \ .ctx.tyItem
 )
 $(testDotSetBoth;
+  -> tAssertEq(0x9ABCDEF)
+  -> tAssertEq(0x78)
   -> tAssertEq(0x56)
   -> tAssertEq(0x1234)
 )
@@ -1117,9 +1143,11 @@ large fn testCtxRef inp(ctx: &FieldCtx) -> out(_:U2) do ret (
 $tAssertEq(0x3378, runCtxRef(fnRef:testCtxRef))
 
 large fn testCtxRefSet inp(ctx: &FieldCtx) -> out(_:U2) do ret (
-  .ctx.offset = 0x5438; .ctx.offset
+  .ctx.offset = 0x5438;
+  .ctx.offset
 )
-$tAssertEq(0x5438, runCtxRef(fnRef:testCtxRefSet))
+$runCtxRef(fnRef:testCtxRefSet)
+$tAssertEq(0x5438)
 
 large fn testCtxDeref inp(ctx: &FieldCtx) -> out(_:U2) do ret (
   .@ctx.tyItem
@@ -1176,14 +1204,16 @@ do ret (
 )
 
 $STORE_PRIV
-fn testConStruct inp(s: Slc) -> out(decDat: &U1)
-  do
-ret ( dec .s.dat )
-
-$(
-  testConStruct(0x12308, 0x22)
-  -> tAssertEq(0x12307)
-)
+\ fn testConStruct inp(s: Slc) -> out(decDat: &U1)
+\   do
+\ ret (
+\   dec .s.dat;
+\ )
+\ 
+\ $(
+\   testConStruct(0x12308, 0x22)
+\   -> tAssertEq(0x12307)
+\ )
 
 $STORE_PUB
 \ TODO: still need to do:

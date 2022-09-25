@@ -1,4 +1,4 @@
-\ * [3.d] Errors
+\  [3.d] Errors
 \ [E000 - E100): built-in errors.
 \  E100: device-specific hardware errors
 \ [E200-E800): reserved
@@ -90,7 +90,7 @@
 #E101  #0=E_fnStateVar  \ var not in fn
 #E102  #0=E_dot
 #E103  #0=E_bracket     \ expected backet
-#E104  #0=E_cBadDeRefs  \ too many de/refs
+#E104  #0=E_cBadDerefs  \ too many de/refs
 #E105  #0=E_cBadConstruct  \ construct of too many fields
 
 #E0B0  #0=E_iBlock      \ invalid block index
