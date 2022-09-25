@@ -214,7 +214,9 @@ pub syn FN fn
   ELSE
     drp\key; tokenPlcSet(0); \ clear token
     dictAdd(0, GET G_metaNext jn TY_FN)
-  END -> _FN(\key)
+  END
+  -> dv_log(dup\key, 0xF00F, 2, 0x10)
+  -> _FN(\key)
   IF(isMetaFnDeclare(GET meta))  srBeR(0, bump(RSIZE, FALSE))  END
   LOOP l0
     dictRefMaybe(0) \ {&Node}
@@ -268,22 +270,22 @@ pre fn _varImpl do ret ( \ [meta]
     ret single(FALSE) \ next token is syn, run it (it may run us)
   END
   tokenPlcSet(0); \ make dictRefMaybe a peek
-  dv_log(0x900, 1, 0x10)
+  dv_log(GET meta, 0x900, 2, 0x10)
   IF(GET meta) \ a "real" variable. Parse ty and update dnode's meta and ty
     (GET meta jn C_TYPED jn C_LOCAL) -> SET meta \ ensure meta is C_TYPED
     ldictAdd(0\value, GET meta) -> SET node
     assertEq(GET meta, d_mGet(GET node), E_intern)
     GET node, 1\isLocal -> colon -> parseTy; \ {&Local isLocal=1 numRefs &Type}
-    -> d_tySet(dup\type, GET node)
     -> assert(ovr\numRefs < 4, E_cBadRefs)
+    -> d_tySet(dup\type, GET node)
     -> ovr\numRefs jn GET meta -> SET meta   \ {&Local isLocal=1 numRefs &Type}
   ELSE \ a "fake" variable (i.e. `stk`)
     0, 1 -> _comment -> colon -> parseTy;    \ {NULL, isLocal=1, numRefs, &Type}
   END
   dv_log(0x910, 1, 0x10)
-  \ TODO: register type
-  IF(swp\numRefs) drp; RSIZE
-  ELSE            tySz(\type);  END \ {&Local isLocal szBytes}
+
+  IF(swp\numRefs) drp\type; RSIZE\sz
+  ELSE            tySz(\type)\sz;  END \ {&Local isLocal szBytes}
 
   dv_log(0x920, 1, 0x10)
   IF(GET meta)
@@ -310,18 +312,24 @@ pub syn fn inp do ret (
 
 pre inline FN tyItem_isConstructed \ (tyItem: &U1 -> U1)
   $h1(4) ft1(\tyItem) msk META_CONSTRUCTED; ret;
+$tAssertNot(tyItem_isConstructed(d_tyGet(dnode:Slot)))
 
-declare large fn compileStructInput do; \ [&Node]
+declare large pre fn conStruct do (); \ [&Node]
 
 \ Called from compileInputs
 \declared fn compileTypedInput do ret ( \ [&Node]
-  $declVar(declL tyItem, 0, RSIZE) $declEnd
-  d_tyGet(dup\node) -> SET tyItem;
+  $declVar(declL nodeTy,  0, RSIZE)  $declEnd
+  dv_log(dup\node, 0x093C, 2, 0x10)
 
-  \ assert(isTyped(dup) == true)
-  IF(tyItem_isConstructed(GET tyItem))
-    compileStructInput(\node)
-  ELSE _setImpl(\node) END
+  IF(isTyped(dup\node) and not(d_mGet(ovr\node) msk TY_VAR_REF))
+    d_tyGet(dup\node) -> SET nodeTy
+    dv_log(GET nodeTy, 0x093E, 2, 0x10)
+    IF(isDictStruct(GET nodeTy))
+      dv_log(0x093F, 1, 0x10)
+      ret conStruct(\node)
+    END
+  END
+  _setImpl(\node)
 )
 
 $STORE_PRIV
@@ -608,11 +616,13 @@ pub struct DNode (
   ckey: &U1;  v: Slot;    m: U2;
 )
 
+struct Slc      ( dat: &U1;  len: U2; )
 struct FieldCtx ( offset:U2; sgMeta:U1, szI:U1, tyItem: &U1 )
 
 const FC_tyItem = RSIZE;
 const FC_sgMeta = 2;
 const FC_szI = 3;
+
 
 fn isTyStruct stk(node: &DNode) -> out(_:U1) do (
   isTyDict(dup\node) -> swp -> isDictStruct(\node) -> and -> ret;
@@ -959,7 +969,7 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
   SG_DIRECT -> SET sgMeta;
   d_tyGet(GET node) -> SET node;
 
-  dv_log(GET varRefs, 0xD002, 2, 0x10)
+  dv_log(GET varRefs, GET directOffset, 0xD002, 3, 0x10)
   consumeDot -> BREAK0 b0
   dv_log(0xD07, 0xD003, 2, 0x10)
   struct_fieldCtx(GET node, REF ctxOffset) \ find first field
@@ -1005,7 +1015,7 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
     assert(not (SG_SETTER msk GET sgMeta), E_cBadRefs)
     \ TODO: do "awesome compile add" if not isDirect
     assert(SG_DIRECT msk GET sgMeta, E_type)
-    h1(LR) h1(GET ctxOffset)
+    h1(LR) h1(GET directOffset + GET ctxOffset)
     ret;
   )
   field_szI(GET node, GET ctxTyItem) -> SET ctxSzI;
@@ -1024,8 +1034,10 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
   if(SG_DIRECT msk GET sgMeta) do (
     dv_log(GET varRefs, 0xD110, 2, 0x10)
     \ We have a direct node and tyItem field.
-    gsDirect(GET directOffset, GET varRefs, GET synDerefs, REF ctxOffset)
+    gsDirect(GET directOffset + GET ctxOffset,
+             GET varRefs, GET synDerefs, REF ctxOffset)
     retIfNot(GET varRefs) \ check if gsDirect finished the job
+    0 -> SET ctxOffset;
     dv_log(GET synRefs, 0xD111, 2, 0x10)
   ) else (
     dv_log(GET synRefs, 0xD120, 2, 0x10)
@@ -1055,6 +1067,8 @@ syn large fn . do ret ( notNow;
   panic E_unimpl
 )
 
+\ **********
+\ *   [XX].a basic dot test cases
 $STORE_PRIV
 fn testDotX inp(x:U1) -> out(_:U1) do ret .x
 $tAssertEq(0x42, testDotX(0x42))
@@ -1077,6 +1091,17 @@ $tAssertEq(0x7788, testDotCtx;)
 large fn testDotSetCtx -> out(_:U2) do
   ret ( var ctx: FieldCtx; .ctx.offset = 0x789; .ctx.offset )
 $tAssertEq(0x789, testDotSetCtx;)
+
+large fn testDotSetBoth do ret (
+  var ctx: FieldCtx;
+    .ctx.offset = 0x1234;
+    .ctx.sgMeta = 0x56;
+  (.ctx.offset, .ctx.sgMeta)
+)
+$(testDotSetBoth;
+  -> tAssertEq(0x56)
+  -> tAssertEq(0x1234)
+)
 
 
 \ Run a function with ctx.offset unset and ctx.tyItem = testU1Ref
@@ -1102,46 +1127,66 @@ large fn testCtxDeref inp(ctx: &FieldCtx) -> out(_:U2) do ret (
 $sr1(0x22, testU1Ref)
 $tAssertEq(0x22, runCtxRef(fnRef:testCtxDeref))
 
+\ **********
+\ *   [XX].b (con|de)structuring structs
 $STORE_PUB
 
-\ fn _constructField
-\     var(offset:U1) \(here for packing)
-\     inp(fields: U1, ctx: &FieldCtx)
-\ do ret (
-\   retIfNot .fields;
-\   \ Cache values before recursion, then update offset and next tyItem
-\   .offset = .ctx.offset \ cache
-\   var tyItem: &U1;
-\   .tyItem = .ctx.tyItem  \ cache
-\   \ FIXME: something wrong with this
-\   \ .ctx.offset =
-\   \   bumpSz(.ctx.offset, tyItem_sz(.tyItem))
-\   \ .ctx.tyItem = tyItem_next(.tyItem)
-\   _constructField(dec .fields, .ctx) \ recurse
-\ 
-\   \ compile the value set
-\   h1(SRLL jn szToSzI(tyItem_sz(.tyItem)))
-\   h1(.offset)
-\ )
-\ 
-\ fn conStruct inp(node: &DNode) do ret (
-\   assert(isTyStruct(GET node), E_intern);
-\   assertNot(d_mGet(GET node) msk TY_VAR_REF, E_cBadConstruct)
-\   var ctx: FieldCtx;
-\     .ctx.offset = 0
-\     .ctx.sgMeta = (SG_SETTER jn SG_DIRECT)
-\     .ctx.tyItem = d_tyGet(GET node)
-\   ft1(.ctx.tyItem) -> assert(dup\numFields < 4, E_cBadConstruct)
-\   .ctx.tyItem =inc .ctx.tyItem
-\   _constructField(\numFields, .&ctx)
-\ )
-\ 
-\ \declared fn compileStructInput inp(node: &DNode) do ret (
-\   \ FIXME: walk the fields in reverse order, compiling the struct.
-\ )
+\ Recursive function to construct fields
+fn _constructFields
+    var(tyItem: &U1, offset:U1) \ here for bit-packing
+    inp(fields: U1, ctx: &FieldCtx)
+do ret (
+  retIfNot .fields;
+  dv_log(.ctx.offset, .ctx.tyItem, .fields, 0xC101, 4, 0x10)
+  .offset = .ctx.offset;  .tyItem = .ctx.tyItem; \ cache
+  .ctx.offset = bumpSz(.ctx.offset, tyItem_sz(.tyItem));
+  .ctx.tyItem = tyItem_next(.tyItem);
+  _constructFields(dec .fields, .ctx) \ recurse
 
+  \ compile setting the field
+  h1(SRLL jn szToSzI(tyItem_sz(.tyItem)))  h1(.offset)
+)
+
+\declared fn conStruct inp(node: &DNode) do ret (
+  var fields: U1;
+  var ctx: FieldCtx;
+
+  dv_log(GET node, 0xCC00, 2, 0x10)
+  assert(isTyVar(GET node), 0x7113);
+  assertNot(d_mGet(GET node) msk TY_VAR_REF, E_cBadConstruct)
+  d_tyGet(.node) -> SET node;
+  \ FIXME: dotSet not working?
+  \ .node = d_tyGet(.node); \ node points to type
+  dv_log(GET node, 0xCC01, 2, 0x10)
+  assert(isTyDict(.node), 0x7114);
+
+  .fields = ft1(d_tyGet(.node)) \ num fields
+  dv_log(.fields, 0xCC05, 2, 0x10)
+  assert(.fields < 4, E_cBadConstruct)
+
+  dv_log(0xCC06, 1, 0x10)
+    .ctx.offset = 0;
+  dv_log(.ctx.offset, 0xCC07, 2, 0x10)
+    .ctx.sgMeta = (SG_SETTER jn SG_DIRECT);
+  dv_log(.ctx.offset, 0xCC08, 2, 0x10)
+    .ctx.tyItem = inc d_tyGet(.node);
+  dv_log(.ctx.offset, 0xCC09, 2, 0x10)
+  dv_log(0xCC0F, 1, 0x10)
+  _constructFields(.fields, .&ctx)
+)
+
+$STORE_PRIV
+fn testConStruct inp(s: Slc) -> out(decDat: &U1)
+  do
+ret ( dec .s.dat )
+
+$(
+  testConStruct(0x12308, 0x22)
+  -> tAssertEq(0x12307)
+)
+
+$STORE_PUB
 \ TODO: still need to do:
-\  - struct inp (assign values)
 \  - .deStruct
 \  - namespacing
 

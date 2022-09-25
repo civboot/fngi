@@ -815,12 +815,9 @@ TEST_END
 // Functions can be either "small" (no locals) or "large" (has locals).
 
 void xImpl(U1 growSz, Ref fn) { // base impl for XS and XL.
-  // eprintf("??? xImpl %X\n", fn);
   CS_PUSH(cfb->ep);
   CSZ.sp -= 1; *(mem + CSZ.dat + CSZ.sp) = growSz; // push growSz onto csz
   cfb->ep = fn;
-  // eprintf("  ??? grow=%u ls=%u ls.sp=%u ls.cap=%u\n",
-  //           growSz, Stk_len(LS) * 4, LS.sp, LS.cap);
 }
 
 void xlImpl(Ref fn) { // impl for XL*
@@ -1309,11 +1306,6 @@ Compiler compiler;
 DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   if(LOC_PUB == nameLoc()) ASM_ASSERT(LOC_PUB == codeLoc(), E_cState);
   if(LOC_LOCAL == nameLoc()) meta |= C_LOCAL; // mark as a local name
-  // eprintf("??? dict adding meta=%X value=%X \"%.*s\" remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
-  //         meta, value, Tplc, Tdat,
-  //         _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
-  //         _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false),
-  //         (C_PUB | C_PUB_NAME) & g->cstate);
   BBA* bba = nameBBA();  Ref ckey = bump(bba, false, s.len + 1);
   *(mem + ckey) = s.len; // Note: unsafe write, memory already checked.
   _memmove(ckey + 1, s.dat, s.len);
@@ -1322,6 +1314,12 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   *add = (DNode) {.ckey = ckey, .v = value, .m = meta};
   DNode* root = nameDict(); Dict_add(&root, add);
   Ref r = asRef(root);
+  eprintf("??? line=%u, dict adding dnode=%X meta=%X value=%X \"%.*s\""
+          " remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
+          line, asRef(add), meta, value, Tplc, Tdat,
+          _heap(asPtr(BBA, g->bbaPub), true)  - _heap(asPtr(BBA, g->bbaPub), false),
+          _heap(asPtr(BBA, g->bbaPriv), true) - _heap(asPtr(BBA, g->bbaPriv), false),
+          (C_PUB | C_PUB_NAME) & g->cstate);
   if(!nameDict()) switch (nameLoc()) {
     case LOC_LOCAL: g->dictLocal = r; break;
     case LOC_PUB:   g->dictPub = r;   break;
