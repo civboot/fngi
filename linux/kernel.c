@@ -46,7 +46,7 @@
 #include <setjmp.h>
 #include <errno.h>
 
-#include "../kernel/kernel.h"
+#include "../boot/kernel.h"
 
 #define memberSize(type, member) sizeof(((type *)0)->member)
 #define eprint(str)                fprintf (stderr, str)
@@ -621,7 +621,7 @@ TEST_END
 //   * 3.e: Dict Binary Search Tree
 // The dictionary is a basic unbalanced binary search tree with keys of cdata.
 // It contains a U4 value and some metadata necessary for distinguishing between
-// the kinds of values (see kernel/constants.sp).
+// the kinds of values (see boot/constants.sp).
 
 // Find slice in BST, starting at node. Set result to node.
 // returns 0 if node==NULL
@@ -689,7 +689,7 @@ TEST_END
 
 // ***********************
 // * 4: Executing Instructions
-// Fngi's assembly is defined in kernel/constants.sp. These constants are
+// Fngi's assembly is defined in boot/constants.sp. These constants are
 // auto-generated into constants.h, which are imported here.
 //
 // The VM executes instruction bytecode in the fngi memory space, utilizing
@@ -1432,7 +1432,7 @@ BARE_TEST(testScan, 3)  BA_init(&k->ba);
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("comment"); ASSERT_TOKEN("#"); ASSERT_TOKEN("00");
   ASSERT_TOKEN("#");  ASSERT_TOKEN("0"); ASSERT_TOKEN("="); ASSERT_TOKEN("bob");
 
-  openUnix(SRC, "kernel/constants.sp");
+  openUnix(SRC, "boot/constants.sp");
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("Kernel"); ASSERT_TOKEN("Constants");
   ASSERT_TOKEN("\\");
   ASSERT_TOKEN("\\"); ASSERT_TOKEN("Note"); ASSERT_TOKEN(":"); ASSERT_TOKEN("this");
@@ -1582,8 +1582,8 @@ void compileFile(char* s) {
 void compileConstants() {
   WS_PUSH(newBlock(g->bbaPriv));
   WS_PUSH(RSIZE); WS_PUSH(SZR);
-  compileFile("kernel/constants.sp");
-  newBlock(g->bbaPriv); compileFile("kernel/errors.sp"); compileFile("kernel/offsets.sp");
+  compileFile("boot/constants.sp");
+  newBlock(g->bbaPriv); compileFile("boot/errors.sp"); compileFile("boot/offsets.sp");
 }
 
 SPOR_TEST(testConstants, 4)
@@ -1683,7 +1683,7 @@ void compileBootSpor() {
   compileConstants(); newBlock(g->bbaPriv);
   g->cstate |= C_PUB | C_PUB_NAME; // full public
   newBlock(g->bbaPub); retImmediately = compileInstrs((U1[]) {RET, IEND});
-  compileFile("kernel/boot.sp");
+  compileFile("boot/boot.sp");
 }
 
 void compileStr(const U1* s) {
@@ -1700,7 +1700,7 @@ TEST_END
 
 void compileBoot() {
   compileBootSpor();
-  compileFile("kernel/boot.fn");
+  compileFile("boot/boot.fn");
 }
 
 SPOR_TEST(testBoot, 16)

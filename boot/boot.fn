@@ -523,15 +523,11 @@ $STORE_PUB
 
 \ **********
 \ * [5] struct
-\ Structs are a dict node with a value to a root node, and type to a tyStream
-\ of the struct fields. The byte structure is:
+\ Example:
+\     struct Foo ( a: U2; b: &U1 )
 \
-\   numFields:U1 | ... fields
-\
-\ struct Foo (
-\   a: U2,
-\   b: &U1,
-\ )
+\ Structs are a TY_DICT node with a value to a root dictionary node
+\ They are C_TYPED so have an extra "tyItems" field.
 
 \ **********
 \ *   [5.a] utilities
