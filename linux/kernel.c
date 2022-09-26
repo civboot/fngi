@@ -126,6 +126,20 @@ void Fiber_init(Fiber* fb) { // Initilize the fiber. Uses the rest of the block.
   fb->ls  = Stk_init(BLOCK_SIZE - lsRef - asRef(fb), lsRef);
 }
 
+U4 Stk_pop(Stk* stk) {
+  ASM_ASSERT(stk->sp + RSIZE <= stk->cap, E_stkUnd);
+  U4 out = *((U4*) (mem + stk->dat + stk->sp));
+  stk->sp += RSIZE;
+  return out;
+}
+
+void Stk_push(Stk* stk, U4 value) {
+  ASM_ASSERT(stk->sp > 0, E_stkOvr);
+  stk->sp -= RSIZE;
+  *((U4*) (mem + stk->dat + stk->sp)) = value;
+}
+
+
 #define WS              (cfb->ws)
 #define LS              (cfb->ls)
 #define CS              (cfb->cs)
@@ -154,6 +168,7 @@ void initEnv(U4 blocks) {
       .buf = (Buf) { .dat = asRef(&g->buf0), .cap = TOKEN_SIZE },
       .code = F_error,
     },
+    .dictStk = Stk_init(DICT_DEPTH * RSIZE, asRef(&g->dictBuf)),
   };
   cfb->gb = asRef(g);
 
@@ -168,12 +183,13 @@ void initEnv(U4 blocks) {
   k->bbaPub   = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
   k->bbaPriv  = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
   g->bbaLocal = (BBA) { .ba = asRef(&k->ba), .rooti=BLOCK_END };
+  Stk_push(&g->dictStk, asRef(&k->dict));
 }
 
 #define NEW_ENV_BARE(BLOCKS) \
   jmp_buf local_err_jmp; \
   err_jmp = &local_err_jmp; \
-  initEnv(BLOCKS);
+  initEnv(BLOCKS); \
 
 #define ENV_CLEANUP()               \
     err_jmp = NULL;                 \
@@ -311,19 +327,6 @@ void zoab_dict(DNode* node) {
 #define CS_PUSH(V)       Stk_push(&CS, V)
 
 #define ASSERT_WS(E)     ASSERT_EQ(E, WS_POP())
-
-U4 Stk_pop(Stk* stk) {
-  ASM_ASSERT(stk->sp + RSIZE <= stk->cap, E_stkUnd);
-  U4 out = *((U4*) (mem + stk->dat + stk->sp));
-  stk->sp += RSIZE;
-  return out;
-}
-
-void Stk_push(Stk* stk, U4 value) {
-  ASM_ASSERT(stk->sp > 0, E_stkOvr);
-  stk->sp -= RSIZE;
-  *((U4*) (mem + stk->dat + stk->sp)) = value;
-}
 
 // Return value of ASCII hex char (or 0xFF if not a hex character)
 /*fn*/ U1 charToHex(U1 c) {
@@ -654,7 +657,19 @@ void Dict_add(DNode** node, DNode* add) {
   add->l = 0, add->r = 0;
 }
 
+// Get the double reference to the public dictionary root node on the dictStk.
+//
+/*&&DNode*/ Ref* dictPubRef() {
+  Stk* s = &g->dictStk;  assert(s->sp < s->cap);
+  // s->dat points to &&DNode, so a pointer to a place in `dat` is a
+  // &&&DNode. We derefernce this once to be &&DNode.
+  return asPtr(Ref, *asPtr(Ref/*&&DNode*/, s->dat + s->sp));
+}
+DNode* dictPub() { return asPtrNull(DNode, *dictPubRef()); }
+
 BARE_TEST(testDict, 3)
+  ASSERT_EQ(asRef(dictPubRef()), asRef(&k->dict));
+
   TEST_SLICES
   DNode* n_a = asPtr(DNode, c_a + 0x100);
   DNode* n_b = &n_a[1];
@@ -705,14 +720,15 @@ typedef enum { LOC_LOCAL, LOC_PRIV, LOC_PUB } Loc; // Location of name/storage
 
 Loc nameLoc() { // get the location to store names
   if(C_LOCAL    & g->cstate) return LOC_LOCAL;
-  if(C_PUB_NAME & g->cstate) return LOC_PUB; else return LOC_PRIV;
+  if(C_PUB_NAME & g->cstate) return LOC_PUB;  else return LOC_PRIV;
 }
 
 // Location to store code
 Loc codeLoc() { return (C_PUB & g->cstate) ? LOC_PUB : LOC_PRIV; }
 
 DNode* nameDict() { Ref r; switch(nameLoc()) {
-    case LOC_LOCAL: r = g->dictLocal; break;  case LOC_PUB: r = g->dictPub; break;
+    case LOC_LOCAL: r = g->dictLocal; break;
+    case LOC_PUB:   r = *dictPubRef(); break;
     case LOC_PRIV:  r = g->dictPriv; break;   default: assert(false);
   }
   return asPtrNull(DNode, r);
@@ -1312,7 +1328,8 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
   U4 nodeSz = sizeof(DNode);  if(C_TYPED & meta) { nodeSz += RSIZE; }
   DNode* add = (DNode*) (mem + bump(bba, true, nodeSz));
   *add = (DNode) {.ckey = ckey, .v = value, .m = meta};
-  DNode* root = nameDict(); Dict_add(&root, add);
+  DNode* root = nameDict();
+  Dict_add(&root, add);
   Ref r = asRef(root);
   eprintf("??? line=%u, dict adding dnode=%X meta=%X value=%X \"%.*s\""
           " remaining[PUB=:%X PRIV=%X] PUBstate=%X\n",
@@ -1322,7 +1339,7 @@ DNode* dictAddMut(U2 meta, U4 value, Slc s) {
           (C_PUB | C_PUB_NAME) & g->cstate);
   if(!nameDict()) switch (nameLoc()) {
     case LOC_LOCAL: g->dictLocal = r; break;
-    case LOC_PUB:   g->dictPub = r;   break;
+    case LOC_PUB:   *dictPubRef() = r;   break;
     case LOC_PRIV:  g->dictPriv = r;  break; default: assert(false);
   }
   if(compiler.lastUpdate) zoab_dict(asPtr(DNode, compiler.lastUpdate));
@@ -1335,9 +1352,14 @@ DNode* dictGetAny(Slc slc) { // Attempt to retrive DNode from all "base" dicts
   DNode* n;
   n = asPtrNull(DNode, g->dictLocal); if(!Dict_find(&n, slc) && n) return n;
   n = asPtrNull(DNode, g->dictPriv);  if(!Dict_find(&n, slc) && n) return n;
-  n = asPtrNull(DNode, g->dictPub);   if(!Dict_find(&n, slc) && n) return n;
-  n = asPtrNull(DNode, k->dict);      if(!Dict_find(&n, slc) && n) return n;
-  // TODO: add "main" lookup
+  Stk* s = &g->dictStk;  Ref sTop = s->dat + s->cap;
+  for(U2 sp = s->sp; sp < s->cap; sp += RSIZE) {
+    // See dictPubRef for documentation on dereferencing from dictStk
+    n = /*&DNode*/asPtrNull(DNode,
+      * /*&&DNode*/asPtr(Ref,
+        * /*&&&DNode*/asPtr(Ref, s->dat + sp)));
+    if(!Dict_find(&n, slc) && n) return n;
+  }
   return NULL;
 }
 
@@ -1583,10 +1605,13 @@ void compileConstants() {
   WS_PUSH(newBlock(g->bbaPriv));
   WS_PUSH(RSIZE); WS_PUSH(SZR);
   compileFile("boot/constants.sp");
-  newBlock(g->bbaPriv); compileFile("boot/errors.sp"); compileFile("boot/offsets.sp");
+  newBlock(g->bbaPriv);
+  compileFile("boot/errors.sp");
+  newBlock(g->bbaPriv);
+  compileFile("boot/offsets.sp");
 }
 
-SPOR_TEST(testConstants, 4)
+SPOR_TEST(testConstants, 5)
   compileConstants();
   ASSERT_DICT("JMPL", 0x81);    ASSERT_DICT("XLW", 0xA0);
   ASSERT_DICT("E_io", 0xE010);  ASSERT_DICT("E_unreach", 0xE003);

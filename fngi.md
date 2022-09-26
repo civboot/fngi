@@ -24,8 +24,9 @@ ovr, dup, dupn).
 
 Unlike C (or most languages) that have an abstract syntax tree, fngi goes about
 parsing in a radically simpler manner. Conceptually, functions (that take an input)
-take in only a _single token_ of input. So you can do `inc 1`. However, some tokens
-execute themselves to compile _more_ tokens, so you can also do `add(1, 2)`
+take in only a _single token_ of input. So you can do `inc 1`. However, `(` is a SYN
+token (it creates its own syntax). It compiles tokens until `)`, so you can also
+do `add(1, 2)`
 
 > Fngi has a few tokens defined for documentation/syntactic surgar:
 > - `,` does nothing and is intended as syntactic surgar (documentation) to

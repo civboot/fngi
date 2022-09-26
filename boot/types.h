@@ -7,6 +7,7 @@
 #define WS_DEPTH    16
 #define CS_DEPTH    128
 #define TOKEN_SIZE  128
+#define DICT_DEPTH  10
 
 typedef uint8_t              U1;
 typedef uint16_t             U2;

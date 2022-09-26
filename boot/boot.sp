@@ -484,9 +484,9 @@ $STORE_PRIV
 $inline $FN read #3$h1 @DV_comp_read1$L %DV@DV_comp$h1 %RET \ { -> numRead}
      $inline $FN tokenPlc    #3$h1 .2%FTGL@G_src@Fs_plc^ADD$h2 %RET
 $pre $inline $FN tokenPlcSet #3$h1 .2%SRGL@G_src@Fs_plc^ADD$h2 %RET
-     $inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
-$pre $inline $FN tokenLenSet #3$h1 .2%SRGL@G_src@Fs_buf^ADD@Buf_len^ADD$h2 %RET
-     $inline $FN tokenDat #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Buf_dat^ADD$h2 %RET
+     $inline $FN tokenLen    #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Slc_len^ADD$h2 %RET
+$pre $inline $FN tokenLenSet #3$h1 .2%SRGL@G_src@Fs_buf^ADD@Slc_len^ADD$h2 %RET
+     $inline $FN tokenDat #3$h1 .2%FTGL@G_src@Fs_buf^ADD@Slc_dat^ADD$h2 %RET
 
 $STORE_PUB
      $FN isEof       $tokenPlc %NOT %RET

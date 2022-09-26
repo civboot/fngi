@@ -88,7 +88,7 @@ typedef struct {
   U4 _null;  Ref memTop;
   BA ba;
   BBA bbaPub;    BBA bbaPriv;
-  Ref dict;
+  Ref/*&DNode*/ dict;
 } Kern;
 
 typedef struct {
@@ -112,10 +112,12 @@ typedef struct {
   Ref curNode; // current node (fn, struct) being compiled
   Ref compFn;  // current function that does compilation
   BBA bbaLocal;  Ref dictLocal;
-  Ref bbaPub;    Ref dictPub;
+  Ref bbaPub;
   Ref bbaPriv;   Ref dictPriv;
+  Stk dictStk;
   Ref srcM;      File src;
   U1 buf0[TOKEN_SIZE];
+  Ref dictBuf[DICT_DEPTH];
 
   int syserr;
 } Globals;

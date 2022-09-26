@@ -38,17 +38,9 @@ void main() {
   int fd = writeto("boot/offsets.sp");
   assert(dprintf(fd, header) > 0);
 
-  assert(dprintf(fd, "\n\\ struct Buf { ... }\n") > 0);
-  WRITE_FIELD(0, Buf, "Buf_", dat, "Ref: data");
-  WRITE_FIELD(0, Buf, "Buf_", len, "U2: length of buffer");
-  WRITE_FIELD(0, Buf, "Buf_", cap, "U2: cap of buffer");
-
-  assert(dprintf(fd, "\n\\ struct Kernel { ... }\n") > 0);
-  WRITE_FIELD(0, Kern, "K_", memTop, "Ref: highest address in memory");
-  WRITE_FIELD(0, Kern, "K_", ba, "BA struct: kernel BA");
-  WRITE_FIELD(0, Kern, "K_", bbaPub, "BBA struct: kernel BBA");
-  WRITE_FIELD(0, Kern, "K_", bbaPriv, "BBA struct: private BBA");
-  WRITE_FIELD(0, Kern, "K_", dict, "&Dict: kernel dictionary");
+  assert(dprintf(fd, "\n\\ struct Slc { ... }\n") > 0);
+  WRITE_FIELD(0, Buf, "Slc_", dat, "Ref: data");
+  WRITE_FIELD(0, Buf, "Slc_", len, "U2: length of buffer");
 
   assert(dprintf(fd, "\n\\ struct Globals { ... }\n") > 0);
   WRITE_FIELD(TY_VAR | SZ2, Globals, "G_", glen, "U2");
@@ -66,30 +58,15 @@ void main() {
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", dictLocal, "&DNode: local dict");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", bbaPub, "&BBA: current public bba");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", bbaPriv, "&BBA: current private bba");
+  WRITE_FIELD(TY_VAR | SZR, Globals, "G_", dictStk, "Stk: stack of dictionary references");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", srcM, "&FileMethods: src file methods");
   WRITE_FIELD(TY_VAR | SZR, Globals, "G_", src, "&File: src File");
-
-  assert(dprintf(fd, "\n\\ struct Fiber { ... }\n") > 0);
-  WRITE_FIELD(0, Fiber, "Fb_", ws, "Stk struct: working stack");
-  WRITE_FIELD(0, Fiber, "Fb_", gb, "&Globals: globals base pointer");
-  WRITE_FIELD(0, Fiber, "Fb_", err, "U2: panic error");
 
   assert(dprintf(fd, "\n\\ struct File { ... }\n") > 0);
   WRITE_FIELD(0, File, "Fs_", buf, "Buf: buffer");
   WRITE_FIELD(0, File, "Fs_", plc, "U2: plc in buffer");
-  WRITE_FIELD(0, File, "Fs_", code, "U2: file code");
 
-  assert(dprintf(fd, "\n\\ BA { Ref nodes; Ref blocks; U1 rooti; U1 cap; }\n"));
-  WRITE_FIELD(0, BA, "BA_", nodes, "&Node: start of nodes len cap*2");
-  WRITE_FIELD(0, BA, "BA_", blocks, "&Block: start of 4k blocks len cap");
-  WRITE_FIELD(0, BA, "BA_", rooti, "U1: root index");
-  WRITE_FIELD(0, BA, "BA_", cap, "U1: number of nodes and blocks");
-
-  assert(dprintf(fd, "\n\\ BBA { Ref ba; U1 rooti; U2 len; U2 cap; }\n"));
-  WRITE_FIELD(0, BBA, "BBA_", ba, "&BA");
-  WRITE_FIELD(0, BBA, "BBA_", rooti, "U1: owned block root index");
-  WRITE_FIELD(0, BBA, "BBA_", len, "U2: unsigned heap");
-  WRITE_FIELD(0, BBA, "BBA_", cap, "U2: signed topheap");
+  assert(dprintf(fd, "\n\\ BBA methods:\n"));
   WRITE_INDEX(BBAMethods, "BBAm_", bump, "method index");
   WRITE_INDEX(BBAMethods, "BBAm_", newBlock, "method index");
   WRITE_INDEX(BBAMethods, "BBAm_", drop, "method index");
