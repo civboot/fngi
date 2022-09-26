@@ -89,10 +89,16 @@ FN SLC_DO     ret |do|
 FN SLC_DOT    ret |.|
 FN SLC_ELIF   ret |elif|
 FN SLC_ELSE   ret |else|
-FN SLC_EQUAL  ret |=|
+FN SLC_EQ     ret |=|
 FN SLC_PAREN  ret |(|
 FN SLC_BRACK_O ret |[|
 FN SLC_BRACK_C ret |]|
+
+\ Scan and return whether the token equals. If it does, it was consumed.
+pre FN consumeToken \(s:Slc -> hasToken:U1) ret (
+  IF(scan; not tokenEq(\s)) tokenPlcSet(0); FALSE;
+  ELSE  TRUE;  END
+)
 
 pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   $declVar(declL err, TY_VAR_INPUT, RSIZE)
@@ -102,7 +108,7 @@ pre FN expectToken \ [<token/s> slc err -> &node(nullable)]
   ret GET node
 
 pre pub FN conEquals \ [`= token` asNow -> ?value]
-  expectToken(SLC_EQUAL, E_needEqual) -> drp;
+  expectToken(SLC_EQ, E_needEqual) -> drp;
   ret compNext(\asNow)
 
 pub syn FN const  \ `const token = token`
@@ -204,20 +210,42 @@ pre FN isFnAndSyn \ {&node}
 $tAssertNot(isFnAndSyn(dnode:isFnAndSyn))
 $tAssert   (isFnAndSyn(dnode:FN))
 
+\ mskjn:MASK(a, b) set bits from a to b, clearing b with MASK first.
+\ same as:     (a jn (b msk (inv MASK))
+\ compiles as: a  b  (inv MASK)  %MSK %JN
+large syn FN mskjn  ret (
+  $declVar(declL asNow,    0, 1)
+  $declVar(declL mask,     0, RSIZE) $declEnd
+  \asNow -> SET asNow;
+  inv(colonValue;) -> SET mask;
+  dv_log(0xC01, 1, 0x10)
+  xlw(GET G_compFn) \ {a b}
+  IF(GET asNow) \b msk GET mask -> jn \a;
+  ELSE          L(GET mask) h1(MSK) h1(JN) END
+)
+$tAssertEq(0x71, mskjn:0x3(1, 0x73))
+$tAssertEq(0x71, mskjn:0x3(1, 0x72))
+
 pub syn FN fn
   $declVar(declL meta,    0, RSIZE) $declEnd notNow;
   GET G_metaNext -> SET meta;
-  dictRefMaybe(0) -> IF(dup\key) \ fn already exists
+  dictRefMaybe(0) -> IF(dup\key) \ check if fn already exists
     assert(isFnDeclare(dup\key), E_cKey); \ {&key}
     d_vGet(dup\key) -> heap -> swp \ {&key heap &declFn}
     srBeR(\heap, \declFn) \ {&key}
-  ELSE
+    \ Make fn normal
+    assertEq(
+      d_mGet(dup\key) msk $L(0xFF - TY_FN_TY_MASK),
+      GET meta jn TY_FN msk 0xFF, E_misDeclare)
+    d_mSet(GET meta jn TY_FN, ovr\key)
+  ELSE \ new function
     drp\key; tokenPlcSet(0); \ clear token
-    dictAdd(0, GET G_metaNext jn TY_FN)
+    dictAdd(0, GET G_metaNext jn TY_FN) \ {&key}
   END
   -> dv_log(dup\key, 0xF00F, 2, 0x10)
   -> _FN(\key)
-  IF(isMetaFnDeclare(GET meta))  srBeR(0, bump(RSIZE, FALSE))  END
+  IF(isMetaFnDeclare(GET meta)) srBeR(0, bump(RSIZE, FALSE))  END
+
   LOOP l0
     dictRefMaybe(0) \ {&Node}
     IF(tokenEq(SLC_DO)) \ function body
@@ -231,9 +259,15 @@ $STORE_PRIV
 pre fn testFn \(a:Slot b:U2 -> b a) do ( swp -> ret; )
 $(testFn(0x4321, 0x54321) -> tAssertEq(0x4321) -> tAssertEq(0x54321))
 
-declare fn testDeclared do ()                    \ [-> U1]
-fn testDeclaredUsed do ( ret testDeclared; ) \ [-> U1]
-fn testDeclared do ( ret 3; )               \ [-> U1]
+declare fn testDeclared do ()                      \ [-> U1]
+$tAssert(isFnDeclare(dnode:testDeclared))
+fn testDeclaredUsed       do ( ret testDeclared; ) \ [-> U1]
+\declared fn testDeclared do ( ret 3; )            \ [-> U1]
+$tAssertNot(isFnDeclare(dnode:testDeclared))
+$tAssertEq(3, testDeclared;)  $tAssertEq(3, testDeclaredUsed;)
+
+fn testDeclaredUsedAfter  do ( ret testDeclared; ) \ [-> U1]
+$tAssertEq(3, testDeclaredUsedAfter;)
 
 $STORE_PUB
 \ **********
@@ -263,9 +297,13 @@ FN parseTy \ [-> numRefs &DNode]
 $tAssertEq(parseTy &&U1, dnode:U1)   -> $tAssertEq(\numRefs, 2)
 $tAssertEq(parseTy Slot, dnode:Slot) -> $tAssertEq(\numRefs, 0)
 
+declare large pre fn _dotLocal do;
+
 pre fn _varImpl do ret ( \ [meta]
+  $declVar(declL compFn,  0, RSIZE)
   $declVar(declL meta, TY_VAR_INPUT, 2)
   $declVar(declL node,            0, RSIZE) $declEnd
+  NULL -> SET node;
   IF(isFnAndSyn(dictRefMaybe(0)))
     ret single(FALSE) \ next token is syn, run it (it may run us)
   END
@@ -294,6 +332,17 @@ pre fn _varImpl do ret ( \ [meta]
   ELSE \stk
     drp; drp; drp;
   END
+  dv_log(0x925, 1, 0x10)
+  IF(GET meta and not(GET meta msk TY_VAR_INPUT)) \ if is `var`
+    assert(GET node, E_intern);
+    IF(consumeToken(SLC_EQ))
+      tokenPlcSet(0)
+      updateCompFn(fnRef:baseCompFn) -> SET compFn;
+      _dotLocal(GET node, 0\synRefs, 0\synDerefs);
+      GET compFn -> SET G_compFn;
+    ELSE  tokenPlcSet(0)  END
+  END
+
   dv_log(0x930, 1, 0x10)
 )
 
@@ -314,10 +363,11 @@ pre inline FN tyItem_isConstructed \ (tyItem: &U1 -> U1)
   $h1(4) ft1(\tyItem) msk META_CONSTRUCTED; ret;
 $tAssertNot(tyItem_isConstructed(d_tyGet(dnode:Slot)))
 
-declare large pre fn conStruct do (); \ [&Node]
+declare large pre fn conStructOffset do (); \ [&Node]
+declare large pre fn deStructOffset do (); \ [&Node]
 
 \ Called from compileInputs
-\declared fn compileTypedInput do ret ( \ [&Node]
+\declared large pre fn compileTypedInput do ret ( \ [&Node]
   $declVar(declL nodeTy,  0, RSIZE)  $declEnd
   dv_log(dup\node, 0x093C, 2, 0x10)
 
@@ -326,7 +376,7 @@ declare large pre fn conStruct do (); \ [&Node]
     dv_log(GET nodeTy, 0x093E, 2, 0x10)
     IF(isDictStruct(GET nodeTy))
       dv_log(0x093F, 1, 0x10)
-      ret conStruct(\node)
+      ret conStructOffset(d_tyGet(\node), 0\offset)
     END
   END
   _setImpl(\node)
@@ -334,10 +384,7 @@ declare large pre fn conStruct do (); \ [&Node]
 
 $STORE_PRIV
 \ test inp by truncating values
-pre FN testInp
-  inp x:U1
-  $declEnd
-  ret(GET x)
+pre FN testInp  inp x:U1 $declEnd  ret(GET x)
 $tAssertEq(testInp(0x101), 1)
 
 pre FN testInp3  inp (x:U1  y:U2  z: &U1)  $declEnd
@@ -393,7 +440,7 @@ fn cToSlc stk(cdat: &U1) -> out(dat: &U1, len: U2) do (
 )
 
 \ TODO: I can remove recursion here and use a loop instead
-fn _if do ( \ [] recursive fn of `if`
+large fn _if do ( \ [] recursive fn of `if`
   var h: &U1  $declEnd
   scan; single(FALSE) \ compile token after `if`
   xx:IF(FALSE\asNow) -> SET h \ compile IF
@@ -468,27 +515,11 @@ $tAssertEq(0x44)
 fn testIfNow do (ret($if(0) do (4) else (0x3F + 3)))  $assertNoWs
 $tAssertEq(testIfNow, 0x42)
 
-\ mskjn:MASK(a, b) set bits from a to b, clearing with MASK first.
-\ same as:     (a jn (b msk (inv MASK))
-\ compiles as: a  b  (inv MASK)  %MSK %JN
-large syn fn mskjn do ret (
-  var asNow: U1;  var mask: Slot;
-  \asNow -> SET asNow;
-  inv(colonValue;) -> SET mask;
-  dv_log(0xC01, 1, 0x10)
-  xlw(GET G_compFn) \ {a b}
-  if(GET asNow) do (\b msk GET mask -> jn \a;)
-  else             (L(GET mask) h1(MSK) h1(JN))
-)
-$STORE_PRIV
-$tAssertEq(0x71, mskjn:0x3(1, 0x73))
-$tAssertEq(0x71, mskjn:0x3(1, 0x72))
 
 fn testMskJn stk(a:U2, b:U2) do ( ret mskjn:0x0F; )
 $tAssertEq(0xF3, testMskJn(3,   0xFF))
 $tAssertEq(0xFF, testMskJn(0xF, 0xF3))
 $STORE_PUB
-
 
 \ **********
 \ * [5] struct
@@ -739,7 +770,7 @@ fn _structSzWalker inp(tyItem: &U1, outSz: &U2) do (
   ret FALSE;
 )
 
-\declared fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
+\declared large pre fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
   var sz: U2; 0 -> SET sz;
   assert(isTyStruct(dup\s), 0xB003\E_intern);
   tyItems_walk(d_tyGet(\s), REF sz, fnRef:_structSzWalker) -> drp;
@@ -778,7 +809,6 @@ large fn struct_fieldCtx stk(dnode: &DNode) inp(ctx: &FieldCtx) do ret (
     tyItems_walk(d_tyGet(\node), GET ctx, fnRef:_fieldNameWalker),
     E_cNoKey);
 )
-
 
 fn consumeDot -> out(hasDot:U1) do (
   if(scan; not tokenEq(SLC_DOT)) do
@@ -982,7 +1012,9 @@ do (
 \ i.e: `.myStruct.fieldStruct.field`
 \ - Continue to add local offset (in Ctx) until a reference type is
 \   encountered.
-large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
+\declared large pre fn _dotLocal
+    stk(node: &DNode, synRefs: U1, synDerefs: U1)
+do (
   \ IMPORTANT: must be first for alignment
   var ctxOffset: U2;  var sgMeta:U1; var ctxSzI:U1; var ctxTyItem: &U1;
   var synDerefs: U1;  var synRefs: U1;  var node: &DNode;
@@ -1035,7 +1067,7 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
   dv_log(GET varRefs, 0xD100, 2, 0x10)
 
   \ Determine whether we are getting or setting
-  if(scan; tokenEq(SLC_EQUAL)) do
+  if(scan; tokenEq(SLC_EQ)) do
        ( SG_SETTER jn GET sgMeta -> SET sgMeta; scan; single(FALSE) )
   else ( \(SG_SETTER=FALSE); tokenPlcSet(0) )
 
@@ -1055,6 +1087,11 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
   if(not GET ctxTyItem) do (
     dv_log(GET directOffset, GET varRefs, GET synDerefs, 0xD104, 4, 0x10)
     assert(SG_DIRECT msk GET sgMeta, E_intern);
+    if(not GET varRefs and isTyDict(GET node) and isDictStruct(GET node)) do (
+      (GET node, GET ctxOffset)
+      -> if(SG_SETTER msk GET sgMeta) do conStructOffset; else deStructOffset;
+      ret;
+    )
     gsDirect(GET directOffset, GET varRefs, GET synDerefs, REF ctxOffset)
     ret gsDeref(GET varRefs, GET synDerefs, REF ctxOffset)
   )
@@ -1085,7 +1122,7 @@ large fn _dotLocal stk(node: &DNode, synRefs: U1, synDerefs: U1) do (
   ret gsDeref(GET varRefs\tyRefs, GET synDerefs, REF ctxOffset)
 )
 
-syn large fn . do ret ( notNow;
+pub syn large fn . do ret ( notNow;
   var synRefs: U1;    countChr(0c&) -> SET synRefs;
   var synDerefs:  U1; countChr(0c@) -> SET synDerefs;
   dv_log(0x1000, 1, 0x10)
@@ -1161,9 +1198,13 @@ large fn testCtxDeref inp(ctx: &FieldCtx) -> out(_:U2) do ret (
 $sr1(0x22, testU1Ref)
 $tAssertEq(0x22, runCtxRef(fnRef:testCtxDeref))
 
+large fn testVarSet stk(v:U2) -> out(_:U2)
+  do ( var v:U2 = (\v + 7);  ret .v )
+$tAssertEq(0x10F7, testVarSet(0x10F0))
+$STORE_PUB
+
 \ **********
 \ *   [XX].b (con|de)structuring structs
-$STORE_PUB
 
 \ Recursive function to construct fields
 fn _constructFields
@@ -1177,43 +1218,55 @@ do ret (
   .ctx.tyItem = tyItem_next(.tyItem);
   _constructFields(dec .fields, .ctx) \ recurse
   dv_log(tyItem_sz(.tyItem), .offset, 0xC10D, 3, 0x10)
-  \ compile setting the field
-  h1(SRLL jn szToSzI(tyItem_sz(.tyItem)));  h1(.offset);
+  h1(SRLL jn szToSzI(tyItem_sz(.tyItem)));  h1(.offset); \ set the field
 )
 
-\declared fn conStruct inp(node: &DNode) do ret (
-  var fields: U1;
-
-  dv_log(GET node, 0xCC00, 2, 0x10)
-  assert(isTyVar(GET node), 0x7113);
-  assertNot(d_mGet(GET node) msk TY_VAR_REF, E_cBadConstruct)
-  d_tyGet(.node) -> SET node;
-  \ FIXME: dotSet not working?
-  \ .node = d_tyGet(.node); \ node points to type
-  dv_log(GET node, 0xCC01, 2, 0x10)
+\declared large pre fn conStructOffset
+    inp(node: &DNode, offset:U1)
+do ret (
   assert(isTyDict(.node), 0x7114);
-
-  .fields = ft1(d_tyGet(.node)) \ num fields
-  dv_log(.fields, 0xCC05, 2, 0x10)
+  dv_log(GET node, 0xCC00, 2, 0x10)
+  var fields:U1 = ft1(d_tyGet(.node));
   assert(.fields < 4, E_cBadConstruct)
   var ctx: FieldCtx;
-    .ctx.offset = 0;
+    .ctx.offset = .offset;
     .ctx.sgMeta = (SG_SETTER jn SG_DIRECT);
     .ctx.tyItem = inc d_tyGet(.node);
-  dv_log(.ctx.offset, 0xCC09, 2, 0x10)
-  dv_log(0xCC0F, 1, 0x10)
+  dv_log(.ctx.offset, 0xCC0F, 2, 0x10)
   _constructFields(.fields, .&ctx)
 )
-
 $STORE_PRIV
-fn testConStruct inp(s: Slc) -> out(decDat: &U1)
-  do
-ret (inc .s.len, dec .s.dat)
-
+fn testConStruct inp(s: Slc) -> \(...) do ret (inc .s.len, dec .s.dat)
 $(testConStruct(0x12308, 0x22) -> tAssertEq(0x12307) -> tAssertEq(0x23))
 
+large fn testConStructVar var(s: Slc) do
+  (.s = (0x123456, 0x789A); ret (.s.len, .s.dat))
+$(testConStructVar -> tAssertEq(0x123456) -> tAssertEq(0x789A))
 $STORE_PUB
-\ TODO: still need to do:
-\  - .deStruct
-\  - namespacing
 
+\declared large pre fn deStructOffset
+    inp(node: &DNode, offset:U1)
+do ret (
+  assert(isTyDict(.node), 0x7114);
+  var fields:U1 = ft1(d_tyGet(.node)); \ num fields
+  assert(.fields < 4, E_cBadConstruct)
+  var tyItem: &U1 = inc d_tyGet(.node);
+
+  LOOP l0
+    retIfNot .fields
+    h1(FTLL jn szToSzI(tyItem_sz(.tyItem)));  h1(.offset); \ set the field
+    .offset = bumpSz(.offset, tyItem_sz(.tyItem));
+    .tyItem = tyItem_next(.tyItem);
+    .fields = dec .fields;
+  AGAIN l0
+)
+$STORE_PRIV
+fn testDeStruct inp(s: Slc) -> do ret (.s -> inc\len;);
+$(testDeStruct(0xABCDEF, 0x1234) -> swp;
+  -> tAssertEq(0xABCDEF) -> tAssertEq(0x1235)
+)
+$STORE_PUB
+
+
+\ TODO: still need to do:
+\  - namespacing

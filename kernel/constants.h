@@ -229,6 +229,7 @@
 #define E_bracket            0xE103
 #define E_cBadDerefs         0xE104
 #define E_cBadConstruct      0xE105
+#define E_misDeclare         0xE106
 #define E_iBlock             0xE0B0
 #define E_ptrBlk             0xE0B1
 #define E_aaPo2              0xE0B2

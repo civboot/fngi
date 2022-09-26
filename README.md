@@ -83,7 +83,7 @@ along the way, some of them complete.
 - [X] Write `fn`, `if`, `while` (untyped
   - [X] Implement forward declaration of functions
 - [X] define struct and native types
-- [ ] Write dot compiler (variable modifier)
+- [X] Write dot compiler (variable modifier)
 - [ ] Create core modules
   - [ ] String formatting
   - [ ] String printing

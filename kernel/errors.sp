@@ -92,6 +92,7 @@
 #E103  #0=E_bracket     \ expected backet
 #E104  #0=E_cBadDerefs  \ too many de/refs
 #E105  #0=E_cBadConstruct  \ construct of too many fields
+#E106  #0=E_misDeclare  \ declared function has different meta
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr
