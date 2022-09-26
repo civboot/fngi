@@ -1,8 +1,7 @@
 # fngi: a readable language that grows from the silicone
 
-> **UPDATE:** the kernel rewrite is complete, fngi works again! I'm now
-> implementing `fn` syntax (without type checking) in `kernel/fngi.fn`. See
-> `notes/fn.md` for more details.
+> **UPDATE:** almost ready to start implementing modules. The language is really
+> comming to life. Should have user-defined modules soon-ish!
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -42,11 +41,11 @@ Fngi is a "macro first" language. Why? So that it can evolve to be whatever is
 needed of it.  To understand this better, go back to early programming
 languages: unix had sh and C.
 
-Sh is barely a lanugage. It has only a single type, the string.
-It has an extremely obtuse syntax who's sole method of operation is to
-dynamically execute scripts and modify strings. In truth, the shell "syntax"
-depends on a host of of other complex syntaxes: awk, grep, regexes, individual
-command lines, formats of system files (`/proc/`), etc.
+Sh is barely a lanugage. It has only a single type, the string.  It has an
+extremely obtuse syntax who's sole method of operation is to dynamically execute
+scripts and modify strings. In truth, the shell "syntax" depends on a host of of
+other complex syntaxes: awk, grep, regexes, individual command lines, formats of
+system files (`/proc/`), etc.
 
 By contrast, C has a rigid syntax, a complex macro system, a complex build and
 linking system and and no dynamic features. You could never use C as a
@@ -112,9 +111,9 @@ The current command I use to run/test is:
 $ python3 etc/make.py --build --test
 ```
 
-There is not yet a way to compile a file outside of `kernel/fngi.fn`,
-and there won't be until modules are implemented. See `linux/kernel.c` for
-implementation details.
+If you want to "play" with the language just define your stuff at the end of
+`boot/fngi.fn` and run the above. Actually defining your own source files should
+happen fairly soon, but is not yet supported.
 
 ## Contributing
 

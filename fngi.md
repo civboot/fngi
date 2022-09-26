@@ -1,9 +1,9 @@
 # Fngi details
 
-Fngi is a general purpose concrete syntax[1] language with similar constraints
-to C. Unlike C it has a rich macro system allowing for arbitrary syntax
-extensions. It targets a bare-bones virtual machine called [spor](./spor.md),
-which (eventually) can be compiled to native code.
+Fngi is a general purpose strongly-typed concrete syntax[1] language with
+similar constraints to C. Unlike C it has a rich macro system allowing for
+arbitrary syntax extensions. It targets a bare-bones virtual machine called
+[spor](./spor.md), which (eventually) can be compiled to native code.
 
 [1] a "concrete syntax" is (tounge-in-cheek) the opposite of an "abstract
 syntax". It is defined as a syntax where the compiler only reads a token stream
@@ -11,38 +11,34 @@ and never creates an abstract syntax tree of any kind.
 
 ## Fngi basics
 
-Fngi is a stack based language. Most stack based languages (i.e. FORTH) use
-postfix notation, also called reverse polish notation. However, most "modern"
-(and more readable) languages use prefix notation, also called standard polish
-notation. Fngi uses mostly standard notation. Here are two examples to add 1 and
-2, both are valid fngi:
+Fngi is a stack based language. This means arguments for a function can be
+gotten either from the current stack or an argument passed to them.  Here are
+two examples to add 1 and 2, both are valid fngi:
 
 - prefix: `add(1, 2)`
 - postfix: `1 2 add;`
 
 In fngi, functions that accept arguments are labeled as PRE, meaning they use
 prefix notation (the exception is purely stack-altering functions: swp, drp,
-ovr, dup, dupn). Functions that don't accept arguments use postfix notation
-(they don't need `()` or `;`). However, by convention they are followed with
-`;`
-
-Fngi has a few tokens defined for documentation/syntactic surgar:
-- `,` does nothing and is intended as syntactic surgar (documentation) to
-  separate arguments in functions.
-- `;` does nothing and is intended to be consumed when no arguments are being
-  passed to a PRE function, i.e. `ret;`
-- `\` is a swiss-army knife comment, described below. It is NOT consumed by
-  a pre function.
+ovr, dup, dupn).
 
 Unlike C (or most languages) that have an abstract syntax tree, fngi goes about
 parsing in a radically simpler manner. Conceptually, functions (that take an input)
 take in only a _single token_ of input. So you can do `inc 1`. However, some tokens
 execute themselves to compile _more_ tokens, so you can also do `add(1, 2)`
 
+> Fngi has a few tokens defined for documentation/syntactic surgar:
+> - `,` does nothing and is intended as syntactic surgar (documentation) to
+>   separate arguments in functions.
+> - `;` does nothing and is intended to be consumed when no arguments are being
+>   passed to a PRE function, i.e. `ret;`
+> - `\` is a swiss-army knife comment, described below. It is NOT consumed by
+>   a pre function.
+
 This allows fngi's compiler to not keep track of an abstract syntax tree; compiling
- tokens "instantly" as they appear in the stream. This is critical for fngi to
- be able to self-bootstrap on very minimal targets like microcontrollers, but
-it also makes reasoning about fngi syntax very easy (in some ways).
+tokens "instantly" as they appear in the stream. This is critical for fngi to be
+able to self-bootstrap on very minimal targets like microcontrollers, but it
+also makes reasoning about fngi syntax very easy.
 
 For example: `myFn 1`
 
@@ -58,7 +54,7 @@ So how do we pass more than one argument? It's easy, we use parenthesis!
 
 So we can do: `myFn2(1, 2 + 3)`
 
-Which is compiled as
+Which is compiled as:
 
 ```spor
 #1$L      \ literal 0x1
@@ -75,23 +71,27 @@ The ultimate "do nothing" token is the swiss-army knife comment: `\`
 Comments have three forms:
 
 - `\token` comments out a single token.
-- `\ line comment` is a line comment
 - `\(block comment)` is a block comment
+- `\ line comment` is a line comment
 
 So you might write one of the below:
 
-- `myFn(_, 2 + 2)  \ "a" from the stack`
+- `myFn(2 + 2)  \ first argument from the stack`
 - `myFn(\a, 2 + 3)`
 - `myFn(\(&a), 2 + 3)`
+
+The fngi comment is something that would be fantastic for other languages to
+replicate. Being able to sprinkle little `\token` comments to declare meaning
+improves readability tremendously.
 
 ## Example
 
 Below is an example fngi function to calculate fibronacci recursively.
 
 ```fngi
-fn fib inp(n:U4) -> out(_:U4) do (
-  if(.n <= 1) do ret 1;
-  ret(fib(dec .n) + fib(.n - 2));
+fn fib inp(n:U4) -> out(_:U4) do ret (
+  if(.n <= 1) do ( ret 1 )
+  fib(dec .n) + fib(.n - 2)
 )
 ```
 
@@ -144,48 +144,43 @@ In fngi, `$token(1, 2)` will run not only `token` NOW, but also it's args
 (assuming `token` is PRE).
 
 > The mechanism by which this is accomplished involves very little code and is a
-> bit clever, see the definitions in `./spor.sp` if you are curious.
+> bit clever, see the definitions in `boot/spor.sp` if you are curious.
 
 Some functions are defined as NOW, which means they will panic if executed
 without `$` (or in a `$(...)` block).
 
 Other functions are defined as SYN, and these are the true workhorses of fngi
-syntax.  A SYN function is (1) always run NOW and (2) is passed a boolean
-(`asNow`) which indicates whether the user wanted it to be run NOW
-(i.e. whether the user used `$`).
+syntax.  A SYN function is (1) always run NOW and (2) knows whether it was
+called with or without `$`.
 
-Some syn functions call `notNow;` right away, meaning they never want to be
-called with `$`. These typically implement some syntax such as `fn`, `if`, etc.
+All fngi syntax is implemented with syn functions. There are also some special
+case functions which typically use `:` or `[...]`, i.e. `xx:myFn` or
+`sizeOf[my.Type]` which define their own local syntax.
 
-Other syn functions have different behavior whether called with `$` or not.
-For example `$(1 + 3)` will put `4` on the stack at compile time. However,
-`(1 + 3)` will compile both the literals and the `%ADD` instruction into the
-function.
-
-> Note: If you want to compile the operation at compile time, use `$L(1 + 3)`
+> Note: If you want to compile a computed literal, use `$L(1 + 3)`
 
 ## Similarities to FORTH
 
 Like FORTH, fngi allows you to define functions that are either compiled or
 run NOW (affecting compilation, often called "macros" in other languages). Also
 like FORTH, fngi's functions operate by push/poping from a working stack and
-useing a call stack to track calls/returns. In addition, both FORTH and fngi
-have very low implementation requirements. Fngi is implemented in about 1000
-lines of spor assembly, and spor is implemented in about 2000 lines of C. Like
-FORTH, fngi/spor do not come with hardware memory management requirements or
-any other bells or whistles. They practically bootstraps themselves from
-nothing.
+using a call stack to track calls/returns.
+
+Both FORTH and fngi have very low implementation requirements. Fngi is
+implemented in about 1000 lines of spor assembly, and spor is implemented in
+about 2000 lines of C. Like FORTH, fngi/spor do not come with hardware memory
+management requirements or any other bells or whistles. They practically
+bootstraps themselves from nothing.
 
 Fngi diverges from FORTH in the following ways:
 
 - Does not follow FORTH naming standards in any way. Typically closer to C
   naming.
-- Although it is stack-based, all functions (except those with no stack inputs
-  or pure stack manipulation like dup/drp/ovr) cause the next token to be
-  compiled before them. This means that syntax is typically written in C like
-  standard-polish notation instead of FORTH's (hard to read) reverse-polish
-  notation.
-- Far more inclusive support of locals. Has a separate locals stack and
+- Although it is stack-based, all functions (except pure-stack functions)
+  cause the next token to be compiled before them. This means that syntax is
+  typically written in C like standard-polish notation instead of FORTH's (hard
+  to read) reverse-polish notation.
+- Far more support for local variables. Has a separate locals stack and
   execution mechanisms which automatically allocate space for locals when
   executed and deallocate when returned, making this both performant and
   minimal.
@@ -193,6 +188,8 @@ Fngi diverges from FORTH in the following ways:
   No support for complex stack manipulation like `ROLL, TUCK, ?DUP`, double
   stack manipulation like `2DROP, 2SWAP`  or return stack manipulation like
   `R>`
+
+## C, FORTH and fngi Comparison
 
 ```c
 // C Syntax
@@ -212,9 +209,9 @@ uint32_t fib(uint32_t n) {
 
 ```fngi
 \ Fngi Syntax
-fn fib inp(n:U4) -> out(_:U4_) do (
-  if(.n <= 1) do ret 1;
-  ret(fib(dec .n) + fib(.n - 2));
+fn fib inp(n:U4) -> out(_:U4_) do ret (
+  if(.n <= 1) do ( ret 1 )
+  fib(dec .n) + fib(.n - 2)
 )
 ```
 
@@ -230,10 +227,7 @@ though:
   security, etc) adds some complexity. However, it (in theory) reduces the
   binary size and allows easier portability. Really one just needs to port spor
   and fngi comes along for the ride!
-- Support of the locals stack requres an extra stack, but also reduces the
+- Support of the locals stack requires an extra stack, but also reduces the
   needed size of the working (data) stack.
-- Support of a range of dictionary types, like constant, syn, pre, etc has a
-  little more complexity. However, FORTH already had to handle NOW functions, so
-  the complexity is largely in the forth compiler too.  Add to this that fngi
-  provides basic type checking from the beginning (you can't execute a constant
-  for instance) makes things well worth it.
+- Support of a range of dictionary types, like constant, syn, pre, etc adds at
+  most a byte (of metadata) plus a pointer for each function.
