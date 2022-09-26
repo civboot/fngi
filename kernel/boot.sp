@@ -407,13 +407,13 @@ $pub $pre $FN szIToSz \ {szI} -> {sz}
 $pub $pre $FN heapSzI \ {value szI} write a value of szI to heap
   %DUP @SZ1$L %EQ $IF  %DRP $_jmp h1  $END
   %DUP @SZ2$L %EQ $IF  %DRP $_jmp h2  $END
-  %DUP @SZ4$L %EQ $IF  %DRP $_jmp h4  $END
+       @SZ4$L %EQ $IF       $_jmp h4  $END
   @E_sz$L $_jmp panic
 
 $pub $pre $FN szToSzI \ [sz] -> [SzI] convert sz to szI (instr)
   %DUP #1$L %EQ $IF  %DRP @SZ1 $L %RET  $END
   %DUP #2$L %EQ $IF  %DRP @SZ2 $L %RET  $END
-       #4$L %EQ $IF  %DRP @SZ4 $L %RET  $END
+       #4$L %EQ $IF       @SZ4 $L %RET  $END
   @E_sz$L $_jmp panic
 
 $pub $pre $FN reqAlign \ {sz -> sz}: get required alignment

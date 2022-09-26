@@ -857,13 +857,16 @@ $tAssertEq(0x10, struct_ctx(dnode:DNode).m -> drp\tyItem)
 \    other
 
 \ Remove refs until there are 0 or 1, or until derefs are exhausted.
-fn doDeref
-    inp(offset:U1 refs:U1 derefs:U1) -> out(offset:U1, refs:U1, derefs:U1)
+fn doPreDeref
+    inp(offset:U1, refs:U1, derefs:U1) -> out(offset:U1, refs:U1, derefs:U1)
 do (
+  assert(GET refs >= GET derefs, 0x7086)
   LOOP l0
     dv_log(GET refs, GET derefs, 0x5100, 3, 0x10)
-    if((GET refs < 2) or (not GET derefs)) do
-      ret (GET offset, GET refs, GET derefs)
+    \ FIXME: why is this working BETTER?
+    \ if(GET refs < 2)
+    if(GET derefs < 2) \ never do final deref
+      do ret (GET offset, GET refs, GET derefs)
     if(GET offset) do (
       h1($L(SZR + FTO)) -> h1(GET offset); 0 -> SET offset
     ) else (
@@ -874,9 +877,19 @@ do (
   AGAIN l0
 )
 
-\ Same as doDeref except set derefs = refs, auto-removing all derefs except last.
-fn autoDeref stk(offset:U1, refs:U1) -> out(offset:U1, newRefs:U1) do
-  ret ( dup\(derefs=refs) -> doDeref; -> drp\derefs; )
+\ Remove all refs until the last
+fn autoDeref inp(offset:U1, refs:U1) -> out(offset:U1, newRefs:U1) do ret (
+  LOOP l0
+    dv_log(GET refs, 0x5200, 2, 0x10)
+    if(GET refs < 2) do ret (GET offset, GET refs)
+    if(GET offset) do (
+      h1($L(SZR + FTO)); h1(GET offset); 0 -> SET offset
+    ) else (
+      h1($L(SZR + FT))
+    )
+    dec GET refs   -> SET refs;
+  AGAIN l0
+)
 
 $STORE_PRIV
 $(
@@ -948,19 +961,19 @@ do ret (
 large fn gsDeref inp (tyRefs: U1, derefs: U1, ctx: &FieldCtx)
 do (
   dv_log(GET tyRefs, GET derefs, 0xD0F0, 3, 0x10)
-  doDeref(ft2(GET ctx)\offset, GET tyRefs, GET derefs)
+  doPreDeref(ft2(GET ctx)\offset, GET tyRefs, GET derefs)
   -> SET derefs -> SET tyRefs -> sr2(\offset, GET ctx)\setOffset
   retIfNot(GET derefs)
   dv_log(GET tyRefs, GET derefs, ft2(GET ctx), 0xD0F1, 4, 0x10)
   if(ft2(GET ctx)\offset) do (
     if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SRO else FTO
-    \instr + fto1:FC_szI(GET ctx)
+    \instr + szIWithRefs(fto1:FC_szI(GET ctx), dec GET tyRefs)
     dv_log(dup\instr, 0xD0F2, 2, 0x10)
     h1(\instr);
     ret h1(ft2(GET ctx)\offset);
   )
   if(SG_SETTER msk fto1:FC_sgMeta(GET ctx)) do SR else FT
-  \instr + fto1:FC_szI(GET ctx)
+  \instr + szIWithRefs(fto1:FC_szI(GET ctx), dec GET tyRefs)
   dv_log(dup\instr, 0xD0F3, 2, 0x10)
   ret h1(\instr)
 )
@@ -1115,20 +1128,13 @@ $tAssertEq(0x789, testDotSetCtx;)
 
 large fn testDotSetBoth do ret (
   var ctx: FieldCtx;
-    .ctx.offset = 0x1234;
-    .ctx.sgMeta = 0x56;
-    .ctx.szI    = 0x78;
-    .ctx.tyItem = 0x9ABCDEF;
+    .ctx.offset = 0x1234;  .ctx.sgMeta = 0x56;
+    .ctx.szI    = 0x78;    .ctx.tyItem = 0x9ABCDEF;
   (.ctx.offset, .ctx.sgMeta, .ctx.szI, .ctx.tyItem)
-  \ .ctx.tyItem
 )
 $(testDotSetBoth;
-  -> tAssertEq(0x9ABCDEF)
-  -> tAssertEq(0x78)
-  -> tAssertEq(0x56)
-  -> tAssertEq(0x1234)
-)
-
+  -> tAssertEq(0x9ABCDEF)\tyItem -> tAssertEq(0x78)\szI
+  -> tAssertEq(0x56)\sgMeta      -> tAssertEq(0x1234)\offset)
 
 \ Run a function with ctx.offset unset and ctx.tyItem = testU1Ref
 large fn runCtxRef inp(largeFn: &Slot) do ret (
@@ -1138,16 +1144,16 @@ large fn runCtxRef inp(largeFn: &Slot) do ret (
 )
 
 large fn testCtxRef inp(ctx: &FieldCtx) -> out(_:U2) do ret (
-  sr2(0x3378, GET ctx)  .ctx.offset
+  sr2(0x3378, GET ctx)  sroR:FC_tyItem(0x789AB, GET ctx)
+  .ctx.tyItem, .ctx.offset
 )
-$tAssertEq(0x3378, runCtxRef(fnRef:testCtxRef))
+$(runCtxRef(fnRef:testCtxRef) -> tAssertEq(0x3378) -> tAssertEq(0x789AB))
 
 large fn testCtxRefSet inp(ctx: &FieldCtx) -> out(_:U2) do ret (
-  .ctx.offset = 0x5438;
-  .ctx.offset
+  .ctx.offset = 0x1234;  .ctx.tyItem = 0x56789;
+  .ctx.tyItem, .ctx.offset
 )
-$runCtxRef(fnRef:testCtxRefSet)
-$tAssertEq(0x5438)
+$(runCtxRef(fnRef:testCtxRefSet) -> tAssertEq(0x1234) -> tAssertEq(0x56789))
 
 large fn testCtxDeref inp(ctx: &FieldCtx) -> out(_:U2) do ret (
   .@ctx.tyItem
@@ -1170,14 +1176,13 @@ do ret (
   .ctx.offset = bumpSz(.ctx.offset, tyItem_sz(.tyItem));
   .ctx.tyItem = tyItem_next(.tyItem);
   _constructFields(dec .fields, .ctx) \ recurse
-
+  dv_log(tyItem_sz(.tyItem), .offset, 0xC10D, 3, 0x10)
   \ compile setting the field
-  h1(SRLL jn szToSzI(tyItem_sz(.tyItem)))  h1(.offset)
+  h1(SRLL jn szToSzI(tyItem_sz(.tyItem)));  h1(.offset);
 )
 
 \declared fn conStruct inp(node: &DNode) do ret (
   var fields: U1;
-  var ctx: FieldCtx;
 
   dv_log(GET node, 0xCC00, 2, 0x10)
   assert(isTyVar(GET node), 0x7113);
@@ -1191,12 +1196,9 @@ do ret (
   .fields = ft1(d_tyGet(.node)) \ num fields
   dv_log(.fields, 0xCC05, 2, 0x10)
   assert(.fields < 4, E_cBadConstruct)
-
-  dv_log(0xCC06, 1, 0x10)
+  var ctx: FieldCtx;
     .ctx.offset = 0;
-  dv_log(.ctx.offset, 0xCC07, 2, 0x10)
     .ctx.sgMeta = (SG_SETTER jn SG_DIRECT);
-  dv_log(.ctx.offset, 0xCC08, 2, 0x10)
     .ctx.tyItem = inc d_tyGet(.node);
   dv_log(.ctx.offset, 0xCC09, 2, 0x10)
   dv_log(0xCC0F, 1, 0x10)
@@ -1204,16 +1206,11 @@ do ret (
 )
 
 $STORE_PRIV
-\ fn testConStruct inp(s: Slc) -> out(decDat: &U1)
-\   do
-\ ret (
-\   dec .s.dat;
-\ )
-\ 
-\ $(
-\   testConStruct(0x12308, 0x22)
-\   -> tAssertEq(0x12307)
-\ )
+fn testConStruct inp(s: Slc) -> out(decDat: &U1)
+  do
+ret (inc .s.len, dec .s.dat)
+
+$(testConStruct(0x12308, 0x22) -> tAssertEq(0x12307) -> tAssertEq(0x23))
 
 $STORE_PUB
 \ TODO: still need to do:
