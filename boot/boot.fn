@@ -93,6 +93,7 @@ FN SLC_EQ     ret |=|
 FN SLC_PAREN  ret |(|
 FN SLC_BRACK_O ret |[|
 FN SLC_BRACK_C ret |]|
+FN SLC_ARROW_BACK ret |<-|
 
 \ Scan and return whether the token equals. If it does, it was consumed.
 pre FN consumeToken \(s:Slc -> hasToken:U1) ret (
@@ -123,10 +124,10 @@ $STORE_PUB
 
 pre FN isTyped      ret( d_mGet(\node) msk C_TYPED )
 pre FN d_tyGet \ {&DNode -> ty}
-  assert(isTyped(dup\dnode), E_intern) -> ret ftoR:DN_ty;
+  assert(isTyped(dup\dnode), 0x7012) -> ret ftoR:DN_ty;
 
 pre FN d_tySet \ {&ty &DNode}
-  assert(isTyped(dup\dnode), E_intern) -> ret sroR:DN_ty;
+  assert(isTyped(dup\dnode), 0x7013) -> ret sroR:DN_ty;
 
 \ declTy:token(meta, ty) manually declare a dictionary entry
 pub syn FN declTy ret ( \ {meta, ty}
@@ -169,7 +170,6 @@ const TY_DICT_BITMAP = 0x01;
 const TY_DICT_STRUCT = 0x02;
 const TY_DICT_ENUM   = 0x03;
 const TY_DICT_MOD    = 0x04;
-const TY_DICT_SUBMOD = 0x05;
 
 const META_CONSTRUCTED   = 0x80;
 const META_NAMED         = 0x40;
@@ -275,7 +275,7 @@ $STORE_PUB
 declare large pre fn struct_sz \(s: &DNode -> sz:U2) do;
 
 pre FN tySz \ {node:&DNode -> szBytes}
-  assert(isTyDict(dup), 0xB001\E_intern)
+  assert(isTyDict(dup), 0x7027)
   IF(isDictNative(dup)) ret szIToSz(d_tyGet(\node) msk SZ_MASK) END
   IF(isDictStruct(dup)) ret struct_sz(\node)                   END
   panic(E_unimpl) \ TODO: other types
@@ -312,7 +312,7 @@ pre fn _varImpl do ret ( \ [meta]
   IF(GET meta) \ a "real" variable. Parse ty and update dnode's meta and ty
     (GET meta jn C_TYPED jn C_LOCAL) -> SET meta \ ensure meta is C_TYPED
     ldictAdd(0\value, GET meta) -> SET node
-    assertEq(GET meta, d_mGet(GET node), E_intern)
+    assertEq(GET meta, d_mGet(GET node), 0x7031)
     GET node, 1\isLocal -> colon -> parseTy; \ {&Local isLocal=1 numRefs &Type}
     -> assert(ovr\numRefs < 4, E_cBadRefs)
     -> d_tySet(dup\type, GET node)
@@ -334,7 +334,7 @@ pre fn _varImpl do ret ( \ [meta]
   END
   dv_log(0x925, 1, 0x10)
   IF(GET meta and not(GET meta msk TY_VAR_INPUT)) \ if is `var`
-    assert(GET node, E_intern);
+    assert(GET node, 0x7033);
     IF(consumeToken(SLC_EQ))
       tokenPlcSet(0)
       updateCompFn(fnRef:baseCompFn) -> SET compFn;
@@ -453,7 +453,7 @@ large fn _if do ( \ [] recursive fn of `if`
     xx:ELSE(GET h, FALSE\asNow) -> SET h;
     scan; single(FALSE);
   ELSE tokenPlcSet(0); \ reset token (peeking)
-  END END 
+  END END
   ret _END(GET h, dup)
 )
 
@@ -551,7 +551,6 @@ fn bumpName stk(size:U2, aligned:U1) -> out(_: &U1) do (
   ret BBA_bump(\size, \aligned, locBBA(nameLoc));
 )
 
-
 \ **********
 \ *   [5.a] struct declaration
 pre fn needSzI do ( \ (value -> neededSzI)
@@ -644,6 +643,7 @@ pub struct DNode (
 )
 
 struct Slc      ( dat: &U1;  len: U2; )
+struct Stk      ( dat: &U1; sp:U2; cap:U2 )
 struct FieldCtx ( offset:U2; sgMeta:U1, szI:U1, tyItem: &U1 )
 
 const FC_tyItem = RSIZE;
@@ -668,6 +668,14 @@ $tAssertEq(ft1(3 + d_tyGet(dnode:DNode)), 0cl)
 \ Skip a name to get the type reference
 $NEW_BLOCK_PUB
 $NEW_BLOCK_PRIV
+
+fn consumeDot -> out(hasDot:U1) do (
+  if(scan; not tokenEq(SLC_DOT)) do
+    ( tokenPlcSet(0); ret FALSE; )
+  ret TRUE;
+)
+$tAssert(consumeDot.)  $tAssertNot(consumeDot)
+
 pre inline FN tyItem_refs \ {tyItem: &U1 -> refs:U1}
   $h1(3) ft1(\tyItem) msk META_REF_MSK; ret;
 
@@ -682,14 +690,14 @@ pre FN tyItem_skipName \ {tyItem: &U1 -> &U1}
 \ Return the dictionary node for the tyItem
 pre FN tyItem_node
   $declVar(declL tyItem, TY_VAR_INPUT, RSIZE) $declEnd
-  assert(tyItem_isConstructed(GET tyItem), 0xB002\E_intern);
+  assert(tyItem_isConstructed(GET tyItem), 0x7069);
   ret ftBeSzI(tyItem_skipName(GET tyItem), ft1(GET tyItem) msk SZ_MASK)
 $tAssertEq(tyItem_node(inc d_tyGet(dnode:DNode)), dnode:DNode)
 
 
 \ Get the szI of a native tyItem
 fn tyItem_nativeSzI stk(tyItem: &U1) -> out(refs:U1) do ret (
-  assert(not tyItem_isConstructed(dup), E_intern);
+  assert(not tyItem_isConstructed(dup), 0x7070);
   ft1(\tyItem) msk SZ_MASK
 )
 
@@ -732,6 +740,16 @@ $(
 \ **********
 \ *   [XX.d] struct field walker and size
 
+\ Find the end of a string of dots, i.e. .a.b.c.d returns &d
+fn dotWalk stk(node: &DNode) -> out(_: &DNode) do (
+  LOOP l0 \ {node}
+    retIfNot(consumeDot)
+    assert(isTyDict(dup\node), E_type);
+    dictRef(d_vGet(\node)) -> \node
+  AGAIN l0
+)
+
+
 \ Bump the size by the add size.
 \
 \ This assumes that addSz behaves like a struct field and requires alignment.
@@ -768,7 +786,7 @@ fn _structSzWalker inp(tyItem: &U1, outSz: &U2) do (
 
 \declared large pre fn struct_sz stk(s: &DNode) -> out(sz: U2) do (
   var sz: U2; 0 -> SET sz;
-  assert(isTyStruct(dup\s), 0xB003\E_intern);
+  assert(isTyStruct(dup\s), 0x7078);
   tyItems_walk(d_tyGet(\s), REF sz, fnRef:_structSzWalker) -> drp;
   ret GET sz;
 )
@@ -779,7 +797,7 @@ $tAssertEq(8,       struct_sz(dnode:FieldCtx));
 \ **********
 \ *   [XX.e] struct field name offsets
 fn tyItem_cName stk(tyItem: &U1) -> out(cName: &U1) do ret (
-  assert(tyItem_isNamed(dup\tyItem), 0xB004\E_intern) -> inc\tyItem;
+  assert(tyItem_isNamed(dup\tyItem), 0x7080) -> inc\tyItem;
 )
 
 \ Called by tyItems_walk for walking struct fields.
@@ -805,13 +823,6 @@ large fn struct_fieldCtx stk(dnode: &DNode) inp(ctx: &FieldCtx) do ret (
     tyItems_walk(d_tyGet(\node), GET ctx, fnRef:_fieldNameWalker),
     E_cNoKey);
 )
-
-fn consumeDot -> out(hasDot:U1) do (
-  if(scan; not tokenEq(SLC_DOT)) do
-    ( tokenPlcSet(0); ret FALSE; )
-  ret TRUE;
-)
-$tAssert(consumeDot.)  $tAssertNot(consumeDot)
 
 \ Return the node from the ctx and clear it (for safety)
 large fn _ctxPopNode inp(ctx: &FieldCtx) -> out(_: &DNode) do ret (
@@ -855,32 +866,9 @@ $tAssertEq(0x10, struct_ctx(dnode:DNode).m -> drp\tyItem)
 \   .&var.field          \ variable field reference
 \   .@var.field = (...)  \ variable field dereference store
 
-\ Okay here's what we do. The first token decides everything.
-\ 1. If it's a local/global then it's just a lookup of field offset
-\    (offset+type+references)
-\ 2. Anything else, it's a dictionary lookup (NEVER a field)
 
-\ IGNORE BELOW (probably)
-\ Agh... I don't know how to do this.
-\ WHAT exactly do I need to do? There are so many damn requirements here...
-\ it is the OPPOSITE of simple!
-\
-\ Here's the first problem: I'm overloading this to do:
-\ 1. local value and local field lookup (deep-struct as well!)
-\ 2. local value and field setting (deep-struct as well!). I really don't think
-\    this is even POSSIBLE without a syntax tree. If it is possible, it would be
-\    such an enourmous pain I can't even begin!
-\ 3. dictionary lookup, finding a function in a module (or struct!)
-\ 4. god knows what else I wanted to do. Method lookup? Variant lookup?
-\
-\ This is WAY too much. A few notes:
-\ 1. Following a bunch of dots on a TY_DICT is TRIVIAL. I could do that in
-\    the base compiler whenever it encounters a dict type, and that is exactly what I
-\    SHOULD do. It would effectively only find functions and constants.
-\    - Alternatively: if the first item is a TY_DICT I could do that, otherwise
-\      do locals/etc. But meh, I don't like that!
-\ 2. '.' should just lookup value. Setting a value NEEDS to be done some other way,
-\    other
+\ **********
+\ *     [XX].a Dot Values: getting and setting local/global values
 
 \ Remove refs until there are 0 or 1, or until derefs are exhausted.
 fn doPreDeref
@@ -889,8 +877,6 @@ do (
   assert(GET refs >= GET derefs, 0x7086)
   LOOP l0
     dv_log(GET refs, GET derefs, 0x5100, 3, 0x10)
-    \ FIXME: why is this working BETTER?
-    \ if(GET refs < 2)
     if(GET derefs < 2) \ never do final deref
       do ret (GET offset, GET refs, GET derefs)
     if(GET offset) do (
@@ -1082,7 +1068,7 @@ do (
   \ If there is no field (only direct) just do it.
   if(not GET ctxTyItem) do (
     dv_log(GET directOffset, GET varRefs, GET synDerefs, 0xD104, 4, 0x10)
-    assert(SG_DIRECT msk GET sgMeta, E_intern);
+    assert(SG_DIRECT msk GET sgMeta, 0x7107);
     if(not GET varRefs and isTyDict(GET node) and isDictStruct(GET node)) do (
       (GET node, GET ctxOffset)
       -> if(SG_SETTER msk GET sgMeta) do conStructOffset; else deStructOffset;
@@ -1108,7 +1094,7 @@ do (
     dv_log(GET synRefs, 0xD111, 2, 0x10)
   ) else (
     dv_log(GET synRefs, 0xD120, 2, 0x10)
-    assertEq(1, GET varRefs, E_intern)
+    assertEq(1, GET varRefs, 0x7109)
   )
   GET varRefs + tyItem_refs(GET ctxTyItem) -> SET varRefs\tyRefs
   inc GET synDerefs                        -> SET synDerefs
@@ -1118,7 +1104,12 @@ do (
   ret gsDeref(GET varRefs\tyRefs, GET synDerefs, REF ctxOffset)
 )
 
-pub syn large fn . do ret ( notNow;
+\ **********
+\ *     [XX].c Definition of `.`
+declare large pre fn _dotMod do ;
+
+pub syn large fn . do (
+  var asNow: U1;      \asNow -> SET asNow;
   var synRefs: U1;    countChr(0c&) -> SET synRefs;
   var synDerefs:  U1; countChr(0c@) -> SET synDerefs;
   dv_log(0x1000, 1, 0x10)
@@ -1128,8 +1119,18 @@ pub syn large fn . do ret ( notNow;
   dictRef(NULL) \ {&root}
 
   dv_log(dup, 0x1001, 2, 0x10)
-  if(isTyLocal(dup\root)) do
-    ( ret _dotLocal(\root, GET synRefs, GET synDerefs) )
+  \ TODO: handle globals
+  if(isTyLocal(dup\root)) do (
+    notNow(GET asNow);
+    ret _dotLocal(\root, GET synRefs, GET synDerefs)
+  )
+
+  if(isTyDict(dup\root)) do (
+    dv_log(0x8800, 1, 0x10)
+    _dotMod(\root, GET asNow);
+    dv_log(0x8801, 1, 0x10)
+    ret;
+  )
 
   panic E_unimpl
 )
@@ -1256,6 +1257,7 @@ do ret (
     .fields = dec .fields;
   AGAIN l0
 )
+
 $STORE_PRIV
 fn testDeStruct inp(s: Slc) -> do ret (.s -> inc\len;);
 $(testDeStruct(0xABCDEF, 0x1234) -> swp;
@@ -1263,6 +1265,47 @@ $(testDeStruct(0xABCDEF, 0x1234) -> swp;
 )
 $STORE_PUB
 
+\ **********
+\ *     [XX].b mod: creating and accessing modules
 
-\ TODO: still need to do:
-\  - namespacing
+\declared large pre fn _dotMod inp(node: &DNode, asNow:U1) do (
+  var s: &Stk;
+  dv_log(0x8802, 1, 0x10)
+  .node = dotWalk(.node);
+  dv_log(0x8803, 1, 0x10)
+  if isTyDict(.node) do (
+    dv_log(0x8804, 1, 0x10)
+    assert(consumeToken(SLC_ARROW_BACK), E_bArrow)
+    assert(.s.sp, E_modDepth)
+    .s.sp = (.s.sp - RSIZE)
+    srR(.&node.v, .s.dat + .s.sp); \ Note: asNow ignored
+    dv_log(0x8805, 1, 0x10)
+    compNode(dictRef(NULL), .asNow)
+    dv_log(0x8806, 1, 0x10)
+    .s.sp = (.s.sp + RSIZE)
+    ret;
+  )
+  dv_log(0x880A, 1, 0x10)
+  ret compNode(.node, .asNow);
+)
+
+\ Create a module: `mod foo`
+large syn fn mod do ret ( notNow;
+  assertNoWs;
+  dictAdd(0, $L(TY_DICT jn TY_DICT_MOD)) -> drp
+)
+
+\ FIXME: mod not yet working, causes allocator error
+\ $STORE_PRIV
+\ mod testing;
+\ $assertNoWs;
+\ 
+\ .testing <- (
+\   fn testMod
+\     do ( ret 0x9231 )
+\ 
+\   $tAssertEq(0x9231, testMod)
+\ )
+\ $tAssertEq(0x9231, .testing.testMod)
+
+$STORE_PUB

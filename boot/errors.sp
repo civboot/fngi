@@ -10,6 +10,7 @@
 #E010  #0=E_io      \ IO error class
 #E0A0  #0=E_asm     \ assembly error class (cause in asm).
 #E0C0  #0=E_comp    \ compiler error class (cause in comp).
+#6000  #0=E_kern    \ internal (undefined) kernel
 #7000  #0=E_intern  \ internal (undefined) error
 #A000  #0=E_test    \ [AXXX] (assert) test case error.
 
@@ -93,6 +94,8 @@
 #E104  #0=E_cBadDerefs  \ too many de/refs
 #E105  #0=E_cBadConstruct  \ construct of too many fields
 #E106  #0=E_misDeclare  \ declared function has different meta
+#E107  #0=E_bArrow      \ expected `<-`
+#E108  #0=E_modDepth    \ too many modules deep
 
 #E0B0  #0=E_iBlock      \ invalid block index
 #E0B1  #0=E_ptrBlk      \ invalid block ptr

@@ -917,28 +917,30 @@ $number notNum   $tAssertNot ^DRP \ not a number
 \ **********
 \   * [6.b] Compile tokens
 
-$FN lit \ {asNow value:U4 -> ?nowVal}: compile literal respecting asNow
-  %SWP $retIf $jmp:L \ if now leave on stack, else compile
+$FN lit \ {value:U4 asNow -> ?nowVal}: compile literal respecting asNow
+  $retIf $jmp:L \ if now leave on stack, else compile
 
-\ Attempt to compile current token as const, else return a node of TY_FN
-$pre $FN _compConstant \ [asNow -> &nodeFn(nullable)}
-  $xx:parseNumber \ {asNow value isNumber}
-  $IF  $xx:lit #0$L %RET  $END  %DRP  \ {asNow}
-  $xx:isEof $IF  %DRP #0$L %RET  $END \ {asNow}
-  #0$L @DV_comp_dGet$L %DV@DV_comp$h1 \ {asNow &node}
-  %DUP @E_cNoKey$L $xx:assert \ assert node {asNow &node}
-  %DUP $xx:isTyConst $IF \ {asNow &node}
-    $d_vGet  $xx:lit  #0$L %RET
-  $END \ {asNow &node}
+\ Compile a node as if it was the current token (i.e. handles PRE)
+$pre $FN compNode \ [&node asNow]
+  $declL node  #0            @RSIZE $declVar
+  $declL asNow @TY_VAR_INPUT #1     $declVar $declEnd
+  %DUP @E_cNoKey$L $xx:assert \ assert node {&node}
+  %DUP $xx:isTyConst $IF \ {&node}
+    $d_vGet  $GET asNow $xx:lit %RET
+  $END \ {&node}
   %DUP $xx:isTyLocal  @E_cLocalNotConst$L $xx:assertNot
-  %SWP %DRP %DUP $jmp:assertFn \ {-> &key}
+  %DUP $xx:assertFn \ {&node}
+  %DUP $SET node %RETZ \ {}
+  $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
+  $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute  $END
+  $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END
+  $GET node $GET asNow  $IF $xx:execute %RET $END  $xx:c_fn %RET
 
 $STORE_PRIV
 $FN executeIt #0$L $xx:dictRef $jmp:execute
 $executeIt answer  #42 $tAssertEq
 
 $STORE_PUB
-
 \ [asNow]: compile the current token.
 \ This is the primary function that all compilation steps (besides spor
 \ compilation) reduce to.
@@ -947,13 +949,11 @@ $pre $FN single
   $declL node  #0 @RSIZE $declVar $declEnd
   \ Handle constants, return if it compiled the token.
   $SET asNow
-  $GET asNow $xx:_compConstant %DUP
-  $SET node %RETZ
-
-  $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
-  $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute    $END
-  $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END
-  $GET node $GET asNow $IF $xx:execute %RET $END  $xx:c_fn %RET
+  $xx:parseNumber \ {value isNumber}
+  $IF  $GET asNow $xx:lit %RET  $END %DRP
+  $xx:isEof $IF  %RET  $END
+  #0$L @DV_comp_dGet$L %DV@DV_comp$h1 \ {&node}
+  $GET asNow $xx:compNode %RET
 
 $pre $FN updateCompFn \ {&newCompFn -> &prevCompFn}
   $GET G_compFn %SWP $SET G_compFn %RET

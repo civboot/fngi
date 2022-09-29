@@ -211,8 +211,8 @@ void initEnv(U4 blocks) {
   else { CALL; UNREACH; }
 
 BARE_TEST(testSetErr, 2)
-  EXPECT_ERR(E_intern, SET_ERR(E_intern));
-  EXPECT_ERR(E_intern, ASM_ASSERT(false, E_intern));
+  EXPECT_ERR(E_kern, SET_ERR(E_kern));
+  EXPECT_ERR(E_kern, ASM_ASSERT(false, E_kern));
 TEST_END
 
 // ***********************
@@ -362,7 +362,7 @@ TEST_END
 #define BBA_ba(bba) asPtr(BA, (bba).ba)
 
 void BA_init(BA* ba) {
-  if(ba->cap == 0) return; ASM_ASSERT(ba->cap < BLOCK_END, E_intern);
+  if(ba->cap == 0) return; ASM_ASSERT(ba->cap < BLOCK_END, 0x6036);
   BANode* nodes = asPtr(BANode, ba->nodes);
   ba->rooti = 0;
   U1 i, previ = BLOCK_END;
@@ -391,7 +391,7 @@ Ref BA_alloc(BA* ba, U1* clientRooti) {
   ba->rooti = d->nexti;  // baRoot -> e
   if (d->nexti != BLOCK_END) nodes[d->nexti].previ = BLOCK_END; // baRoot <- e
 
-  ASM_ASSERT(d->previ == BLOCK_END, E_intern); // "d" is already root node
+  ASM_ASSERT(d->previ == BLOCK_END, 0x6039); // "d" is already root node
   d->nexti = *clientRooti; // d -> c
   if(*clientRooti != BLOCK_END) {
     nodes[*clientRooti].previ = di;  // d <- c
@@ -417,7 +417,7 @@ void BA_free(BA* ba, uint8_t* clientRooti, Ref b) {
   BANode* nodes = asPtr(BANode, ba->nodes);
   BANode* c = &nodes[ci]; // node 'c'
   if(ci == *clientRooti) {
-    ASM_ASSERT(c->previ == BLOCK_END, E_intern);
+    ASM_ASSERT(c->previ == BLOCK_END, 0x6042);
     *clientRooti = c->nexti; // clientRoot -> b
     if(c->nexti != BLOCK_END) {
       nodes[c->nexti].previ = BLOCK_END; // clientRoot <- b
@@ -657,10 +657,10 @@ void Dict_add(DNode** node, DNode* add) {
   add->l = 0, add->r = 0;
 }
 
-// Get the double reference to the public dictionary root node on the dictStk.
-//
+// Get the double reference to the "top" of the dictStk.
+// This is where any pub symbols are stored.
 /*&&DNode*/ Ref* dictPubRef() {
-  Stk* s = &g->dictStk;  assert(s->sp < s->cap);
+  Stk* s = &g->dictStk;  ASM_ASSERT(s->sp < s->cap, E_kern);
   // s->dat points to &&DNode, so a pointer to a place in `dat` is a
   // &&&DNode. We derefernce this once to be &&DNode.
   return asPtr(Ref, *asPtr(Ref/*&&DNode*/, s->dat + s->sp));
@@ -1261,7 +1261,7 @@ void F_read(FileMethods* m, File* f) {
 
 // Read file blocking. Any errors result in a panic.
 U2 readAtLeast(FileMethods* m, File* f, U2 atLeast) {
-  ASM_ASSERT(f->buf.cap - f->buf.len >= atLeast, E_intern);
+  ASM_ASSERT(f->buf.cap - f->buf.len >= atLeast, 0x6126);
   U2 startLen = f->buf.len;
   while(1) {
     F_read(m, f);
@@ -1431,7 +1431,7 @@ U1 scanInstr(FileMethods* m, File* f) { // scan a single instruction, combine wi
   if(usesSzI(instr)) {
     switch (compiler.sz) {
       case 1: instr |= SZ1; break; case 2: instr |= SZ2; break;
-      case 4: instr |= SZ4; break; default: SET_ERR(E_intern);
+      case 4: instr |= SZ4; break; default: SET_ERR(0x6143);
     }
   }
   return instr;
