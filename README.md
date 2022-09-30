@@ -1,4 +1,4 @@
-# fngi: a readable language that grows from the silicone
+# fngi: a readable language that grows from the silicon
 
 > **UPDATE:** almost ready to start implementing modules. The language is really
 > comming to life. Should have user-defined modules soon-ish!
