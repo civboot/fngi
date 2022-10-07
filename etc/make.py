@@ -136,7 +136,7 @@ parser = argparse.ArgumentParser(description='Fngi linux make script and harness
 parser.add_argument('--build', action='store_true', help="Build kernel")
 parser.add_argument('--test', action='store_true', help="Run tests")
 parser.add_argument('--valgrind', action='store_true', help="Run with valgrind")
-parser.add_argument('--log', default='LOG_USER', help="The log level, i.e. LOG_INFO.")
+parser.add_argument('--log', default='LOG_INFO', help="The log level")
 parser.add_argument('--syslog', default='LOG_COMPILER', help="The log level, i.e. LOG_INFO.")
 parser.add_argument('--pdb', action='store_true', help="Enter debug on failure")
 
@@ -184,7 +184,8 @@ def nice(value):
 
 def integerBE(data): return int.from_bytes(data, 'big')
 def integerLE(data, l=None): return int.from_bytes(data, 'little')
-LVL = {0x1F: 'trace', 0x17: 'debug', 0x13: 'info', 0x11: 'warn', 0x10: 'crit'}
+LVL = {0x2F: 'trace', 0x1F: 'debug', 0x0F: 'info', 0x07: 'warn', 0x03: 'crit',
+       0x01: 'user'}
 
 @dataclass
 class FnEntry:
@@ -350,6 +351,11 @@ def inputs_stream(env, io):
     if not z.arr: continue
     yield Event.frZ(z)
 
+def printDyn(d: zoa.Dyn):
+  if d.ty is zoa.DynType.Empty:
+    return
+  print(d, end='')
+
 def _eventReader(env, io):
   """Harness for spor.
 
@@ -360,8 +366,11 @@ def _eventReader(env, io):
   for i, ev in enumerate(inputs_stream(env, io)):
     if ev is None: print(f"ev is none at i={i}");
     elif ev.log:
-      if ev.log.lvl.is_silent(): print(nice(ev.log.msg), end="")
-      else: print(f"{LVL[ev.log.lvl.value]}: {nice(ev.log.msg)}")
+      if ev.log.lvl.is_user():
+        print(ev.log.msg, end=""); printDyn(ev.log.d)
+      else:
+        print(f"[{LVL[ev.log.lvl.value]}] {ev.log.msg}", end="")
+        printDyn(ev.log.d); print()
     elif ev.dict: handleDictEvent(env, ev.dict);
     elif ev.err: handleErrEvent(env, ev.err);
     elif ev.jmp: handleExecuteEvent(env, ev.jmp);

@@ -263,19 +263,24 @@
 #08 #0=TY_VAR_INPUT
 #03 #0=TY_VAR_REF
 
-\ \ * [3.b] Zoab
+\ * [3.b] Zoab
 \ #C0 #0=ZOAB_TY   \ bitmask: all types
 \ #80 #0=ZOAB_JOIN \ bitmask: join type
 \ #40 #0=ZOAB_ARR  \ bitmask: arr type
 \ #C0 #0=ZOAB_PTR  \ equality: next 4 bytes are a pointer.
 
+#01 #0=DYN_STR
+#02 #0=DYN_DATA
+#03 #0=DYN_INT
+#20 #0=DYN_ARR
+
 \ * [3.c] Log Levels
-#10 #0=LOG_USER
-#1F #0=LOG_TRACE
-#17 #0=LOG_DEBUG
-#13 #0=LOG_INFO
-#11 #0=LOG_WARN
-#10 #0=LOG_CRIT
+#2F #0=LOG_TRACE
+#1F #0=LOG_DEBUG
+#0F #0=LOG_INFO
+#07 #0=LOG_WARN
+#03 #0=LOG_CRIT
+#01 #0=LOG_USER
 
 \ Language Level (builtin) Logs
 #27 #0=LOG_INSTR

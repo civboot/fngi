@@ -23,5 +23,6 @@ typedef Ref                  Slot;
 typedef struct { Ref dat; U2 len; }                         Slc;
 typedef struct { Ref dat; U2 len; U2 cap; }                 Buf;
 typedef struct { Ref dat; U2 len; U2 cap; U2 plc; }         PlcBuf;
+typedef struct { Ref dat; U2 sp;  U2 cap; }                 Stk;
 
 #endif // __TYPES_H

@@ -53,7 +53,6 @@ typedef struct { FileMethods* m; File* f; } FileRole;
 
 typedef U1 Instr;
 
-typedef struct { Ref dat; U2 sp; U2 cap; }                  Stk;
 typedef struct { U1 previ; U1 nexti; }                      BANode;
 typedef struct { Ref nodes; Ref blocks; U1 rooti; U1 cap; } BA;
 typedef struct { Ref ba; U1 rooti; U2 len; U2 cap; }        BBA;
@@ -93,10 +92,10 @@ typedef struct {
 
 typedef struct {
   Ref next; Ref prev; // LL pointers to other fibers.
-  Ref ep;           // execution pointer
-  Stk ws; Stk ls;   // working and local stacks
-  Stk cs; Stk csz;  // call and call size stacks
-  Ref gb;           // globals base pointer
+  Ref ep;             // execution pointer
+  Stk ws; Stk ls;     // working and local stacks
+  Stk cs; Stk csz;    // call and call size stacks
+  Ref gb;             // globals base pointer
   U2 err;
 } Fiber;
 
@@ -121,5 +120,7 @@ typedef struct {
 
   int syserr;
 } Globals;
+
+typedef struct { U1* dat; U2 len; } CSlc;
 
 #endif // __KERNEL_H

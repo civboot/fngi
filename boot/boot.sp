@@ -115,6 +115,19 @@ $pub @_FP@TY_FN_INLINE^JN :bump \ {size align -> &dat} bump some memory
   .1%LIT@SLIT, %JN  \ {jn(U1, SLIT) get full instr
   .2%JMPL@h1, \ made into SLIT instr and stored.
 
+
+\ {... numArgs iden:Slot} dead-simple hex logging from the stack.
+\ logs "DV" [iden, ...args] at the info level.
+\ This is used for log debugging when there is NOTHING: no strings or structs
+\ or anything.
+\
+\ Params:
+\   iden: identifier to use, i.e. 0x7700 at start of some function, then
+\         increment it.
+\   numArgs: number of values to pop from the WS
+@_FP:infoDV  @LOG_INFO$L0 $dv_log %RET
+#6 #9 #2 #42 $infoDV \ Hitchhiker's Guide answer + question
+
 $STORE_PRIV       $NEW_BLOCK_PRIV
 @_FP :answer #30$L0 #12$L0 %ADD %RET \ { -> 0x42}
 $answer #42 $tAssertEq

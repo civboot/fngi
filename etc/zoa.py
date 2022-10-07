@@ -7,25 +7,42 @@ from typing import Any, Dict, List, Tuple, Iterable
 from dataclasses import dataclass
 
 ZOA_LEN_MASK = 0x3F
-ZOA_JOIN =     0x80
-ZOA_ARR =      0x40
-ZOA_DATA =     0x00
+ZOA_JOIN = 0x80
+ZOA_ARR = 0x40
+ZOA_DATA = 0x00
 
 class Eof(Exception): pass
 
 def isbytes(v): return isinstance(v, (bytes, bytearray))
 
+def reprData(data: bytes):
+  out = bytearray()
+  if len(data) % 2 != 0: out.extend(b'  '); e = 2
+  else:                                     e = 0
+
+  for i, b in enumerate(data):
+    out.extend(b'%.2X' % b)
+    if e == 2 and i != len(data) - 1: out.extend(b'_'); e = 1
+    else:                                               e += 1
+  return out.decode('utf-8')
+
+def reprArr(arr: list):
+  out = []
+  for v in arr:
+    out.append(repr(v))
+  return '[' + ', '.join(out) + ']'
+
 @dataclass
 class ZoaRaw(object):
   data: bytearray
-  arr: List["ZoaRaw"]
+  arr: list["ZoaRaw"]
 
   @classmethod
-  def from_bytes(cls, value):
+  def frPy(cls, value):
     if isbytes(value): return cls.new_data(value)
     out = []
     for v in value:
-      out.append(ZoaRaw.from_bytes(v))
+      out.append(ZoaRaw.frPy(v))
     return cls.new_arr(out)
 
   def to_py(self):
@@ -64,6 +81,10 @@ class ZoaRaw(object):
       return self.data
     return self.arr
 
+  def __repr__(self):
+    if self.data is not None: return reprData(self.data)
+    else:                     return reprArr(self.arr)
+
 def int_from_bytes(b: bytes):
   return int.from_bytes(b, 'big')
 
@@ -84,7 +105,7 @@ def write_data(bw: io.BytesIO, data: bytes):
   write_byte(bw, len(data) - i) # note: not joined
   bw.write(data[i:])
 
-def write_arr(bw: io.BytesIO, arr: List[ZoaRaw]):
+def write_arr(bw: io.BytesIO, arr: list[ZoaRaw]):
   i = 0
   while True:
     remaining = len(arr) - i
@@ -165,14 +186,28 @@ class Int(int):
     if self >= 0: return z
     return ZoaRaw.new_arr([z])
 
-class Bytes(bytes):
-  name = 'Bytes'
+  def toPy(self) -> 'Int': return self
+
+class Data(bytes):
+  name = 'Data'
 
   @classmethod
   def frPy(cls, *args, **kwargs): return cls(*args, **kwargs)
   @classmethod
-  def frZ(cls, raw: ZoaRaw) -> "Bytes": return cls(raw.data)
+  def frZ(cls, raw: ZoaRaw) -> "Data": return cls(raw.data)
   def toZ(self) -> ZoaRaw: return ZoaRaw.new_data(self)
+  def toPy(self) -> 'Data': return self
+  def __repr__(self): return reprData(self)
+
+class Str(str):
+  name = 'Str'
+
+  @classmethod
+  def frPy(cls, *args, **kwargs): return cls(*args, **kwargs)
+  @classmethod
+  def frZ(cls, raw: ZoaRaw) -> "Str": return cls(raw.data.decode('utf-8'))
+  def toZ(self) -> ZoaRaw: return ZoaRaw.new_data(self.encode('utf-8'))
+  def toPy(self) -> 'Str': return self
 
 @dataclass
 class StructField:
@@ -186,6 +221,12 @@ class ArrBase(list):
   @classmethod
   def frZ(cls, raw: ZoaRaw): return cls(cls._ty.frZ(z) for z in raw.arr)
   def toZ(self) -> ZoaRaw: return ZoaRaw.new_arr([v.toZ() for v in self])
+  def toPy(self) -> list: return [v.toPy() for v in self]
+  def __repr__(self): return reprArr(self)
+
+ArrStr   = type('ArrStr', (ArrBase,),  {'_ty': Str,  'name': 'ArrStr'})
+ArrData  = type('ArrData', (ArrBase,), {'_ty': Data, 'name': 'ArrData'})
+ArrInt   = type('ArrInt', (ArrBase,),  {'_ty': Int,  'name': 'ArrInt'})
 
 @dataclass(init=False)
 class StructBase:
@@ -195,10 +236,7 @@ class StructBase:
     posArgs = Int.frZ(z.arr[0]) # number of positional args
     fields = iter(cls._fields)
     for pos in range(posArgs):
-      try:
-        _name, f = next(fields)
-      except StopIteration:
-        import pdb; pdb.set_trace()
+      _name, f = next(fields)
       assert f.zid is None
       args.append(f.ty.frZ(z.arr[1 + pos]))
     kwargs = {}
@@ -224,6 +262,13 @@ class StructBase:
       else: out.append(ZoaRaw.new_arr([f.zid, self.get(name).toZ()]))
     return ZoaRaw.new_arr(out)
 
+  def toPy(self) -> dict:
+    out = {}
+    for name, f in self._fields:
+      name = name.decode('utf-8')
+      out[name] = getattr(self, name).toPy()
+    return out
+
 @dataclass(init=False)
 class EnumBase:
   @classmethod
@@ -242,6 +287,8 @@ class EnumBase:
         variant, value = i, v
     if variant is None: raise ValueError("No variant set")
     return ZoaRaw.new_arr([Int(variant).toZ(), value.toZ()])
+
+  def toPy(self) -> Enum: return self
 
 @dataclass
 class BmVar: # Bitmap Variant
@@ -274,14 +321,99 @@ class BitmapBase:
   @classmethod
   def frZ(cls, z: ZoaRaw) -> 'BitmapBase': return cls(int(Int.frZ(z)))
   def toZ(self) -> ZoaRaw: return Int(self.value).toZ()
+  def toPy(self) -> 'BitmapBase': return self
+
+
+class DynType(Enum):
+  Empty = 0
+  Str   = 1
+  Data  = 2
+  Int   = 3
+  Num   = 4
+  Path  = 5
+
+  ArrDyn   = 0x20
+  ArrStr   = 0x21
+  ArrData  = 0x22
+  ArrInt   = 0x23
+
+dynFrZMethod = {
+  DynType.Str: Str.frZ,
+  DynType.Data: Data.frZ,
+  DynType.Int: Int.frZ,
+  DynType.ArrStr: ArrStr.frZ,
+  DynType.ArrData: ArrData.frZ,
+  DynType.ArrInt: ArrInt.frZ,
+}
+
+@dataclass
+class Dyn:
+  value: Any
+  ty: DynType
+  name = "Dyn"
+
+  @classmethod
+  def _none(cls): return cls(value=None, ty=DynType.Empty)
+  @classmethod
+  def _str(cls, v): return cls(value=v, ty=DynType.Str)
+  @classmethod
+  def _data(cls, v): return cls(value=v, ty=DynType.Data)
+  @classmethod
+  def _int(cls, v): return cls(value=v, ty=DynType.Int)
+  @classmethod
+  def _arrInt(cls, v): return cls(value=v, ty=DynType.ArrInt)
+  @classmethod
+  def _arrData(cls, v): return cls(value=v, ty=DynType.ArrData)
+  @classmethod
+  def _arrDyn(cls, v): return cls(value=v, ty=DynType.ArrDyn)
+
+  @classmethod
+  def frPy(cls, arg):
+    if(isinstance(arg, cls)): return arg
+    if(isinstance(arg, str)): return cls._str(Str(arg))
+    if(isinstance(arg, bytes)): return cls._data(Data(arg))
+    if(isinstance(arg, int)): return cls._int(Int(arg))
+    raise TypeError(arg)
+
+  @classmethod
+  def frPyArrInt(cls, arr): return cls._arrInt(ArrInt.frPy(arr))
+  @classmethod
+  def frPyArrData(cls, arr): return cls._arrData(ArrData.frPy(arr))
+  @classmethod
+  def frPyArrDyn(cls, arr): return _frPyArrDyn(cls, arr)
+
+  @classmethod
+  def frZ(cls, raw: ZoaRaw) -> 'Dyn':
+    if not len(raw.arr): return cls._none()
+    if len(raw.arr) != 2: raise TypeError(raw)
+    ty = DynType(Int.frZ(raw.arr[0]))
+    return cls(value=dynFrZMethod[ty](raw.arr[1]), ty=ty)
+
+  def toZ(self) -> ZoaRaw:
+    return ZoaRaw.new_arr([
+      Int(self.ty.value).toZ(),
+      self.value.toZ(),
+    ])
+
+  def toPy(self) -> Any: return self.value.toPy()
+
+  def __repr__(self):    return repr(self.value)
+
+# Regster final dyn conversion
+ArrDyn   = type('ArrDyn', (ArrBase,),  {'_ty': Dyn,  'name': 'ArrDyn'})
+dynFrZMethod[DynType.ArrDyn] = ArrDyn.frZ
+def _frPyArrDyn(cls, arr): return cls._arrDyn(ArrDyn.frPy(arr))
+
 
 def modname(mod, name): return mod + '.' + name if mod else name
 
 class TyEnv:
   def __init__(self):
     self.tys = {
+        b'Str': Str,
+        b'Data': Data,
         b'Int': Int,
-        b'Bytes': Bytes,
+        b'Dyn': Dyn,
     }
 
   def arr(self, ty: Any) -> ArrBase:

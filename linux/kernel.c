@@ -63,6 +63,9 @@
 
 #define EXPECTING_ERR   (C_EXPECT_ERR & g->cstate)
 
+U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
+U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
+
 // ***********************
 // * 1: Environment and Test Setup
 // This sets up the environment and tests.
@@ -140,6 +143,7 @@ void Stk_push(Stk* stk, U4 value) {
 }
 
 
+#define Stk_len(S)      (((S).cap - (S).sp) / RSIZE)
 #define WS              (cfb->ws)
 #define LS              (cfb->ls)
 #define CS              (cfb->cs)
@@ -219,7 +223,7 @@ TEST_END
 // * 2: Communication (zoab)
 // Zoa is a structured data format with two types: bytes and arrays.
 //
-// Zoab is a binary format of zoa which has the following protocol.  The first
+// Zoab is a binary format of zoa which has the following protocol. The first
 // byte of data is:
 //
 //      array
@@ -242,58 +246,64 @@ void zoab_start() { ASM_ASSERT(fwrite(START_BYTES, 1, 2, stdout), E_io); }
 
 void writeOutbuf(U2 len) {
   U4 out = fwrite(outbuf, 1, len, stdout);
+  ASSERT_EQ(out, len);
 }
 
 // Write data of length and join bit.
-void zoab_data(U2 len, U1* str, U1 join) {
+void zoab_data(U2 len, U1* dat, U1 join) {
   while(true) {
-    if(len <= 63) {
+    if(len <= 63) { // Write final segment
       if(join) outbuf[0] = ZOAB_JOIN | len;
       else outbuf[0] = len;
       writeOutbuf(1);
-      if(len) assert(fwrite(str, 1, len, stdout));
+      if(len) assert(fwrite(dat, 1, len, stdout));
       return;
     }
-    // Write a join byte
+    // Write a join segment
     outbuf[0] = ZOAB_JOIN | 63;
     writeOutbuf(1);
-    assert(fwrite(str, 1, 63, stdout));
+    assert(fwrite(dat, 1, 63, stdout));
     len -= 63;
-    str += 63;
+    dat += 63;
   }
 }
 
 // Start an array of length and join bit.
 void zoab_arr(U1 len, U1 join) {
-  if(join) len = ZOAB_ARR | ZOAB_JOIN | len;
-  else len = ZOAB_ARR | len;
-  outbuf[0] = len;
+  assert(len < 64);
+  if(join) { outbuf[0] = ZOAB_ARR | ZOAB_JOIN | len; }
+  else     { outbuf[0] = ZOAB_ARR             | len; }
   writeOutbuf(1);
 }
 
 void zoab_int(U4 value) { // Write an integer (bigendian)
-  // TODO: why start at 8?
-  outbuf[8]  = value >> 24;
-  outbuf[9]  = value >> 16;
-  outbuf[10] = value >> 8;
-  outbuf[11] = value;
-  if      (value <= 0xFF)     zoab_data(1, outbuf+11, false);
-  else if (value <= 0xFFFF)   zoab_data(2, outbuf+10, false);
-  else if (value <= 0xFFFFFF) zoab_data(3, outbuf+9, false);
-  else                        zoab_data(4, outbuf+8, false);
+  outbuf[0] = value >> 24;
+  outbuf[1] = value >> 16;
+  outbuf[2] = value >> 8;
+  outbuf[3] = value;
+  if      (value <= 0xFF)     zoab_data(1, outbuf+3, false);
+  else if (value <= 0xFFFF)   zoab_data(2, outbuf+2, false);
+  else if (value <= 0xFFFFFF) zoab_data(3, outbuf+1, false);
+  else                        zoab_data(4, outbuf,   false);
 }
 
-void zoab_stk(Stk* stk) {
-  zoab_arr((stk->cap - stk->sp) / RSIZE, false);
-  for(U2 i = stk->sp; i < stk->cap; i += RSIZE)
-    zoab_int(*asPtr(U4, i));
+void zoab_stk(Stk* stk, U2 len) {
+  len = min(len, Stk_len(*stk));
+  zoab_arr(len, false);
+  for(I4 s = stk->cap - RSIZE; len; s -= RSIZE, len-= 1) {
+    zoab_int(*asPtr(Slot, stk->dat + s));
+  }
+}
+
+void zoab_dynStk(Stk* stk, U2 len) { // Write a whole stack
+  zoab_arr(2, false);  zoab_int(DYN_ARR | DYN_DATA);  zoab_stk(stk, len);
 }
 
 void zoab_ntStr(U1* str, U1 join) { zoab_data(strlen(str), str, join); }
 void zoab_arrStart(U1 len) { zoab_start(); zoab_arr(len, false); }
 void zoab_enumStart(U1 var) { zoab_arrStart(2); zoab_int(var); }
 void zoab_struct(U1 posArgs) { zoab_arr(posArgs + 1, false); zoab_int(posArgs); }
-
+void zoab_enum(U1 var) { zoab_arr(2, false); zoab_int(var); }
 
 enum EventVar {
   Ev_log = 0, Ev_file = 1, Ev_dict = 2, Ev_err = 3, Ev_jmp = 4, Ev_ret = 5, };
@@ -309,6 +319,15 @@ void zoab_dict(DNode* node) {
   zoab_int(asRef(node));  zoab_int(node->m);  zoab_int(node->v);
 }
 
+void zoab_log(U2 lvl, CSlc msg) {
+  zoab_enumStart(Ev_log);
+  zoab_struct(3);
+  zoab_int(lvl);
+  zoab_data(msg.len, msg.dat, false);
+}
+
+void zoab_logMsg(U2 lvl, CSlc msg) { zoab_log(lvl, msg); zoab_arr(0, false); }
+
 // ***********************
 // * 3: Memory Managers and Data Structures
 // Fngi has a few very simple data structures it uses for managing memory. All
@@ -319,7 +338,6 @@ void zoab_dict(DNode* node) {
 //   * 3.a: Stacks
 // Stacks are the core memory manager for operations (via the working stack
 // (WS)) and for executing functions (via the call stack (CS)).
-#define Stk_len(S)       (((S).cap - (S).sp) / RSIZE)
 #define Stk_clear(S)     ((S).sp = (S).cap);
 #define WS_POP()         Stk_pop(&WS)
 #define WS_PUSH(V)       Stk_push(&WS, V)
@@ -570,6 +588,7 @@ TEST_END
 #define cAsSlc(CDATA)  asSlc(CDATA + 1, *asP1(CDATA))
 #define sAsTmpSlc(S)   mvAndSlc(S, strlen(S))
 #define bAsSlc(BUF)    (Slc) {.dat = (BUF).dat, .len = (BUF).len }
+#define sSlc(STR)  ( (CSlc) { .dat = STR, .len = strlen(STR) } )
 
 Slc asSlc(Ref ref, U2 len) {
   ASM_ASSERT(ref, E_null); ASM_ASSERT(ref + len < memSize, E_oob);
@@ -759,9 +778,6 @@ Ref bump(BBA* bba, U1 aligned, U4 size) { // bump memory from the bba
   return ref;
 }
 
-U4 min(U4 a, U4 b) { if(a < b) return a; return b; }
-U4 max(U4 a, U4 b) { if(a < b) return b; return a; }
-
 // "Clear" the place buffer by moving existing data after plc to the beginning.
 void clearPlcBuf(PlcBuf* p) {
   U1* ref = mem + p->dat;   p->len -= p->plc; // the new length
@@ -926,7 +942,7 @@ void dbgErr() {
   zoab_enumStart(Ev_err); zoab_struct(7);
   zoab_int(cfb->err); zoab_int(cfb->ep); zoab_int(line);
   zoab_arr(0, false); // err data
-  zoab_stk(&CS);
+  zoab_stk(&CS, Stk_len(CS));
   zoab_data(CSZ.cap - CSZ.sp, asP1(CSZ.dat), false);
   zoab_data(LS.cap - LS.sp, asP1(LS.dat), false);
   fflush(stdout);
@@ -1648,12 +1664,17 @@ static inline void executeDV(U1 dv) {
         _memmove(dst, src, len);
         return;
     } case DV_log: {
-      U1 lvl = WS_POP(); U2 len = WS_POP();
+      U1 lvl = WS_POP(); Slot iden = WS_POP(); U2 len = WS_POP();
       if(g->logLvlUsr & lvl) {
-        eprintf("DV_log [%X]", lvl);
-        for(U2 i = 0; i < len; i++) eprintf(" %.4X", WS_POP());
-        eprint("\n");
-      } else for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
+        zoab_log(lvl, sSlc("DV"));
+        zoab_enum(DYN_ARR); zoab_arr(2, false);
+          zoab_enum(DYN_DATA); zoab_int(iden);
+          zoab_dynStk(&WS, len);
+        // eprintf("DV_log %X len=%u: ", iden, len);
+        // for(U2 i = 0; i < len; i++) eprintf(" %.4X", WS_POP());
+        // eprint("\n");
+      }
+      for(U2 i = 0; i < len; i++) WS_POP(); // drop len ws items
       return;
     } case DV_file: { // method &File &FileMethods
       FileMethods* m = asPtrNull(FileMethods, WS_POP());
@@ -1778,6 +1799,19 @@ U4 strToHex(U1 len, U1* s) {
   U4 out = 0; for(U1 i = 0; i < len; i++) { out = (out << 4) + charToHex(s[i]); }
   return out; }
 
+BARE_TEST(visual_test_zoab, 2)
+  zoab_logMsg(LOG_USER, sSlc("Hello!\n"));
+  zoab_log(LOG_INFO, sSlc("Some Data: "));
+  zoab_arr(2, false);
+    zoab_int(0x22); // DynType.ArrData
+    zoab_arr(2, false);
+      zoab_int(0x1234);
+      zoab_int(0x5678);
+  WS_PUSH(0xFF); WS_PUSH(0x1F); WS_PUSH(0x3C);
+  zoab_log(LOG_INFO, sSlc("WS: "));
+  zoab_dynStk(&WS, 3);
+TEST_END
+
 int main(int argc, char** argv) {
   if(argc != 4) return 1;
   U1 runTests        = '0' !=      argv[1][0];
@@ -1786,5 +1820,6 @@ int main(int argc, char** argv) {
   eprintf("sysLog=%X  usrLog=%X\n", startingLogLvlSys, startingLogLvlUsr);
 
   tests();
+  visual_test_zoab();
   return 0;
 }
