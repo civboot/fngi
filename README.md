@@ -83,18 +83,17 @@ along the way, some of them complete.
   - [X] Implement forward declaration of functions
 - [X] define struct and native types
 - [X] Write dot compiler (variable modifier)
-- [ ] Create core modules
+- [ ] Create standard library
+  - [ ] Allocator options and allocator stack
   - [ ] String formatting
   - [ ] String printing
   - [ ] Regex
-  - [ ] File modification
+  - [ ] File reading and modification
+  * [ ] zoa integration
 - [ ] Create an ultra-basic text-editor (zat)
 - [ ] Extend zat to create an ultra-basic CLI
 - [ ] Implement a tyStk (type checking) and hook into `fn`, `if`, etc
-- [ ] Write zoat in fngi (see [zoa][zoa] project)
-- [ ] Implement zoac (see [zoa][zoa] project)
-- [ ] Implement zosh (see [zoa][zoa] project)
-- [ ] Extend zat to make it usable and glorious
+* [ ] Implement a better shell (shrm)
 - [ ] Design and build a cross-compiler to compile spor -> IR -> native assembly
 - [ ] Create an embedded operating system (RISC-V, ARM, etc)
 - [ ] Create custom (stack-based) hardware and port the operating system
