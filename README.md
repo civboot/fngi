@@ -1,7 +1,9 @@
 # fngi: a readable language that grows from the silicon
 
-> **UPDATE:** almost ready to start implementing modules. The language is really
-> comming to life. Should have user-defined modules soon-ish!
+> **UPDATE:** Will be [eliminating spor](./notes/spor_future.md), with many
+> other benefits.  On fngi side, I'm almost ready to start implementing modules.
+> I hit some kind of memory bug and decided another re-implementation was in
+> order.
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
