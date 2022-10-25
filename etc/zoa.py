@@ -1,10 +1,25 @@
+"""
+Zoa single file library (https://github.com/civboot/zoa)
+
+Zoa is part of the civboot.org project and is released to the public domain
+or licensed MIT under your discression. Modify this file in any way you wish.
+Contributions are welcome.
+
+Version: 0.0.2
+"""
+import ast
 import io
 import unittest
 import dataclasses
 
+from collections import OrderedDict as odict
+from collections.abc import Hashable
 from enum import Enum
 from typing import Any, Dict, List, Tuple, Iterable
 from dataclasses import dataclass
+
+################################################################################
+# Utilities and Constants
 
 ZOA_LEN_MASK = 0x3F
 ZOA_JOIN = 0x80
@@ -32,8 +47,26 @@ def reprArr(arr: list):
     out.append(repr(v))
   return '[' + ', '.join(out) + ']'
 
+def extendWithInt(b: bytearray, i: int):
+  if i == 0: b.append(0); return
+  out = []
+  while i != 0:
+    out.append(i % 0x100)
+    i = i >> 8
+  out.reverse()
+  b.extend(out)
+
+def asciiInt(a: int) -> int:
+  if ord('0') <= a <= ord('9'): return a - ord('0')
+  if ord('a') <= a <= ord('f'): return a - ord('a')
+  if ord('A') <= a <= ord('F'): return a - ord('F')
+  return None
+
+################################################################################
+# ZoaRaw: representing raw zoa (Data and Arr)
+
 @dataclass
-class ZoaRaw(object):
+class ZoaRaw:
   data: bytearray
   arr: list["ZoaRaw"]
 
@@ -84,6 +117,9 @@ class ZoaRaw(object):
   def __repr__(self):
     if self.data is not None: return reprData(self.data)
     else:                     return reprArr(self.arr)
+
+################################################################################
+# ZoaRaw Parser
 
 def int_from_bytes(b: bytes):
   return int.from_bytes(b, 'big')
@@ -158,6 +194,19 @@ def from_zoab(br: io.BytesIO, joinTo:ZoaRaw = None):
       return out
     prev_ty = ty
 
+################################################################################
+# Native Types (zty)
+
+@dataclass
+class Undefined:
+  """Undefined type."""
+  name: str
+
+def updateUndefined(prevTy, newTyName, newTy):
+  if not isinstance(prevTy, Undefined): return prevTy
+  if newTy == prevTy:                    return prevTy
+  if newTyName == prevTy.name:           return newTy
+  else:                                  return prevTy
 
 def intBytesLen(v: int) -> int:
   if v <= 0xFF:       return 1
@@ -188,6 +237,16 @@ class Int(int):
 
   def toPy(self) -> 'Int': return self
 
+  @classmethod
+  def parse(cls, p: "Parser") -> "Int":
+    bracket = p.peek() == b'{'
+    if bracket: p.need('{')
+    t = p.singleData()
+    i = ast.literal_eval(t.decode('utf-8'))
+    if not isinstance(i, int): p.error("Not an int: " + t)
+    if bracket: p.need('}')
+    return cls(i)
+
 class Data(bytes):
   name = 'Data'
 
@@ -199,6 +258,36 @@ class Data(bytes):
   def toPy(self) -> 'Data': return self
   def __repr__(self): return reprData(self)
 
+  @classmethod
+  def parse(cls, p: "Parser") -> "Data":
+    """Data must be an integer or any hexadecimal numbers inside {...}"""
+    t = p.token()
+    if not t: p.error("Unexpected EOF")
+    p.i -= len(t)
+    if p.buf[p.i] == ord('|'):
+      return cls(Str.parse(p).encode('utf-8'))
+
+    out = bytearray()
+    if t != b'{':
+      extendWithInt(out, Int.parse(p))
+      return cls(out)
+    p.need('{')
+    while True:
+      p.skipWhitespace()
+      if p.i >= len(p.buf):      p.error("Unexpected EOF waiting for '}'")
+      if p.buf[p.i] == ord('}'): break
+      if p.i + 1 >= len(p.buf):  p.error("Expecting two characters")
+      a = asciiInt(p.buf[p.i]); b = asciiInt(p.buf[p.i + 1])
+      if a is None or b is None:
+        p.error(f"Expecting two hex numbers: {p.buf[p.i:p.i+2]}")
+      out.append((a << 4) + b);
+      p.i += 2
+    p.need('}')
+    return cls(out)
+
+
+STR_ESC_LIT = {ord(c) for c in ('\\', '|', ' ')}
+
 class Str(str):
   name = 'Str'
 
@@ -209,12 +298,40 @@ class Str(str):
   def toZ(self) -> ZoaRaw: return ZoaRaw.new_data(self.encode('utf-8'))
   def toPy(self) -> 'Str': return self
 
-@dataclass
-class StructField:
-  ty: Any
-  zid: int = None
+  @classmethod
+  def parse(cls, p: "Parser") -> "Str":
+    r"""Strings must be any characters without whitespace or inside {...}.
 
-@dataclass(init=False)
+    There is also escape logic (i.e. `\n`, `\t`, `\ `)
+    """
+    t = p.token(); p.i -= len(t)
+    if not t.startswith(b'|'):
+      return cls(p.singleNonWhitespace().decode('utf-8'))
+    out = bytearray()
+    escaped = False
+    p.i += 1;
+    while True:
+      if p.i >= len(p.buf): p.error("Unexpected EOF")
+      c = p.buf[p.i]; p.i += 1
+      if escaped:
+        escaped = False
+        if c in STR_ESC_LIT: out.append(c)
+        elif c == ord('\n'): p.skipWhitespace(skipNewlines=False)
+        elif c == ord('n'): out.append(ord('\n'))
+        elif c == ord('t'): out.append(ord('\t'))
+        else: p.error("Unrecognized escaped char: " + chr(c))
+      elif c == ord('\\'): escaped = True
+      elif c == ord('|'): break
+      else:
+        out.append(c)
+        if c == ord('\n'): p.skipWhitespace(skipNewlines=False)
+    return cls(out.decode('utf-8'))
+
+
+################################################################################
+# Container Types (zty)
+# Note: the full type information and methods are created by the Parser.
+
 class ArrBase(list):
   @classmethod
   def frPy(cls, l: Iterable[Any]): return cls([cls._ty.frPy(i) for i in l])
@@ -224,9 +341,71 @@ class ArrBase(list):
   def toPy(self) -> list: return [v.toPy() for v in self]
   def __repr__(self): return reprArr(self)
 
-ArrStr   = type('ArrStr', (ArrBase,),  {'_ty': Str,  'name': 'ArrStr'})
-ArrData  = type('ArrData', (ArrBase,), {'_ty': Data, 'name': 'ArrData'})
-ArrInt   = type('ArrInt', (ArrBase,),  {'_ty': Int,  'name': 'ArrInt'})
+  @classmethod
+  def parse(cls, p: "Parser"):
+    out = []
+    p.need('{')
+    while p.peek() != b'}':
+      out.append(cls._ty.parse(p))
+      p.sugar(',')
+    p.need('}')
+    return cls(out)
+
+  @classmethod
+  def _define(cls, name, ty):
+    cls._ty = updateUndefined(cls._ty, name, ty)
+
+class MapBase(odict):
+  @classmethod
+  def frPy(cls, l: Iterable[Any]):
+    if isinstance(l, dict): l = l.items()
+    return cls(odict((cls._kty.frPy(k), cls._vty.frPy(v)) for k, v in l))
+
+  @classmethod
+  def frZ(cls, raw: ZoaRaw):
+    if len(raw.arr) % 2 != 0: raise ValueError(f"length not even: {raw}")
+    arr = iter(raw.arr)
+    out = odict()
+    while True:
+      try:
+        key = cls._kty.frZ(next(arr))
+        out[key] = cls._vty.frZ(next(arr))
+      except StopIteration: break
+    return cls(out)
+
+  def toZ(self) -> ZoaRaw:
+    def flatten():
+      for key, value in self.items():
+        yield key.toZ(); yield value.toZ()
+    return ZoaRaw.new_arr(list(flatten()))
+
+  def toPy(self) -> odict: return odict((k.toPy(), v.toPy()) for k, v in self.items())
+  def __repr__(self): return repr(self.toPy())
+
+  @classmethod
+  def parse(cls, p: "Parser"):
+    out = odict()
+    p.need('{')
+    while p.peek() != b'}':
+      k      = cls._kty.parse(p);
+      p.need('=')
+      out[k] = cls._vty.parse(p); p.sugar(',')
+    p.need('}')
+    return cls(out)
+
+  @classmethod
+  def _define(cls, name, ty):
+    cls._vty = updateUndefined(cls._vty, name, ty)
+    cls._kty = updateUndefined(cls._kty, name, ty)
+
+@dataclass
+class StructField:
+  ty: Any
+  zid: int = None
+  default: Any = None
+
+  def _define(self, name, ty):
+    self.ty = updateUndefined(self.ty, name, ty)
 
 @dataclass(init=False)
 class StructBase:
@@ -234,13 +413,13 @@ class StructBase:
   def frZ(cls, z: ZoaRaw):
     args = []
     posArgs = Int.frZ(z.arr[0]) # number of positional args
-    fields = iter(cls._fields)
+    fields = iter(cls._fields.items())
     for pos in range(posArgs):
       _name, f = next(fields)
       assert f.zid is None
       args.append(f.ty.frZ(z.arr[1 + pos]))
     kwargs = {}
-    byId = {f.zid: (name, f.ty) for name, f in cls._fields}
+    byId = {f.zid: (name, f.ty) for name, f in cls._fields.items()}
     for z in z.arr[1+posArgs:]:
       name, ty = byId[Int.frZ(zi[0])]
       kwargs[name] = ty.frZ(zi[1])
@@ -249,7 +428,7 @@ class StructBase:
   def toZ(self) -> ZoaRaw:
     # find how many positional args exist
     posArgs = 0; posArgsDone = False
-    for name, f in self._fields:
+    for name, f in self._fields.items():
       if f.zid is None: # positional arg
         if getattr(self, name.decode('utf-8')) is None: posArgsDone = True
         elif posArgsDone: raise ValueError(
@@ -257,29 +436,54 @@ class StructBase:
         else: posArgs += 1
 
     out = [Int(posArgs).toZ()] # starts with number of positional arguments
-    for name, f in self._fields:
+    for name, f in self._fields.items():
       if f.zid is None: out.append(getattr(self, name.decode('utf-8')).toZ())
       else: out.append(ZoaRaw.new_arr([f.zid, self.get(name).toZ()]))
     return ZoaRaw.new_arr(out)
 
   def toPy(self) -> dict:
     out = {}
-    for name, f in self._fields:
+    for name, f in self._fields.items():
       name = name.decode('utf-8')
       out[name] = getattr(self, name).toPy()
     return out
+
+  @classmethod
+  def parse(cls, p: "Parser"):
+    kwargs = {}
+    p.need('{')
+    while p.peek() != b'}':
+      name = Str.parse(p); p.need('=')
+      if name in kwargs: p.error(f"Specified {name} twice")
+      field = cls._fields[name.encode('utf-8')]
+      kwargs[name] = field.ty.parse(p); p.sugar(',')
+    p.need('}')
+    return cls(**kwargs)
+
+  @classmethod
+  def _define(cls, name, ty):
+    for f in cls._fields.values():
+      f._define(name, ty)
+
+@dataclass
+class EnumVar:
+  ty: Any
+
+  def _define(self, name, ty):
+    self.ty = updateUndefined(self.ty, name, ty)
 
 @dataclass(init=False)
 class EnumBase:
   @classmethod
   def frZ(cls, z: ZoaRaw) -> 'EnumBase':
     variant = Int.frZ(z.arr[0])
-    name, ty = cls._variants[variant]
-    return cls(**{name.decode('utf-8'): ty.frZ(z.arr[1])})
+    name, var = cls._variants[variant]
+    return cls(**{name.decode('utf-8'): var.ty.frZ(z.arr[1])})
 
   def toZ(self) -> ZoaRaw:
     variant, value = None, None
-    for i, (n, ty) in enumerate(self._variants):
+    for i, (n, v) in enumerate(self._variants):
+      ty = v.ty
       v = getattr(self, n.decode('utf-8'))
       if v:
         if variant is not None: raise ValueError(
@@ -289,6 +493,20 @@ class EnumBase:
     return ZoaRaw.new_arr([Int(variant).toZ(), value.toZ()])
 
   def toPy(self) -> Enum: return self
+
+  @classmethod
+  def parse(cls, p: "Parser"):
+    nameB = p.token(); name = nameB.decode('utf-8')
+    for n, variant in cls._variants:
+      if n == nameB: break
+    else: p.error(f"Could not find variant: {name}")
+    kwargs = {}; kwargs[name] = variant.ty.parse(p)
+    return cls(**kwargs)
+
+  @classmethod
+  def _define(cls, name, ty):
+    for _n, v in cls._variants:
+      v._define(name, ty)
 
 @dataclass
 class BmVar: # Bitmap Variant
@@ -309,6 +527,16 @@ class BmVar: # Bitmap Variant
       bitmapSelf.value = ((~varSelf.msk) & bitmapSelf.value) | var
     return closure
 
+  def _togVariantClosure(varSelf):
+    def closure(bitmapSelf):
+      if not varSelf.var: raise TypeError("Toggle not allowed on value=0")
+      v = varSelf.msk & bitmapSelf.value
+      if v == varSelf.var: bitmapSelf.value &= ~varSelf.msk  # clear
+      elif v == 0:         bitmapSelf.value |= varSelf.var   # set
+      else: raise ValueError(
+        f"Attempted toggle on multi-var mask at a different var: {v}")
+    return closure
+
   def _isVariantClosure(varSelf):
     def closure(bitmapSelf):
       return varSelf.msk & bitmapSelf.value == varSelf.var
@@ -323,6 +551,8 @@ class BitmapBase:
   def toZ(self) -> ZoaRaw: return Int(self.value).toZ()
   def toPy(self) -> 'BitmapBase': return self
 
+################################################################################
+# Dyn
 
 class DynType(Enum):
   Empty = 0
@@ -337,14 +567,11 @@ class DynType(Enum):
   ArrData  = 0x22
   ArrInt   = 0x23
 
-dynFrZMethod = {
-  DynType.Str: Str.frZ,
-  DynType.Data: Data.frZ,
-  DynType.Int: Int.frZ,
-  DynType.ArrStr: ArrStr.frZ,
-  DynType.ArrData: ArrData.frZ,
-  DynType.ArrInt: ArrInt.frZ,
-}
+  MapStr    = 0x41
+  MapData   = 0x42
+  MapStrStr = 0x43
+
+dynFrZMethod = {}  # note: updated later
 
 @dataclass
 class Dyn:
@@ -402,45 +629,104 @@ class Dyn:
 # Regster final dyn conversion
 ArrDyn   = type('ArrDyn', (ArrBase,),  {'_ty': Dyn,  'name': 'ArrDyn'})
 dynFrZMethod[DynType.ArrDyn] = ArrDyn.frZ
+
+ArrStr  = type('ArrStr', (ArrBase,),  {'_ty': Str,  'name': 'ArrStr'})
+ArrData = type('ArrData', (ArrBase,), {'_ty': Data, 'name': 'ArrData'})
+ArrInt  = type('ArrInt', (ArrBase,),  {'_ty': Int,  'name': 'ArrInt'})
+
+MapStrDyn  = type('MapStrDyn', (MapBase,),  {'_vty': Str, '_kty': Dyn, 'name': 'MapStrDyn'})
+MapDataDyn = type('MapDataDyn', (MapBase,), {'_vty': Data,'_kty': Dyn, 'name': 'MapDataDyn'})
+MapStrStr  = type('MapStrStr', (MapBase,),  {'_vty': Str, '_kty': Str, 'name': 'MapStrStr'})
+dynFrZMethod.update({
+  DynType.Str: Str.frZ,
+  DynType.Data: Data.frZ,
+  DynType.Int: Int.frZ,
+  DynType.ArrStr: ArrStr.frZ,
+  DynType.ArrData: ArrData.frZ,
+  DynType.ArrInt: ArrInt.frZ,
+  DynType.MapStr: MapStrDyn.frZ,
+  DynType.MapData: MapDataDyn.frZ,
+  DynType.MapStrStr: MapStrStr.frZ,
+})
+
 def _frPyArrDyn(cls, arr): return cls._arrDyn(ArrDyn.frPy(arr))
 
+################################################################################
+# Env: this contains all native and user-defined types found during parsing.
 
 def modname(mod, name): return mod + '.' + name if mod else name
 
 class TyEnv:
   def __init__(self):
     self.tys = {
-        b'Str': Str,
-        b'Data': Data,
-        b'Int': Int,
-        b'Dyn': Dyn,
+      b'Str': Str,
+      b'Data': Data,
+      b'Int': Int,
+      b'Dyn': Dyn,
+      b'ArrDyn': ArrDyn,
+      b'ArrStr': ArrStr,
+      b'ArrData': ArrData,
+      b'ArrInt': ArrInt,
+      b'MapStrDyn': MapStrDyn,
+      b'MapDataDyn': MapDataDyn,
+      b'MapStrStr': MapStrStr,
     }
+    self.vals = {}
 
   def arr(self, ty: Any) -> ArrBase:
     """Create or get generic array type."""
-    name = f'Array[{ty.name}]'
+    name = f'Arr[{ty.name}]'
     existing = self.tys.get(name)
     if existing: return existing
     arrTy = type(name, (ArrBase,), {'_ty': ty, 'name': name})
     self.tys[name] = arrTy
     return arrTy
 
-  def struct(self, mod: bytes, name: bytes, fields: List[Tuple[bytes, StructField]]):
+  def map(self, kty: Any, vty: Any) -> MapBase:
+    """Create or get generic map type."""
+    name = f'Map[{kty.name},{vty.name}]'
+    existing = self.tys.get(name)
+    if existing: return existing
+    mapTy = type(name, (MapBase,), {'_kty': kty, '_vty': vty, 'name': name})
+    self.tys[name] = mapTy
+    return mapTy
+
+  def undefined(self, name):
+    existing = self.tys.get(name)
+    if existing: raise ValueError(f"Declaring already defined type: {name}")
+    if existing: return existing
+    ty = Undefined(name)
+    self.tys[name] = ty
+    return ty
+
+  def struct(self, mod: bytes, name: bytes, fields: Dict[bytes, StructField]):
     mn = modname(mod, name)
-    if mn in self.tys: raise KeyError(f"Modname {mn} already exists")
+    undefined = self.tys.get(mn)
+    if isinstance(undefined, Undefined): pass
+    elif mn in self.tys: raise KeyError(f"Modname {mn} already exists")
+    dfields = []
+    for n, f in fields.items():
+      n = n.decode('utf-8')
+      if f.default is None:
+        item = [n, f.ty]
+      else:
+        item = [n, f.ty, dataclasses.field(default_factory=lambda: f.default)]
+      dfields.append(item)
+
     ty = dataclasses.make_dataclass(
       name.decode('utf-8'),
-      [(n.decode('utf-8'), f.ty) for (n, f) in fields],
+      dfields,
       bases=(StructBase,),
     )
     ty.name = mn
     ty._fields = fields
-    self.tys[mn] = ty
-    return ty
+    return self._register(mn, ty, undefined)
 
   def enum(self, mod: bytes, name: bytes, variants: List[Tuple[bytes, Any]]):
     mn = modname(mod, name)
-    if mn in self.tys: raise KeyError(f"Modname {mn} already exists")
+    undefined = self.tys.get(mn)
+    if isinstance(undefined, Undefined): pass
+    elif mn in self.tys: raise KeyError(f"Modname {mn} already exists")
     ty = dataclasses.make_dataclass(
       name.decode('utf-8'),
       [
@@ -451,8 +737,7 @@ class TyEnv:
     )
     ty.name = mn
     ty._variants = variants
-    self.tys[mn] = ty
-    return ty
+    return self._register(mn, ty, undefined)
 
   def bitmap(self, mod: bytes, name: bytes, variants: List[Tuple[bytes, BmVar]]):
     mn = modname(mod, name)
@@ -463,9 +748,23 @@ class TyEnv:
       methods['get_' + n] = var._getVariantClosure()
       methods['set_' + n] = var._setVariantClosure()
       methods['is_' + n] = var._isVariantClosure()
+      methods['tog_' + n] = var._togVariantClosure()
     ty = type(name.decode('utf-8'), (BitmapBase,), methods)
     self.tys[mn] = ty
     return ty
+
+  def _register(self, name, ty, undefined):
+    self.tys[name] = ty
+    if undefined: self._define(name, ty)
+    return ty
+
+  def _define(self, name, ty):
+    for v in self.tys.values():
+      if hasattr(v, '_define'):
+        v._define(name, ty)
+
+################################################################################
+# Parser: parses tokens to create types
 
 SINGLES = {ord(c) for c in ['%', '\\', '$', '|', '(', ')', '[', ']']}
 
@@ -502,19 +801,17 @@ class ParseError(RuntimeError):
 @dataclass
 class Parser:
   buf: bytearray
-  env: TyEnv = dataclasses.field(default_factory=TyEnv)
   mod: bytes = None
   i: int = 0
   line: int = 1
+  env: TyEnv = dataclasses.field(default_factory=TyEnv)
 
   def error(self, msg): raise ParseError(self.line, msg)
 
-  def trackLine(self):
-      if self.buf[self.i] == ord('\n'): self.line += 1
-
-  def skipWhitespace(self):
+  def skipWhitespace(self, skipNewlines=True):
     while self.i < len(self.buf) and TG.fromChr(self.buf[self.i]) is TG.T_WHITE:
-      self.trackLine()
+      if skipNewlines and self.buf[self.i] == ord('\n'):
+        self.line += 1
       self.i += 1
 
   def _token(self) -> bytes:
@@ -530,6 +827,41 @@ class Parser:
         return self.buf[starti:self.i]
       self.i += 1
     return self.buf[starti: self.i]
+
+  def token(self, allowEof=False):
+    if not allowEof and self.i >= len(self.buf): self.error("Unexpected EOF")
+    while self.i < len(self.buf):
+      t = self._token()
+      if t == b'\\': self.parseComment()
+      else: return t
+
+  def peek(self, allowEof=True) -> bytes:
+    starti = self.i
+    out = self.token(allowEof=allowEof)
+    self.i = starti
+    return out
+
+  def need(self, s):
+    if self.token() != s.encode('utf-8'): self.error(f"Expected |{s}|")
+
+  def singleData(self):
+    t = self.token()
+    if t != '{': return t
+    t = self.token()
+    self.need('}')
+    return t
+
+  def singleNonWhitespace(self) -> bytearray:
+    self.skipWhitespace()
+    if self.i == len(self.buf): self.error("Unexpected EOF")
+    out = bytearray()
+    while self.i < len(self.buf) and self.buf[self.i] > ord(' '):
+      out.append(self.buf[self.i])
+      self.i += 1
+    return out
+
+  def sugar(self, s):
+    if self.peek() == s.encode('utf-8'): self.token() # consume token
 
   def _blockComment(self):
     while self.i < len(self.buf):
@@ -550,50 +882,44 @@ class Parser:
     else: # ignore token
       self._token()
 
-  def token(self):
-    while self.i < len(self.buf):
-      t = self._token()
-      if t == b'\\': self.parseComment()
-      else: return t
-
-  def peek(self) -> bytes:
-    starti = self.i
-    out = self.token()
-    self.i = starti
-    return out
-
-  def need(self, s):
-    if self.token() != s.encode('utf-8'): self.error(f"Expected |{s}|")
-
-  def sugar(self, s):
-    if self.peek() == s.encode('utf-8'): self.token() # consume token
-
   def parseArr(self) -> ArrBase:
     self.need('['); ty = self.parseTy(); self.need(']')
     return self.env.arr(ty)
 
+  def parseMap(self) -> MapBase:
+    self.need('['); kty = self.parseTy();
+    self.need(','); vty = self.parseTy();
+    self.need(']')
+    if not isinstance(kty, Hashable): raise TypeError(f'Key {kty.name} is not hashable')
+    return self.env.map(kty, vty)
+
   def parseTy(self) -> Any:
     name = self.token()
-    if name == b'Arr':
-      return self.parseArr()
+    if name == b'Arr': return self.parseArr()
+    if name == b'Map': return self.parseMap()
     return self.env.tys[name]
 
   def parseField(self) -> StructField:
     name = self.token(); self.need(':')
     # TODO: handle zid case
     ty = self.parseTy()
-    return (name, StructField(ty=ty))
+    if self.peek() == b'=':
+      self.need('='); default = ty.parse(self)
+    else: default = None
+    return (name, StructField(ty=ty, default=default))
 
   def _parseStruct(self) -> (str, List[StructField]):
     name = self.token()
-    fields = []
+    fields = odict()
     self.need('[')
     while True:
       p = self.peek()
       if p == b']':
         self.need(']')
         break
-      fields.append(self.parseField())
+      k, v = self.parseField()
+      if k in fields: raise ValueError(f'field {k} listed twice')
+      fields[k] = v
       self.sugar(';')
     return name, fields
 
@@ -603,6 +929,9 @@ class Parser:
     if t.startswith(b'0x'): return int(t[2:], 16)
     return int(t, 10)
 
+  def parseDeclare(self) -> Undefined:
+    return self.env.undefined(self.token())
+
   def parseStruct(self) -> StructBase:
     name, fields = self._parseStruct()
     return self.env.struct(self.mod, name, fields)
@@ -610,7 +939,7 @@ class Parser:
   def parseEnum(self) -> EnumBase:
     name, fields = self._parseStruct()
     # TODO: handle zid
-    return self.env.enum(self.mod, name, [(n, f.ty) for (n, f) in fields])
+    return self.env.enum(self.mod, name, [(n, EnumVar(f.ty)) for (n, f) in fields.items()])
 
   def parseBitmap(self) -> BitmapBase:
     name = self.token()
@@ -633,10 +962,18 @@ class Parser:
       variants.append((vname, BmVar(var, msk)))
     return self.env.bitmap(self.mod, name, variants)
 
+  def parseConst(self):
+    name = self.token(); self.need(':');
+    if name in self.env.vals: self.error(f"const {name} already defined")
+    tyName = self.token(); self.need('=')
+    self.env.vals[name] = self.env.tys[tyName].parse(self)
+
   def parse(self):
     while self.i < len(self.buf):
       token = self.token()
       if not token: break
-      if token == b'struct': self.parseStruct()
-      if token == b'enum': self.parseEnum()
-      if token == b'bitmap': self.parseBitmap()
+      elif token == b'declare': self.parseDeclare()
+      elif token == b'struct':  self.parseStruct()
+      elif token == b'enum':    self.parseEnum()
+      elif token == b'bitmap':  self.parseBitmap()
+      elif token == b'const':   self.parseConst()

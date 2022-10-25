@@ -1,0 +1,47 @@
+\ Auto-generates bin/const.h
+const CSZ_CATCH : Int = 0xFF
+
+const T_NUM     : Int = 0x0
+const T_HEX     : Int = 0x1
+const T_ALPHA   : Int = 0x2
+const T_SINGLE  : Int = 0x3
+const T_SYMBOL  : Int = 0x4
+const T_WHITE   : Int = 0x5
+
+const C_LOCAL      :Int = 0x4000 \ G_cstate AND meta: store as locals (func and name)
+const C_TYPED      :Int = 0x2000 \ G_cstate AND meta: store as typed (dict)
+const C_EXPECT_ERR :Int = 0x0080 \ G_cstate: expeting error (for testing)
+const C_PUB        :Int = 0x0040 \ G_cstate: store as public (function data)
+const C_PUB_NAME   :Int = 0x0020 \ G_cstate: make next name public
+
+\ const C_FN_STATE    = 0x0003 \ G_cstate: mask of current FN position
+\ const FN_STATE_NO   = 0x0000 \ not compiling a fn
+\ const FN_STATE_BODY = 0x0001 \ compiling FN body
+\ const FN_STATE_STK  = 0x0002 \ can declare stk inputs
+\ const FN_STATE_INP  = 0x0003 \ can declare inp inputs
+\ 
+\ \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
+\ const META_TY_MASK = 0xC0 \ upper three bits determine type
+\ const TY_CONST     = 0x00 \ constant, the value is used directly
+\ const TY_FN        = 0x40 \ function, can be called and has an fnMeta
+\ const TY_VAR       = 0x80 \ variable (local, global, struct field, etc). Has varMeta
+\ const TY_DICT      = 0xC0 \ a "dictionary" type which has dictMeta.
+\ 
+\ \ FN meta bits [TTPL -FFF] P=pre L=locals F=fnTy
+\ const TY_FN_PRE    = 0x20  \ Compile next token first. Creates pre-order arguments.
+\ const TY_FN_LARGE  = 0x10  \ large, has locals (called with XLL or XLW)
+\ 
+\ const TY_FN_TY_MASK = 0x07 \ 4 function types
+\ const TY_FN_NORMAL  = 0x00 \ Normally compiled, can use $ to make NOW
+\ const TY_FN_NOW     = 0x01 \ Required to be run as NOW (must use $)
+\ const TY_FN_SYN     = 0x02 \ (syntactical) always run now (knowing asNow)
+\ const TY_FN_INLINE  = 0x03 \ Inline function, copies bytes when compiled.
+\ const TY_FN_COMMENT = 0x04 \ Comment function. Executed immediately.
+\ const TY_FN_DECLARE = 0x05 \ Declare function, compile later.
+\ 
+\ \ @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
+\ 
+\ \ Local meta bits  [TTSS I-RR] I=input R=ref S=szI
+\ \ Global meta bits [TTSS --RR]         R=ref S=szI
+\ const TY_VAR_INPUT = 0x08 
+\ const TY_VAR_REF   = 0x03 
