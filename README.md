@@ -104,8 +104,6 @@ See [civboot.org](http://civboot.org) for future goals.
 
 ## Helping / Hacking
 
-I just started over so no real source code yet exists. Sorry!
-
 To build and run tests:
 ```
 make test

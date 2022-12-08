@@ -1,47 +1,74 @@
 \ Auto-generates bin/const.h
-const CSZ_CATCH : Int = 0xFF
+const CSZ_CATCH : U2 = 0xFF
 
-const T_NUM     : Int = 0x0
-const T_HEX     : Int = 0x1
-const T_ALPHA   : Int = 0x2
-const T_SINGLE  : Int = 0x3
-const T_SYMBOL  : Int = 0x4
-const T_WHITE   : Int = 0x5
+const T_NUM     : U2 = 0x0
+const T_HEX     : U2 = 0x1
+const T_ALPHA   : U2 = 0x2
+const T_SINGLE  : U2 = 0x3
+const T_SYMBOL  : U2 = 0x4
+const T_WHITE   : U2 = 0x5
 
-const C_LOCAL      :Int = 0x4000 \ G_cstate AND meta: store as locals (func and name)
-const C_TYPED      :Int = 0x2000 \ G_cstate AND meta: store as typed (dict)
-const C_EXPECT_ERR :Int = 0x0080 \ G_cstate: expeting error (for testing)
-const C_PUB        :Int = 0x0040 \ G_cstate: store as public (function data)
-const C_PUB_NAME   :Int = 0x0020 \ G_cstate: make next name public
+const C_LOCAL      :U4 = 0x4000 \ G_cstate AND meta: store as locals (func and name)
+const C_TYPED      :U4 = 0x2000 \ G_cstate AND meta: store as typed (dict)
+const C_EXPECT_ERR :U4 = 0x0080 \ G_cstate: expeting error (for testing)
+const C_PUB        :U4 = 0x0040 \ G_cstate: store as public (function data)
+const C_PUB_NAME   :U4 = 0x0020 \ G_cstate: make next name public
 
-\ const C_FN_STATE    = 0x0003 \ G_cstate: mask of current FN position
-\ const FN_STATE_NO   = 0x0000 \ not compiling a fn
-\ const FN_STATE_BODY = 0x0001 \ compiling FN body
-\ const FN_STATE_STK  = 0x0002 \ can declare stk inputs
-\ const FN_STATE_INP  = 0x0003 \ can declare inp inputs
-\ 
-\ \ * [3.a] Dict Ty Bits (meta byte):  TTXX XXXX T=TY_MASK
-\ const META_TY_MASK = 0xC0 \ upper three bits determine type
-\ const TY_CONST     = 0x00 \ constant, the value is used directly
-\ const TY_FN        = 0x40 \ function, can be called and has an fnMeta
-\ const TY_VAR       = 0x80 \ variable (local, global, struct field, etc). Has varMeta
-\ const TY_DICT      = 0xC0 \ a "dictionary" type which has dictMeta.
-\ 
-\ \ FN meta bits [TTPL -FFF] P=pre L=locals F=fnTy
-\ const TY_FN_PRE    = 0x20  \ Compile next token first. Creates pre-order arguments.
-\ const TY_FN_LARGE  = 0x10  \ large, has locals (called with XLL or XLW)
-\ 
-\ const TY_FN_TY_MASK = 0x07 \ 4 function types
-\ const TY_FN_NORMAL  = 0x00 \ Normally compiled, can use $ to make NOW
-\ const TY_FN_NOW     = 0x01 \ Required to be run as NOW (must use $)
-\ const TY_FN_SYN     = 0x02 \ (syntactical) always run now (knowing asNow)
-\ const TY_FN_INLINE  = 0x03 \ Inline function, copies bytes when compiled.
-\ const TY_FN_COMMENT = 0x04 \ Comment function. Executed immediately.
-\ const TY_FN_DECLARE = 0x05 \ Declare function, compile later.
-\ 
-\ \ @TY_FN@TY_FN_PRE^JN #0=_FP \ Meta for function with args
-\ 
-\ \ Local meta bits  [TTSS I-RR] I=input R=ref S=szI
-\ \ Global meta bits [TTSS --RR]         R=ref S=szI
-\ const TY_VAR_INPUT = 0x08 
-\ const TY_VAR_REF   = 0x03 
+const C_FN_STATE    :U4 = 0x0003 \ G_cstate: mask of current FN position
+const FN_STATE_NO   :U4 = 0x0000 \ not compiling a fn
+const FN_STATE_BODY :U4 = 0x0001 \ compiling FN body
+const FN_STATE_STK  :U4 = 0x0002 \ can declare stk inputs
+const FN_STATE_INP  :U4 = 0x0003 \ can declare inp inputs
+
+\ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
+const META_TY_MASK  :U1 = 0xC0 \ upper two bits determine type
+const TY_CONST      :U1 = 0x00 \ constant, the value is used directly if ty is native
+const TY_FN         :U1 = 0x40 \ function, can be called and has an fnMeta
+const TY_VAR        :U1 = 0x80 \ variable (local, global, struct field, etc). Has varMeta
+const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
+
+\ TY_FN meta bits: [01PL -FFF] P=pre L=locals F=fnTy
+const TY_FN_PRE     :U1  = 0x20  \ Compile next token first. Creates pre-order arguments.
+const TY_FN_LARGE   :U1  = 0x10  \ large, has locals (called with XLL or XLW)
+
+const TY_FN_TY_MASK :U1 = 0x07 \ Function type mask
+const TY_FN_NORMAL  :U1 = 0x00 \ Normally compiled, can use $ to make NOW
+const TY_FN_NOW     :U1 = 0x01 \ Required to be run as NOW (must use $)
+const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run now (knowing asNow)
+const TY_FN_INLINE  :U1 = 0x03 \ Inline function, copies bytes when compiled.
+const TY_FN_COMMENT :U1 = 0x04 \ Comment function. Executed immediately.
+
+\ TY_VAR meta bits: [10SS GIRR] S=szI  G=global I=input  R=ref  S=szI
+\ Note: S is SZ_MASK defined in spor.zty
+const TY_VAR_GLOBAL :U1 = 0x08
+const TY_VAR_INPUT  :U1 = 0x04
+const TY_VAR_REF    :U1 = 0x03
+
+\ TY_DICT meta bits: [11-- -DDD] H=other D=dictType
+const TY_DICT_MSK    :U1 = 0x07
+const TY_DICT_NATIVE :U1 = 0x00 \ native type, type pointer must be cast to a TyI meta
+const TY_DICT_BITMAP :U1 = 0x01
+const TY_DICT_STRUCT :U1 = 0x02
+const TY_DICT_ENUM   :U1 = 0x03
+const TY_DICT_MOD    :U1 = 0x04
+
+\ **********
+\ * TyDat: type specification
+\ A counted data stream specifying the type of a dictionary (struct,enum,etc)
+\ by listing it's member (fields, variants, etc) names and their types. Its
+\ form is:
+\
+\   struct TyDat { U1 len; U1 tyI[]; }
+\
+\ Each TyI (type item) is a packed struct of one form specified by meta:
+\
+\   struct TyINative      { meta: U1; name: CStr; }
+\   struct TyIConstructed { meta: U1; name: CStr; node: &DNode; }
+
+\ TYI meta: [C--- -RRR]  C=constructed  R=reference depth
+const TYI_NATIVE      :U1 = 0x00;
+const TYI_CONSTRUCTED :U1 = 0x80;
+const TYI_REF_MASK    :U1 = 0x07; \ reference depth
+
+\ TYI_NATIVE: [0-ZZ SRRR] Z=SZ_MASK S=signed R=TYI_REF_MASK
+const TYI_NATIVE_SIGNED  :U1 = 0x08;

@@ -3,24 +3,6 @@
 
 #include "../civ/civ_unix.h"
 
-#define WS_DEPTH    16
-#define CS_DEPTH    128
-#define TOKEN_SIZE  128
-#define DICT_DEPTH  10
-
-typedef struct {
-  Bst bst;
-  Slot v;
-  U2 m;
-  // ?Ref: ty, // iff C_TYPED then this exists.
-} DNode;
-
-typedef struct {
-  U4 _null;
-  BBA bbaPub;    BBA bbaPriv;
-  DNode* dict;
-} Kern;
-
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
@@ -30,7 +12,7 @@ typedef struct {
   U1 logLvlSys;
   U1 logLvlUsr;
   DNode* curNode; // current node (fn, struct) being compiled
-  void* compFn;  // current function that does compilation
+  void* compFn;   // current function that does compilation
   BBA  bbaLocal;  DNode* dictLocal;
   BBA* bbaPub;
   BBA* bbaPriv;   DNode* dictPriv;

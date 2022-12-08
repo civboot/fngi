@@ -4,23 +4,21 @@
 #include "../bin/const.h"
 #include "../bin/spor.h"
 
-#define cfb             ((FnFiber*)civ.fb)
+#define cfb             (k->fb)
 
-#define WS              (cfb->ws)
-#define CS              (cfb->cs)
-#define CSZ             (cfb->csz)
-#define CS_SP           (&CS.dat[CS.sp])
+#define WS              (&cfb->ws)
+#define RS              (&cfb->rs)
 
-#define WS_POP()          Stk_pop(&WS)
-#define WS_POP2(A, B)     STK_POP2(&WS, A, B)
-#define WS_PUSH(V)        Stk_push(&WS, V)
-#define WS_PUSH2(A, B)    STK_PUSH2(&WS, A, B)
-#define WS_PUSH3(A, B, C) STK_PUSH3(&WS, A, B, C)
-#define CS_PUSH(V)        Stk_push(&CS, V)
+#define WS_POP()          Stk_pop(WS)
+#define WS_POP2(A, B)     STK_POP2(WS, A, B)
+#define WS_PUSH(V)        Stk_push(WS, V)
+#define WS_PUSH2(A, B)    STK_PUSH2(WS, A, B)
+#define WS_PUSH3(A, B, C) STK_PUSH3(WS, A, B, C)
+#define RS_PUSH(V)        Stk_push(RS, V)
 
 #define TASSERT_WS(E)     TASSERT_EQ(E, WS_POP());
 
-Slot line;
+Slot    line;
 Globals rootG;
 Kern    rootK;
 FnFiber rootFb;

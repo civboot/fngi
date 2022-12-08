@@ -1,4 +1,3 @@
-
 \ Spor Constants
 \
 \ # Table of Contents
@@ -90,9 +89,10 @@ const DIV_S:Int = 0x32  \ {l / r  } signed division
 \ floating point: add,sub,mul,div,ge,lt
 
 \ # [1.a] Sizes: --SS ----
-const SZ1: Int = 0x00
-const SZ2: Int = 0x10
-const SZ4: Int = 0x20
+const SZ_MASK :Int = 0x30 \ size bit mask (for instr and meta)
+const SZ1     :Int = 0x00
+const SZ2     :Int = 0x10
+const SZ4     :Int = 0x20
 
 \ # [1.d] Mem|Store               |Description
 const I_MEM:Int = 0x40
@@ -117,24 +117,15 @@ const I_JMP :Int = 0x80
 \ Unsized jumps:
 const LCL  :Int = 0x80 \ Grow Local stack by U1 Literal
 const XL   :Int = 0x81 \ Execute U4 Literal
-const XNL  :Int = 0x90 \ Execute Native U4 Literal
-const JW   :Int = 0x91 \ Jump from Working Stack
-const XW   :Int = 0xA0 \ Execute from Working stack
+const JW   :Int = 0x90 \ Jump from Working Stack
+const XW   :Int = 0x91 \ Execute from Working stack
 
-\   Jmp      Description
+\ Sized jumps:
 const JL   :Int = 0x82 \ Jmp to Literal
-const JLZ  :Int = 0x83 \ Jmp to Literal on 0 (popping WS)
+const JLZ  :Int = 0x83 \ Jmp to Literal if 0 (popping WS)
 const JTBL :Int = 0x84 \ Jump to Table index using size=Literal
 const SLC  :Int = 0x85 \ Inline Slc, jmp sz and push {ref, len}
-
-\ Common instr+szs
-\ @SZ2@XSL  ^JN   #0=XSL2
-\ @SZ2@JMPL ^JN   #0=JMPL2
 
 \ # [1.f] Small Literal [0xC0 - 0xFF]
 const SLIT :Int = 0xC0
 
-\ JZL and JMPL for SZ=1
-\ For SZ=1 they jump to the 1 byte signed offset from the location
-\ of the operation (NOT the location of the literal).
-const SZ_MASK :Int = 0x30 \ size bit mask (for instr and meta)
