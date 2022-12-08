@@ -1,9 +1,12 @@
 # fngi: a readable language that grows from the silicon
 
-> **UPDATE:** Will be [eliminating spor](./notes/spor_future.md), with many
-> other benefits.  On fngi side, I'm almost ready to start implementing modules.
-> I hit some kind of memory bug and decided another re-implementation was in
-> order.
+> **UPDATE:** I am doing another rewrite of the language. This includes
+> [eliminating spor](./notes/spor_future.md), with many other benefits. In my
+> first attempt, I hit some kind of memory bug. I've realized I want a more
+> inspectable, debuggable language. I'm removing the python harness and other
+> supposed "nicities" that really just add complexity. I'm allowing the
+> complexity of the base language to grow a bit for the sake of inspectability.
+> For more see [round_two.md](./notes/round_two.md)
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -73,18 +76,12 @@ fngi's goal is to evolve into nothing less than the primary programming language
 and operating system for [Civboot](http://civboot.org). There are many steps
 along the way, some of them complete.
 
-- [X] create an assembly. Done, see [spor.c](./spor.c)
-- [X] bootstrap the assembly into fngi. Mostly done, see [spor.sp](./spor.sp)
-- [x] Write zoab in fngi (see [zoa][zoa] project).
-- [X] boostrap fngi into a _more_ full-featured language. This will be in
-  [fngi.fn](./fngi.fn). This is mostly adding core operators (`+`, `-`, `*`,
-  etc), along with several other expected pieces.
-- [X] rewrite the kernel to allow for modules/etc
-  - [X] Create a 4k block allocator and arena-buddy-allocator.
-- [X] Write `fn`, `if`, `while` (untyped
-  - [X] Implement forward declaration of functions
-- [X] define struct and native types
-- [X] Write dot compiler (variable modifier)
+- [X] Make a complete fngi language, then throw it away. See
+  [round_two](./notes/round_two.md)
+- [ ] Create [civc] library to build on top of, based on lessons learned
+- [ ] Create [fngi] library to avoid writing annoying boilerplate C code to do
+  basic inspectibility.
+- [ ] Create fngi (... more bullet points will be added)
 - [ ] Create standard library
   - [ ] Allocator options and allocator stack
   - [ ] String formatting
@@ -102,19 +99,23 @@ along the way, some of them complete.
 
 See [civboot.org](http://civboot.org) for future goals.
 
-[zoa]: http://github.com/vitiral/zoa
+[zoa]: http://github.com/civboot/zoa
+[civc]: http://github.com/civboot/civc
 
 ## Helping / Hacking
 
-The current command I use to run/test is:
+I just started over so no real source code yet exists. Sorry!
 
+To build and run tests:
 ```
-$ python3 etc/make.py --build --test
+make test
 ```
 
-If you want to "play" with the language just define your stuff at the end of
-`boot/fngi.fn` and run the above. Actually defining your own source files should
-happen fairly soon, but is not yet supported.
+The following dependencies must exist in the sub-directory (../). These are
+devleoped along-side civboot, so there is no need to worry about versions (just
+use latest).
+* [zoa]
+* [civc]
 
 ## Contributing
 
