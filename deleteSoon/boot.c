@@ -364,15 +364,9 @@ void executeLoop() { // execute fibers until all fibers are done.
 }
 
 
-U1* compileInstrs(Slc s) {
-  U1* out = heap;
-  for(U2 i = 0; i < s.len; i += 1) pushH(s.dat[i], 1);
-  return out;
-}
-
-U1* executeInstrs(U1* instrs) {
-  cfb->ep = instrs;
-  executeLoop();
+U1* executeInstrs(Kern* k, Slc instrs) {
+  cfb->ep = instrs.dat;
+  executeLoop(k);
   eprintf("??? done execute\n");
 }
 

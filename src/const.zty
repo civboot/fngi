@@ -27,9 +27,9 @@ const TY_FN         :U1 = 0x40 \ function, can be called and has an fnMeta
 const TY_VAR        :U1 = 0x80 \ variable (local, global, struct field, etc). Has varMeta
 const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
 
-\ TY_FN meta bits: [01PL -FFF] P=pre L=locals F=fnTy
-const TY_FN_PRE     :U1  = 0x20  \ Compile next token first. Creates pre-order arguments.
-const TY_FN_LARGE   :U1  = 0x10  \ large, has locals (called with XLL or XLW)
+\ TY_FN meta bits: [01N- PFFF] N=native D=defer P=pre F=fnTy
+const TY_FN_NATIVE  :U1  = 0x20  \ is a native function (i.e. C)
+const TY_FN_PRE     :U1  = 0x08  \ Compile next token first. Creates pre-order arguments.
 
 const TY_FN_TY_MASK :U1 = 0x07 \ Function type mask
 const TY_FN_NORMAL  :U1 = 0x00 \ Normally compiled, can use $ to make NOW

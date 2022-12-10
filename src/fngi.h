@@ -17,11 +17,11 @@
 #define RS              (&cfb->rs)
 
 #define WS_POP()          Stk_pop(WS)
-#define WS_POP2(A, B)     STK_POP2(WS, A, B)
+#define WS_POP2(A, B)     Stk_pop2(WS, A, B)
 #define WS_ADD(V)         Stk_add(WS, V)
-#define WS_ADD2(A, B)     STK_PUSH2(WS, A, B)
-#define WS_ADD3(A, B, C)  STK_PUSH3(WS, A, B, C)
-#define RS_PUSH(V)        Stk_add(RS, V)
+#define WS_ADD2(A, B)     Stk_add2(WS, A, B)
+#define WS_ADD3(A, B, C)  Stk_add3(WS, A, B, C)
+#define RS_ADD(V)         Stk_add(RS, V)
 
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
 
@@ -34,6 +34,12 @@
     Civ_init((Fiber*)&fnFb);                  \
     Kern _k = {0}; Kern* k = &_k;             \
     Kern_init(k, &fnFb);
+
+// ################################
+// # From gen/name.c
+extern U1* unknownInstr;
+Slc instrName(U1 instr);
+U1* szName(U1 szI);
 
 // ################################
 // # Types
@@ -56,10 +62,13 @@ typedef struct _Ty {
   Slot         v;    // either a value or pointer (depends on node type/etc)
 } Ty;
 
+typedef struct {Ty d; U1 lSlots; } TyFn;
+
 // Dict type nodes have an extra pointer which points to the TyDict that has
 // them as a 'v' (dict parent). This is only used when finding the full name
 // of a node for debugging.
 typedef struct { Ty d; Ty* tyParent; } TyDict;
+
 
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
@@ -102,5 +111,9 @@ void Kern_init(Kern* k, FnFiber* fb);
 
 // Initialze FnFiber (beyond Fiber init).
 bool FnFiber_init(FnFiber* fb, Globals* g);
+
+// ################################
+// # Execute
+U1* executeInstrs(Kern* k, Slc instrs);
 
 #endif // __FNGI_H
