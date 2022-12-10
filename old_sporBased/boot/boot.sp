@@ -943,7 +943,7 @@ $pre $FN compNode \ [&node asNow]
   $END \ {&node}
   %DUP $xx:isTyLocal  @E_cLocalNotConst$L $xx:assertNot
   %DUP $xx:assertFn \ {&node}
-  %DUP $SET node %RETZ \ {}
+  %DUP $SET node %RETZ \ {}  -- WTF was this line?
   $GET node $xx:isFnPre $IF $GET G_compFn %XLW $END \ recurse for PRE
   $GET node $xx:isFnSyn $IF $GET asNow $GET node $jmp:execute  $END
   $GET node $xx:isFnNow $IF $GET asNow @E_cReqNow$L $xx:assert $END

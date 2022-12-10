@@ -1,13 +1,12 @@
 
 #include "./fngi.h"
 
-#define R0  return 0;
+#define R0        return 0;
 
 // ***********************
 // * 1: Initialization
 
-bool FnFiber_init(FnFiber* fb, Globals* g) {
-  fb->g = g;
+bool FnFiber_init(FnFiber* fb) {
   U4* dat = (U4*) BA_alloc(&civ.ba);
   if(not dat) return false;
   fb->ws   = Stk_init(dat, WS_DEPTH); dat += WS_DEPTH;
@@ -53,22 +52,38 @@ U4 popLit(Kern* k, U1 size) {
   return out;
 }
 
-static inline bool isTyFn(Ty* fn) {
-  return TY_FN == (META_TY_MASK & fn->meta);
-}
-
-static inline TyFn* fnTy(void* p) {
+static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");
   return (TyFn*)p;
 }
 
+// Make sure to check isFnNative first!
+static inline void executeNative(Kern* k, TyFn* fn) {
+  ((void(*)(Kern*)) fn->d.v)(k);
+}
+
 void xImpl(Kern* k, Ty* ty) {
-  TyFn* fn = fnTy(ty);
-  if(bitHas(ty->meta, TY_FN_NATIVE)) return ((void(*)()) ty->v)();
-  ASSERT(RS->sp >= fn->lSlots, "execute: return stack overflow");
-  Stk_add(&cfb->info, (Slot)fn);
-  RS->sp -= fn->lSlots;
-  cfb->ep = (U1*)ty->v;
+  TyFn* fn = tyFn(ty);
+  eprintf("?? xImpl: %X\n", ty->v);
+  if(isFnNative(fn)) return executeNative(k, fn);
+  ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
+  INFO_ADD((Slot)fn);
+  RS_ADD((Slot)cfb->ep); cfb->ep = (U1*)ty->v;
+  RS->sp -= fn->lSlots; // grow locals (and possibly defer)
+}
+
+TyFn catchTy;
+void ret(Kern* k) {
+  TyFn* ty = (TyFn*) INFO_POP();
+  U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
+  RS->sp += lSlots;
+  cfb->ep = (U1*)RS_POP();
+}
+
+void jmpImpl(Kern* k, void* ty) {
+  TyFn* fn = tyFn(ty);
+  ASSERT(0 == fn->lSlots, "jmp to fn with locals");
+  cfb->ep = (U1*)fn->d.v;
 }
 
 void slcImpl(Kern* k, U1 sz) {
@@ -92,8 +107,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case OVR : WS_POP2(l, r); WS_ADD3(l, r, l);          R0
     case DUP : r = WS_POP(); WS_ADD2(r, r);              R0
     case DUPN: r = WS_POP(); WS_ADD(r); WS_ADD(0 == r); R0
-    // case LR: WS_ADD((Slot)&CS.dat[CS.sp] + popLit(k, 1)); R0
-    // case GR: WS_ADD((Slot)cfb->g + popLit(k, 2)); R0
+    case LR: WS_ADD((Slot)&RS->dat[RS->sp] + popLit(k, 1)); R0
 
     case INC : WS_ADD(WS_POP() + 1); R0
     case INC2: WS_ADD(WS_POP() + 2); R0
@@ -164,7 +178,8 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case SZ4 + LIT: WS_ADD(popLit(k, 4)); R0
 
     // // Jmp Cases
-  //   case LCL: // grow locals stack
+    case LCL: // grow locals stack
+      assert(false);
   //     r = (U1)WS_POP();
   //     ASSERT(CSZ.sp < CSZ.cap, "CSZ oob");
   //     l = CSZ.dat[CSZ.sp];
@@ -198,22 +213,13 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
   SET_ERR(Slc_ntLit("Unknown instr"));
 }
 
-TyFn catchTy;
-
-void ret(Kern* k) {
-  TyFn* ty = (TyFn*) Stk_pop(&cfb->info);
-  U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
-  RS->sp += lSlots;
-  cfb->ep = (U1*)Stk_pop(RS);
-}
-
 typedef struct { U2 i; U2 rs; bool found; } PanicHandler;
 
 PanicHandler getPanicHandler(Kern* k) { // find the index of the panic handler
   Stk* info = &cfb->info;
   PanicHandler h = {.i = info->sp, .rs = RS->sp};
   while(h.i < info->cap) {
-    TyFn* fn = fnTy((void*)info->dat[h.i]);
+    TyFn* fn = tyFn((void*)info->dat[h.i]);
     if(&catchTy == fn) {
       h.found = true;
       return h;
@@ -263,9 +269,104 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 
-U1* executeInstrs(Kern* k, Slc instrs) {
+void executeFn(Kern* k, TyFn* fn) {
+  if(isFnNative(fn)) return executeNative(k, fn);
+  cfb->ep = (U1*)fn->d.v;
+  executeLoop(k);
+}
+
+void executeInstrs(Kern* k, Slc instrs) {
   cfb->ep = instrs.dat;
   executeLoop(k);
-  eprintf("??? done execute\n");
-  return cfb->ep;
 }
+
+// ***********************
+// * 3: Token scanner
+
+U1 toTokenGroup(U1 c) {
+  if(c <= ' ')             return T_WHITE;
+  if('0' <= c && c <= '9') return T_NUM;
+  if('a' <= c && c <= 'f') return T_HEX;
+  if('A' <= c && c <= 'F') return T_HEX;
+  if(c == '_')             return T_HEX;
+  if('g' <= c && c <= 'z') return T_ALPHA;
+  if('G' <= c && c <= 'Z') return T_ALPHA;
+  if(c == '%' || c == '\\' || c == '$' || c == '|' ||
+     c == '.' || c ==  '(' || c == ')') {
+    return T_SINGLE;
+  }
+  return T_SYMBOL;
+}
+
+void skipWhitespace(Reader f) {
+  Ring* r = &Xr(f, asBase)->ring;
+  while(true) {
+    U1* c = Reader_get(f, 0);
+    if(c == NULL) return;
+    if(*c > ' ')  return;
+    Ring_incHead(r, 1);
+  }
+}
+
+// Guarantees a token is in Kern.g.token
+void scan(Reader f, Buf* b) {
+  if(b->len) return; // does nothing if token wasn't cleared.
+  skipWhitespace(f);
+  U1* c = Reader_get(f, 0); if(c == NULL) return;
+  const U1 firstTg = toTokenGroup(*c);
+  Buf_add(b, *c);
+  if(T_SINGLE == firstTg) return;
+  while(true) {
+    c = Reader_get(f, b->len); if(c == NULL) return;
+    U1 tg = toTokenGroup(*c);
+    if (tg == firstTg) {}
+    else if ((tg <= T_ALPHA) && (firstTg <= T_ALPHA)) {}
+    else break;
+    ASSERT(b->len < b->cap, "Token too long");
+    _Buf_add(b, *c);
+  }
+}
+
+void scanNext(Reader f, Buf* b) {
+  Ring_incHead(&Xr(f, asBase)->ring, b->len);
+  Buf_clear(b);
+  scan(f, b);
+}
+
+// #################################
+// # Compiler
+
+void lit(Buf* b, U4 v) {
+  if (v <= SLIT_MAX)    { Buf_add(b, SLIT | v); }
+  else if (v <= 0xFF)   { Buf_add(b, SZ1 | LIT); Buf_add(b, v); }
+  else if (v <= 0xFFFF) { Buf_add(b, SZ2 | LIT); Buf_addBE2(b, v); }
+  else                  { Buf_add(b, SZ4 | LIT); Buf_addBE4(b, v); }
+}
+
+void compileLit(Kern* k, Ty* ty, bool asNow) {
+  if(asNow) return WS_ADD(ty->v);
+  lit(&k->g.code, ty->v);
+}
+
+void compileFn(Kern* k, TyFn* fn) {
+  Buf* b = &k->g.code;
+  Buf_add(b, XL);
+  Buf_addBE4(b, (U4)&fn);
+}
+
+void compileTy(Kern* k, Ty* ty, bool asNow) {
+  ASSERT(ty, "name not found");
+  if(isTyConst(ty)) return compileLit(k, ty, asNow);
+  if(isTyLocal(ty)) assert(false); // TODO
+  TyFn* fn = tyFn(ty);
+  if(isFnPre(fn))  executeFn(k, fn); // recurse before compiling rest
+
+  if(isFnSyn(fn)) {
+    WS_ADD(asNow);
+    return executeFn(k, fn);
+  }
+  if(isFnNow(fn)) { ASSERT(asNow, "function must be called with '$'"); }
+  if(asNow) executeFn(k, fn);
+  else      compileFn(k, fn);
+}
+
