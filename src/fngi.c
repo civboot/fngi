@@ -20,7 +20,12 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
     .fb = fb,
+    .g = {
+      .dictStk = Stk_init(k->g.dictBuf, DICT_DEPTH),
+      .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
+    }
   };
+  Stk_add(&k->g.dictStk, 0);
 }
 
 // Allocate and initialize a new Ty from the information in Kern.
@@ -89,7 +94,8 @@ void xImpl(Kern* k, Ty* ty) {
   if(isFnNative(fn)) return executeNative(k, fn);
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
   INFO_ADD((Slot)fn);
-  RS_ADD((Slot)cfb->ep); cfb->ep = (U1*)ty->v;
+  RS_ADD((Slot)cfb->ep);
+  cfb->ep = (U1*)ty->v;
   RS->sp -= fn->lSlots; // grow locals (and possibly defer)
 }
 
@@ -268,8 +274,8 @@ void yield() {
 void executeLoop(Kern* k) { // execute fibers until all fibers are done.
   jmp_buf local_errJmp;
   jmp_buf* prev_errJmp = civ.fb->errJmp; civ.fb->errJmp = &local_errJmp;
+  eprintf("?? Execute loop\n");
   while(cfb) {
-    eprintf("?? Execute loop\n");
     if(setjmp(local_errJmp)) { // got panic
       if(!catchPanic(k)) longjmp(*prev_errJmp, 1);
     }
@@ -293,11 +299,6 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 void executeFn(Kern* k, TyFn* fn) {
   if(isFnNative(fn)) return executeNative(k, fn);
   cfb->ep = (U1*)fn->d.v;
-  executeLoop(k);
-}
-
-void executeInstrs(Kern* k, Slc instrs) {
-  cfb->ep = instrs.dat;
   executeLoop(k);
 }
 
@@ -398,8 +399,20 @@ void compileLit(Kern* k, U4 v, bool asNow) {
 
 void compileFn(Kern* k, TyFn* fn) {
   Buf* b = &k->g.code;
+  if(isFnInline(fn)) { // inline: len before function code.
+    U1* code = (U1*) fn->d.v;
+    return Buf_extend(b, (Slc){code, .len=*(code - 1)});
+  }
   Buf_add(b, XL);
   Buf_addBE4(b, (U4)&fn);
+}
+
+void single(Kern* k, bool asNow);
+void baseCompFn(Kern* k) {
+  scanNext(k->g.src, &k->g.token);
+  eprintf("baseCompFn: %.*s\n", Dat_fmt(k->g.token));
+  if(not k->g.token.len) return;
+  single(k, false);
 }
 
 void compileTy(Kern* k, Ty* ty, bool asNow) {
@@ -407,7 +420,7 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyLocal(ty)) assert(false); // TODO
   TyFn* fn = tyFn(ty);
-  if(isFnPre(fn))  executeFn(k, fn); // recurse before compiling rest
+  if(isFnPre(fn))  baseCompFn(k); // recurse before compiling rest
 
   if(isFnSyn(fn)) {
     WS_ADD(asNow);
@@ -421,9 +434,10 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
 Ty* Kern_findTy(Kern* k, Slc t) {
   Ty* ty = NULL;
   Stk* dicts = &k->g.dictStk;
-  for(U4 i = dicts->sp; i < dicts->cap; i++) {
+  for(U2 i = dicts->sp; i < dicts->cap; i++) {
     ty = (Ty*)dicts->dat[i];
     I4 res = Bst_find((Bst**)&ty, t);
+    eprintf("?? i=%u ty=%X res=%i\n", i, ty, res);
     if((0 == res) && (ty != NULL)) return ty;
   }
   return NULL;
@@ -431,17 +445,143 @@ Ty* Kern_findTy(Kern* k, Slc t) {
 
 // Bst* Bst_add(Bst** root, Bst* add);
 void Kern_addTy(Kern* k, Ty* ty) {
-  Ty* root = (Ty*)Stk_top(&k->g.dictStk);
-  ty = (Ty*)Bst_add((Bst**)&root, (Bst*)ty);
+  Stk* dicts = &k->g.dictStk;
+  ASSERT(dicts->sp < dicts->cap, "No dicts");
+  Bst** root = (Bst**) &dicts->dat[dicts->sp];
+  ty = (Ty*)Bst_add(root, (Bst*)ty);
   ASSERT(not ty, "key was overwritten");
 }
 
 // Compile the current token
 void single(Kern* k, bool asNow) {
   Slc t = *Buf_asSlc(&k->g.token);
+  eprintf("Compiling: %.*s\n", Dat_fmt(t));
   ParsedNumber n = parseNumber(t);
+  eprintf("?? isNum: %u\n", n.isNum);
   if(n.isNum) return compileLit(k, n.v, asNow);
+  eprintf("?? finding Ty\n");
   Ty* ty = Kern_findTy(k, t);
+  eprintf("?? ty found\n");
   ASSERT(ty, "token not found");
   compileTy(k, ty, asNow);
 }
+
+void compileSrc(Kern* k) {
+  while(true) {
+    baseCompFn(k);
+    if(not k->g.token.len) return;
+  }
+}
+
+// #################################
+// # Base functions
+
+void N_ret(Kern* k) {
+  ASSERT(not WS_POP(), "ret cannot be called with $");
+  Buf_add(&k->g.code, RET);
+}
+
+void N_plus(Kern* k) {
+  if(WS_POP()) WS_ADD(WS_POP() + WS_POP());
+  else         Buf_add(&k->g.code, ADD);
+}
+
+// Create a static Ty and add it to the kern.
+// NAMELEN: the fngi name's length
+// NAME: the fngi name
+// META: the meta to use
+// NAT: the native value to add
+#define STATIC_NATIVE(NAMELEN, NAME, META, NAT) \
+  CStr_ntVar(LINED(key), NAMELEN, NAME);   \
+  static Ty LINED(Ty);                  \
+  LINED(Ty) = (Ty) {                    \
+    .bst.key = LINED(key),              \
+    .meta = META,                       \
+    .v = (Slot)NAT,                     \
+  };                                    \
+  Kern_addTy(k, &LINED(Ty));
+
+#define STATIC_INLINE(NAMELEN, NAME, META, ...) \
+  assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);   \
+  static U1 LINED(code)[] = {sizeof((U1[]){__VA_ARGS__}), __VA_ARGS__ __VA_OPT__(,) RET}; \
+  STATIC_NATIVE(NAMELEN, NAME, TY_FN | TY_FN_INLINE | META, LINED(code) + 1);
+
+void Kern_fns(Kern* k) {
+  // Pure noop syntax sugar
+  STATIC_INLINE("\x01", ";"    , 0       ,);
+  STATIC_INLINE("\x02", "->"   , 0       ,);
+
+  // Stack operators. These are **not** PRE since they directly modify the stack.
+  STATIC_INLINE("\x03", "swp"  , 0       , SWP   );
+  STATIC_INLINE("\x03", "drp"  , 0       , DRP   );
+  STATIC_INLINE("\x03", "ovr"  , 0       , OVR   );
+  STATIC_INLINE("\x03", "dup"  , 0       , DUP   );
+  STATIC_INLINE("\x04", "dupn" , 0       , DUPN  );
+
+  // Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
+  STATIC_INLINE("\x03", "nop"  , TY_FN_PRE, NOP  );
+  STATIC_INLINE("\x03", "ret"  , TY_FN_PRE, RET  );
+  STATIC_INLINE("\x03", "inc"  , TY_FN_PRE, INC  );
+  STATIC_INLINE("\x04", "inc2" , TY_FN_PRE, INC2 );
+  STATIC_INLINE("\x04", "inc4" , TY_FN_PRE, INC4 );
+  STATIC_INLINE("\x03", "dec"  , TY_FN_PRE, DEC  );
+  STATIC_INLINE("\x03", "inv"  , TY_FN_PRE, INV  );
+  STATIC_INLINE("\x03", "neg"  , TY_FN_PRE, NEG  );
+  STATIC_INLINE("\x03", "not"  , TY_FN_PRE, NOT  );
+  STATIC_INLINE("\x05", "i1to4", TY_FN_PRE, CI1  );
+  STATIC_INLINE("\x05", "i2to4", TY_FN_PRE, CI2  );
+  STATIC_INLINE("\x01", "+"    , TY_FN_PRE, ADD  );
+  STATIC_INLINE("\x01", "-"    , TY_FN_PRE, SUB  );
+  STATIC_INLINE("\x01", "%"    , TY_FN_PRE, MOD  );
+  STATIC_INLINE("\x03", "shl"  , TY_FN_PRE, SHL  );
+  STATIC_INLINE("\x03", "shr"  , TY_FN_PRE, SHR  );
+  STATIC_INLINE("\x03", "msk"  , TY_FN_PRE, MSK  );
+  STATIC_INLINE("\x02", "jn"   , TY_FN_PRE, JN   );
+  STATIC_INLINE("\x03", "xor"  , TY_FN_PRE, XOR  );
+  STATIC_INLINE("\x03", "and"  , TY_FN_PRE, AND  );
+  STATIC_INLINE("\x02", "or"   , TY_FN_PRE, OR   );
+  STATIC_INLINE("\x02", "=="   , TY_FN_PRE, EQ   );
+  STATIC_INLINE("\x02", "!="   , TY_FN_PRE, NEQ  );
+  STATIC_INLINE("\x02", ">="   , TY_FN_PRE, GE_U );
+  STATIC_INLINE("\x01", "<"    , TY_FN_PRE, LT_U );
+  STATIC_INLINE("\x04", "ge_s" , TY_FN_PRE, GE_S );
+  STATIC_INLINE("\x04", "lt_s" , TY_FN_PRE, LT_S );
+  STATIC_INLINE("\x01", "*"    , TY_FN_PRE, MUL  );
+  STATIC_INLINE("\x01", "/"    , TY_FN_PRE, DIV_U);
+  STATIC_INLINE("\x02", "xw"   , TY_FN_PRE, XW  );
+
+  // ftN(addr): fetch a value of sz N from address.
+  // srN(value, addr): store a value of sz N to address.
+  STATIC_INLINE("\x03", "ft1"  , TY_FN_PRE, SZ1+FT   );
+  STATIC_INLINE("\x03", "ft2"  , TY_FN_PRE, SZ2+FT   );
+  STATIC_INLINE("\x03", "ft4"  , TY_FN_PRE, SZ4+FT   );
+  STATIC_INLINE("\x03", "ftR"  , TY_FN_PRE, SZR+FT   );
+  STATIC_INLINE("\x03", "sr1"  , TY_FN_PRE, SZ1+SR   );
+  STATIC_INLINE("\x03", "sr2"  , TY_FN_PRE, SZ2+SR   );
+  STATIC_INLINE("\x03", "sr4"  , TY_FN_PRE, SZ4+SR   );
+  STATIC_INLINE("\x03", "srR"  , TY_FN_PRE, SZR+SR   );
+  STATIC_INLINE("\x05", "ftBe1", TY_FN_PRE, SZ1+FTBE );
+  STATIC_INLINE("\x05", "ftBe2", TY_FN_PRE, SZ2+FTBE );
+  STATIC_INLINE("\x05", "ftBe4", TY_FN_PRE, SZ4+FTBE );
+  STATIC_INLINE("\x05", "ftBeR", TY_FN_PRE, SZR+FTBE );
+  STATIC_INLINE("\x05", "srBe1", TY_FN_PRE, SZ1+SRBE );
+  STATIC_INLINE("\x05", "srBe2", TY_FN_PRE, SZ2+SRBE );
+  STATIC_INLINE("\x05", "srBe4", TY_FN_PRE, SZ4+SRBE );
+  STATIC_INLINE("\x05", "srBeR", TY_FN_PRE, SZR+SRBE );
+}
+
+// #################################
+// # Test Helpers
+
+void executeInstrs(Kern* k, U1* instrs) { cfb->ep = instrs; executeLoop(k); }
+U1* compileStream(Kern* k) {
+  U1* body = (U1*) BBA_alloc(&k->bbaCode, 256, 1);
+  ASSERT(body, "compileStream OOM");
+  Buf* code = &k->g.code; *code = (Buf){.dat=body, .cap=256};
+  compileSrc(k);
+  if(code->len)
+    BBA_free(&k->bbaCode, /*dat*/code->dat + code->len, /*sz*/code->cap - code->len, 1);
+  *code = (Buf){0};
+  return body;
+}
+

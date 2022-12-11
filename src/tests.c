@@ -8,7 +8,7 @@ TEST(basic)
   TASSERT_EQ(0xFF, cToU1('-'));
 END_TEST
 
-FNGI_TEST(init, 10)
+TEST_FNGI(init, 10)
   TASSERT_EQ(WS_DEPTH, WS->cap);
   TASSERT_EQ(WS->sp,   WS->cap);
 
@@ -22,11 +22,14 @@ void N_add42(Kern* k) {
 
 // Helpers to execute functions
 static inline void _xFn(Kern* k, TyFn fn) { executeFn(k, &fn); }
+
+// XFN(dat, meta, lSlots)
 #define XFN(...)  _xFn(k, litFn(__VA_ARGS__))
 
-FNGI_TEST(call, 1)
+TEST_FNGI(call, 1)
   // Running some code
-  TyFn fiveFn = litFn((U1[]){SLIT + 2, SLIT + 3, ADD, RET}, 0, 0);
+
+  TyFn_static(fiveFn, 0, 0, ((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
   executeFn(k, &fiveFn);       TASSERT_WS(5);
 
   // Calling a function
@@ -35,7 +38,7 @@ FNGI_TEST(call, 1)
   XFN(call5.dat, 0, 0);       TASSERT_WS(5);
 
   // Executing a native
-  TyFn add42 = litFn((U1*)N_add42, TY_FN_NATIVE, 0);
+  TyFn_static(add42, TY_FN_NATIVE, 0, (U1*)N_add42);
   Buf_var(callAdd42, 16);
   Buf_add(&callAdd42, XL); Buf_addBE4(&callAdd42, (Slot)&add42); Buf_add(&callAdd42, RET);
   WS_ADD(3); XFN(callAdd42.dat, 0, 0);  TASSERT_WS(45);
@@ -45,7 +48,7 @@ END_TEST
   scanNext(f, b);        \
   TASSERT_SLC_EQ(T, *Buf_asSlc(b));
 
-FNGI_TEST(scan, 1)
+TEST_FNGI(scan, 1)
   Buf_var(_b, 32); Buf* b = &_b;
   BufFile_var(bf, 8, "  this-has(*) eight tokens");
   Reader f = File_asReader(BufFile_asFile(&bf));
@@ -55,13 +58,29 @@ FNGI_TEST(scan, 1)
   TASSERT_TOKEN("eight"); TASSERT_TOKEN("tokens");
 END_TEST
 
-int main() {
-  Slc s = Slc_ntLit("World");
-  eprintf("Hello %.*s!\n", Dat_fmt(s));
 
+TEST_FNGI(compile0, 10)
+  Kern_fns(k);
+
+  // Very explicit memory layout
+  BufFile_var(bf, 8, "42 + 7 ret;");
+  Reader f = File_asReader(BufFile_asFile(&bf));
+  k->g.src = f;
+  U1 codeDat[256]; k->g.code = (Buf){.dat=codeDat, .cap=256};
+  compileSrc(k);
+  XFN(codeDat, 0, 0); TASSERT_WS(49);
+
+  // Using internal BBA
+  COMPILE_EXEC("1 + 2 ret;"); TASSERT_WS(3);
+END_TEST
+
+int main() {
+  eprintf("# Running tests\n");
   test_basic();
   test_init();
   test_call();
   test_scan();
+  test_compile0();
+  eprintf("# Tests complete\n");
   return 0;
 }

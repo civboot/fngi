@@ -5,6 +5,8 @@
 #include "./gen/const.h"
 #include "./gen/spor.h"
 
+#define SZR         SZ4
+
 #define WS_DEPTH    16
 #define RS_DEPTH    128
 #define TOKEN_SIZE  128
@@ -30,12 +32,12 @@
 
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
 
-#define FNGI_TEST(NAME, numBlocks)            \
+#define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
     FnFiber fnFb = {0};                       \
     Fiber_init((Fiber*)&fnFb, &localErrJmp);  \
-    assert(FnFiber_init(&fnFb));          \
-    Civ_init((Fiber*)&fnFb);                  \
+    assert(FnFiber_init(&fnFb));              \
+    civ.fb = (Fiber*)&fnFb;                   \
     Kern _k = {0}; Kern* k = &_k;             \
     Kern_init(k, &fnFb);
 
@@ -68,6 +70,16 @@ typedef struct _Ty {
 
 typedef struct {Ty d; U1 lSlots; } TyFn;
 
+#define TyFn_static(NAME, META, LSLOTS, DAT) \
+  static TyFn NAME;               \
+  NAME = (TyFn) {                 \
+    .d.meta = TY_FN | META,       \
+    .d.v = (Slot)DAT,            \
+    .lSlots = LSLOTS,             \
+  };
+
+
+
 static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
   return (TyFn) {
     .d = (Ty) { .meta = TY_FN | meta, .v = (Slot)dat},
@@ -80,7 +92,6 @@ static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
 // of a node for debugging.
 typedef struct { Ty d; Ty* tyParent; } TyDict;
 
-
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
@@ -91,10 +102,10 @@ typedef struct {
   U1 logLvlUsr;
   Ty* curTy;    // current type (fn, struct) being compiled
   TyFn* compFn; // current function that does compilation
-  Ty* dictBuf[DICT_DEPTH];
+  Slot dictBuf[DICT_DEPTH];
   Stk dictStk;
   Reader src; FileInfo* srcInfo; U2 srcLine;
-  Buf token; U2 tokenLine;
+  Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
 } Globals;
 
@@ -124,7 +135,6 @@ bool FnFiber_init(FnFiber* fb);
 // ################################
 // # Execute
 void executeFn(Kern* k, TyFn* fn);
-void executeInstrs(Kern* k, Slc instrs);
 
 // #################################
 // # Scan
@@ -154,7 +164,24 @@ static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 #undef IS_FN
 
+void Kern_fns(Kern* k);
+void single(Kern* k, bool asNow);
+void compileSrc(Kern* k);
 
+// #################################
+// # Test Helpers
 
+#define COMPILE(NAME, CODE) \
+  BufFile_var(LINED(bf), 32, CODE); \
+  Reader LINED(f) = File_asReader(BufFile_asFile(&LINED(bf))); \
+  k->g.src = LINED(f); \
+  U1* NAME = compileStream(k);
+
+#define COMPILE_EXEC(CODE) \
+  COMPILE(LINED(code), CODE); \
+  executeInstrs(k, LINED(code));
+
+void executeInstrs(Kern* k, U1* instrs);
+U1*  compileStream(Kern* k);
 
 #endif // __FNGI_H
