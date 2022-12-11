@@ -23,6 +23,27 @@ void Kern_init(Kern* k, FnFiber* fb) {
   };
 }
 
+// Allocate and initialize a new Ty from the information in Kern.
+// It is the caller's job to initialize: bst.l, bst.r, ty, v.
+// It is also the caller's job to handle TyFn and TyDict values.
+Ty* Ty_new(Kern* k, Ty* parent, U2 meta) {
+  U1 sz = sizeof(Ty);
+  switch (TY_MASK & meta) {
+    case TY_FN:   sz = sizeof(TyFn);   break;
+    case TY_DICT: sz = sizeof(TyDict); break;
+  }
+  Ty* ty = (Ty*) BBA_alloc(&k->bbaDict, sz, 4);
+  *ty = (Ty) {
+    .bst = (Bst) {
+      .key = CStr_new(BBA_asArena(&k->bbaDict), *Buf_asSlc(&k->g.token)),
+    },
+    .parent = parent,
+    .meta = meta,
+    .line = k->g.tokenLine,
+    .file = k->g.srcInfo,
+  };
+  return ty;
+}
 
 // ***********************
 // * 2: Executing Instructions
@@ -333,6 +354,33 @@ void scanNext(Reader f, Buf* b) {
   scan(f, b);
 }
 
+U1 cToU1(U1 c) {
+  if('0' <= c && c <= '9') return c - '0';
+  if('a' <= c && c <= 'f') return 10 + c - 'a';
+  if('A' <= c && c <= 'F') return 10 + c - 'A';
+  return 0xFF; // invalid
+}
+
+// Attempt to parse a number from the token
+typedef struct { bool isNum; U4 v; } ParsedNumber;
+ParsedNumber parseNumber(Slc t) {
+  ParsedNumber p = {0};
+  U1 base = 10, i = 0;
+  if(t.len > 2) {
+    Slc s = Slc_slc(&t, 0, 2);
+    if(Slc_eq(Slc_ntLit("0b"), s)) { base = 2;  i = 2; }
+    if(Slc_eq(Slc_ntLit("0x"), s)) { base = 16; i = 2; }
+    if(Slc_eq(Slc_ntLit("0c"), s)) { assert(false); } // character
+  }
+  for(;i < t.len; i++) {
+    U1 c = cToU1(t.dat[i]);
+    if(0xFF == c) return p;
+    p.v = (p.v * base) + c;
+  }
+  p.isNum = true;
+  return p;
+}
+
 // #################################
 // # Compiler
 
@@ -343,9 +391,9 @@ void lit(Buf* b, U4 v) {
   else                  { Buf_add(b, SZ4 | LIT); Buf_addBE4(b, v); }
 }
 
-void compileLit(Kern* k, Ty* ty, bool asNow) {
-  if(asNow) return WS_ADD(ty->v);
-  lit(&k->g.code, ty->v);
+void compileLit(Kern* k, U4 v, bool asNow) {
+  if(asNow) return WS_ADD(v);
+  lit(&k->g.code, v);
 }
 
 void compileFn(Kern* k, TyFn* fn) {
@@ -356,7 +404,7 @@ void compileFn(Kern* k, TyFn* fn) {
 
 void compileTy(Kern* k, Ty* ty, bool asNow) {
   ASSERT(ty, "name not found");
-  if(isTyConst(ty)) return compileLit(k, ty, asNow);
+  if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyLocal(ty)) assert(false); // TODO
   TyFn* fn = tyFn(ty);
   if(isFnPre(fn))  executeFn(k, fn); // recurse before compiling rest
@@ -370,3 +418,30 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
   else      compileFn(k, fn);
 }
 
+Ty* Kern_findTy(Kern* k, Slc t) {
+  Ty* ty = NULL;
+  Stk* dicts = &k->g.dictStk;
+  for(U4 i = dicts->sp; i < dicts->cap; i++) {
+    ty = (Ty*)dicts->dat[i];
+    I4 res = Bst_find((Bst**)&ty, t);
+    if((0 == res) && (ty != NULL)) return ty;
+  }
+  return NULL;
+}
+
+// Bst* Bst_add(Bst** root, Bst* add);
+void Kern_addTy(Kern* k, Ty* ty) {
+  Ty* root = (Ty*)Stk_top(&k->g.dictStk);
+  ty = (Ty*)Bst_add((Bst**)&root, (Bst*)ty);
+  ASSERT(not ty, "key was overwritten");
+}
+
+// Compile the current token
+void single(Kern* k, bool asNow) {
+  Slc t = *Buf_asSlc(&k->g.token);
+  ParsedNumber n = parseNumber(t);
+  if(n.isNum) return compileLit(k, n.v, asNow);
+  Ty* ty = Kern_findTy(k, t);
+  ASSERT(ty, "token not found");
+  compileTy(k, ty, asNow);
+}

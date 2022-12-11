@@ -23,10 +23,10 @@
 #define FN_STATE_BODY         0x01
 #define FN_STATE_STK          0x02
 #define FN_STATE_INP          0x03
-#define META_TY_MASK          0xC0
+#define TY_MASK               0xC0
 #define TY_CONST              0x00
-#define TY_FN                 0x40
-#define TY_VAR                0x80
+#define TY_VAR                0x40
+#define TY_FN                 0x80
 #define TY_DICT               0xC0
 #define TY_FN_NATIVE          0x20
 #define TY_FN_PRE             0x08

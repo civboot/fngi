@@ -54,14 +54,14 @@ typedef struct { U1 len; TyI dat[]; } TyDat;
 
 typedef struct { CStr path; } FileInfo;
 
-// A Ty can be a const, function, variable or dict. See META_TY_MASK in
+// A Ty can be a const, function, variable or dict. See TY_MASK in
 // const.zty.
 typedef struct _Ty {
   Bst          bst;  // symbol name and dict search.
   struct _Ty*  parent;
   U2           meta; // specifies node type
   U2           line; // src code line of definition.
-  FileInfo*    info; // source file
+  FileInfo*    file; // source file
   TyDat*       ty;   // type information (fields, etc)
   Slot         v;    // either a value or pointer (depends on node type/etc)
 } Ty;
@@ -91,12 +91,10 @@ typedef struct {
   U1 logLvlUsr;
   Ty* curTy;    // current type (fn, struct) being compiled
   TyFn* compFn; // current function that does compilation
-  BBA* bbaCode; // where code is stored
-  BBA* bbaDict; // where dictionary/etc is stored
   Ty* dictBuf[DICT_DEPTH];
   Stk dictStk;
-  Reader src; FileInfo* srcInfo; U2 line;
-  Buf token;
+  Reader src; FileInfo* srcInfo; U2 srcLine;
+  Buf token; U2 tokenLine;
   Buf code;
 } Globals;
 
@@ -132,12 +130,13 @@ void executeInstrs(Kern* k, Slc instrs);
 // # Scan
 void scan(Reader f, Buf* b);
 void scanNext(Reader f, Buf* b);
+U1 cToU1(U1 c); // return 0-15 or 0xFF if not a hex integer.
 
 // #################################
 // # Compiler
 static inline bool isTyLocal(Ty* fn)  { return C_LOCAL & fn->meta; }
 
-#define IS_TY(M)   { return (M) == (META_TY_MASK & fn->meta); }
+#define IS_TY(M)   { return (M) == (TY_MASK & fn->meta); }
 static inline bool isTyConst(Ty* fn)  IS_TY(TY_CONST)
 static inline bool isTyFn(Ty* fn)     IS_TY(TY_FN)
 static inline bool isTyVar(Ty* fn)    IS_TY(TY_VAR)

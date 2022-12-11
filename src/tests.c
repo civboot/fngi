@@ -1,6 +1,13 @@
 
 #include "./fngi.h"
 
+TEST(basic)
+  TASSERT_EQ(7,    cToU1('7'));
+  TASSERT_EQ(0xB,  cToU1('b'));
+  TASSERT_EQ(0xB,  cToU1('B'));
+  TASSERT_EQ(0xFF, cToU1('-'));
+END_TEST
+
 FNGI_TEST(init, 10)
   TASSERT_EQ(WS_DEPTH, WS->cap);
   TASSERT_EQ(WS->sp,   WS->cap);
@@ -52,6 +59,7 @@ int main() {
   Slc s = Slc_ntLit("World");
   eprintf("Hello %.*s!\n", Dat_fmt(s));
 
+  test_basic();
   test_init();
   test_call();
   test_scan();

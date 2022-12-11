@@ -21,10 +21,10 @@ const FN_STATE_STK  :U4 = 0x0002 \ can declare stk inputs
 const FN_STATE_INP  :U4 = 0x0003 \ can declare inp inputs
 
 \ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
-const META_TY_MASK  :U1 = 0xC0 \ upper two bits determine type
+const TY_MASK       :U1 = 0xC0 \ upper two bits determine type
 const TY_CONST      :U1 = 0x00 \ constant, the value is used directly if ty is native
-const TY_FN         :U1 = 0x40 \ function, can be called and has an fnMeta
-const TY_VAR        :U1 = 0x80 \ variable (local, global, struct field, etc). Has varMeta
+const TY_VAR        :U1 = 0x40 \ variable (local, global, struct field, etc). Has varMeta
+const TY_FN         :U1 = 0x80 \ function, can be called and has an fnMeta
 const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
 
 \ TY_FN meta bits: [01N- PFFF] N=native D=defer P=pre F=fnTy
