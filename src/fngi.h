@@ -171,17 +171,19 @@ void compileSrc(Kern* k);
 // #################################
 // # Test Helpers
 
-#define COMPILE(NAME, CODE) \
+#define _COMPILE(NAME, CODE, withRet) \
   BufFile_var(LINED(bf), 32, CODE); \
   Reader LINED(f) = File_asReader(BufFile_asFile(&LINED(bf))); \
   k->g.src = LINED(f); \
-  U1* NAME = compileStream(k);
+  U1* NAME = compileStream(k, withRet);
+#define COMPILE_RET(NAME, CODE) _COMPILE(NAME, CODE, true)
 
-#define COMPILE_EXEC(CODE) \
-  COMPILE(LINED(code), CODE); \
+#define COMPILE_EXEC(CODE)    \
+  COMPILE_RET(LINED(code), CODE); \
   executeInstrs(k, LINED(code));
 
 void executeInstrs(Kern* k, U1* instrs);
-U1*  compileStream(Kern* k);
+U1*  compileStream(Kern* k, bool withRet);
+void simpleRepl(Kern* k);
 
 #endif // __FNGI_H

@@ -67,11 +67,18 @@ TEST_FNGI(compile0, 10)
   Reader f = File_asReader(BufFile_asFile(&bf));
   k->g.src = f;
   U1 codeDat[256]; k->g.code = (Buf){.dat=codeDat, .cap=256};
-  compileSrc(k);
-  XFN(codeDat, 0, 0); TASSERT_WS(49);
+  compileSrc(k); XFN(codeDat, 0, 0); TASSERT_WS(49);
 
-  // Using internal BBA
-  COMPILE_EXEC("1 + 2 ret;"); TASSERT_WS(3);
+  COMPILE_EXEC("inc 4");   TASSERT_WS(5);
+  COMPILE_EXEC("inc2 4");  TASSERT_WS(6);
+  COMPILE_EXEC("dec  4");  TASSERT_WS(3);
+  COMPILE_EXEC("1 + 2");   TASSERT_WS(3);
+  COMPILE_EXEC("1 shl 4"); TASSERT_WS(1 << 4);
+END_TEST
+
+TEST_FNGI(repl, 20)
+  Kern_fns(k);
+  simpleRepl(k);
 END_TEST
 
 int main() {
@@ -82,5 +89,8 @@ int main() {
   test_scan();
   test_compile0();
   eprintf("# Tests complete\n");
+
+  test_repl();
+
   return 0;
 }

@@ -364,7 +364,7 @@ U1 cToU1(U1 c) {
 
 // Attempt to parse a number from the token
 typedef struct { bool isNum; U4 v; } ParsedNumber;
-ParsedNumber parseNumber(Slc t) {
+ParsedNumber parseU4(Slc t) {
   ParsedNumber p = {0};
   U1 base = 10, i = 0;
   if(t.len > 2) {
@@ -374,11 +374,12 @@ ParsedNumber parseNumber(Slc t) {
     if(Slc_eq(Slc_ntLit("0c"), s)) { assert(false); } // character
   }
   for(;i < t.len; i++) {
+    if('_' == t.dat[i]) continue;
     U1 c = cToU1(t.dat[i]);
-    if(0xFF == c) return p;
+    if(0xFF == c or c >= base) { p.isNum = false; return p; }
+    p.isNum = true;
     p.v = (p.v * base) + c;
   }
-  p.isNum = true;
   return p;
 }
 
@@ -437,7 +438,6 @@ Ty* Kern_findTy(Kern* k, Slc t) {
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
     ty = (Ty*)dicts->dat[i];
     I4 res = Bst_find((Bst**)&ty, t);
-    eprintf("?? i=%u ty=%X res=%i\n", i, ty, res);
     if((0 == res) && (ty != NULL)) return ty;
   }
   return NULL;
@@ -455,9 +455,9 @@ void Kern_addTy(Kern* k, Ty* ty) {
 // Compile the current token
 void single(Kern* k, bool asNow) {
   Slc t = *Buf_asSlc(&k->g.token);
-  eprintf("Compiling: %.*s\n", Dat_fmt(t));
-  ParsedNumber n = parseNumber(t);
-  eprintf("?? isNum: %u\n", n.isNum);
+  ASSERT(t.len, "compiling empty token");
+  ParsedNumber n = parseU4(t);
+  eprintf("Compiling: %.*s isNum=%b\n", Dat_fmt(t), n.isNum);
   if(n.isNum) return compileLit(k, n.v, asNow);
   eprintf("?? finding Ty\n");
   Ty* ty = Kern_findTy(k, t);
@@ -570,18 +570,47 @@ void Kern_fns(Kern* k) {
   STATIC_INLINE("\x05", "srBeR", TY_FN_PRE, SZR+SRBE );
 }
 
-// #################################
-// # Test Helpers
+// Test helpers
 
 void executeInstrs(Kern* k, U1* instrs) { cfb->ep = instrs; executeLoop(k); }
-U1* compileStream(Kern* k) {
+
+U1* compileStream(Kern* k, bool withRet) {
   U1* body = (U1*) BBA_alloc(&k->bbaCode, 256, 1);
   ASSERT(body, "compileStream OOM");
   Buf* code = &k->g.code; *code = (Buf){.dat=body, .cap=256};
   compileSrc(k);
+  if(withRet) Buf_add(code, RET);
   if(code->len)
     BBA_free(&k->bbaCode, /*dat*/code->dat + code->len, /*sz*/code->cap - code->len, 1);
   *code = (Buf){0};
   return body;
+}
+
+void dbgWs(Kern *k) {
+  Stk* ws = WS; U2 cap = ws->cap; U2 len = cap - ws->sp;
+  eprintf("{");
+  for(U2 i = 1; i <= len; i++) {
+    U4 v = ws->dat[cap - i];
+    if(v <= 0xFFFF)   eprintf(" %+8X", v);
+    else              eprintf(" %+4X_%X", v >> 16, 0xFFFF & v);
+  }
+  eprintf("}\n");
+}
+
+void simpleRepl(Kern* k) {
+  U1* dat; size_t cap;
+  Ring_var(r, 32);
+  BufFile f = BufFile_init(r, (Buf){.dat = dat});
+  k->g.src = File_asReader(BufFile_asFile(&f));
+
+  eprintf("Simple REPL: type EXIT to exit\n");
+  while(true) {
+    size_t len = getline(&dat, &cap, stdin);
+    ASSERT(len < 0xFFFF, "input too large");
+    if(0 == strcmp("EXIT", dat)) return;
+    f.b.plc = 0; f.b.len = len; f.b.cap = cap;
+    if(len-1) executeInstrs(k, compileStream(k, true));
+    dbgWs(k);
+  }
 }
 
