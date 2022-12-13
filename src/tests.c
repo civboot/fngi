@@ -90,7 +90,7 @@ int main() {
   test_compile0();
   eprintf("# Tests complete\n");
 
-  test_repl();
+  // test_repl();
 
   return 0;
 }

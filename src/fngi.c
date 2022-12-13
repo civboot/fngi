@@ -15,12 +15,20 @@ bool FnFiber_init(FnFiber* fb) {
   return true;
 }
 
+void baseCompFn(Kern* k);
+TyFn TyFn_baseCompFn = {
+  .d.bst.key = (CStr*) ("\x0A" "baseCompFn"),
+  .d.meta = TY_FN | TY_FN_NATIVE,
+  .d.v = (Slot)baseCompFn,
+};
+
 void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
     .fb = fb,
     .g = {
+      .compFn = &TyFn_baseCompFn,
       .dictStk = Stk_init(k->g.dictBuf, DICT_DEPTH),
       .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
     }
@@ -31,7 +39,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
 // Allocate and initialize a new Ty from the information in Kern.
 // It is the caller's job to initialize: bst.l, bst.r, ty, v.
 // It is also the caller's job to handle TyFn and TyDict values.
-Ty* Ty_new(Kern* k, Ty* parent, U2 meta) {
+Ty* Ty_new(Kern* k, U2 meta) {
   U1 sz = sizeof(Ty);
   switch (TY_MASK & meta) {
     case TY_FN:   sz = sizeof(TyFn);   break;
@@ -42,7 +50,6 @@ Ty* Ty_new(Kern* k, Ty* parent, U2 meta) {
     .bst = (Bst) {
       .key = CStr_new(BBA_asArena(&k->bbaDict), *Buf_asSlc(&k->g.token)),
     },
-    .parent = parent,
     .meta = meta,
     .line = k->g.tokenLine,
     .file = k->g.srcInfo,
@@ -421,7 +428,7 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyLocal(ty)) assert(false); // TODO
   TyFn* fn = tyFn(ty);
-  if(isFnPre(fn))  baseCompFn(k); // recurse before compiling rest
+  if(isFnPre(fn))  executeFn(k, k->g.compFn);
 
   if(isFnSyn(fn)) {
     WS_ADD(asNow);
@@ -476,21 +483,56 @@ void compileSrc(Kern* k) {
 // #################################
 // # Base functions
 
-void N_ret(Kern* k) {
-  ASSERT(not WS_POP(), "ret cannot be called with $");
-  Buf_add(&k->g.code, RET);
+void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
+
+void tNext(Kern* k) { scanNext(k->g.src, &k->g.token); }
+bool tRequire(Kern* k, Slc s) {
+  tNext(k);
+  return Slc_eq(s, *Buf_asSlc(&k->g.token));
+}
+#define REQUIRE(T)  ASSERT(tRequire(k, Slc_ntLit(T)), "Expected: " T)
+
+void _fnMetaNext(Kern* k, U2 meta) {
+  N_notNow(k);
+  ASSERT(not (k->g.metaNext & TY_FN_TY_MASK),
+         "fn can only be one main type: now, syn, inline, comment");
+  k->g.metaNext |= meta;
 }
 
-void N_plus(Kern* k) {
-  if(WS_POP()) WS_ADD(WS_POP() + WS_POP());
-  else         Buf_add(&k->g.code, ADD);
+void N_pre(Kern* k)     { N_notNow(k); k->g.metaNext |= TY_FN_PRE;      }
+void N_now(Kern* k)     { _fnMetaNext(k,   TY_FN_NOW); }
+void N_syn(Kern* k)     { _fnMetaNext(k,   TY_FN_SYN); }
+void N_inline(Kern* k)  { _fnMetaNext(k,   TY_FN_INLINE); }
+void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
+
+void N_fn(Kern* k) {
+  tNext(k);
+  TyFn* fn = (TyFn*) Ty_new(k, TY_FN | k->g.metaNext);
+  REQUIRE("do");
+  Buf* code = &k->g.code;
+  *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC); ASSERT(code->dat, "Code OOM");
+  if(TY_FN_INLINE & k->g.metaNext) Buf_add(code, 0);
+  // Compile function (single token, which might be parens)
+  executeFn(k, k->g.compFn);
+  if(TY_FN_INLINE & k->g.metaNext) {
+    ASSERT(code->len < 256, "inline fn > 255 bytes");
+    // first byte is the count
+    *(code->dat) = code->len - 1;
+    code->len -= 1; code->dat += 1;
+  }
+  if(RET != code->dat[code->len-1]) Buf_add(code, RET); // add RET at end.
+  // Free unused area of buffer
+  BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
+  fn->d.bst.key = CStr_new(BBA_asArena(&k->bbaDict), *Buf_asSlc(&k->g.token));
+  ASSERT(fn->d.bst.key, "Code name OOM");
+  fn->d.v = (Slot)code->dat;
+  Kern_addTy(k, (Ty*)fn);
+  k->g.metaNext = 0;
 }
 
 // Create a static Ty and add it to the kern.
-// NAMELEN: the fngi name's length
-// NAME: the fngi name
-// META: the meta to use
-// NAT: the native value to add
+// NAMELEN: the fngi name's length; NAME: the fngi name
+// META: the meta to use;  NAT: the native value to add
 #define STATIC_NATIVE(NAMELEN, NAME, META, NAT) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);   \
   static Ty LINED(Ty);                  \
@@ -507,6 +549,15 @@ void N_plus(Kern* k) {
   STATIC_NATIVE(NAMELEN, NAME, TY_FN | TY_FN_INLINE | META, LINED(code) + 1);
 
 void Kern_fns(Kern* k) {
+  Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
+
+  STATIC_NATIVE("\x06", "notNow", TY_FN_SYN, N_notNow);
+  STATIC_NATIVE("\x03", "pre", TY_FN_SYN, N_pre);
+  STATIC_NATIVE("\x03", "now", TY_FN_SYN, N_now);
+  STATIC_NATIVE("\x03", "syn", TY_FN_SYN, N_syn);
+  STATIC_NATIVE("\x06", "inline", TY_FN_SYN, N_inline);
+  STATIC_NATIVE("\x07", "comment", TY_FN_SYN, N_comment);
+
   // Pure noop syntax sugar
   STATIC_INLINE("\x01", ";"    , 0       ,);
   STATIC_INLINE("\x02", "->"   , 0       ,);
@@ -598,7 +649,7 @@ void dbgWs(Kern *k) {
 }
 
 void simpleRepl(Kern* k) {
-  U1* dat; size_t cap;
+  char* dat = NULL; size_t cap;
   Ring_var(r, 32);
   BufFile f = BufFile_init(r, (Buf){.dat = dat});
   k->g.src = File_asReader(BufFile_asFile(&f));
@@ -613,4 +664,3 @@ void simpleRepl(Kern* k) {
     dbgWs(k);
   }
 }
-

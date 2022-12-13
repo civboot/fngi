@@ -11,6 +11,7 @@
 #define RS_DEPTH    128
 #define TOKEN_SIZE  128
 #define DICT_DEPTH  10
+#define FN_ALLOC    256
 
 #define SLIT_MAX    0x2F
 
