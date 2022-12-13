@@ -16,7 +16,6 @@ TEST_FNGI(init, 10)
 END_TEST
 
 void N_add42(Kern* k) {
-  eprintf("?? Native: Adding 42\n");
   WS_ADD(WS_POP() + 42);
 }
 
@@ -45,13 +44,13 @@ TEST_FNGI(call, 1)
 END_TEST
 
 #define TASSERT_TOKEN(T) \
-  scanNext(f, b);        \
-  TASSERT_SLC_EQ(T, *Buf_asSlc(b));
+  scanNext(k);        \
+  TASSERT_SLC_EQ(T, *Buf_asSlc(&k->g.token));
 
 TEST_FNGI(scan, 1)
-  Buf_var(_b, 32); Buf* b = &_b;
+  U1 dat[32]; k->g.token = (Buf){.dat = dat, .cap = 32};
   BufFile_var(bf, 8, "  this-has(*) eight tokens");
-  Reader f = File_asReader(BufFile_asFile(&bf));
+  k->g.src = File_asReader(BufFile_asFile(&bf));
 
   TASSERT_TOKEN("this");  TASSERT_TOKEN("-"); TASSERT_TOKEN("has");
   TASSERT_TOKEN("(");     TASSERT_TOKEN("*"); TASSERT_TOKEN(")");
@@ -74,6 +73,11 @@ TEST_FNGI(compile0, 10)
   COMPILE_EXEC("dec  4");  TASSERT_WS(3);
   COMPILE_EXEC("1 + 2");   TASSERT_WS(3);
   COMPILE_EXEC("1 shl 4"); TASSERT_WS(1 << 4);
+
+  COMPILE("fn answer do 0x42", false);
+  TyFn* answer = tyFn(Kern_findTy(k, Slc_ntLit("answer")));
+  executeFn(k, answer); TASSERT_WS(0x42);
+  COMPILE_EXEC("answer");  TASSERT_WS(0x42);
 END_TEST
 
 TEST_FNGI(repl, 20)

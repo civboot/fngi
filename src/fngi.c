@@ -2,6 +2,7 @@
 #include "./fngi.h"
 
 #define R0        return 0;
+#define Ty_fmt(TY)  CStr_fmt((TY)->bst.key)
 
 // ***********************
 // * 1: Initialization
@@ -26,6 +27,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
+    .bbaRepl = (BBA) { &civ.ba },
     .fb = fb,
     .g = {
       .compFn = &TyFn_baseCompFn,
@@ -37,6 +39,8 @@ void Kern_init(Kern* k, FnFiber* fb) {
 }
 
 // Allocate and initialize a new Ty from the information in Kern.
+// This includes the token as the fn name.
+//
 // It is the caller's job to initialize: bst.l, bst.r, ty, v.
 // It is also the caller's job to handle TyFn and TyDict values.
 Ty* Ty_new(Kern* k, U2 meta) {
@@ -46,6 +50,7 @@ Ty* Ty_new(Kern* k, U2 meta) {
     case TY_DICT: sz = sizeof(TyDict); break;
   }
   Ty* ty = (Ty*) BBA_alloc(&k->bbaDict, sz, 4);
+  eprintf("?? Ty_new: %.*s\n", Dat_fmt(k->g.token));
   *ty = (Ty) {
     .bst = (Bst) {
       .key = CStr_new(BBA_asArena(&k->bbaDict), *Buf_asSlc(&k->g.token)),
@@ -54,6 +59,7 @@ Ty* Ty_new(Kern* k, U2 meta) {
     .line = k->g.tokenLine,
     .file = k->g.srcInfo,
   };
+  ASSERT(ty->bst.key, "Ty_new key OOM");
   return ty;
 }
 
@@ -85,20 +91,16 @@ U4 popLit(Kern* k, U1 size) {
   return out;
 }
 
-static inline TyFn* tyFn(void* p) {
-  ASSERT(isTyFn((Ty*)p), "invalid TyFn");
-  return (TyFn*)p;
-}
-
 // Make sure to check isFnNative first!
 static inline void executeNative(Kern* k, TyFn* fn) {
+  eprintf("?? native\n");
   ((void(*)(Kern*)) fn->d.v)(k);
 }
 
 void xImpl(Kern* k, Ty* ty) {
   TyFn* fn = tyFn(ty);
-  eprintf("?? xImpl: %X\n", ty->v);
   if(isFnNative(fn)) return executeNative(k, fn);
+  eprintf("?? non-native: %X\n", ty->v);
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
   INFO_ADD((Slot)fn);
   RS_ADD((Slot)cfb->ep);
@@ -112,6 +114,7 @@ void ret(Kern* k) {
   U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
   RS->sp += lSlots;
   cfb->ep = (U1*)RS_POP();
+  eprintf("ret: ep=%X lSlots=%u\n", cfb->ep, lSlots);
 }
 
 void jmpImpl(Kern* k, void* ty) {
@@ -281,18 +284,15 @@ void yield() {
 void executeLoop(Kern* k) { // execute fibers until all fibers are done.
   jmp_buf local_errJmp;
   jmp_buf* prev_errJmp = civ.fb->errJmp; civ.fb->errJmp = &local_errJmp;
-  eprintf("?? Execute loop\n");
   while(cfb) {
     if(setjmp(local_errJmp)) { // got panic
       if(!catchPanic(k)) longjmp(*prev_errJmp, 1);
     }
     U1 res = executeInstr(k, popLit(k, 1));
     if(res) {
-      eprintf("  ??? res: %X\n", res);
       if(YLD == res) yield();
       else /* RET */ {
         if(0 == Stk_len(RS)) {  // empty stack, fiber done
-          eprintf("??? killing\n");
           cfb->ep = NULL;
           break;
         } else ret(k);
@@ -304,6 +304,7 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 
 
 void executeFn(Kern* k, TyFn* fn) {
+  // eprintf("?? executing fn: %.*s\n", Ty_fmt((Ty*)fn));
   if(isFnNative(fn)) return executeNative(k, fn);
   cfb->ep = (U1*)fn->d.v;
   executeLoop(k);
@@ -356,10 +357,11 @@ void scan(Reader f, Buf* b) {
   }
 }
 
-void scanNext(Reader f, Buf* b) {
-  Ring_incHead(&Xr(f, asBase)->ring, b->len);
+void scanNext(Kern* k) {
+  Buf* b = &k->g.token;
+  Ring_incHead(&Xr(k->g.src, asBase)->ring, b->len);
   Buf_clear(b);
-  scan(f, b);
+  scan(k->g.src, b);
 }
 
 U1 cToU1(U1 c) {
@@ -402,23 +404,22 @@ void lit(Buf* b, U4 v) {
 
 void compileLit(Kern* k, U4 v, bool asNow) {
   if(asNow) return WS_ADD(v);
+  eprintf("?? compilingLit: %X\n", v);
   lit(&k->g.code, v);
 }
 
 void compileFn(Kern* k, TyFn* fn) {
+  eprintf("?? compiling fn: %.*s\n", Ty_fmt((Ty*)fn));
   Buf* b = &k->g.code;
   if(isFnInline(fn)) { // inline: len before function code.
-    U1* code = (U1*) fn->d.v;
-    return Buf_extend(b, (Slc){code, .len=*(code - 1)});
+    return Buf_extend(b, (Slc){(U1*)fn->d.v, .len=fn->len});
   }
-  Buf_add(b, XL);
-  Buf_addBE4(b, (U4)&fn);
+  Buf_add(b, XL); Buf_addBE4(b, (U4)fn);
 }
 
 void single(Kern* k, bool asNow);
 void baseCompFn(Kern* k) {
-  scanNext(k->g.src, &k->g.token);
-  eprintf("baseCompFn: %.*s\n", Dat_fmt(k->g.token));
+  scanNext(k);
   if(not k->g.token.len) return;
   single(k, false);
 }
@@ -461,22 +462,21 @@ void Kern_addTy(Kern* k, Ty* ty) {
 
 // Compile the current token
 void single(Kern* k, bool asNow) {
-  Slc t = *Buf_asSlc(&k->g.token);
-  ASSERT(t.len, "compiling empty token");
+  Slc t = *Buf_asSlc(&k->g.token);  ASSERT(t.len, "compiling empty token");
   ParsedNumber n = parseU4(t);
   eprintf("Compiling: %.*s isNum=%b\n", Dat_fmt(t), n.isNum);
-  if(n.isNum) return compileLit(k, n.v, asNow);
-  eprintf("?? finding Ty\n");
-  Ty* ty = Kern_findTy(k, t);
-  eprintf("?? ty found\n");
-  ASSERT(ty, "token not found");
+  if(n.isNum) {
+    return compileLit(k, n.v, asNow);
+  }
+  Ty* ty = Kern_findTy(k, t);       ASSERT(ty, "token not found");
   compileTy(k, ty, asNow);
 }
 
 void compileSrc(Kern* k) {
+  BaseFile* base = Xr(k->g.src, asBase);
   while(true) {
     baseCompFn(k);
-    if(not k->g.token.len) return;
+    if((File_EOF == base->code) and Ring_isEmpty(&base->ring)) return;
   }
 }
 
@@ -485,9 +485,8 @@ void compileSrc(Kern* k) {
 
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
 
-void tNext(Kern* k) { scanNext(k->g.src, &k->g.token); }
 bool tRequire(Kern* k, Slc s) {
-  tNext(k);
+  scanNext(k);
   return Slc_eq(s, *Buf_asSlc(&k->g.token));
 }
 #define REQUIRE(T)  ASSERT(tRequire(k, Slc_ntLit(T)), "Expected: " T)
@@ -505,62 +504,65 @@ void N_syn(Kern* k)     { _fnMetaNext(k,   TY_FN_SYN); }
 void N_inline(Kern* k)  { _fnMetaNext(k,   TY_FN_INLINE); }
 void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
 
+// fn NAME do (... code ...)
+// future:
+// fn ... types ... do ( ... code ... )
 void N_fn(Kern* k) {
-  tNext(k);
-  TyFn* fn = (TyFn*) Ty_new(k, TY_FN | k->g.metaNext);
+  U2 meta = k->g.metaNext;
+  // Create TyFn based on NAME
+  scanNext(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta);
+  Buf* code = &k->g.code;  Buf prevCode = *code;
+  *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
+  ASSERT(code->dat, "Code OOM");
+
+  // do (... code ... )
   REQUIRE("do");
-  Buf* code = &k->g.code;
-  *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC); ASSERT(code->dat, "Code OOM");
-  if(TY_FN_INLINE & k->g.metaNext) Buf_add(code, 0);
-  // Compile function (single token, which might be parens)
   executeFn(k, k->g.compFn);
-  if(TY_FN_INLINE & k->g.metaNext) {
-    ASSERT(code->len < 256, "inline fn > 255 bytes");
-    // first byte is the count
-    *(code->dat) = code->len - 1;
-    code->len -= 1; code->dat += 1;
-  }
-  if(RET != code->dat[code->len-1]) Buf_add(code, RET); // add RET at end.
+
+  if(RET != code->dat[code->len-1]) Buf_add(code, RET); // force RET at end.
   // Free unused area of buffer
   BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
-  fn->d.bst.key = CStr_new(BBA_asArena(&k->bbaDict), *Buf_asSlc(&k->g.token));
-  ASSERT(fn->d.bst.key, "Code name OOM");
-  fn->d.v = (Slot)code->dat;
+  fn->d.v = (Slot)code->dat; fn->len = code->len;
   Kern_addTy(k, (Ty*)fn);
-  k->g.metaNext = 0;
+  k->g.metaNext = 0;  *code = prevCode;
 }
 
-// Create a static Ty and add it to the kern.
+// Create a static TyFn and add it to the kern.
 // NAMELEN: the fngi name's length; NAME: the fngi name
 // META: the meta to use;  NAT: the native value to add
-#define STATIC_NATIVE(NAMELEN, NAME, META, NAT) \
-  CStr_ntVar(LINED(key), NAMELEN, NAME);   \
-  static Ty LINED(Ty);                  \
-  LINED(Ty) = (Ty) {                    \
-    .bst.key = LINED(key),              \
-    .meta = META,                       \
-    .v = (Slot)NAT,                     \
+#define STATIC_FNTY(NAMELEN, NAME, META, NAT) \
+  CStr_ntVar(LINED(key), NAMELEN, NAME);\
+  static TyFn LINED(Ty);                \
+  LINED(Ty) = (TyFn) {                  \
+    .d = {                              \
+      .bst.key = LINED(key),            \
+      .meta = TY_FN | (META),           \
+      .v = (Slot)(NAT),                 \
+    }                                   \
   };                                    \
-  Kern_addTy(k, &LINED(Ty));
+  Kern_addTy(k, (Ty*)&LINED(Ty));
 
-#define STATIC_INLINE(NAMELEN, NAME, META, ...) \
-  assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);   \
-  static U1 LINED(code)[] = {sizeof((U1[]){__VA_ARGS__}), __VA_ARGS__ __VA_OPT__(,) RET}; \
-  STATIC_NATIVE(NAMELEN, NAME, TY_FN | TY_FN_INLINE | META, LINED(code) + 1);
+#define STATIC_INLINE(NAMELEN, NAME, META, ...)               \
+  assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);                 \
+  static U1 LINED(code)[] = {__VA_ARGS__ __VA_OPT__(,) RET};  \
+  STATIC_FNTY(NAMELEN, NAME, TY_FN_INLINE | (META), LINED(code)); \
+  LINED(Ty).len = sizeof(LINED(code));
+
 
 void Kern_fns(Kern* k) {
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
 
-  STATIC_NATIVE("\x06", "notNow", TY_FN_SYN, N_notNow);
-  STATIC_NATIVE("\x03", "pre", TY_FN_SYN, N_pre);
-  STATIC_NATIVE("\x03", "now", TY_FN_SYN, N_now);
-  STATIC_NATIVE("\x03", "syn", TY_FN_SYN, N_syn);
-  STATIC_NATIVE("\x06", "inline", TY_FN_SYN, N_inline);
-  STATIC_NATIVE("\x07", "comment", TY_FN_SYN, N_comment);
+  STATIC_FNTY("\x06", "notNow",  TY_FN_NATIVE | TY_FN_SYN, N_notNow);
+  STATIC_FNTY("\x03", "pre",     TY_FN_NATIVE | TY_FN_SYN, N_pre);
+  STATIC_FNTY("\x03", "now",     TY_FN_NATIVE | TY_FN_SYN, N_now);
+  STATIC_FNTY("\x03", "syn",     TY_FN_NATIVE | TY_FN_SYN, N_syn);
+  STATIC_FNTY("\x06", "inline",  TY_FN_NATIVE | TY_FN_SYN, N_inline);
+  STATIC_FNTY("\x07", "comment", TY_FN_NATIVE | TY_FN_SYN, N_comment);
+  STATIC_FNTY("\x02", "fn",      TY_FN_NATIVE | TY_FN_SYN, N_fn);
 
   // Pure noop syntax sugar
-  STATIC_INLINE("\x01", ";"    , 0       ,);
-  STATIC_INLINE("\x02", "->"   , 0       ,);
+  STATIC_INLINE("\x01", ";"    , 0       , /*no code*/);
+  STATIC_INLINE("\x02", "->"   , 0       , /*no code*/);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
   STATIC_INLINE("\x03", "swp"  , 0       , SWP   );
@@ -625,14 +627,14 @@ void Kern_fns(Kern* k) {
 
 void executeInstrs(Kern* k, U1* instrs) { cfb->ep = instrs; executeLoop(k); }
 
-U1* compileStream(Kern* k, bool withRet) {
-  U1* body = (U1*) BBA_alloc(&k->bbaCode, 256, 1);
-  ASSERT(body, "compileStream OOM");
+U1* compileRepl(Kern* k, bool withRet) {
+  U1* body = (U1*) BBA_alloc(&k->bbaRepl, 256, 1);
+  ASSERT(body, "compileRepl OOM");
   Buf* code = &k->g.code; *code = (Buf){.dat=body, .cap=256};
   compileSrc(k);
   if(withRet) Buf_add(code, RET);
-  if(code->len)
-    BBA_free(&k->bbaCode, /*dat*/code->dat + code->len, /*sz*/code->cap - code->len, 1);
+  if(code->len < code->cap)
+    BBA_free(&k->bbaRepl, /*dat*/code->dat + code->len, /*sz*/code->cap - code->len, 1);
   *code = (Buf){0};
   return body;
 }
@@ -660,7 +662,7 @@ void simpleRepl(Kern* k) {
     ASSERT(len < 0xFFFF, "input too large");
     if(0 == strcmp("EXIT", dat)) return;
     f.b.plc = 0; f.b.len = len; f.b.cap = cap;
-    if(len-1) executeInstrs(k, compileStream(k, true));
+    if(len-1) executeInstrs(k, compileRepl(k, true));
     dbgWs(k);
   }
 }

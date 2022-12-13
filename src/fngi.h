@@ -69,7 +69,7 @@ typedef struct _Ty {
   Slot         v;    // either a value or pointer (depends on node type/etc)
 } Ty;
 
-typedef struct {Ty d; U1 lSlots; } TyFn;
+typedef struct { Ty d; U1 lSlots; U2 len; } TyFn;
 
 #define TyFn_static(NAME, META, LSLOTS, DAT) \
   static TyFn NAME;               \
@@ -121,6 +121,7 @@ typedef struct {
   U4 _null;
   BBA bbaCode;
   BBA bbaDict;
+  BBA bbaRepl;
   Globals g;     // kernel globals
   Ty*   dict;    // kernel dictionary (root)
   FnFiber* fb;   // current fiber.
@@ -135,12 +136,14 @@ bool FnFiber_init(FnFiber* fb);
 
 // ################################
 // # Execute
+
 void executeFn(Kern* k, TyFn* fn);
+
 
 // #################################
 // # Scan
 void scan(Reader f, Buf* b);
-void scanNext(Reader f, Buf* b);
+void scanNext(Kern* k);
 U1 cToU1(U1 c); // return 0-15 or 0xFF if not a hex integer.
 
 // #################################
@@ -165,26 +168,40 @@ static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 #undef IS_FN
 
+static inline TyFn* tyFn(void* p) {
+  ASSERT(isTyFn((Ty*)p), "invalid TyFn");
+  return (TyFn*)p;
+}
+
+Ty* Kern_findTy(Kern* k, Slc t);
+void Kern_addTy(Kern* k, Ty* ty);
+
 void Kern_fns(Kern* k);
 void single(Kern* k, bool asNow);
 void compileSrc(Kern* k);
 
+// Compile a stream to bbaRepl, returning the start.
+//
+// Any functions/etc will still be compiled to the normal locations.
+U1*  compileRepl(Kern* k, bool withRet);
+
 // #################################
 // # Test Helpers
 
-#define _COMPILE(NAME, CODE, withRet) \
+#define _COMPILE_VARS(CODE) \
   BufFile_var(LINED(bf), 32, CODE); \
   Reader LINED(f) = File_asReader(BufFile_asFile(&LINED(bf))); \
-  k->g.src = LINED(f); \
-  U1* NAME = compileStream(k, withRet);
-#define COMPILE_RET(NAME, CODE) _COMPILE(NAME, CODE, true)
+  k->g.src = LINED(f);
 
+#define COMPILE_NAMED(NAME, CODE, withRet) \
+  _COMPILE_VARS(CODE); U1* NAME = compileRepl(k, withRet)
+#define COMPILE(CODE, withRet) \
+  _COMPILE_VARS(CODE); compileRepl(k, withRet)
 #define COMPILE_EXEC(CODE)    \
-  COMPILE_RET(LINED(code), CODE); \
-  executeInstrs(k, LINED(code));
+  COMPILE_NAMED(LINED(code), CODE, true); executeInstrs(k, LINED(code));
 
 void executeInstrs(Kern* k, U1* instrs);
-U1*  compileStream(Kern* k, bool withRet);
+
 void simpleRepl(Kern* k);
 
 #endif // __FNGI_H
