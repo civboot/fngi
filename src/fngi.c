@@ -599,6 +599,8 @@ void N_syn(Kern* k)     { _fnMetaNext(k,   TY_FN_SYN); }
 void N_inline(Kern* k)  { _fnMetaNext(k,   TY_FN_INLINE); }
 void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
 
+void N_dropWs(Kern* k) { Stk_clear(WS); }
+
 // fn NAME do (... code ...)
 // future:
 // fn ... types ... do ( ... code ... )
@@ -668,6 +670,8 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE("\x06", "inline",  TY_FN_SYN, N_inline);
   STATIC_NATIVE("\x07", "comment", TY_FN_COMMENT, N_comment);
   STATIC_NATIVE("\x02", "fn",      TY_FN_SYN, N_fn);
+
+  STATIC_NATIVE("\x06", "dropWs",  0, N_dropWs);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
   STATIC_INLINE("\x03", "swp"  , 0       , SWP   );
@@ -746,24 +750,27 @@ U1* compileRepl(Kern* k, bool withRet) {
 }
 
 void simpleRepl(Kern* k) {
-  size_t cap;
-  Ring_var(r, 256);
-  BufFile f = BufFile_init(r, (Buf){0});
+  size_t cap;  jmp_buf local_errJmp;  jmp_buf* prev_errJmp = civ.fb->errJmp;
+  Ring_var(_r, 256);  BufFile f = BufFile_init(_r, (Buf){0});
   k->g.src = File_asReader(BufFile_asFile(&f));
 
+  civ.fb->errJmp = &local_errJmp;
   eprintf(  "Simple REPL: type EXIT to exit\n");
+  U2 rsSp = RS->sp; U2 infoSp = cfb->info.sp;
   while(true) {
+    if(setjmp(local_errJmp)) { // got panic
+      eprintf("!! Caught panic, WS: "); dbgWs(k);
+      RS->sp = rsSp; cfb->info.sp = infoSp;
+      Ring_clear(&f.ring); Buf_clear(&k->g.token);
+    }
+
     size_t len = getline((char**)&f.b.dat, &cap, stdin);
     ASSERT(len < 0xFFFF, "input too large");
-    f.b.plc = 0; f.b.len = len; f.b.cap = len;
-    eprintf("##### Input: %s", f.b.dat);
-    if(0 == strcmp("EXIT", f.b.dat)) return;
-    if(len-1) {
-      eprintf("?? Compiling Repl\n");
-      U1* code = compileRepl(k, true);
-      eprintf("?? Executing Repl\n");
-      executeInstrs(k, code);
-    }
-    dbgWs(k);
+    f.b.plc = 0; f.b.len = len; f.b.cap = len; f.code = File_DONE;
+    eprintf("##### Input: %.*s", Dat_fmt(f.b));
+    if(0 == strcmp("EXIT", f.b.dat)) break;
+    if(len-1) executeInstrs(k, compileRepl(k, true));
+    eprintf("> "); dbgWs(k);
   }
+  civ.fb->errJmp = prev_errJmp;
 }

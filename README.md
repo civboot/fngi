@@ -1,12 +1,10 @@
 # fngi: a readable language that grows from the silicon
 
-> **UPDATE:** I am doing another rewrite of the language. This includes
-> [eliminating spor](./notes/spor_future.md), with many other benefits. In my
-> first attempt, I hit some kind of memory bug. I've realized I want a more
-> inspectable, debuggable language. I'm removing the python harness and other
-> supposed "nicities" that really just add complexity. I'm allowing the
-> complexity of the base language to grow a bit for the sake of inspectability.
-> For more see [round_two.md](./notes/round_two.md)
+> **UPDATE:** The rewrite is going well ([round_two.md](./notes/round_two.md)).
+> I now even have a repl so you can play with the language as it is. It is still
+> missing several important features (like if statements and fn syntax) but
+> those should be ported from the old spor implementation shortly. I'm very
+> excited to implement types as well.
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -40,6 +38,35 @@ Read more:
 
 > Fngi and civboot should be considred an
 > [Obsolete Technology](http://xkcd.com/1891)
+
+## REPL
+You can open a very basic REPL with:
+
+```
+make test ARGS=--repl
+```
+
+Example repl sesion:
+```
+\ Note: this is a line comment
+\ put 0xF1 and 2 on the stack (stack is in hex)
+0xF1 2
+> {       F1        2}
+
+\ add the top of the stack to 9
++ 9
+> {       F1        B}
+
+\ drop the working stack
+dropWs
+> {}
+
+\ define a function that multiples input by 2
+\ TODO: input types
+pre fn mulTwo do ( * 2 )
+mulTwo(4)
+> {        8}
+```
 
 ## Motivation
 Fngi is a "macro first" language. Why? So that it can evolve to be whatever is

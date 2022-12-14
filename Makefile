@@ -5,11 +5,12 @@ LIBS=-I../civc ../civc/civ/civ*
 FNGI_SRC=src/fngi.* src/gen/*.c src/gen/*.h
 TEST_SRC=src/tests.c
 OUT=bin/tests
+ARGS=
 
 all: test
 
 test: build
-	./$(OUT)
+	./$(OUT) $(ARGS)
 
 build:
 	mkdir -p bin/

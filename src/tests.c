@@ -98,7 +98,15 @@ TEST_FNGI(repl, 20)
   simpleRepl(k);
 END_TEST_FNGI
 
-int main() {
+int main(int argc, char* argv[]) {
+  char* arg; bool repl = false;
+  for(int i = 1; i < argc; arg = argv[i++]) {
+    if(strcmp("--repl", arg)) repl = true;
+    else {
+      eprintf("Unrecognized argument: %s\n", arg);
+    }
+  }
+
   eprintf("# Running tests\n");
   test_basic();
   test_init();
@@ -108,7 +116,7 @@ int main() {
   test_compile1();
   eprintf("# Tests complete\n");
 
-  // test_repl();
+  if(repl) test_repl();
 
   return 0;
 }
