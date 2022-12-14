@@ -32,6 +32,7 @@
 #define INFO_POP(V)       Stk_pop(&cfb->info)
 
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
+#define TASSERT_EMPTY()   TASSERT_EQ(0, Stk_len(WS))
 
 #define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
@@ -41,6 +42,8 @@
     civ.fb = (Fiber*)&fnFb;                   \
     Kern _k = {0}; Kern* k = &_k;             \
     Kern_init(k, &fnFb);
+
+#define END_TEST_FNGI   END_TEST_UNIX
 
 // ################################
 // # From gen/name.c
@@ -70,6 +73,12 @@ typedef struct _Ty {
 } Ty;
 
 typedef struct { Ty d; U1 lSlots; U2 len; } TyFn;
+
+#define TyFn_native(CNAME, META, NFN) {       \
+  .d.bst.key = (CStr*) ( CNAME ),             \
+  .d.meta = TY_FN | TY_FN_NATIVE | (META),    \
+  .d.v = NFN \
+}
 
 #define TyFn_static(NAME, META, LSLOTS, DAT) \
   static TyFn NAME;               \
@@ -196,9 +205,10 @@ U1*  compileRepl(Kern* k, bool withRet);
 // # Test Helpers
 
 #define _COMPILE_VARS(CODE) \
-  BufFile_var(LINED(bf), 32, CODE); \
+  BufFile_var(LINED(bf), 64, CODE); \
   Reader LINED(f) = File_asReader(BufFile_asFile(&LINED(bf))); \
-  k->g.src = LINED(f);
+  k->g.src = LINED(f); \
+  eprintf("!! Compiling: %.*s\n", Dat_fmt(LINED(bf).b))
 
 #define COMPILE_NAMED(NAME, CODE, withRet) \
   _COMPILE_VARS(CODE); U1* NAME = compileRepl(k, withRet)

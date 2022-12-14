@@ -4,12 +4,12 @@ DISABLE_WARNINGS=-Wno-pointer-sign -Wno-format
 LIBS=-I../civc ../civc/civ/civ*
 FNGI_SRC=src/fngi.* src/gen/*.c src/gen/*.h
 TEST_SRC=src/tests.c
-OUT=bin/a.out
+OUT=bin/tests
 
 all: test
 
 test: build
-	./bin/a.out
+	./$(OUT)
 
 build:
 	mkdir -p bin/
