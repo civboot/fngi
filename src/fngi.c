@@ -339,7 +339,8 @@ void skipWhitespace(Reader f) {
 }
 
 // Guarantees a token is in Kern.g.token
-void scan(Reader f, Buf* b) {
+void scan(Kern* k) {
+  Reader f = k->g.src; Buf* b = &k->g.token;
   if(b->len) return; // does nothing if token wasn't cleared.
   skipWhitespace(f);
   U1* c = Reader_get(f, 0); if(c == NULL) return;
@@ -357,12 +358,13 @@ void scan(Reader f, Buf* b) {
   }
 }
 
-void scanNext(Kern* k) {
+void tokenDrop(Kern* k) {
   Buf* b = &k->g.token;
   Ring_incHead(&Xr(k->g.src, asBase)->ring, b->len);
   Buf_clear(b);
-  scan(k->g.src, b);
 }
+
+bool Kern_eof(Kern* k) { return Reader_eof(k->g.src); }
 
 U1 cToU1(U1 c) {
   if('0' <= c && c <= '9') return c - '0';
@@ -372,7 +374,6 @@ U1 cToU1(U1 c) {
 }
 
 // Attempt to parse a number from the token
-typedef struct { bool isNum; U4 v; } ParsedNumber;
 ParsedNumber parseU4(Slc t) {
   ParsedNumber p = {0};
   U1 base = 10, i = 0;
@@ -419,8 +420,7 @@ void compileFn(Kern* k, TyFn* fn) {
 
 void single(Kern* k, bool asNow);
 void baseCompFn(Kern* k) {
-  scanNext(k);
-  if(not k->g.token.len) return;
+  if(Kern_eof(k)) return;
   single(k, false);
 }
 
@@ -460,23 +460,23 @@ void Kern_addTy(Kern* k, Ty* ty) {
   ASSERT(not ty, "key was overwritten");
 }
 
-// Compile the current token
+// Compile a single token.
 void single(Kern* k, bool asNow) {
-  Slc t = *Buf_asSlc(&k->g.token);  ASSERT(t.len, "compiling empty token");
+  scan(k); Slc t = *Buf_asSlc(&k->g.token);  ASSERT(t.len, "compiling empty token");
   ParsedNumber n = parseU4(t);
   eprintf("Compiling: %.*s isNum=%b\n", Dat_fmt(t), n.isNum);
   if(n.isNum) {
+    tokenDrop(k);
     return compileLit(k, n.v, asNow);
   }
   Ty* ty = Kern_findTy(k, t);       ASSERT(ty, "token not found");
-  compileTy(k, ty, asNow);
+  tokenDrop(k); compileTy(k, ty, asNow);
 }
 
 void compileSrc(Kern* k) {
-  BaseFile* base = Xr(k->g.src, asBase);
   while(true) {
-    baseCompFn(k);
-    if((File_EOF == base->code) and Ring_isEmpty(&base->ring)) return;
+    executeFn(k, k->g.compFn);
+    if(Kern_eof(k)) return;
   }
 }
 
@@ -485,11 +485,12 @@ void compileSrc(Kern* k) {
 
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
 
-bool tRequire(Kern* k, Slc s) {
-  scanNext(k);
-  return Slc_eq(s, *Buf_asSlc(&k->g.token));
-}
 #define REQUIRE(T)  ASSERT(tRequire(k, Slc_ntLit(T)), "Expected: " T)
+bool tRequire(Kern* k, Slc s) {
+  scan(k); bool out = Slc_eq(s, *Buf_asSlc(&k->g.token));
+  tokenDrop(k);
+  return out;
+}
 
 void _fnMetaNext(Kern* k, U2 meta) {
   N_notNow(k);
@@ -510,14 +511,13 @@ void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
 void N_fn(Kern* k) {
   U2 meta = k->g.metaNext;
   // Create TyFn based on NAME
-  scanNext(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta);
+  scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta);
   Buf* code = &k->g.code;  Buf prevCode = *code;
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
-
-  // do (... code ... )
-  REQUIRE("do");
-  executeFn(k, k->g.compFn);
+  tokenDrop(k);
+  //       do    (... code ... )
+  REQUIRE("do"); executeFn(k, k->g.compFn);
 
   if(RET != code->dat[code->len-1]) Buf_add(code, RET); // force RET at end.
   // Free unused area of buffer
@@ -537,28 +537,31 @@ void N_fn(Kern* k) {
     .d = {                              \
       .bst.key = LINED(key),            \
       .meta = TY_FN | (META),           \
-      .v = (Slot)(NAT),                 \
+      .v = NAT,                         \
     }                                   \
   };                                    \
   Kern_addTy(k, (Ty*)&LINED(Ty));
 
+#define STATIC_NATIVE(NAMELEN, NAME, META, KFN) \
+    STATIC_FNTY(NAMELEN, NAME, TY_FN_NATIVE | (META), kFn(KFN))
+
 #define STATIC_INLINE(NAMELEN, NAME, META, ...)               \
   assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);                 \
   static U1 LINED(code)[] = {__VA_ARGS__ __VA_OPT__(,) RET};  \
-  STATIC_FNTY(NAMELEN, NAME, TY_FN_INLINE | (META), LINED(code)); \
+  STATIC_FNTY(NAMELEN, NAME, TY_FN_INLINE | (META), (Slot)LINED(code)); \
   LINED(Ty).len = sizeof(LINED(code));
 
 
 void Kern_fns(Kern* k) {
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
 
-  STATIC_FNTY("\x06", "notNow",  TY_FN_NATIVE | TY_FN_SYN, N_notNow);
-  STATIC_FNTY("\x03", "pre",     TY_FN_NATIVE | TY_FN_SYN, N_pre);
-  STATIC_FNTY("\x03", "now",     TY_FN_NATIVE | TY_FN_SYN, N_now);
-  STATIC_FNTY("\x03", "syn",     TY_FN_NATIVE | TY_FN_SYN, N_syn);
-  STATIC_FNTY("\x06", "inline",  TY_FN_NATIVE | TY_FN_SYN, N_inline);
-  STATIC_FNTY("\x07", "comment", TY_FN_NATIVE | TY_FN_SYN, N_comment);
-  STATIC_FNTY("\x02", "fn",      TY_FN_NATIVE | TY_FN_SYN, N_fn);
+  STATIC_NATIVE("\x06", "notNow",  TY_FN_SYN, N_notNow);
+  STATIC_NATIVE("\x03", "pre",     TY_FN_SYN, N_pre);
+  STATIC_NATIVE("\x03", "now",     TY_FN_SYN, N_now);
+  STATIC_NATIVE("\x03", "syn",     TY_FN_SYN, N_syn);
+  STATIC_NATIVE("\x06", "inline",  TY_FN_SYN, N_inline);
+  STATIC_NATIVE("\x07", "comment", TY_FN_SYN, N_comment);
+  STATIC_NATIVE("\x02", "fn",      TY_FN_SYN, N_fn);
 
   // Pure noop syntax sugar
   STATIC_INLINE("\x01", ";"    , 0       , /*no code*/);

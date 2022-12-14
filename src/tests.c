@@ -28,7 +28,7 @@ static inline void _xFn(Kern* k, TyFn fn) { executeFn(k, &fn); }
 TEST_FNGI(call, 1)
   // Running some code
 
-  TyFn_static(fiveFn, 0, 0, ((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
+  TyFn_static(fiveFn, 0, 0, (Slot)((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
   executeFn(k, &fiveFn);       TASSERT_WS(5);
 
   // Calling a function
@@ -37,14 +37,14 @@ TEST_FNGI(call, 1)
   XFN(call5.dat, 0, 0);       TASSERT_WS(5);
 
   // Executing a native
-  TyFn_static(add42, TY_FN_NATIVE, 0, (U1*)N_add42);
+  TyFn_static(add42, TY_FN_NATIVE, 0, kFn(N_add42));
   Buf_var(callAdd42, 16);
   Buf_add(&callAdd42, XL); Buf_addBE4(&callAdd42, (Slot)&add42); Buf_add(&callAdd42, RET);
   WS_ADD(3); XFN(callAdd42.dat, 0, 0);  TASSERT_WS(45);
 END_TEST
 
 #define TASSERT_TOKEN(T) \
-  scanNext(k);        \
+  tokenDrop(k); scan(k); \
   TASSERT_SLC_EQ(T, *Buf_asSlc(&k->g.token));
 
 TEST_FNGI(scan, 1)

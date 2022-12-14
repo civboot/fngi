@@ -75,10 +75,9 @@ typedef struct { Ty d; U1 lSlots; U2 len; } TyFn;
   static TyFn NAME;               \
   NAME = (TyFn) {                 \
     .d.meta = TY_FN | META,       \
-    .d.v = (Slot)DAT,            \
+    .d.v = DAT,                   \
     .lSlots = LSLOTS,             \
   };
-
 
 
 static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
@@ -134,17 +133,25 @@ void Kern_init(Kern* k, FnFiber* fb);
 // Initialze FnFiber (beyond Fiber init).
 bool FnFiber_init(FnFiber* fb);
 
+static inline Slot kFn(void(*native)(Kern*)) { return (Slot) native; }
+
 // ################################
 // # Execute
 
 void executeFn(Kern* k, TyFn* fn);
 
-
 // #################################
 // # Scan
-void scan(Reader f, Buf* b);
-void scanNext(Kern* k);
+// scan fills g.token with a token. If one already exists it is a noop.
+// scan does NOT affect g.src's ring buffer, except to increment tail with
+// characters.
+// When the token is used, tokenDrop should be called. This will update
+// src's ring buffer as well so the next token can be scanned.
+void scan(Kern* k);
+void tokenDrop(Kern* k); // clear token and update src.ring
 U1 cToU1(U1 c); // return 0-15 or 0xFF if not a hex integer.
+typedef struct { bool isNum; U4 v; } ParsedNumber;
+ParsedNumber parseU4(Slc t);
 
 // #################################
 // # Compiler
