@@ -19,6 +19,7 @@ const FN_STATE_NO   :U4 = 0x0000 \ not compiling a fn
 const FN_STATE_BODY :U4 = 0x0001 \ compiling FN body
 const FN_STATE_STK  :U4 = 0x0002 \ can declare stk inputs
 const FN_STATE_INP  :U4 = 0x0003 \ can declare inp inputs
+const FN_STATE_OUT  :U4 = 0x0004 \ can declare outputs
 
 \ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
 const TY_MASK       :U1 = 0xC0 \ upper two bits determine type
@@ -50,7 +51,6 @@ const TY_DICT_NATIVE :U1 = 0x00 \ native type, type pointer must be cast to a Ty
 const TY_DICT_BITMAP :U1 = 0x01
 const TY_DICT_STRUCT :U1 = 0x02
 const TY_DICT_ENUM   :U1 = 0x03
-const TY_DICT_MOD    :U1 = 0x04
 
 \ **********
 \ * TyDat: type specification
@@ -58,17 +58,17 @@ const TY_DICT_MOD    :U1 = 0x04
 \ by listing it's member (fields, variants, etc) names and their types. Its
 \ form is:
 \
-\   struct TyDat { U1 len; U1 tyI[]; }
+\   struct TyDat { U1 inpLen; U1 outLen; TyI tyI[]; }
 \
 \ Each TyI (type item) is a packed struct of one form specified by meta:
 \
 \   struct TyINative      { meta: U1; name: CStr; }
-\   struct TyIConstructed { meta: U1; name: CStr; node: &DNode; }
+\   struct TyIConstructed { meta: U1; name: CStr; ty: &Ty; }
 
-\ TYI meta: [C--- -RRR]  C=constructed  R=reference depth
-const TYI_NATIVE      :U1 = 0x00;
+\ TYI meta:   [C--- -RRR]  C=constructed   R=reference depth
 const TYI_CONSTRUCTED :U1 = 0x80;
 const TYI_REF_MASK    :U1 = 0x07; \ reference depth
 
 \ TYI_NATIVE: [0-ZZ SRRR] Z=SZ_MASK S=signed R=TYI_REF_MASK
-const TYI_NATIVE_SIGNED  :U1 = 0x08;
+const TYI_NATIVE_MASK    :U1 = 0x38;
+const TYI_NATIVE_SIGNED  :U1 = 0x40;

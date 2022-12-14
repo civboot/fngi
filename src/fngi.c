@@ -45,6 +45,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
       .compFn = &TyFn_baseCompFn,
       .dictStk = Stk_init(k->g.dictBuf, DICT_DEPTH),
       .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
+      .bbaDict = &k->bbaDict,
     }, 0
   };
   assert(0 == k->g.dictBuf[DICT_DEPTH - 1]);
@@ -62,11 +63,11 @@ Ty* Ty_new(Kern* k, U2 meta) {
     case TY_FN:   sz = sizeof(TyFn);   break;
     case TY_DICT: sz = sizeof(TyDict); break;
   }
-  Ty* ty = (Ty*) BBA_alloc(&k->bbaDict, sz, 4);
+  Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   eprintf("?? Ty_new: %.*s\n", Dat_fmt(k->g.token));
   *ty = (Ty) {
     .bst = (Bst) {
-      .key = CStr_new(BBA_asArena(&k->bbaDict), *Buf_asSlc(&k->g.token)),
+      .key = CStr_new(BBA_asArena(k->g.bbaDict), *Buf_asSlc(&k->g.token)),
     },
     .meta = meta,
     .line = k->g.tokenLine,
@@ -517,6 +518,48 @@ void Kern_addTy(Kern* k, Ty* ty) {
   ASSERT(not ty, "key was overwritten");
 }
 
+Ty* scanTy(Kern* k) {
+  scan(k);  Ty* ty = Kern_findToken(k); ASSERT(ty, "token not found");
+  tokenDrop(k);
+  return ty;
+}
+
+typedef struct { Ty* ty; U1 refs; U1 derefs; } TySpec;
+TySpec scanTySpec(Kern *k) {
+  TySpec s = {0};
+  while(true) {
+    scan(k);
+    if     (tokenEq(k, Slc_ntLit("&"))) s.refs += 1;
+    else if(tokenEq(k, Slc_ntLit("@"))) s.derefs += 1;
+    else break;
+    tokenDrop(k);
+  }
+  ASSERT(not s.derefs,           "invalid deref on type spec");
+  ASSERT(s.refs <= TYI_REF_MASK, "references larger than 7");
+
+  Ty* ty = scanTy(k);
+  if(isTyDict(ty)) eprintf("");
+  else if(isTyFn(ty)) ASSERT(s.refs > 0, "type spec on fn must be a reference");
+  else SET_ERR(Slc_ntLit("type spec must be a Dict or &Fn"))
+  return s;
+}
+
+TyI TyI_fromSpec(TySpec* s) {
+  TyI out = {0}; Ty* ty = s->ty;
+  if(isTyFn(ty)) {
+    out.meta |= TYI_CONSTRUCTED;
+    out.ty = ty;
+  } else if (isTyDict(ty)) {
+    if(not isDictNative((TyDict*)ty)) {
+      out.meta |= TYI_CONSTRUCTED;
+      out.ty = ty;
+    } else out.meta |= TYI_NATIVE_MASK & ty->v;
+  }
+  out.meta |= s->refs;
+  return out;
+}
+
+
 // Compile a single token.
 void single(Kern* k, bool asNow) {
   scan(k); Slc t = *Buf_asSlc(&k->g.token);
@@ -527,8 +570,7 @@ void single(Kern* k, bool asNow) {
     tokenDrop(k);
     return compileLit(k, n.v, asNow);
   }
-  Ty* ty = Kern_findTy(k, t);       ASSERT(ty, "token not found");
-  tokenDrop(k); compileTy(k, ty, asNow);
+  compileTy(k, scanTy(k), asNow);
 }
 
 void compileSrc(Kern* k) {
@@ -536,6 +578,40 @@ void compileSrc(Kern* k) {
     Kern_compFn(k);
     if(Kern_eof(k)) break;
   }
+}
+
+// #################################
+// # TyDat: a compact stream of TyI's
+// See TyDat in const.zty
+
+void TyI_write(Buf* b, TyI* tyI) {
+  Buf_add(b, tyI->meta);
+  Buf_add(b, tyI->name->len);
+  Buf_extend(b, CStr_asSlc(tyI->name));
+  if(TYI_CONSTRUCTED & tyI->meta) Buf_addBE4(b, (Slot)tyI->ty);
+}
+
+TyI  TyI_next(TyI* tyI) {
+  TyI out = {0};
+  if(tyI->inpLen)     { out.inpLen = tyI->inpLen - 1; out.isInput = true; }
+  else if (tyI->outLen) out.outLen = tyI->outLen - 1;
+  else SET_ERR(Slc_ntLit("Attempted to get next on exhausted TyI"));
+  U1* d = tyI->next;
+  out.meta = *(d++);
+  out.name = (CStr*) d;
+  d += *d + 1; // move past CStr
+  if(TYI_CONSTRUCTED & out.meta) {
+    out.ty = (Ty*) ftBE4(d); d += 4;
+  }
+  if(TyI_hasNext(&out)) out.next = d;
+  return out;
+}
+
+TyI  TyI_start(TyDat* types) {
+  U1* dat = (U1*)types;
+  U1 inpLen = *(dat++); U1 outLen = *(dat++);
+  TyI i = (TyI) {.next = dat, .inpLen=inpLen, .outLen = outLen};
+  return TyI_next(&i);
 }
 
 // #################################
@@ -601,27 +677,94 @@ void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
 
 void N_dropWs(Kern* k) { Stk_clear(WS); }
 
+#define FN_STATE(STATE)   k->g.fnState = (~C_FN_STATE & k->g.fnState) | (STATE)
+#define IS_FN_STATE(STATE) ((~C_FN_STATE & k->g.fnState) == (STATE))
+
+void N_stk(Kern *k) {
+  ASSERT(IS_FN_STATE(FN_STATE_STK), "stk used after inp or out");
+  FN_STATE(FN_STATE_STK);
+  scan(k); tokenDrop(k); REQUIRE(":");
+  TySpec s = scanTySpec(k);
+  TyI tyI = TyI_fromSpec(&s);
+
+  Buf* b = &k->g.tyIBuf;
+  TyI_write(b, &tyI);
+  *b->dat += 1; // increment inputs
+}
+
+void N_inp(Kern* k) {
+  ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
+         , "inp used after out");
+  FN_STATE(FN_STATE_INP);
+  scan(k); Ty* var = Ty_new(k, TY_VAR | TY_VAR_INPUT);
+  TySpec s = scanTySpec(k);
+  ASSERT(s.refs <= TY_VAR_REF, "locals ref count > 3");
+  var->meta |= s.refs;
+  TyI tyI = TyI_fromSpec(&s);
+
+  Buf* b = &k->g.tyIBuf;
+  TyI_write(b, &tyI);
+  *b->dat += 1; // increment inputs
+
+  // FIXME: handle locals offset
+}
+
+void N_out(Kern* k) {
+
+}
+
 // fn NAME do (... code ...)
 // future:
 // fn ... types ... do ( ... code ... )
 void N_fn(Kern* k) {
   N_notNow(k);
+  FN_STATE(FN_STATE_STK);
   U2 meta = k->g.metaNext;
   // Create TyFn based on NAME
   scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta);
   eprintf("?? N_fn: %.*s\n", TyFn_fmt(fn));
+  Kern_addTy(k, (Ty*)fn); tokenDrop(k);
+
+  // Setup resources for compiling locals
+  BBA* prevBBADict = k->g.bbaDict;
+  Buf* tyIBuf = &k->g.tyIBuf; *tyIBuf = Buf_new(BBA_asArena(prevBBADict), 256);
+  BBA fnBBA = (BBA) { &civ.ba };
+  k->g.bbaDict = &fnBBA;
+  Stk_add(&k->g.dictStk, (Slot)NULL); // add locals dict
+
+  while(true) {
+    scan(k);
+    if(tokenEq(k, Slc_ntLit("do"))) break;
+    if(tokenEq(k, Slc_ntLit(","))) { tokenDrop(k); continue; }
+    if(tokenEq(k, Slc_ntLit("->"))) { tokenDrop(k); FN_STATE(FN_STATE_OUT); }
+    Ty* ty = Kern_findToken(k);
+    if(ty) {
+      ASSERT(isTyFn(ty) and isFnSyn((TyFn*)ty), "expect only syn functions for fn type");
+      tokenDrop(k);
+      WS_ADD(true/*asNow*/);
+      executeFn(k, (TyFn*)ty);
+    } else if (IS_FN_STATE(FN_STATE_OUT)) N_out(k);
+    else                                  N_inp(k);
+  }
+
+  // Free unused tyI space
+  BBA_free(prevBBADict, tyIBuf->dat + tyIBuf->len, tyIBuf->cap - tyIBuf->len, 1);
+
   Buf* code = &k->g.code;  Buf prevCode = *code;
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
-  tokenDrop(k);
   //       do    (... code ... )
-  REQUIRE("do"); Kern_compFn(k);
+  REQUIRE("do"); FN_STATE(FN_STATE_BODY); Kern_compFn(k);
 
   if(RET != code->dat[code->len-1]) Buf_add(code, RET); // force RET at end.
-  // Free unused area of buffer
+  // Free unused area of buffers
   BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
+
+  BBA_drop(k->g.bbaDict); k->g.bbaDict = prevBBADict;
+
   fn->d.v = (Slot)code->dat; fn->len = code->len;
-  Kern_addTy(k, (Ty*)fn);
+
+  Stk_pop(&k->g.dictStk); // remove locals dict
   k->g.metaNext = 0;  *code = prevCode;
 }
 
