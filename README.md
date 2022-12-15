@@ -1,10 +1,7 @@
 # fngi: a readable language that grows from the silicon
 
-> **UPDATE:** The rewrite is going well ([round_two.md](./notes/round_two.md)).
-> I now even have a repl so you can play with the language as it is. It is still
-> missing several important features (like if statements and fn syntax) but
-> those should be ported from the old spor implementation shortly. I'm very
-> excited to implement types as well.
+> **UPDATE:** I'm taking a break for at least a few months while I focus on
+> work. The rewrite is going well, but it takes up too much of my time.
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
