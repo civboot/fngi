@@ -57,72 +57,82 @@ U1* szName(U1 szI);
 typedef struct { CStr path; } FileInfo;
 typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 
-// A Ty can be a const, function, variable or dict. See TY_MASK in
-// const.zty.
-typedef struct _Ty {
-  Bst          bst;  // symbol name and dict search.
-  struct _Ty*  parent;
-  U2           meta; // specifies node type
-  U2           line; // src code line of definition.
-  FileInfo*    file; // source file
-  TyDat*       ty;   // type information (fields, etc)
-  Slot         v;    // either a value or pointer (depends on node type/etc)
-} Ty;
+// A Ty can be a const, function, variable or dict depending on meta. See
+// TY_MASK in const.zty.
+#define TY_BODY \
+  Bst          bst;  /* symbol name and dict search. */ \
+  struct _Ty*  parent;  \
+  U2           meta; /* specifies node type */ \
+  U2           line; /* src code line of definition. */ \
+  FileInfo*    file; /* source file */ \
+  Slot         v;    /* either a value or pointer (depends on node type/etc) */
 
-typedef struct { Ty d; U1 lSlots; U2 len; } TyFn;
+typedef struct _Ty { TY_BODY } Ty;
 
-typedef struct {
-  U1*   next;
-  bool  isInput;
-  U1    inpLen;
-  U1    outLen;
+typedef struct _TyI {
+  struct _TyI*   next;
   U1    meta;
   CStr* name;
   Ty*   ty;
 } TyI;
 
-static inline bool TyI_hasNext(TyI* i) { return i->inpLen or i->outLen; }
+typedef struct { TY_BODY; TyI* tyI; } TyVar;
+
+typedef struct {
+  TY_BODY
+  TyI* inp;
+  TyI* out;
+  U2 len; // size of spor binary
+  U1 lSlots;
+} TyFn;
 
 #define TyFn_native(CNAME, META, NFN) {       \
-  .d.bst.key = (CStr*) ( CNAME ),             \
-  .d.meta = TY_FN | TY_FN_NATIVE | (META),    \
-  .d.v = NFN \
+  .bst.key = (CStr*) ( CNAME ),             \
+  .meta = TY_FN | TY_FN_NATIVE | (META),    \
+  .v = NFN \
 }
 
 #define TyFn_static(NAME, META, LSLOTS, DAT) \
   static TyFn NAME;               \
   NAME = (TyFn) {                 \
-    .d.meta = TY_FN | META,       \
-    .d.v = DAT,                   \
+    .meta = TY_FN | META,       \
+    .v = DAT,                   \
     .lSlots = LSLOTS,             \
   };
 
+static inline Sll** TyFn_inpRoot(TyFn* this) { return (Sll**)&this->inp; }
+static inline Sll** TyFn_outRoot(TyFn* this) { return (Sll**)&this->out; }
+static inline Sll*  TyI_asSll(TyI* this)     { return (Sll*)this; }
 
 static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
   return (TyFn) {
-    .d = (Ty) { .meta = TY_FN | meta, .v = (Slot)dat},
+    .meta = TY_FN | meta,
+    .v = (Slot)dat,
     .lSlots = lSlots,
   };
 }
 
-
-typedef struct { Ty d; U2 sz; Ty* tyParent; } TyDict;
+typedef struct {
+  TY_BODY;
+  TyI* tyI; // fields, variants, etc
+  U2 sz;
+  Ty* tyParent;
+} TyDict;
 
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
   U2 cstate;
-  U1 fnState;
-  U1 localOffset;
-  U1 logLvlSys;
-  U1 logLvlUsr;
+  U2 fnLocals; // locals size
+  U1 fnState;    U1 localOffset;
+  U1 logLvlSys;  U1 logLvlUsr;
   Ty* curTy;    // current type (fn, struct) being compiled
   TyFn* compFn; // current function that does compilation
   Slot dictBuf[DICT_DEPTH];
   Stk dictStk;
   Reader src; FileInfo* srcInfo; U2 srcLine;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
-  Buf code; Buf tyIBuf;
+  Buf code;
   BBA* bbaDict;
 } Globals;
 
@@ -180,21 +190,22 @@ static inline bool isTyFn(Ty* ty)     IS_TY(TY_FN)
 static inline bool isTyVar(Ty* ty)    IS_TY(TY_VAR)
 static inline bool isTyDict(Ty* ty)   IS_TY(TY_DICT)
 #undef IS_TY
-#define IS_FN(M)   { return (M) & fn->d.meta; }
+#define IS_FN(M)   { return (M) & fn->meta; }
 static inline bool isFnPre(TyFn* fn)       IS_FN(TY_FN_PRE)
 static inline bool isFnNative(TyFn* fn)    IS_FN(TY_FN_NATIVE)
 #undef IS_FN
-#define IS_FN(M)   { return (TY_FN_TY_MASK & fn->d.meta) == (M); }
+#define IS_FN(M)   { return (TY_FN_TY_MASK & fn->meta) == (M); }
 static inline bool isFnNormal(TyFn* fn)    IS_FN(TY_FN_NORMAL)
 static inline bool isFnNow(TyFn* fn)       IS_FN(TY_FN_NOW)
 static inline bool isFnSyn(TyFn* fn)       IS_FN(TY_FN_SYN)
 static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 #undef IS_FN
-#define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->d.meta); }
+#define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
 static inline bool isDictStruct(TyDict* ty)    IS_DICT(TY_DICT_STRUCT)
 #undef IS_DICT
+static inline U1   TyI_refs(TyI* tyI) { return TY_REFS & tyI->meta; }
 
 static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");

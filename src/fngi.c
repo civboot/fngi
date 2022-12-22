@@ -3,7 +3,7 @@
 
 #define R0        return 0;
 #define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
-#define TyFn_fmt(TY)  CStr_fmt((TY)->d.bst.key)
+#define TyFn_fmt(TY)  CStr_fmt((TY)->bst.key)
 
 void dbgWs(Kern *k) {
   Stk* ws = WS; U2 cap = ws->cap; U2 len = cap - ws->sp;
@@ -30,9 +30,9 @@ bool FnFiber_init(FnFiber* fb) {
 
 void baseCompFn(Kern* k);
 TyFn TyFn_baseCompFn = {
-  .d.bst.key = (CStr*) ("\x0A" "baseCompFn"),
-  .d.meta = TY_FN | TY_FN_NATIVE,
-  .d.v = (Slot)baseCompFn,
+  .bst.key = (CStr*) ("\x0A" "baseCompFn"),
+  .meta = TY_FN | TY_FN_NATIVE,
+  .v = (Slot)baseCompFn,
 };
 
 void Kern_init(Kern* k, FnFiber* fb) {
@@ -52,12 +52,19 @@ void Kern_init(Kern* k, FnFiber* fb) {
   Stk_add(&k->g.dictStk, 0);
 }
 
-// Allocate and initialize a new Ty from the information in Kern.
+CStr* tokenCStr(Kern* k) {
+  scan(k);
+  return CStr_new(BBA_asArena(k->g.bbaDict), *Buf_asSlc(&k->g.token));
+}
+
+// Allocate, initialize and add to dict a new Ty from the information in Kern.
 // This includes the token as the fn name.
 //
 // It is the caller's job to initialize: bst.l, bst.r, ty, v.
 // It is also the caller's job to handle TyFn and TyDict values.
-Ty* Ty_new(Kern* k, U2 meta) {
+Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
+  if(not key) key = tokenCStr(k);
+  ASSERT(key, "Ty_new key OOM");
   U1 sz = sizeof(Ty);
   switch (TY_MASK & meta) {
     case TY_FN:   sz = sizeof(TyFn);   break;
@@ -66,14 +73,12 @@ Ty* Ty_new(Kern* k, U2 meta) {
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   eprintf("?? Ty_new: %.*s\n", Dat_fmt(k->g.token));
   *ty = (Ty) {
-    .bst = (Bst) {
-      .key = CStr_new(BBA_asArena(k->g.bbaDict), *Buf_asSlc(&k->g.token)),
-    },
+    .bst = (Bst) { .key = key },
     .meta = meta,
     .line = k->g.tokenLine,
     .file = k->g.srcInfo,
   };
-  ASSERT(ty->bst.key, "Ty_new key OOM");
+  Kern_addTy(k, ty);
   return ty;
 }
 
@@ -108,7 +113,7 @@ U4 popLit(Kern* k, U1 size) {
 // Make sure to check isFnNative first!
 static inline void executeNative(Kern* k, TyFn* fn) {
   eprintf("?? native\n");
-  ((void(*)(Kern*)) fn->d.v)(k);
+  ((void(*)(Kern*)) fn->v)(k);
 }
 
 void xImpl(Kern* k, Ty* ty) {
@@ -134,7 +139,7 @@ void ret(Kern* k) {
 void jmpImpl(Kern* k, void* ty) {
   TyFn* fn = tyFn(ty);
   ASSERT(0 == fn->lSlots, "jmp to fn with locals");
-  cfb->ep = (U1*)fn->d.v;
+  cfb->ep = (U1*)fn->v;
 }
 
 void slcImpl(Kern* k, U1 sz) {
@@ -320,7 +325,7 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 void executeFn(Kern* k, TyFn* fn) {
   // eprintf("?? executing fn: %.*s\n", Ty_fmt((Ty*)fn));
   if(isFnNative(fn)) return executeNative(k, fn);
-  cfb->ep = (U1*)fn->d.v;
+  cfb->ep = (U1*)fn->v;
   executeLoop(k);
 }
 
@@ -357,8 +362,9 @@ void skipWhitespace(Reader f) {
 // Guarantees a token is in Kern.g.token
 void scan(Kern* k);
 void scanRaw(Kern* k) {
-  Reader f = k->g.src; Buf* b = &k->g.token;
+  Buf* b = &k->g.token;
   if(b->len) return; // does nothing if token wasn't cleared.
+  Reader f = k->g.src;
   skipWhitespace(f);
   U1* c = Reader_get(f, 0); if(c == NULL) return;
   const U1 firstTg = toTokenGroup(*c);
@@ -390,15 +396,19 @@ static inline bool tokenEq(Kern* k, Slc s) {
   return Slc_eq(s, *Buf_asSlc(&k->g.token));
 }
 
-#define REQUIRE(T)  ASSERT(tRequire(k, Slc_ntLit(T)), "Expected: " T)
-bool tRequire(Kern* k, Slc s) {
+#define CONSUME(T)  tokenConsume(k, Slc_ntLit(T))
+#define REQUIRE(T)  ASSERT(CONSUME(T), "Expected: '" T "'")
+
+// consume token if it equals slc
+bool tokenConsume(Kern* k, Slc s) {
   scan(k); bool out = tokenEq(k, s);
-  tokenDrop(k);
+  if(out) tokenDrop(k);
   return out;
 }
 
 void tokenDrop(Kern* k) {
   Buf* b = &k->g.token;
+  eprintf("?? tokenDrop: %.*s\n", Dat_fmt(*b));
   Ring_incHead(&Xr(k->g.src, asBase)->ring, b->len);
   Buf_clear(b);
 }
@@ -452,7 +462,7 @@ void compileFn(Kern* k, TyFn* fn) {
   eprintf("?? compileFn: %.*s\n", Ty_fmt((Ty*)fn));
   Buf* b = &k->g.code;
   if(isFnInline(fn)) { // inline: len before function code.
-    return Buf_extend(b, (Slc){(U1*)fn->d.v, .len=fn->len});
+    return Buf_extend(b, (Slc){(U1*)fn->v, .len=fn->len});
   }
   Buf_add(b, XL); Buf_addBE4(b, (U4)fn);
 }
@@ -471,7 +481,6 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
   if(isTyLocal(ty)) assert(false); // TODO
   TyFn* fn = tyFn(ty);
   if(isFnPre(fn))  {
-    eprintf("  ?? is Pre\n");
     Kern_compFn(k);
   }
 
@@ -519,7 +528,8 @@ void Kern_addTy(Kern* k, Ty* ty) {
 }
 
 Ty* scanTy(Kern* k) {
-  scan(k);  Ty* ty = Kern_findToken(k); ASSERT(ty, "token not found");
+  scan(k);  Ty* ty = Kern_findToken(k);
+  if(not ty) return NULL;
   tokenDrop(k);
   return ty;
 }
@@ -535,30 +545,23 @@ TySpec scanTySpec(Kern *k) {
     tokenDrop(k);
   }
   ASSERT(not s.derefs,           "invalid deref on type spec");
-  ASSERT(s.refs <= TYI_REF_MASK, "references larger than 7");
+  ASSERT(s.refs <= TY_REFS, "number of '&' must be <= 3");
 
-  Ty* ty = scanTy(k);
-  if(isTyDict(ty)) eprintf("");
-  else if(isTyFn(ty)) ASSERT(s.refs > 0, "type spec on fn must be a reference");
+  s.ty = scanTy(k); ASSERT(s.ty, "Type not found");
+  if(isTyDict(s.ty)) eprintf("");
+  else if(isTyFn(s.ty)) ASSERT(s.refs > 0, "type spec on fn must be a reference");
   else SET_ERR(Slc_ntLit("type spec must be a Dict or &Fn"))
   return s;
 }
 
-TyI TyI_fromSpec(TySpec* s) {
-  TyI out = {0}; Ty* ty = s->ty;
-  if(isTyFn(ty)) {
-    out.meta |= TYI_CONSTRUCTED;
-    out.ty = ty;
-  } else if (isTyDict(ty)) {
-    if(not isDictNative((TyDict*)ty)) {
-      out.meta |= TYI_CONSTRUCTED;
-      out.ty = ty;
-    } else out.meta |= TYI_NATIVE_MASK & ty->v;
-  }
-  out.meta |= s->refs;
-  return out;
+TyI* scanTyI(Kern* k) {
+  TySpec s = scanTySpec(k);
+  ASSERT(not s.derefs, "derefs not allowed in Ty");
+  TyI* tyI = (TyI*) BBA_alloc(k->g.bbaDict, sizeof(TyI), RSIZE);
+  ASSERT(tyI, "scanTyI: OOM");
+  *tyI = (TyI) { .meta = s.refs, .ty = s.ty };
+  return tyI;
 }
-
 
 // Compile a single token.
 void single(Kern* k, bool asNow) {
@@ -570,7 +573,8 @@ void single(Kern* k, bool asNow) {
     tokenDrop(k);
     return compileLit(k, n.v, asNow);
   }
-  compileTy(k, scanTy(k), asNow);
+  Ty* ty = scanTy(k); ASSERT(ty, "name not found");
+  compileTy(k, ty, asNow);
 }
 
 void compileSrc(Kern* k) {
@@ -584,35 +588,35 @@ void compileSrc(Kern* k) {
 // # TyDat: a compact stream of TyI's
 // See TyDat in const.zty
 
-void TyI_write(Buf* b, TyI* tyI) {
-  Buf_add(b, tyI->meta);
-  Buf_add(b, tyI->name->len);
-  Buf_extend(b, CStr_asSlc(tyI->name));
-  if(TYI_CONSTRUCTED & tyI->meta) Buf_addBE4(b, (Slot)tyI->ty);
-}
-
-TyI  TyI_next(TyI* tyI) {
-  TyI out = {0};
-  if(tyI->inpLen)     { out.inpLen = tyI->inpLen - 1; out.isInput = true; }
-  else if (tyI->outLen) out.outLen = tyI->outLen - 1;
-  else SET_ERR(Slc_ntLit("Attempted to get next on exhausted TyI"));
-  U1* d = tyI->next;
-  out.meta = *(d++);
-  out.name = (CStr*) d;
-  d += *d + 1; // move past CStr
-  if(TYI_CONSTRUCTED & out.meta) {
-    out.ty = (Ty*) ftBE4(d); d += 4;
-  }
-  if(TyI_hasNext(&out)) out.next = d;
-  return out;
-}
-
-TyI  TyI_start(TyDat* types) {
-  U1* dat = (U1*)types;
-  U1 inpLen = *(dat++); U1 outLen = *(dat++);
-  TyI i = (TyI) {.next = dat, .inpLen=inpLen, .outLen = outLen};
-  return TyI_next(&i);
-}
+// void TyI_write(Buf* b, TyI* tyI) {
+//   Buf_add(b, tyI->meta);
+//   Buf_add(b, tyI->name->len);
+//   Buf_extend(b, CStr_asSlc(tyI->name));
+//   if(TYI_CONSTRUCTED & tyI->meta) Buf_addBE4(b, (Slot)tyI->ty);
+// }
+// 
+// TyI  TyI_next(TyI* tyI) {
+//   TyI out = {0};
+//   if(tyI->inpLen)     { out.inpLen = tyI->inpLen - 1; out.isInput = true; }
+//   else if (tyI->outLen) out.outLen = tyI->outLen - 1;
+//   else SET_ERR(Slc_ntLit("Attempted to get next on exhausted TyI"));
+//   U1* d = tyI->next;
+//   out.meta = *(d++);
+//   out.name = (CStr*) d;
+//   d += *d + 1; // move past CStr
+//   if(TYI_CONSTRUCTED & out.meta) {
+//     out.ty = (Ty*) ftBE4(d); d += 4;
+//   }
+//   if(TyI_hasNext(&out)) out.next = d;
+//   return out;
+// }
+// 
+// TyI  TyI_start(TyDat* types) {
+//   U1* dat = (U1*)types;
+//   U1 inpLen = *(dat++); U1 outLen = *(dat++);
+//   TyI i = (TyI) {.next = dat, .inpLen=inpLen, .outLen = outLen};
+//   return TyI_next(&i);
+// }
 
 // #################################
 // # Base functions
@@ -620,32 +624,31 @@ TyI  TyI_start(TyDat* types) {
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
 
 void _N_dollar(Kern* k);
-TyFn _TyFn_N_dollar = TyFn_native("\x01" "$", 0, (Slot)_N_dollar);
+TyFn _TyFn_dollar = TyFn_native("\x01" "$", 0, (Slot)_N_dollar);
 void _N_dollar(Kern* k) {
   if(Kern_eof(k)) return;
   single(k, true);
 }
 
 void N_dollar(Kern*k) {
-  TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_N_dollar;
-  executeFn(k, &_TyFn_N_dollar);
+  TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_dollar;
+  executeFn(k, &_TyFn_dollar);
   k->g.compFn = cfn;
 }
 
 void N_paren(Kern* k) {
   WS_POP(); // ignore asNow
   while(true) {
-    scan(k); if(tokenEq(k, Slc_ntLit(")"))) break;
+    if(CONSUME(")")) break;
     ASSERT(not Kern_eof(k), "expected ')' but reached EOF");
     Kern_compFn(k);
   }
-  tokenDrop(k); // drop ')'
 }
 
 void _N_fslash(Kern* k);
-TyFn _TyFn_N_fslash = TyFn_native("\x01" "$", 0, (Slot)_N_fslash);
+TyFn _TyFn_fslash = TyFn_native("\x01" "$", 0, (Slot)_N_fslash);
 void _N_fslash(Kern* k) {
-  TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_N_fslash;
+  TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_fslash;
   scanRaw(k);
   // Execute next token if it is '(', else drop it.
   if(tokenEq(k, Slc_ntLit("("))) single(k, true);
@@ -677,40 +680,102 @@ void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
 
 void N_dropWs(Kern* k) { Stk_clear(WS); }
 
-#define FN_STATE(STATE)   k->g.fnState = (~C_FN_STATE & k->g.fnState) | (STATE)
-#define IS_FN_STATE(STATE) ((~C_FN_STATE & k->g.fnState) == (STATE))
+#define SET_FN_STATE(STATE)   k->g.fnState = (~C_FN_STATE & k->g.fnState) | (STATE)
+#define IS_FN_STATE(STATE) ((C_FN_STATE & k->g.fnState) == (STATE))
 
-void N_stk(Kern *k) {
-  ASSERT(IS_FN_STATE(FN_STATE_STK), "stk used after inp or out");
-  FN_STATE(FN_STATE_STK);
-  scan(k); tokenDrop(k); REQUIRE(":");
-  TySpec s = scanTySpec(k);
-  TyI tyI = TyI_fromSpec(&s);
-
-  Buf* b = &k->g.tyIBuf;
-  TyI_write(b, &tyI);
-  *b->dat += 1; // increment inputs
+Slot TyI_size(TyI tyI) {
+  if(TyI_refs(&tyI)) return RSIZE;
+  ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
+  return ((TyDict*)tyI.ty)->sz;
 }
+
+void synFnFound(Kern* k, Ty* ty) {
+  ASSERT(isTyFn(ty) and isFnSyn((TyFn*)ty),
+         "expect only syn functions in function signature");
+  executeFn(k, (TyFn*)ty);
+}
+
+// TyVar* varImpl(Kern* k, TyI* tyI, CStr* key, Slot ptr) {
+void varImpl(Kern* k, TyVar* var, Slot ptr) {
+  if(ptr) var->v = ptr;
+  else { // uses fn locals offset
+    Slot sz = TyI_size(*var->tyI);
+    var->v = align(k->g.fnLocals, alignment(sz));
+    k->g.fnLocals = var->v + sz;
+  }
+}
+
+TyVar* varPre(Kern* k) {
+  Ty* found = scanTy(k);
+  CStr* key; if(found) key = found->bst.key;
+             else      key = tokenCStr(k);
+  REQUIRE(":");
+  TyVar* var = (TyVar*) Ty_new(k, TY_VAR, key);
+  TyI* tyI = scanTyI(k);
+  tyI->name = key;
+  var->tyI = tyI;
+  return var;
+}
+
+// Used for both stk and out
+void N_stk(Kern *k) {
+  eprintf("?? N_stk\n");
+  N_notNow(k);
+  Sll** root;
+  if(IS_FN_STATE(FN_STATE_STK))      root = TyFn_inpRoot(tyFn(k->g.curTy));
+  else if(IS_FN_STATE(FN_STATE_OUT)) root = TyFn_outRoot(tyFn(k->g.curTy));
+  else {
+    printf("?? fnState=%X\n", k->g.fnState);
+    SET_ERR(Slc_ntLit("stk used after local variable inputs or in body"));
+  }
+  scan(k); tokenDrop(k); REQUIRE(":");
+  Sll_add(root, TyI_asSll(scanTyI(k)));
+}
+TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (Slot)N_stk);
 
 void N_inp(Kern* k) {
+  eprintf("?? N_inp\n");
+  TyVar* var = varPre(k);
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
          , "inp used after out");
-  FN_STATE(FN_STATE_INP);
-  scan(k); Ty* var = Ty_new(k, TY_VAR | TY_VAR_INPUT);
-  TySpec s = scanTySpec(k);
-  ASSERT(s.refs <= TY_VAR_REF, "locals ref count > 3");
-  var->meta |= s.refs;
-  TyI tyI = TyI_fromSpec(&s);
+  SET_FN_STATE(FN_STATE_INP);
+  var->meta |= TY_VAR_INPUT;
+  Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(var->tyI));
+  varImpl(k, var, /*ptr=*/0);
+}
+TyFn TyFn_inp = TyFn_native("\x03" "inp", 0, (Slot)N_inp);
 
-  Buf* b = &k->g.tyIBuf;
-  TyI_write(b, &tyI);
-  *b->dat += 1; // increment inputs
+void fnSig(Kern* k, TyFn* fn) {
+  TyFn* cfn = k->g.compFn; k->g.compFn = &TyFn_inp;
+  k->g.curTy = (Ty*) fn;
+  while(true) {
+    if(CONSUME("do")) break;
+    if(CONSUME("->")) {
+      SET_FN_STATE(FN_STATE_OUT);
+      k->g.compFn = &TyFn_stk;
+    }
+    ASSERT(not Kern_eof(k), "expected 'do' but reached EOF");
+    Kern_compFn(k);
+  }
+  fn->inp = (TyI*) Sll_reverse((Sll*) fn->inp);
+  fn->out = (TyI*) Sll_reverse((Sll*) fn->out);
 
-  // FIXME: handle locals offset
+  k->g.compFn = cfn;
 }
 
-void N_out(Kern* k) {
-
+void fnSignature(Kern* k) {
+  SET_FN_STATE(FN_STATE_STK);
+  while(true) {
+    if(CONSUME("do")) break;
+    if(CONSUME("->")) SET_FN_STATE(FN_STATE_OUT);
+    Ty* ty = Kern_findToken(k);
+    if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
+      eprintf("?? found syn\n");
+      tokenDrop(k);
+      WS_ADD(/*asNow=*/false); executeFn(k, (TyFn*)ty);
+    } else if (IS_FN_STATE(FN_STATE_OUT)) N_stk(k);
+    else                                  N_inp(k);
+  }
 }
 
 // fn NAME do (... code ...)
@@ -718,68 +783,40 @@ void N_out(Kern* k) {
 // fn ... types ... do ( ... code ... )
 void N_fn(Kern* k) {
   N_notNow(k);
-  FN_STATE(FN_STATE_STK);
   U2 meta = k->g.metaNext;
   // Create TyFn based on NAME
-  scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta);
+  scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
+  tokenDrop(k);
+  k->g.curTy = (Ty*) fn;
   eprintf("?? N_fn: %.*s\n", TyFn_fmt(fn));
-  Kern_addTy(k, (Ty*)fn); tokenDrop(k);
+  fnSignature(k);
 
-  // Setup resources for compiling locals
-  BBA* prevBBADict = k->g.bbaDict;
-  Buf* tyIBuf = &k->g.tyIBuf; *tyIBuf = Buf_new(BBA_asArena(prevBBADict), 256);
-  BBA fnBBA = (BBA) { &civ.ba };
-  k->g.bbaDict = &fnBBA;
-  Stk_add(&k->g.dictStk, (Slot)NULL); // add locals dict
-
-  while(true) {
-    scan(k);
-    if(tokenEq(k, Slc_ntLit("do"))) break;
-    if(tokenEq(k, Slc_ntLit(","))) { tokenDrop(k); continue; }
-    if(tokenEq(k, Slc_ntLit("->"))) { tokenDrop(k); FN_STATE(FN_STATE_OUT); }
-    Ty* ty = Kern_findToken(k);
-    if(ty) {
-      ASSERT(isTyFn(ty) and isFnSyn((TyFn*)ty), "expect only syn functions for fn type");
-      tokenDrop(k);
-      WS_ADD(true/*asNow*/);
-      executeFn(k, (TyFn*)ty);
-    } else if (IS_FN_STATE(FN_STATE_OUT)) N_out(k);
-    else                                  N_inp(k);
-  }
-
-  // Free unused tyI space
-  BBA_free(prevBBADict, tyIBuf->dat + tyIBuf->len, tyIBuf->cap - tyIBuf->len, 1);
-
+  eprintf("?? N_fn: sig done\n");
   Buf* code = &k->g.code;  Buf prevCode = *code;
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
   //       do    (... code ... )
-  REQUIRE("do"); FN_STATE(FN_STATE_BODY); Kern_compFn(k);
+  SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k);
 
   if(RET != code->dat[code->len-1]) Buf_add(code, RET); // force RET at end.
   // Free unused area of buffers
   BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
 
-  BBA_drop(k->g.bbaDict); k->g.bbaDict = prevBBADict;
+  fn->v = (Slot)code->dat; fn->len = code->len;
 
-  fn->d.v = (Slot)code->dat; fn->len = code->len;
-
-  Stk_pop(&k->g.dictStk); // remove locals dict
   k->g.metaNext = 0;  *code = prevCode;
 }
 
 // Create a static TyFn and add it to the kern.
 // NAMELEN: the fngi name's length; NAME: the fngi name
-// META: the meta to use;  NAT: the native value to add
-#define STATIC_FNTY(NAMELEN, NAME, META, NAT) \
+// META: the meta to use;  VAL: the native value to add
+#define STATIC_FNTY(NAMELEN, NAME, META, VAL) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);\
   static TyFn LINED(Ty);                \
   LINED(Ty) = (TyFn) {                  \
-    .d = {                              \
-      .bst.key = LINED(key),            \
-      .meta = TY_FN | (META),           \
-      .v = NAT,                         \
-    }                                   \
+    .bst.key = LINED(key),              \
+    .meta =  TY_FN | META,              \
+    .v = VAL,                           \
   };                                    \
   Kern_addTy(k, (Ty*)&LINED(Ty));
 
@@ -792,10 +829,22 @@ void N_fn(Kern* k) {
   STATIC_FNTY(NAMELEN, NAME, TY_FN_INLINE | (META), (Slot)LINED(code)); \
   LINED(Ty).len = sizeof(LINED(code)) - 1;
 
+// For Ty that really do only take up Ty space (TY_DICT_NATIVE)
+#define STATIC_TY(NAMELEN, NAME, META, VAL) \
+  CStr_ntVar(LINED(key), NAMELEN, NAME);\
+  static Ty LINED(Ty);                \
+  LINED(Ty) = (Ty) {                  \
+    .bst.key = LINED(key),            \
+    .meta = META,                     \
+    .v = VAL,                         \
+  };                                  \
+  Kern_addTy(k, (Ty*)&LINED(Ty));
 
 void Kern_fns(Kern* k) {
   TASSERT_EMPTY();
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
+  Kern_addTy(k, (Ty*) &TyFn_stk);
+  Kern_addTy(k, (Ty*) &TyFn_inp);
 
   // Pure noop syntax sugar
   STATIC_INLINE("\x01", "_"    , 0       , /*no code*/);
@@ -873,6 +922,15 @@ void Kern_fns(Kern* k) {
   STATIC_INLINE("\x05", "srBe2", TY_FN_PRE, SZ2+SRBE );
   STATIC_INLINE("\x05", "srBe4", TY_FN_PRE, SZ4+SRBE );
   STATIC_INLINE("\x05", "srBeR", TY_FN_PRE, SZR+SRBE );
+
+  // Native data types
+  STATIC_TY("\x02", "U1",  TY_DICT | TY_DICT_NATIVE                   , SZ1);
+  STATIC_TY("\x02", "U2",  TY_DICT | TY_DICT_NATIVE                   , SZ2);
+  STATIC_TY("\x02", "U4",  TY_DICT | TY_DICT_NATIVE                   , SZ4);
+  STATIC_TY("\x04", "S",   TY_DICT | TY_DICT_NATIVE                   , SZR);
+  STATIC_TY("\x02", "I1",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ1);
+  STATIC_TY("\x02", "I2",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ2);
+  STATIC_TY("\x02", "I4",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ4);
   TASSERT_EMPTY();
 }
 

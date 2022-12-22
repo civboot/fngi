@@ -39,14 +39,11 @@
 #define TY_FN_COMMENT         0x04
 #define TY_VAR_GLOBAL         0x08
 #define TY_VAR_INPUT          0x04
-#define TY_VAR_REF            0x03
 #define TY_DICT_MSK           0x07
 #define TY_DICT_NATIVE        0x00
 #define TY_DICT_BITMAP        0x01
 #define TY_DICT_STRUCT        0x02
 #define TY_DICT_ENUM          0x03
-#define TYI_CONSTRUCTED       0x80
-#define TYI_REF_MASK          0x07
-#define TYI_NATIVE_MASK       0x38
-#define TYI_NATIVE_SIGNED     0x40
+#define TY_REFS               0x03
+#define TY_NATIVE_SIGNED      0x08
 

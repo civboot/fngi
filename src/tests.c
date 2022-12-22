@@ -91,6 +91,7 @@ TEST_FNGI(compile1, 4)
   Kern_fns(k);
   COMPILE_EXEC("pre fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
+  COMPILE_EXEC("pre fn maths2 stk x : U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
 END_TEST_FNGI
 
 TEST_FNGI(repl, 20)
