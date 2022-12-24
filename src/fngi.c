@@ -115,14 +115,13 @@ U4 popLit(Kern* k, U1 size) {
 
 // Make sure to check isFnNative first!
 static inline void executeNative(Kern* k, TyFn* fn) {
-  eprintf("?? native\n");
   ((void(*)(Kern*)) fn->v)(k);
 }
 
 void xImpl(Kern* k, Ty* ty) {
   TyFn* fn = tyFn(ty);
+  eprintf("?? xImpl ep=%X fn=%X isNative=%u\n", cfb->ep, fn, isFnNative(fn));
   if(isFnNative(fn)) return executeNative(k, fn);
-  eprintf("?? non-native: %X\n", ty->v);
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
   INFO_ADD((S)fn);
   RS_ADD((S)cfb->ep);
@@ -136,7 +135,7 @@ void ret(Kern* k) {
   U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
   RS->sp += lSlots;
   cfb->ep = (U1*)RS_POP();
-  eprintf("ret: ep=%X lSlots=%u\n", cfb->ep, lSlots);
+  eprintf("?? ret: ep=%X lSlots=%u\n", cfb->ep, lSlots);
 }
 
 void jmpImpl(Kern* k, void* ty) {
@@ -315,6 +314,7 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
     if(res) {
       if(YLD == res) yield();
       else /* RET */ {
+        eprintf("?? here RSlen=%u\n", Stk_len(RS));
         if(0 == Stk_len(RS)) {  // empty stack, fiber done
           cfb->ep = NULL;
           break;
@@ -478,10 +478,54 @@ void baseCompFn(Kern* k) {
 
 static inline void Kern_compFn(Kern* k) { executeFn(k, k->g.compFn); }
 
+void Buf_addSz(Buf* b, S v, U1 sz) {
+  switch(SZ_MASK & v) {
+    case SZ1: return Buf_add(b, v);
+    case SZ2: return Buf_addBE2(b, v);
+    case SZ4: return Buf_addBE4(b, v);
+  }
+  SET_ERR(SLC("Buf_addSz: sz"));
+}
+
+// sized operation with 1 byte literal (i.e. FTLL, SRLL, etc)
+void op1(Buf* b, U1 op, U1 sz, S v) {
+  Buf_add(b, op | (SZ_MASK & sz));
+  Buf_add(b, v);
+}
+void op2(Buf* b, U1 op, U1 sz, S v) {
+  Buf_add(b, op | (SZ_MASK & sz));
+  Buf_addBE2(b, v);
+}
+
+void ftLocal(Kern* k, TyI* tyI, U2 offset) {
+  Buf* b = &k->g.code;
+  if(TyI_refs(tyI)) return op1(b, FTLL, SZR, offset);
+  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
+  TyDict* d = (TyDict*) tyI->ty;
+  if(isDictNative(d)) return op1(b, FTLL, d->v, offset);
+  assert(false); // struct / etc
+}
+
+void srLocal(Kern* k, TyI* tyI, U2 offset) {
+  Buf* b = &k->g.code;
+  if(TyI_refs(tyI)) return op1(b, SRLL, SZR, offset);
+  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
+  TyDict* d = (TyDict*) tyI->ty;
+  if(isDictNative(d)) return op1(b, SRLL, d->v, offset);
+  assert(false); // struct / etc
+}
+
+void compileVar(Kern* k, TyVar* v, bool asNow) {
+  if(isVarGlobal(v)) assert(false);
+  ASSERT(not asNow, "'$' used with local variable");
+  if(CONSUME("=")) assert(false);
+  else             ftLocal(k, v->tyI, /*offset=*/v->v);
+}
+
 void compileTy(Kern* k, Ty* ty, bool asNow) {
   ASSERT(ty, "name not found");
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
-  if(isTyLocal(ty)) assert(false); // TODO
+  if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asNow);
   TyFn* fn = tyFn(ty);
   if(isFnPre(fn))  {
     Kern_compFn(k);
@@ -521,7 +565,6 @@ void scan(Kern* k) {
 
 // Bst* Bst_add(Bst** root, Bst* add);
 void Kern_addTy(Kern* k, Ty* ty) {
-  eprintf("?? addty: %.*s\n", Ty_fmt(ty));
   ty->bst.l = NULL; ty->bst.r = NULL;
   Stk* dicts = &k->g.dictStk;
   ASSERT(dicts->sp < dicts->cap, "No dicts");
@@ -559,7 +602,6 @@ TySpec scanTySpec(Kern *k) {
 
 TyI* scanTyI(Kern* k) {
   TySpec s = scanTySpec(k);
-  eprintf("?? scanTyI ty=%X\n", s.ty);
   ASSERT(not s.derefs, "derefs not allowed in Ty");
   TyI* tyI = (TyI*) BBA_alloc(k->g.bbaDict, sizeof(TyI), RSIZE);
   ASSERT(tyI, "scanTyI: OOM");
@@ -675,7 +717,6 @@ void _fnMetaNext(Kern* k, U2 meta) {
 }
 
 void N_pre(Kern* k)     {
-  eprintf("?? in N_pre\n");
   N_notNow(k); k->g.metaNext |= TY_FN_PRE; }
 void N_now(Kern* k)     { _fnMetaNext(k,   TY_FN_NOW); }
 void N_syn(Kern* k)     { _fnMetaNext(k,   TY_FN_SYN); }
@@ -687,10 +728,24 @@ void N_dropWs(Kern* k) { Stk_clear(WS); }
 #define SET_FN_STATE(STATE)  k->g.fnState = bitSet(k->g.fnState, STATE, C_FN_STATE)
 #define IS_FN_STATE(STATE)   ((C_FN_STATE & k->g.fnState) == (STATE))
 
+static inline S szIToSz(U1 szI) {
+  switch(SZ_MASK & szI) {
+    case SZ1: return 1;
+    case SZ2: return 2;
+    case SZ4: return 4;
+  }
+  assert(false);
+}
+
+S TyDict_size(TyDict* ty) {
+  if(isDictNative(ty)) return szIToSz(ty->v);
+  else                 return ty->sz;
+}
+
 S TyI_size(TyI tyI) {
   if(TyI_refs(&tyI)) return RSIZE;
   ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
-  return ((TyDict*)tyI.ty)->sz;
+  return TyDict_size((TyDict*)tyI.ty);
 }
 
 void synFnFound(Kern* k, Ty* ty) {
@@ -711,7 +766,6 @@ void varImpl(Kern* k, TyVar* var, S ptr) {
 
 // Used for both stk and out
 void N_stk(Kern *k) {
-  eprintf("?? N_stk\n");
   N_notNow(k);
   Sll** root;
   if(IS_FN_STATE(FN_STATE_STK))      root = TyFn_inpRoot(tyFn(k->g.curTy));
@@ -720,7 +774,7 @@ void N_stk(Kern *k) {
     printf("?? fnState=%X\n", k->g.fnState);
     SET_ERR(SLC("stk used after local variable inputs or in body"));
   }
-  scan(k); tokenDrop(k); REQUIRE(":");
+  CONSUME(":");
   Sll_add(root, TyI_asSll(scanTyI(k)));
 }
 TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (S)N_stk);
@@ -729,45 +783,49 @@ TyVar* varPre(Kern* k) {
   Ty* found = scanTy(k);
   CStr* key; if(found) key = found->bst.key;
              else      key = tokenCStr(k);
-  eprintf("?? varPre key=%.*s\n", Dat_fmt(*key));
   REQUIRE(":");
   TyVar* var = (TyVar*) Ty_new(k, TY_VAR, key);
   TyI* tyI = scanTyI(k);
-  eprintf("?? varPre tyI=%X\n", tyI);
   tyI->name = key;
   var->tyI = tyI;
   return var;
 }
 
 void N_inp(Kern* k) {
-  eprintf("?? N_inp\n");
   N_notNow(k);
   TyVar* var = varPre(k);
-  eprintf("?? N_inp tyI=%X\n", var->tyI);
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
          , "inp used after out");
   SET_FN_STATE(FN_STATE_INP);
-  var->meta |= TY_VAR_INPUT;
   Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(var->tyI));
   varImpl(k, var, /*ptr=*/0);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", 0, (S)N_inp);
 
-void fnSignature(Kern* k) {
+void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
   SET_FN_STATE(FN_STATE_STK);
   while(true) {
-    eprintf("?? fnSignature loop\n");
     if(CONSUME("do")) break;
     if(CONSUME("->")) SET_FN_STATE(FN_STATE_OUT);
     Ty* ty = Kern_findToken(k);
     ASSERT(not Kern_eof(k), "expected 'do' but reached EOF");
     WS_ADD(/*asNow=*/ false); // all of these are syn functions
     if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
-      eprintf("?? found syn\n");
       tokenDrop(k); executeFn(k, (TyFn*)ty);
     } else if (IS_FN_STATE(FN_STATE_OUT)) N_stk(k);
     else                                  N_inp(k);
   }
+
+  TyI* tyI = ((TyFn*)k->g.curTy)->inp;
+  while(tyI) {
+    TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
+    if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) srLocal(k, tyI, v->v);
+    tyI = tyI->next;
+  }
+
+  fn->inp = (TyI*) Sll_reverse((Sll*) fn->inp);
+  fn->out = (TyI*) Sll_reverse((Sll*) fn->out);
+  if(fn->inp) fn->meta |= TY_FN_PRE;
 }
 
 // fn NAME do (... code ...)
@@ -781,24 +839,23 @@ void N_fn(Kern* k) {
   tokenDrop(k);
   k->g.curTy = (Ty*) fn;
   eprintf("?? N_fn: %.*s\n", TyFn_fmt(fn));
-  fnSignature(k);
-  fn->inp = (TyI*) Sll_reverse((Sll*) fn->inp);
-  fn->out = (TyI*) Sll_reverse((Sll*) fn->out);
 
-  eprintf("?? N_fn: sig done\n");
   Buf* code = &k->g.code;  Buf prevCode = *code;
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
-  //       do    (... code ... )
-  SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k);
+
+  fnSignature(k, fn, code);
+  SET_FN_STATE(FN_STATE_BODY);
+  Kern_compFn(k);
 
   if(RET != code->dat[code->len-1]) Buf_add(code, RET); // force RET at end.
   // Free unused area of buffers
   BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
 
   fn->v = (S)code->dat; fn->len = code->len;
-
-  k->g.metaNext = 0;  *code = prevCode;
+  fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
+  k->g.fnLocals = 0; k->g.metaNext = 0;
+  *code = prevCode;
 }
 
 // Create a static TyFn and add it to the kern.
@@ -843,6 +900,7 @@ void Kern_fns(Kern* k) {
   // Pure noop syntax sugar
   STATIC_INLINE("\x01", "_"    , 0       , /*no code*/);
   STATIC_INLINE("\x01", ";"    , 0       , /*no code*/);
+  STATIC_INLINE("\x01", ","    , 0       , /*no code*/);
   STATIC_INLINE("\x02", "->"   , 0       , /*no code*/);
 
   STATIC_NATIVE("\x01", "\\",      TY_FN_COMMENT, N_fslash);
@@ -931,7 +989,10 @@ void Kern_fns(Kern* k) {
 
 // Test helpers
 
-void executeInstrs(Kern* k, U1* instrs) { cfb->ep = instrs; executeLoop(k); }
+void executeInstrs(Kern* k, U1* instrs) {
+  cfb->ep = instrs;
+  executeLoop(k);
+}
 
 U1* compileRepl(Kern* k, bool withRet) {
   U1* body = (U1*) BBA_alloc(&k->bbaRepl, 256, 1);
@@ -939,8 +1000,13 @@ U1* compileRepl(Kern* k, bool withRet) {
   Buf* code = &k->g.code; *code = (Buf){.dat=body, .cap=256};
   compileSrc(k);
   if(withRet) Buf_add(code, RET);
-  if(code->len < code->cap)
-    BBA_free(&k->bbaRepl, /*dat*/code->dat + code->len, /*sz*/code->cap - code->len, 1);
+  if(code->len < code->cap) {
+    BBA_free(
+      &k->bbaRepl,
+      /*dat*/code->dat + code->len,
+      /*sz*/code->cap - code->len,
+      /*alignment*/1);
+  }
   *code = (Buf){0};
   return body;
 }

@@ -124,7 +124,7 @@ typedef struct {
   U2 metaNext; // meta of next fn
   U2 cstate;
   U2 fnLocals; // locals size
-  U1 fnState;    U1 localOffset;
+  U1 fnState;
   U1 logLvlSys;  U1 logLvlUsr;
   Ty* curTy;    // current type (fn, struct) being compiled
   TyFn* compFn; // current function that does compilation
@@ -205,11 +205,18 @@ static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
 static inline bool isDictStruct(TyDict* ty)    IS_DICT(TY_DICT_STRUCT)
 #undef IS_DICT
+static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }
 static inline U1   TyI_refs(TyI* tyI) { return TY_REFS & tyI->meta; }
 
 static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");
   return (TyFn*)p;
+}
+
+static inline TyDict* tyDict(Ty* ty) {
+  ASSERT(isTyDict(ty), "invalid TyDict");
+  ASSERT(not isDictNative((TyDict*)ty), "native dict");
+  return (TyDict*) ty;
 }
 
 Ty* Kern_findTy(Kern* k, Slc t);
