@@ -86,9 +86,9 @@ Slc instrName(U1 instr) {
     case JTBL + SZ1      : return Slc_ntLit("JTBL1");
     case JTBL + SZ2      : return Slc_ntLit("JTBL2");
     case JTBL + SZ4      : return Slc_ntLit("JTBL4");
-    case SLC + SZ1       : return Slc_ntLit("SLC1");
-    case SLC + SZ2       : return Slc_ntLit("SLC2");
-    case SLC + SZ4       : return Slc_ntLit("SLC4");
+    case SLIC + SZ1      : return Slc_ntLit("SLIC1");
+    case SLIC + SZ2      : return Slc_ntLit("SLIC2");
+    case SLIC + SZ4      : return Slc_ntLit("SLIC4");
     case JW              : return Slc_ntLit("JW");
     case XW              : return Slc_ntLit("XW");
     case SLIT + 0x0      : return Slc_ntLit("{0x00}");

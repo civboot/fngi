@@ -14,7 +14,7 @@ const C_EXPECT_ERR :U4 = 0x0080 \ G_cstate: expeting error (for testing)
 const C_PUB        :U4 = 0x0040 \ G_cstate: store as public (function data)
 const C_PUB_NAME   :U4 = 0x0020 \ G_cstate: make next name public
 
-const C_FN_STATE    :U4 = 0x0003 \ G_cstate: mask of current FN position
+const C_FN_STATE    :U4 = 0x0007 \ G_cstate: mask of current FN position
 const FN_STATE_NO   :U4 = 0x0000 \ not compiling a fn
 const FN_STATE_BODY :U4 = 0x0001 \ compiling FN body
 const FN_STATE_STK  :U4 = 0x0002 \ can declare stk inputs

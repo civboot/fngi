@@ -28,18 +28,18 @@ static inline void _xFn(Kern* k, TyFn fn) { executeFn(k, &fn); }
 TEST_FNGI(call, 1)
   // Running some code
 
-  TyFn_static(fiveFn, 0, 0, (Slot)((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
+  TyFn_static(fiveFn, 0, 0, (S)((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
   executeFn(k, &fiveFn);       TASSERT_WS(5);
 
   // Calling a function
   Buf_var(call5, 16);
-  Buf_add(&call5, XL); Buf_addBE4(&call5, (Slot)&fiveFn); Buf_add(&call5, RET);
+  Buf_add(&call5, XL); Buf_addBE4(&call5, (S)&fiveFn); Buf_add(&call5, RET);
   XFN(call5.dat, 0, 0);       TASSERT_WS(5);
 
   // Executing a native
   TyFn_static(add42, TY_FN_NATIVE, 0, kFn(N_add42));
   Buf_var(callAdd42, 16);
-  Buf_add(&callAdd42, XL); Buf_addBE4(&callAdd42, (Slot)&add42); Buf_add(&callAdd42, RET);
+  Buf_add(&callAdd42, XL); Buf_addBE4(&callAdd42, (S)&add42); Buf_add(&callAdd42, RET);
   WS_ADD(3); XFN(callAdd42.dat, 0, 0);  TASSERT_WS(45);
   TASSERT_EMPTY();
 END_TEST_FNGI
@@ -81,7 +81,7 @@ TEST_FNGI(compile0, 4)
   TASSERT_EMPTY();
 
   COMPILE("fn answer do 0x42", false);
-  TyFn* answer = tyFn(Kern_findTy(k, Slc_ntLit("answer")));
+  TyFn* answer = tyFn(Kern_findTy(k, SLC("answer")));
   executeFn(k, answer);    TASSERT_WS(0x42);
   COMPILE_EXEC("answer");  TASSERT_WS(0x42);
   TASSERT_EMPTY();
@@ -89,9 +89,29 @@ END_TEST_FNGI
 
 TEST_FNGI(compile1, 4)
   Kern_fns(k);
+  Ty* Ty_U2 = Kern_findTy(k, SLC("U2"));
+  Ty* Ty_S  = Kern_findTy(k, SLC("S"));
+
   COMPILE_EXEC("pre fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
-  COMPILE_EXEC("pre fn maths2 stk x : U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
+  COMPILE_EXEC("pre fn maths2 stk x:U2 -> what:U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
+  TyFn* maths2 = tyFn(Kern_findTy(k, SLC("maths2")));
+  TASSERT_EQ(Ty_U2, maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
+  TASSERT_EQ(Ty_U2, maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
+  TASSERT_EQ(NULL, maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
+
+  COMPILE_EXEC("pre fn maths3 x:U2 -> what:U2 do (_ + 10)");
+  TyFn* maths3 = tyFn(Kern_findTy(k, SLC("maths3")));
+  TASSERT_EQ(Ty_U2, maths3->inp->ty);
+  TASSERT_SLC_EQ("x" , CStr_asSlc(maths3->inp->name));
+  TASSERT_EQ(Ty_U2, maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
+  TASSERT_EQ(NULL, maths3->inp->next); TASSERT_EQ(NULL, maths3->out->next);
+
+  COMPILE_EXEC("pre fn add a:S b:S -> _:S do (_ + _)");
+  TyFn* add = tyFn(Kern_findTy(k, SLC("add")));
+  TASSERT_SLC_EQ("a" , CStr_asSlc(add->inp->name));
+  TASSERT_SLC_EQ("b" , CStr_asSlc(add->inp->next->name));
+  TASSERT_EQ(Ty_S, add->inp->ty);
 END_TEST_FNGI
 
 TEST_FNGI(repl, 20)

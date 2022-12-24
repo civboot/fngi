@@ -67,6 +67,6 @@
 #define JL                    0x82
 #define JLZ                   0x83
 #define JTBL                  0x84
-#define SLC                   0x85
+#define SLIC                  0x85
 #define SLIT                  0xC0
 

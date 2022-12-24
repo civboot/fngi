@@ -65,7 +65,7 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
   U2           meta; /* specifies node type */ \
   U2           line; /* src code line of definition. */ \
   FileInfo*    file; /* source file */ \
-  Slot         v;    /* either a value or pointer (depends on node type/etc) */
+  S         v;    /* either a value or pointer (depends on node type/etc) */
 
 typedef struct _Ty { TY_BODY } Ty;
 
@@ -107,7 +107,7 @@ static inline Sll*  TyI_asSll(TyI* this)     { return (Sll*)this; }
 static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
   return (TyFn) {
     .meta = TY_FN | meta,
-    .v = (Slot)dat,
+    .v = (S)dat,
     .lSlots = lSlots,
   };
 }
@@ -128,7 +128,7 @@ typedef struct {
   U1 logLvlSys;  U1 logLvlUsr;
   Ty* curTy;    // current type (fn, struct) being compiled
   TyFn* compFn; // current function that does compilation
-  Slot dictBuf[DICT_DEPTH];
+  S dictBuf[DICT_DEPTH];
   Stk dictStk;
   Reader src; FileInfo* srcInfo; U2 srcLine;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
@@ -160,7 +160,7 @@ void Kern_init(Kern* k, FnFiber* fb);
 // Initialze FnFiber (beyond Fiber init).
 bool FnFiber_init(FnFiber* fb);
 
-static inline Slot kFn(void(*native)(Kern*)) { return (Slot) native; }
+static inline S kFn(void(*native)(Kern*)) { return (S) native; }
 
 // ################################
 // # Execute

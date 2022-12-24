@@ -119,7 +119,7 @@ const XW   :Int = 0x91 \ Execute from Working stack
 const JL   :Int = 0x82 \ Jmp to Literal
 const JLZ  :Int = 0x83 \ Jmp to Literal if 0 (popping WS)
 const JTBL :Int = 0x84 \ Jump to Table index using size=Literal
-const SLC  :Int = 0x85 \ Inline Slc, jmp sz and push {ref, len}
+const SLIC :Int = 0x85 \ Inline Slc, jmp sz and push {ref, len}
 
 \ # [1.f] Small Literal [0xC0 - 0xFF]
 const SLIT :Int = 0xC0
