@@ -54,7 +54,7 @@ U1* szName(U1 szI);
 // ################################
 // # Types
 
-typedef struct { CStr path; } FileInfo;
+typedef struct { CStr* path; U2 line; } FileInfo;
 typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 
 // A Ty can be a const, function, variable or dict depending on meta. See
@@ -86,11 +86,13 @@ typedef struct {
   U1 lSlots;
 } TyFn;
 
-#define TyFn_native(CNAME, META, NFN) {       \
+#define TyFn_native(CNAME, META, NFN, INP, OUT) {       \
   .bst.key = (CStr*) ( CNAME ),             \
   .meta = TY_FN | TY_FN_NATIVE | (META),    \
-  .v = NFN \
+  .v = NFN, \
+  .inp = INP, .out = OUT \
 }
+
 
 #define TyFn_static(NAME, META, LSLOTS, DAT) \
   static TyFn NAME;               \
@@ -119,6 +121,14 @@ typedef struct {
   Ty* tyParent;
 } TyDict;
 
+#define TYDB_DEPTH 16
+typedef struct {
+  Stk tyIs;
+  Stk done;
+  S   tyIsDat[TYDB_DEPTH];
+  S   doneDat[TYDB_DEPTH];
+} TyDb;
+
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
@@ -130,9 +140,10 @@ typedef struct {
   TyFn* compFn; // current function that does compilation
   S dictBuf[DICT_DEPTH];
   Stk dictStk;
-  Reader src; FileInfo* srcInfo; U2 srcLine;
+  Reader src; FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
+  TyDb tyDb;
   BBA* bbaDict;
 } Globals;
 
@@ -145,6 +156,7 @@ typedef struct {
 
 typedef struct {
   U4 _null;
+  BBA bbaTy;
   BBA bbaCode;
   BBA bbaDict;
   BBA bbaRepl;
@@ -232,6 +244,16 @@ void compileSrc(Kern* k);
 U1*  compileRepl(Kern* k, bool withRet);
 
 // #################################
+// # Misc
+
+#define WS_SLC()          Slc_fromWs(k)
+static inline Slc Slc_fromWs(Kern* k) {
+  U1* dat = (U1*)WS_POP();
+  return (Slc){dat, .len=WS_POP()};
+}
+
+
+// #################################
 // # Test Helpers
 
 #define _COMPILE_VARS(CODE) \
@@ -250,5 +272,64 @@ U1*  compileRepl(Kern* k, bool withRet);
 void executeInstrs(Kern* k, U1* instrs);
 
 void simpleRepl(Kern* k);
+
+
+// Get the current snapshot
+static inline TyI* TyDb_top(TyDb* db) { return (TyI*) Stk_top(&db->tyIs); }
+
+// Get a reference to the current snapshot
+static inline TyI** TyDb_root(TyDb* db) { return (TyI**) Stk_topRef(&db->tyIs); }
+
+// Get/set whether current snapshot is done (guaranteed ret)
+static inline bool TyDb_done(TyDb* db) { return (bool) Stk_top(&db->done); }
+static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = done; }
+
+// Free from the current snapshot.
+//
+// "stream" can be either TyDb_top (freeing the entire snapshot), or a
+// separate type stream which indicates the length of items to drop.
+static inline void TyDb_free(Kern* k, TyI* stream) {
+  TyDb* db = &k->g.tyDb;
+  TyI** root = TyDb_root(db);
+  while(stream) {
+    TyI* next = stream->next; // cache since we may free the node
+    BBA_free(&k->bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
+    stream = next;
+  }
+}
+
+// Drop the current snapshot
+void TyDb_drop(Kern* k);
+
+// Create a new snapshot
+static inline void TyDb_new(TyDb* db, TyI* tyI) {
+  Stk_add(&db->tyIs, (S)tyI);
+  Stk_add(&db->done, false);
+}
+
+void tyCheck(TyI* require, TyI* given, bool sameLen, Slc errCxt);
+void tyCall(Kern* k, TyI* inp, TyI* out);
+void tyRet(Kern* k, bool done);
+void tySplit(Kern* k);
+void tyMerge(Kern* k);
+void TyI_printAll(TyI* tyI);
+
+#define TYI_VOID  NULL
+#define TYIS(PRE) \
+  PRE TyI TyIs_S;      /* S          */ \
+  PRE TyI TyIs_SS;     /* S, S       */ \
+  PRE TyI TyIs_SSS;    /* S, S, S    */ \
+  PRE TyI TyIs_U1;     /* U1         */ \
+  PRE TyI TyIs_U2;     /* U2         */ \
+  PRE TyI TyIs_U4;     /* U4         */ \
+  PRE TyI TyIs_U4x2;   /* U4 U4      */ \
+  PRE TyI TyIs_rU1;    /* &U1        */ \
+  PRE TyI TyIs_rU2;    /* &U2        */ \
+  PRE TyI TyIs_rU4;    /* &U4        */ \
+  PRE TyI TyIs_U1_rU1; /* &U1, U1    */ \
+  PRE TyI TyIs_U2_rU2; /* &U2, U2    */ \
+  PRE TyI TyIs_U4_rU4; /* &U4, U4    */
+
+TYIS(extern)
 
 #endif // __FNGI_H

@@ -58,6 +58,32 @@ TEST_FNGI(scan, 1)
   TASSERT_TOKEN("eight"); TASSERT_TOKEN("tokens");
 END_TEST_FNGI
 
+Slc testCxt = SLC("test");
+#define TY_CHECK(REQ, GIV, SAMELEN) tyCheck(REQ, GIV, SAMELEN, testCxt)
+
+TEST_FNGI(tyDb, 4)
+  Kern_fns(k);
+
+  TyI_printAll(&TyIs_S);      eprintf("\n");
+  TyI_printAll(&TyIs_U4_rU4); eprintf("\n");
+  TY_CHECK(&TyIs_S, &TyIs_S,  false);
+  TY_CHECK(&TyIs_S, &TyIs_S,  true);
+  TY_CHECK(&TyIs_S, &TyIs_SS, false);
+
+  EXPECT_ERR(TY_CHECK(&TyIs_S, &TyIs_SS, true));
+  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_U4_rU4, true));
+
+  TyDb* db = &k->g.tyDb;
+
+  TyDb_new(db, NULL);
+
+  // Call a function which returns [S], the type gets put on
+  tyCall(k, NULL, &TyIs_S); TY_CHECK(&TyIs_S, TyDb_top(db), true);
+
+  // Now call a function which consumes [S], the type stack empties
+  tyCall(k, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
+
+END_TEST_FNGI
 
 TEST_FNGI(compile0, 4)
   Kern_fns(k);
@@ -89,8 +115,8 @@ END_TEST_FNGI
 
 TEST_FNGI(compile1, 4)
   Kern_fns(k);
-  Ty* Ty_U1 = Kern_findTy(k, SLC("U1"));
   Ty* Ty_U2 = Kern_findTy(k, SLC("U2"));
+  Ty* Ty_S  = Kern_findTy(k, SLC("S"));
 
   COMPILE_EXEC("pre fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
@@ -111,10 +137,16 @@ TEST_FNGI(compile1, 4)
   COMPILE_EXEC("fn pop2 a:U1 b:U2 c:S -> \\a:S do (a); pop2(0x1234 2 3)");
   TASSERT_WS(0x34);
   TyFn* pop2 = tyFn(Kern_findTy(k, SLC("pop2")));
-  TASSERT_SLC_EQ("a" , CStr_asSlc(pop2->inp->name));
+  TASSERT_SLC_EQ("c" , CStr_asSlc(pop2->inp->name));
   TASSERT_SLC_EQ("b" , CStr_asSlc(pop2->inp->next->name));
-  TASSERT_EQ(Ty_U1, pop2->inp->ty);
+  TASSERT_SLC_EQ("a" , CStr_asSlc(pop2->inp->next->next->name));
+  TASSERT_EQ(Ty_S, pop2->inp->ty);
   TASSERT_EQ(2, pop2->lSlots);
+
+  COMPILE_EXEC("tAssertEq(42, 42)");
+  COMPILE_EXEC("tAssertEq(0x10 + 3, 0x13)");
+  COMPILE_EXEC("tAssertEq(1 shl 4, 0x10)");
+  COMPILE_EXEC("tAssertEq(0x10 shr 4, 1)");
 END_TEST_FNGI
 
 TEST_FNGI(repl, 20)
@@ -138,6 +170,7 @@ int main(int argc, char* argv[]) {
   test_scan();
   test_compile0();
   test_compile1();
+  test_tyDb();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

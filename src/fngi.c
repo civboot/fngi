@@ -37,6 +37,7 @@ TyFn TyFn_baseCompFn = {
 
 void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
+    .bbaTy   = (BBA) { &civ.ba },
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
     .bbaRepl = (BBA) { &civ.ba },
@@ -46,6 +47,11 @@ void Kern_init(Kern* k, FnFiber* fb) {
       .dictStk = Stk_init(k->g.dictBuf, DICT_DEPTH),
       .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
       .bbaDict = &k->bbaDict,
+      .tyDb = (TyDb) {
+        .tyIs = Stk_init(k->g.tyDb.tyIsDat, TYDB_DEPTH),
+        .done = Stk_init(k->g.tyDb.doneDat, TYDB_DEPTH),
+
+      }
     }, 0
   };
   assert(0 == k->g.dictBuf[DICT_DEPTH - 1]);
@@ -164,7 +170,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case DRP : WS_POP(); R0
     case OVR : WS_POP2(l, r); WS_ADD3(l, r, l);          R0
     case DUP : r = WS_POP(); WS_ADD2(r, r);              R0
-    case DUPN: r = WS_POP(); WS_ADD(r); WS_ADD(0 == r); R0
+    case DUPN: r = WS_POP(); WS_ADD(r); WS_ADD(0 == r);  R0
     case LR: WS_ADD((S)&RS->dat[RS->sp] + popLit(k, 1)); R0
 
     case INC : WS_ADD(WS_POP() + 1); R0
@@ -272,11 +278,12 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
 }
 
 typedef struct { U2 i; U2 rs; bool found; } PanicHandler;
-
 PanicHandler getPanicHandler(Kern* k) { // find the index of the panic handler
   Stk* info = &cfb->info;
+  eprintf("?? handler start info=%X\n", info);
   PanicHandler h = {.i = info->sp, .rs = RS->sp};
   while(h.i < info->cap) {
+    eprintf("?? handler i=%u\n", h.i);
     TyFn* fn = tyFn((void*)info->dat[h.i]);
     if(&catchTy == fn) {
       h.found = true;
@@ -288,7 +295,9 @@ PanicHandler getPanicHandler(Kern* k) { // find the index of the panic handler
 }
 
 bool catchPanic(Kern* k) { // handle a panic and return whether it is caught
+  eprintf("?? catchpanic start\n");
   U2 rsDepth = Stk_len(RS);
+  eprintf("?? here\n");
   PanicHandler h = getPanicHandler(k);
   if(not h.found) return false;
   eprintf("?? Catching panic\n");
@@ -306,9 +315,16 @@ void yield() {
 void executeLoop(Kern* k) { // execute fibers until all fibers are done.
   jmp_buf local_errJmp;
   jmp_buf* prev_errJmp = civ.fb->errJmp; civ.fb->errJmp = &local_errJmp;
+  eprintf("?? start executeLoop\n");
   while(cfb) {
     if(setjmp(local_errJmp)) { // got panic
-      if(!catchPanic(k)) longjmp(*prev_errJmp, 1);
+      eprintf("?? PANIC\n");
+      if(!catchPanic(k)) {
+        eprintf("?? not catching panic line=%u\n", k->g.srcInfo->line);
+        Slc path = CStr_asSlcMaybe(k->g.srcInfo->path);
+        eprintf("!! Uncaught panic: %.*s[%u]\n", Dat_fmt(path), k->g.srcInfo->line);
+        longjmp(*prev_errJmp, 1);
+      }
     }
     U1 res = executeInstr(k, popLit(k, 1));
     if(res) {
@@ -322,11 +338,11 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
       }
     }
   }
+  eprintf("?? end executeLoop\n");
   civ.fb->errJmp = prev_errJmp;
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  // eprintf("?? executing fn: %.*s\n", Ty_fmt((Ty*)fn));
   if(isFnNative(fn)) return executeNative(k, fn);
   cfb->ep = (U1*)fn->v;
   executeLoop(k);
@@ -352,12 +368,13 @@ U1 toTokenGroup(U1 c) {
   return T_SYMBOL;
 }
 
-void skipWhitespace(Reader f) {
+void skipWhitespace(Kern* k, Reader f) {
   Ring* r = &Xr(f, asBase)->ring;
   while(true) {
     U1* c = Reader_get(f, 0);
     if(c == NULL) return;
     if(*c > ' ')  return;
+    if(*c == '\n') k->g.srcInfo->line += 1;
     Ring_incHead(r, 1);
   }
 }
@@ -368,7 +385,7 @@ void scanRaw(Kern* k) {
   Buf* b = &k->g.token;
   if(b->len) return; // does nothing if token wasn't cleared.
   Reader f = k->g.src;
-  skipWhitespace(f);
+  skipWhitespace(k, f);
   U1* c = Reader_get(f, 0); if(c == NULL) return;
   const U1 firstTg = toTokenGroup(*c);
   Buf_add(b, *c);
@@ -631,46 +648,174 @@ void compileSrc(Kern* k) {
 }
 
 // #################################
-// # TyDat: a compact stream of TyI's
-// See TyDat in const.zty
+// # Ty checker
 
-// void TyI_write(Buf* b, TyI* tyI) {
-//   Buf_add(b, tyI->meta);
-//   Buf_add(b, tyI->name->len);
-//   Buf_extend(b, CStr_asSlc(tyI->name));
-//   if(TYI_CONSTRUCTED & tyI->meta) Buf_addBE4(b, (S)tyI->ty);
-// }
-// 
-// TyI  TyI_next(TyI* tyI) {
-//   TyI out = {0};
-//   if(tyI->inpLen)     { out.inpLen = tyI->inpLen - 1; out.isInput = true; }
-//   else if (tyI->outLen) out.outLen = tyI->outLen - 1;
-//   else SET_ERR(SLC("Attempted to get next on exhausted TyI"));
-//   U1* d = tyI->next;
-//   out.meta = *(d++);
-//   out.name = (CStr*) d;
-//   d += *d + 1; // move past CStr
-//   if(TYI_CONSTRUCTED & out.meta) {
-//     out.ty = (Ty*) ftBE4(d); d += 4;
-//   }
-//   if(TyI_hasNext(&out)) out.next = d;
-//   return out;
-// }
-// 
-// TyI  TyI_start(TyDat* types) {
-//   U1* dat = (U1*)types;
-//   U1 inpLen = *(dat++); U1 outLen = *(dat++);
-//   TyI i = (TyI) {.next = dat, .inpLen=inpLen, .outLen = outLen};
-//   return TyI_next(&i);
-// }
+bool TyI_eq(TyI* l, TyI* r) { return (TyI_refs(l) == TyI_refs(r)) and (l->ty == r->ty); }
+
+void TyI_print(TyI* tyI) {
+  for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
+  eprintf("%.*s", Dat_fmt(*tyI->ty->bst.key));
+}
+
+void TyI_printAll(TyI* tyI) {
+  if(not tyI) return;
+  TyI_printAll(tyI->next);
+  eprintf(" "); TyI_print(tyI);
+}
+
+void TyDb_drop(Kern* k) {
+  TyDb* db = &k->g.tyDb;
+  TyDb_free(k, TyDb_top(db));
+  Stk_pop(&db->tyIs);
+  Stk_pop(&db->done);
+}
+
+void tyNotMatch(TyI* require, TyI* given) {
+      eprintf("!!   Given  :"); TyI_printAll(given);
+    eprintf("\n!!   Require:"); TyI_printAll(require); eprintf("\n");
+}
+
+// Check two type stacks.
+void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
+  TyI* require = require_, *given = given_;
+  S i = 0;
+  while(require) {
+    if(not given) {
+      eprintf("!! Detected stack underflow, need additional types:");
+      TyI_printAll(require);
+      SET_ERR(errCxt);
+    }
+    if(not TyI_eq(require, given)) {
+      eprintf("!! Given %u Types from right doesn't match Require\n", i);
+      tyNotMatch(require_, given_);
+      SET_ERR(errCxt);
+    }
+    given = given->next; require = require->next;
+    i += 1;
+  }
+  if(sameLen and given) {
+    eprintf("!! Type lengths differ:\n"); tyNotMatch(require_, given_);
+    SET_ERR(errCxt);
+  }
+}
+
+// Call a function or equivalent, checking and popping inp; then pushing the out.
+void tyCall(Kern* k, TyI* inp, TyI* out) {
+  ASSERT(not TyDb_done(&k->g.tyDb), "Code after guaranteed 'ret'");
+  TyI** root = TyDb_root(&k->g.tyDb);
+
+  tyCheck(inp, *root, false, SLC("Type error during operation (i.e. function call, struct, etc)"));
+  TyDb_free(k, inp);
+
+  for(; out; out = out->next) {
+    TyI* tyI = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE); ASSERT(tyI, "OOM tyCall");
+    *tyI = *out;
+    Sll_add((Sll**)root, (Sll*)tyI);
+  }
+}
+
+// Check function return type and possibly mark as done.
+void tyRet(Kern* k, bool done) {
+  TyDb* db = &k->g.tyDb;
+  ASSERT(not TyDb_done(db), "Code after guaranteed 'ret'");
+  tyCheck(tyFn(k->g.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
+  TyDb_setDone(db, done);
+}
+
+TyI* TyI_cloneNode(Kern* k, TyI* node) {
+  TyI* cloned = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
+  *cloned = *node; cloned->next = NULL;
+  return cloned;
+}
+
+// Clone from bottom to top. The result will be in the same order.
+void  TyI_cloneBotToTop(Kern* k, TyI** root, TyI* node) {
+  if(not node) return;
+  TyI_cloneBotToTop(k, root, node->next);
+  Sll_add((Sll**)root, TyI_asSll(TyI_cloneNode(k, node)));
+}
+
+// Clone from top to bottom. The result will be in the same order.
+TyI* TyI_cloneTopToBot(Kern* k, TyI* node) {
+  TyI* cloned = NULL;
+  for(; node; node = node->next) {
+    TyI* next = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE);
+    ASSERT(next, "tyClone OOM");
+    if(cloned) cloned->next = next;
+    else       cloned = next;
+    node = node->next;
+  }
+  return cloned;
+}
+
+// clone in reversed order
+void TyI_cloneReversed(Kern* k, TyI** root, TyI* node) {
+  if(not node) return;
+  TyI_cloneReversed(k, root, node->next);
+
+}
+
+// Clone the current snapshot and use clone for continued mutations.
+void tyClone(Kern* k) {
+  TyDb* db = &k->g.tyDb;
+  TyI* stream = TyDb_top(db);
+  TyDb_new(&k->g.tyDb, NULL);
+  TyI_cloneBotToTop(k, TyDb_root(db), stream);
+}
+
+void tyMerge(Kern* k) {
+  TyDb* db = &k->g.tyDb;
+  ASSERT(Stk_len(&db->tyIs) > 1, "tyMerge with 1 or fewer snapshots");
+  TyI* top = TyDb_top(db);
+  TyI* scnd = (TyI*) &db->tyIs.dat[db->tyIs.sp + 1];
+  tyCheck(scnd, top, true, SLC("Type error during merge (i.e. if/else)"));
+  TyDb_drop(k);
+}
 
 // #################################
-// # Base functions
+// # Native Type Streams
+
+TYIS(/*extern*/)
+
+// #################################
+// # Native Functions
+// These functions are implemented as native C code and can be executed by fngi.
+
+// #################################
+//   # Utility
+
+static inline S szIToSz(U1 szI) {
+  switch(SZ_MASK & szI) {
+    case SZ1: return 1;
+    case SZ2: return 2;
+    case SZ4: return 4;
+  }
+  assert(false);
+}
+
+S TyDict_size(TyDict* ty) {
+  if(isDictNative(ty)) return szIToSz(ty->v);
+  else                 return ty->sz;
+}
+
+S TyI_size(TyI tyI) {
+  if(TyI_refs(&tyI)) return RSIZE;
+  ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
+  return TyDict_size((TyDict*)tyI.ty);
+}
+
+// #################################
+//   # Misc
 
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
+void N_dropWs(Kern* k) { Stk_clear(WS); }
+void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
+
+// #################################
+//   # Core syn functions
 
 void _N_dollar(Kern* k);
-TyFn _TyFn_dollar = TyFn_native("\x01" "$", 0, (S)_N_dollar);
+TyFn _TyFn_dollar = TyFn_native("\x01" "$", TY_FN_SYN, (S)_N_dollar, TYI_VOID, TYI_VOID);
 void _N_dollar(Kern* k) {
   if(Kern_eof(k)) return;
   single(k, true);
@@ -692,7 +837,7 @@ void N_paren(Kern* k) {
 }
 
 void _N_fslash(Kern* k);
-TyFn _TyFn_fslash = TyFn_native("\x01" "$", 0, (S)_N_fslash);
+TyFn _TyFn_fslash = TyFn_native("\x07" "_fslash", 0, (S)_N_fslash, TYI_VOID, TYI_VOID);
 void _N_fslash(Kern* k) {
   TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_fslash;
   scanRaw(k);
@@ -716,6 +861,9 @@ void _fnMetaNext(Kern* k, U2 meta) {
   k->g.metaNext |= meta;
 }
 
+// #################################
+//   # fn and fn signature
+
 void N_pre(Kern* k)     {
   N_notNow(k); k->g.metaNext |= TY_FN_PRE; }
 void N_now(Kern* k)     { _fnMetaNext(k,   TY_FN_NOW); }
@@ -723,30 +871,8 @@ void N_syn(Kern* k)     { _fnMetaNext(k,   TY_FN_SYN); }
 void N_inline(Kern* k)  { _fnMetaNext(k,   TY_FN_INLINE); }
 void N_comment(Kern* k) { _fnMetaNext(k,   TY_FN_COMMENT); }
 
-void N_dropWs(Kern* k) { Stk_clear(WS); }
-
 #define SET_FN_STATE(STATE)  k->g.fnState = bitSet(k->g.fnState, STATE, C_FN_STATE)
 #define IS_FN_STATE(STATE)   ((C_FN_STATE & k->g.fnState) == (STATE))
-
-static inline S szIToSz(U1 szI) {
-  switch(SZ_MASK & szI) {
-    case SZ1: return 1;
-    case SZ2: return 2;
-    case SZ4: return 4;
-  }
-  assert(false);
-}
-
-S TyDict_size(TyDict* ty) {
-  if(isDictNative(ty)) return szIToSz(ty->v);
-  else                 return ty->sz;
-}
-
-S TyI_size(TyI tyI) {
-  if(TyI_refs(&tyI)) return RSIZE;
-  ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
-  return TyDict_size((TyDict*)tyI.ty);
-}
 
 void synFnFound(Kern* k, Ty* ty) {
   ASSERT(isTyFn(ty) and isFnSyn((TyFn*)ty),
@@ -777,7 +903,7 @@ void N_stk(Kern *k) {
   CONSUME(":");
   Sll_add(root, TyI_asSll(scanTyI(k)));
 }
-TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (S)N_stk);
+TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (S)N_stk, TYI_VOID, TYI_VOID);
 
 TyVar* varPre(Kern* k) {
   Ty* found = scanTy(k);
@@ -800,7 +926,7 @@ void N_inp(Kern* k) {
   Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(var->tyI));
   varImpl(k, var, /*ptr=*/0);
 }
-TyFn TyFn_inp = TyFn_native("\x03" "inp", 0, (S)N_inp);
+TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (S)N_inp, TYI_VOID, TYI_VOID);
 
 void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
   SET_FN_STATE(FN_STATE_STK);
@@ -823,8 +949,6 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
     tyI = tyI->next;
   }
 
-  fn->inp = (TyI*) Sll_reverse((Sll*) fn->inp);
-  fn->out = (TyI*) Sll_reverse((Sll*) fn->out);
   if(fn->inp) fn->meta |= TY_FN_PRE;
 }
 
@@ -858,132 +982,160 @@ void N_fn(Kern* k) {
   *code = prevCode;
 }
 
+
+// #################################
+// # Registering Functions
+
 // Create a static TyFn and add it to the kern.
 // NAMELEN: the fngi name's length; NAME: the fngi name
 // META: the meta to use;  VAL: the native value to add
-#define STATIC_FNTY(NAMELEN, NAME, META, VAL) \
+#define STATIC_FNTY(INP, OUT, NAMELEN, NAME, META, VAL) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);\
   static TyFn LINED(Ty);                \
   LINED(Ty) = (TyFn) {                  \
     .bst.key = LINED(key),              \
     .meta =  TY_FN | META,              \
     .v = VAL,                           \
+    .inp = INP, .out = OUT              \
   };                                    \
   Kern_addTy(k, (Ty*)&LINED(Ty));
 
-#define STATIC_NATIVE(NAMELEN, NAME, META, KFN) \
-    STATIC_FNTY(NAMELEN, NAME, TY_FN_NATIVE | (META), kFn(KFN))
+#define STATIC_NATIVE(INP, OUT, NAMELEN, NAME, META, KFN) \
+    STATIC_FNTY(INP, OUT, NAMELEN, NAME, TY_FN_NATIVE | (META), kFn(KFN))
 
-#define STATIC_INLINE(NAMELEN, NAME, META, ...)               \
+#define STATIC_INLINE(INP, OUT, NAMELEN, NAME, META, ...)               \
   assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);                 \
   static U1 LINED(code)[] = {__VA_ARGS__ __VA_OPT__(,) RET};  \
-  STATIC_FNTY(NAMELEN, NAME, TY_FN_INLINE | (META), (S)LINED(code)); \
+  STATIC_FNTY(INP, OUT, NAMELEN, NAME, TY_FN_INLINE | (META), (S)LINED(code)); \
   LINED(Ty).len = sizeof(LINED(code)) - 1;
 
 // For Ty that really do only take up Ty space (TY_DICT_NATIVE)
-#define STATIC_TY(NAMELEN, NAME, META, VAL) \
+#define V_STATIC_TY(V, NAMELEN, NAME, META, VAL) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);\
-  static Ty LINED(Ty);                \
-  LINED(Ty) = (Ty) {                  \
+  static Ty V;                 \
+  V = (Ty) {                   \
     .bst.key = LINED(key),            \
     .meta = META,                     \
     .v = VAL,                         \
   };                                  \
-  Kern_addTy(k, (Ty*)&LINED(Ty));
+  Kern_addTy(k, (Ty*)&V);
+
+#define STATIC_TY(NAMELEN, NAME, META, VAL) V_STATIC_TY(LINED(Ty))
+
 
 void Kern_fns(Kern* k) {
+  // Native data types
+  V_STATIC_TY(Ty_U1, "\x02", "U1",  TY_DICT | TY_DICT_NATIVE                   , SZ1);
+  V_STATIC_TY(Ty_U2, "\x02", "U2",  TY_DICT | TY_DICT_NATIVE                   , SZ2);
+  V_STATIC_TY(Ty_U4, "\x02", "U4",  TY_DICT | TY_DICT_NATIVE                   , SZ4);
+  V_STATIC_TY(Ty_S , "\x01", "S",   TY_DICT | TY_DICT_NATIVE                   , SZR);
+  V_STATIC_TY(Ty_I1, "\x02", "I1",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ1);
+  V_STATIC_TY(Ty_I2, "\x02", "I2",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ2);
+  V_STATIC_TY(Ty_I4, "\x02", "I4",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ4);
+  V_STATIC_TY(Ty_SI, "\x02", "SI",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZR);
   TASSERT_EMPTY();
+
+  // Ty: S
+  TyIs_S = (TyI) { .ty = &Ty_S };
+  // Ty: S, s
+  TyIs_SS = (TyI) { .next = &TyIs_S, .ty = &Ty_S };
+  // Ty: S, s, S
+  TyIs_SSS = (TyI) { .next = &TyIs_SS, .ty = &Ty_S };
+
+  TyIs_U1 = (TyI) { .ty = &Ty_U1 };
+  TyIs_U2 = (TyI) { .ty = &Ty_U2 };
+  TyIs_U4 = (TyI) { .ty = &Ty_U4 };
+  TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = &Ty_U4 };
+
+  TyIs_rU1 = (TyI) { .ty = &Ty_U1, .meta = 1 };
+  TyIs_rU2 = (TyI) { .ty = &Ty_U2, .meta = 1 };
+  TyIs_rU4 = (TyI) { .ty = &Ty_U4, .meta = 1 };
+
+  TyIs_U1_rU1 = (TyI) {.next = &TyIs_rU1, .ty = &Ty_U1 };
+  TyIs_U2_rU2 = (TyI) {.next = &TyIs_rU2, .ty = &Ty_U2 };
+  TyIs_U4_rU4 = (TyI) {.next = &TyIs_rU4, .ty = &Ty_U4 };
+
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
   Kern_addTy(k, (Ty*) &TyFn_stk);
   Kern_addTy(k, (Ty*) &TyFn_inp);
 
   // Pure noop syntax sugar
-  STATIC_INLINE("\x01", "_"    , 0       , /*no code*/);
-  STATIC_INLINE("\x01", ";"    , 0       , /*no code*/);
-  STATIC_INLINE("\x01", ","    , 0       , /*no code*/);
-  STATIC_INLINE("\x02", "->"   , 0       , /*no code*/);
+  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", "_"    , 0       , /*no code*/);
+  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", ";"    , 0       , /*no code*/);
+  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", ","    , 0       , /*no code*/);
+  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x02", "->"   , 0       , /*no code*/);
 
-  STATIC_NATIVE("\x01", "\\",      TY_FN_COMMENT, N_fslash);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "\\",      TY_FN_COMMENT, N_fslash);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "$",       TY_FN_SYN, N_dollar);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "(",       TY_FN_SYN, N_paren);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "notNow",  TY_FN_SYN, N_notNow);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "pre",     TY_FN_SYN, N_pre);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "now",     TY_FN_SYN, N_now);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "syn",     TY_FN_SYN, N_syn);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "inline",  TY_FN_SYN, N_inline);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x07", "comment", TY_FN_COMMENT, N_comment);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
 
-  STATIC_NATIVE("\x01", "$",       TY_FN_SYN, N_dollar);
-  STATIC_NATIVE("\x01", "(",       TY_FN_SYN, N_paren);
-  STATIC_NATIVE("\x06", "notNow",  TY_FN_SYN, N_notNow);
-  STATIC_NATIVE("\x03", "pre",     TY_FN_SYN, N_pre);
-  STATIC_NATIVE("\x03", "now",     TY_FN_SYN, N_now);
-  STATIC_NATIVE("\x03", "syn",     TY_FN_SYN, N_syn);
-  STATIC_NATIVE("\x06", "inline",  TY_FN_SYN, N_inline);
-  STATIC_NATIVE("\x07", "comment", TY_FN_COMMENT, N_comment);
-  STATIC_NATIVE("\x02", "fn",      TY_FN_SYN, N_fn);
-
-  STATIC_NATIVE("\x06", "dropWs",  0, N_dropWs);
+  STATIC_NATIVE(&TyIs_SS, &TyIs_S, "\x09", "tAssertEq",  TY_FN_PRE, N_tAssertEq);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
-  STATIC_INLINE("\x03", "swp"  , 0       , SWP   );
-  STATIC_INLINE("\x03", "drp"  , 0       , DRP   );
-  STATIC_INLINE("\x03", "ovr"  , 0       , OVR   );
-  STATIC_INLINE("\x03", "dup"  , 0       , DUP   );
-  STATIC_INLINE("\x04", "dupn" , 0       , DUPN  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_SS,  "\x03", "swp"  , 0       , SWP   );
+  STATIC_INLINE(&TyIs_S,  TYI_VOID,  "\x03", "drp"  , 0       , DRP   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_SSS, "\x03", "ovr"  , 0       , OVR   );
+  STATIC_INLINE(&TyIs_S,  &TyIs_SS,  "\x03", "dup"  , 0       , DUP   );
+  STATIC_INLINE(&TyIs_S,  &TyIs_SS,  "\x04", "dupn" , 0       , DUPN  );
 
   // Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
-  STATIC_INLINE("\x03", "nop"  , TY_FN_PRE, NOP  );
-  STATIC_INLINE("\x03", "ret"  , TY_FN_PRE, RET  );
-  STATIC_INLINE("\x03", "inc"  , TY_FN_PRE, INC  );
-  STATIC_INLINE("\x04", "inc2" , TY_FN_PRE, INC2 );
-  STATIC_INLINE("\x04", "inc4" , TY_FN_PRE, INC4 );
-  STATIC_INLINE("\x03", "dec"  , TY_FN_PRE, DEC  );
-  STATIC_INLINE("\x03", "inv"  , TY_FN_PRE, INV  );
-  STATIC_INLINE("\x03", "neg"  , TY_FN_PRE, NEG  );
-  STATIC_INLINE("\x03", "not"  , TY_FN_PRE, NOT  );
-  STATIC_INLINE("\x05", "i1to4", TY_FN_PRE, CI1  );
-  STATIC_INLINE("\x05", "i2to4", TY_FN_PRE, CI2  );
-  STATIC_INLINE("\x01", "+"    , TY_FN_PRE, ADD  );
-  STATIC_INLINE("\x01", "-"    , TY_FN_PRE, SUB  );
-  STATIC_INLINE("\x01", "%"    , TY_FN_PRE, MOD  );
-  STATIC_INLINE("\x03", "shl"  , TY_FN_PRE, SHL  );
-  STATIC_INLINE("\x03", "shr"  , TY_FN_PRE, SHR  );
-  STATIC_INLINE("\x03", "msk"  , TY_FN_PRE, MSK  );
-  STATIC_INLINE("\x02", "jn"   , TY_FN_PRE, JN   );
-  STATIC_INLINE("\x03", "xor"  , TY_FN_PRE, XOR  );
-  STATIC_INLINE("\x03", "and"  , TY_FN_PRE, AND  );
-  STATIC_INLINE("\x02", "or"   , TY_FN_PRE, OR   );
-  STATIC_INLINE("\x02", "=="   , TY_FN_PRE, EQ   );
-  STATIC_INLINE("\x02", "!="   , TY_FN_PRE, NEQ  );
-  STATIC_INLINE("\x02", ">="   , TY_FN_PRE, GE_U );
-  STATIC_INLINE("\x01", "<"    , TY_FN_PRE, LT_U );
-  STATIC_INLINE("\x04", "ge_s" , TY_FN_PRE, GE_S );
-  STATIC_INLINE("\x04", "lt_s" , TY_FN_PRE, LT_S );
-  STATIC_INLINE("\x01", "*"    , TY_FN_PRE, MUL  );
-  STATIC_INLINE("\x01", "/"    , TY_FN_PRE, DIV_U);
-  STATIC_INLINE("\x02", "xw"   , TY_FN_PRE, XW  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "nop"  , TY_FN_PRE, NOP  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "ret"  , TY_FN_PRE, RET  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inc"  , TY_FN_PRE, INC  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc2" , TY_FN_PRE, INC2 );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc4" , TY_FN_PRE, INC4 );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "dec"  , TY_FN_PRE, DEC  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inv"  , TY_FN_PRE, INV  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "neg"  , TY_FN_PRE, NEG  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "not"  , TY_FN_PRE, NOT  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i1to4", TY_FN_PRE, CI1  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i2to4", TY_FN_PRE, CI2  );
+
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "+"    , TY_FN_PRE, ADD  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "-"    , TY_FN_PRE, SUB  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "%"    , TY_FN_PRE, MOD  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shl"  , TY_FN_PRE, SHL  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shr"  , TY_FN_PRE, SHR  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "msk"  , TY_FN_PRE, MSK  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "jn"   , TY_FN_PRE, JN   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "xor"  , TY_FN_PRE, XOR  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "and"  , TY_FN_PRE, AND  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "or"   , TY_FN_PRE, OR   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "=="   , TY_FN_PRE, EQ   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "!="   , TY_FN_PRE, NEQ  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", ">="   , TY_FN_PRE, GE_U );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "<"    , TY_FN_PRE, LT_U );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "ge_s" , TY_FN_PRE, GE_S );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "lt_s" , TY_FN_PRE, LT_S );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "*"    , TY_FN_PRE, MUL  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "/"    , TY_FN_PRE, DIV_U);
 
   // ftN(addr): fetch a value of sz N from address.
-  // srN(value, addr): store a value of sz N to address.
-  STATIC_INLINE("\x03", "ft1"  , TY_FN_PRE, SZ1+FT   );
-  STATIC_INLINE("\x03", "ft2"  , TY_FN_PRE, SZ2+FT   );
-  STATIC_INLINE("\x03", "ft4"  , TY_FN_PRE, SZ4+FT   );
-  STATIC_INLINE("\x03", "ftR"  , TY_FN_PRE, SZR+FT   );
-  STATIC_INLINE("\x03", "sr1"  , TY_FN_PRE, SZ1+SR   );
-  STATIC_INLINE("\x03", "sr2"  , TY_FN_PRE, SZ2+SR   );
-  STATIC_INLINE("\x03", "sr4"  , TY_FN_PRE, SZ4+SR   );
-  STATIC_INLINE("\x03", "srR"  , TY_FN_PRE, SZR+SR   );
-  STATIC_INLINE("\x05", "ftBe1", TY_FN_PRE, SZ1+FTBE );
-  STATIC_INLINE("\x05", "ftBe2", TY_FN_PRE, SZ2+FTBE );
-  STATIC_INLINE("\x05", "ftBe4", TY_FN_PRE, SZ4+FTBE );
-  STATIC_INLINE("\x05", "ftBeR", TY_FN_PRE, SZR+FTBE );
-  STATIC_INLINE("\x05", "srBe1", TY_FN_PRE, SZ1+SRBE );
-  STATIC_INLINE("\x05", "srBe2", TY_FN_PRE, SZ2+SRBE );
-  STATIC_INLINE("\x05", "srBe4", TY_FN_PRE, SZ4+SRBE );
-  STATIC_INLINE("\x05", "srBeR", TY_FN_PRE, SZR+SRBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft1"  , TY_FN_PRE, SZ1+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft2"  , TY_FN_PRE, SZ2+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft4"  , TY_FN_PRE, SZ4+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ftR"  , TY_FN_PRE, SZR+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe1", TY_FN_PRE, SZ1+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe2", TY_FN_PRE, SZ2+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe4", TY_FN_PRE, SZ4+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBeR", TY_FN_PRE, SZR+FTBE );
 
-  // Native data types
-  STATIC_TY("\x02", "U1",  TY_DICT | TY_DICT_NATIVE                   , SZ1);
-  STATIC_TY("\x02", "U2",  TY_DICT | TY_DICT_NATIVE                   , SZ2);
-  STATIC_TY("\x02", "U4",  TY_DICT | TY_DICT_NATIVE                   , SZ4);
-  STATIC_TY("\x01", "S",   TY_DICT | TY_DICT_NATIVE                   , SZR);
-  STATIC_TY("\x02", "I1",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ1);
-  STATIC_TY("\x02", "I2",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ2);
-  STATIC_TY("\x02", "I4",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ4);
-  STATIC_TY("\x02", "SI",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZR);
+  // srN(value, addr): store a value of sz N to address.
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr1"  , TY_FN_PRE, SZ1+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr2"  , TY_FN_PRE, SZ2+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr4"  , TY_FN_PRE, SZ4+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "srR"  , TY_FN_PRE, SZR+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe1", TY_FN_PRE, SZ1+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe2", TY_FN_PRE, SZ2+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe4", TY_FN_PRE, SZ4+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBeR", TY_FN_PRE, SZR+SRBE );
   TASSERT_EMPTY();
 }
 
@@ -994,7 +1146,13 @@ void executeInstrs(Kern* k, U1* instrs) {
   executeLoop(k);
 }
 
+
+CStr_ntLitUnchecked(replPath, "\x08", "/repl.fn");
+FileInfo replInfo = {0};
+
 U1* compileRepl(Kern* k, bool withRet) {
+  replInfo.path = replPath;
+  k->g.srcInfo = &replInfo;
   U1* body = (U1*) BBA_alloc(&k->bbaRepl, 256, 1);
   ASSERT(body, "compileRepl OOM");
   Buf* code = &k->g.code; *code = (Buf){.dat=body, .cap=256};
