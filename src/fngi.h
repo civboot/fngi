@@ -65,7 +65,7 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
   U2           meta; /* specifies node type */ \
   U2           line; /* src code line of definition. */ \
   FileInfo*    file; /* source file */ \
-  S         v;    /* either a value or pointer (depends on node type/etc) */
+  S            v;    /* either a value or pointer (depends on node type/etc) */
 
 typedef struct _Ty { TY_BODY } Ty;
 
@@ -183,6 +183,12 @@ static inline S kFn(void(*native)(Kern*)) { return (S) native; }
   BBA_drop(&NAME); \
   k->g.NAME = prev##NAME;
 
+#define REPL_START \
+  TyDb_new(&k->g.tyDb, NULL); LOCAL_BBA(bbaTy);
+
+#define REPL_END \
+  TyDb_drop(k); END_LOCAL_BBA(bbaTy);
+
 
 
 // ################################
@@ -268,8 +274,7 @@ static inline Slc Slc_fromWs(Kern* k) {
 #define _COMPILE_VARS(CODE) \
   BufFile_var(LINED(bf), 64, CODE); \
   Reader LINED(f) = File_asReader(BufFile_asFile(&LINED(bf))); \
-  k->g.src = LINED(f); \
-  eprintf("!! Compiling: %.*s\n", Dat_fmt(LINED(bf).b))
+  k->g.src = LINED(f);
 
 #define COMPILE_NAMED(NAME, CODE, withRet) \
   _COMPILE_VARS(CODE); U1* NAME = compileRepl(k, withRet)
@@ -284,6 +289,11 @@ void simpleRepl(Kern* k);
 
 
 // Get the current snapshot
+static inline TyI* TyDb_index(TyDb* db, U2 i) {
+  ASSERT(i < Stk_len(&db->tyIs), "TyDb OOB index");
+  return (TyI*) db->tyIs.dat[db->tyIs.sp + i];
+}
+
 static inline TyI* TyDb_top(TyDb* db) { return (TyI*) Stk_top(&db->tyIs); }
 
 // Get a reference to the current snapshot

@@ -129,8 +129,6 @@ TEST_FNGI(tyDb, 4)
   Kern_fns(k);
   LOCAL_BBA(bbaTy);
 
-  TyI_printAll(&TyIs_S);      eprintf("\n");
-  TyI_printAll(&TyIs_U4_rU4); eprintf("\n");
   TY_CHECK(&TyIs_S, &TyIs_S,  false);
   TY_CHECK(&TyIs_S, &TyIs_S,  true);
   TY_CHECK(&TyIs_S, &TyIs_SS, false);
@@ -158,14 +156,60 @@ END_TEST_FNGI
 
 TEST_FNGI(compileTy, 6)
   Kern_fns(k);
-  eprintf("?? compiling typed pop2\n");
+  REPL_START
   COMPILE_EXEC("fn pop2    a:U1 b:U2 c:S -> \\a:U1  do (a)");
   COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1  do (_)");
   COMPILE_EXEC("fn add   stk:U1 b:S      -> \\sum:S do (_ + b)");
-  // COMPILE_EXEC("add(42, 7)");
-  // eprintf("?? out\n");
-  // TASSERT_WS(49);
+  COMPILE_EXEC("add(42, 7)"); TASSERT_WS(49);
+  REPL_END
+END_TEST_FNGI
 
+TEST_FNGI(compileIf, 10)
+  Kern_fns(k);
+  k->g.fnState |= C_UNTY;
+
+  COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
+  COMPILE_EXEC("if(1) do 0x42 else 0x33");                 TASSERT_WS(0x42);
+  COMPILE_EXEC("if(0) do 0x42 else 0x33");                 TASSERT_WS(0x33);
+  COMPILE_EXEC("if(1) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x42);
+  COMPILE_EXEC("if(0) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x11);
+  COMPILE_EXEC("if(0) do 0x42 elif(0) do 0x11 else 0x33"); TASSERT_WS(0x33);
+
+  eprintf("# testing typedIf\n");
+#define TY_LEN  Sll_len((Sll*)TyDb_top(&k->g.tyDb))
+  k->g.fnState &= ~C_UNTY;
+  REPL_START
+  COMPILE_EXEC("if(1) do ;");
+  TASSERT_EQ(0, TY_LEN);
+  TASSERT_EQ(0, Stk_len(WS));
+
+  COMPILE_EXEC("if(1) do 0x42 else 0x33"); TASSERT_EQ(1, TY_LEN);
+  COMPILE_EXEC("tAssertEq 0x42");          TASSERT_EQ(0, TY_LEN);
+
+  COMPILE_EXEC("fn ifRet stk:S -> S do ( if(_) do (0x22 ret;) else 0x33 )")
+  COMPILE_EXEC("tAssertEq(0x22, ifRet(1))");
+  COMPILE_EXEC("tAssertEq(0x33, ifRet(0))");
+
+  eprintf("?? getting real real\n");
+  COMPILE_EXEC("fn ifElifRet stk:S -> S do ("
+               "  if(dup == 0x42) do (_ ret;)"
+               "  elif(_ == 0x11) do (0 ret;)"
+               "  else 0x33"
+               ")")
+  COMPILE_EXEC("tAssertEq(0x42, ifElifRet(0x42))");
+  COMPILE_EXEC("tAssertEq(0,    ifElifRet(0x11))");
+  COMPILE_EXEC("tAssertEq(0x33, ifElifRet(7))");
+
+  // middle returns
+  eprintf("#### MIDDLE RET\n");
+  COMPILE_EXEC("fn ifElifRet2 x:S -> S do ("
+               "  if  (x == 0x42) do (0x42)"
+               "  elif(x == 0x11) do (0 ret;)"
+               "  else 0x33"
+               ")")
+
+  REPL_END
+  TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
 END_TEST_FNGI
 
 TEST_FNGI(repl, 20)
@@ -191,6 +235,7 @@ int main(int argc, char* argv[]) {
   test_compile1();
   test_tyDb();
   test_compileTy();
+  test_compileIf();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

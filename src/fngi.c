@@ -1,9 +1,28 @@
+// C Bootstrapping of fngi programming language.
+//
+// Table of Contents:
+//
+// ***********************
+// * 1: Initialization
+// * 2: Executing Instructions
+// * 3: TyDb, the type database and validator
+// * 4: Token scanner
+// * 5: Compiler
+// * 6: Native Functions
+//   * Misc
+//   * Core syn functions
+//   * fn and fn signature
+//   * if/elif/else
+// * 7: Registering Functions and Tys
+// * 8: Execution helpers
 
 #include "./fngi.h"
 
 #define R0        return 0;
 #define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
 #define TyFn_fmt(TY)  CStr_fmt((TY)->bst.key)
+
+#define NL eprintf("\n")
 
 void dbgWs(Kern *k) {
   Stk* ws = WS; U2 cap = ws->cap; U2 len = cap - ws->sp;
@@ -13,11 +32,12 @@ void dbgWs(Kern *k) {
     if(v <= 0xFFFF)   eprintf(" %+8X", v);
     else              eprintf(" %+4X_%X", v >> 16, 0xFFFF & v);
   }
-  eprintf("}\n");
+  eprintf("}");
 }
 
 // ***********************
 // * 1: Initialization
+// Starting global types and kernel. Creating new types on allocator.
 
 bool FnFiber_init(FnFiber* fb) {
   U4* dat = (U4*) BA_alloc(&civ.ba);
@@ -67,7 +87,7 @@ CStr* tokenCStr(Kern* k) {
 // Allocate, initialize and add to dict a new Ty from the information in Kern.
 // This includes the token as the fn name.
 //
-// It is the caller's job to initialize: bst.l, bst.r, ty, v.
+// It is the caller's job to initialize .v
 // It is also the caller's job to handle TyFn and TyDict values.
 Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
   if(not key) key = tokenCStr(k);
@@ -79,7 +99,6 @@ Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
     case TY_DICT: sz = sizeof(TyDict); break;
   }
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
-  eprintf("?? Ty_new: %.*s\n", Dat_fmt(k->g.token));
   *ty = (Ty) {
     .bst = (Bst) { .key = key },
     .meta = meta,
@@ -92,8 +111,8 @@ Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
 
 // ***********************
 // * 2: Executing Instructions
-// Fngi's assembly is defined in src/constants.zty. These constants are
-// auto-generated into src/gen/constants.h
+// Fngi's assembly is defined in src/spor.zty. These constants are
+// auto-generated into src/gen/spor.h
 //
 // The VM is compsed of these few instructions, which are designed to be:
 // (1) extremely close to the memory. They all directly access memory or the
@@ -125,7 +144,6 @@ static inline void executeNative(Kern* k, TyFn* fn) {
 
 void xImpl(Kern* k, Ty* ty) {
   TyFn* fn = tyFn(ty);
-  eprintf("?? xImpl ep=%X fn=%X isNative=%u\n", cfb->ep, fn, isFnNative(fn));
   if(isFnNative(fn)) return executeNative(k, fn);
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
   INFO_ADD((S)fn);
@@ -140,7 +158,6 @@ void ret(Kern* k) {
   U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
   RS->sp += lSlots;
   cfb->ep = (U1*)RS_POP();
-  eprintf("?? ret: ep=%X lSlots=%u\n", cfb->ep, lSlots);
 }
 
 void jmpImpl(Kern* k, void* ty) {
@@ -156,8 +173,8 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  Slc name = instrName(instr);
-  eprintf("??? instr: %+10.*s: ", Dat_fmt(name)); dbgWs(k);
+  // Slc name = instrName(instr);
+  // eprintf("??? instr: %+10.*s: ", Dat_fmt(name)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -279,10 +296,8 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
 typedef struct { U2 i; U2 rs; bool found; } PanicHandler;
 PanicHandler getPanicHandler(Kern* k) { // find the index of the panic handler
   Stk* info = &cfb->info;
-  eprintf("?? handler start info=%X\n", info);
   PanicHandler h = {.i = info->sp, .rs = RS->sp};
   while(h.i < info->cap) {
-    eprintf("?? handler i=%u\n", h.i);
     TyFn* fn = tyFn((void*)info->dat[h.i]);
     if(&catchTy == fn) {
       h.found = true;
@@ -294,12 +309,9 @@ PanicHandler getPanicHandler(Kern* k) { // find the index of the panic handler
 }
 
 bool catchPanic(Kern* k) { // handle a panic and return whether it is caught
-  eprintf("?? catchpanic start\n");
   U2 rsDepth = Stk_len(RS);
-  eprintf("?? here\n");
   PanicHandler h = getPanicHandler(k);
   if(not h.found) return false;
-  eprintf("?? Catching panic\n");
   Stk_clear(WS); WS_ADD(rsDepth); // set WS to {rsDepth}
   cfb->info.sp = h.i;
   RS->sp = h.rs;
@@ -314,12 +326,9 @@ void yield() {
 void executeLoop(Kern* k) { // execute fibers until all fibers are done.
   jmp_buf local_errJmp;
   jmp_buf* prev_errJmp = civ.fb->errJmp; civ.fb->errJmp = &local_errJmp;
-  eprintf("?? start executeLoop\n");
   while(cfb) {
     if(setjmp(local_errJmp)) { // got panic
-      eprintf("?? PANIC\n");
       if(!catchPanic(k)) {
-        eprintf("?? not catching panic line=%u\n", k->g.srcInfo->line);
         Slc path = CStr_asSlcMaybe(k->g.srcInfo->path);
         eprintf("!! Uncaught panic: %.*s[%u]\n", Dat_fmt(path), k->g.srcInfo->line);
         longjmp(*prev_errJmp, 1);
@@ -329,7 +338,6 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
     if(res) {
       if(YLD == res) yield();
       else /* RET */ {
-        eprintf("?? here RSlen=%u\n", Stk_len(RS));
         if(0 == Stk_len(RS)) {  // empty stack, fiber done
           cfb->ep = NULL;
           break;
@@ -337,7 +345,6 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
       }
     }
   }
-  eprintf("?? end executeLoop\n");
   civ.fb->errJmp = prev_errJmp;
 }
 
@@ -348,8 +355,34 @@ void executeFn(Kern* k, TyFn* fn) {
 }
 
 
-// #################################
-// # Ty checker
+// ***********************
+// * 3: TyDb, the type database and validator
+// The type database is a stack of TyI Singly Linked Lists.
+// Whenever a function is called, it's inputs are popped from the top SLL and
+// the outputs are added.
+// If statements/etc utilize split/merge operations.
+
+TYIS(/*extern*/) // global TyI and TyIs, see fngi.h
+
+static inline S szIToSz(U1 szI) {
+  switch(SZ_MASK & szI) {
+    case SZ1: return 1;
+    case SZ2: return 2;
+    case SZ4: return 4;
+  }
+  assert(false);
+}
+
+S TyDict_size(TyDict* ty) {
+  if(isDictNative(ty)) return szIToSz(ty->v);
+  else                 return ty->sz;
+}
+
+S TyI_size(TyI tyI) {
+  if(TyI_refs(&tyI)) return RSIZE;
+  ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
+  return TyDict_size((TyDict*)tyI.ty);
+}
 
 bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
   if(TyI_refs(r) != TyI_refs(g)) return false;
@@ -380,6 +413,13 @@ void TyI_printAll(TyI* tyI) {
   eprintf(" "); TyI_print(tyI);
 }
 
+#define IS_UNTY  (C_UNTY & k->g.fnState)
+
+void dbgTyIs(Kern* k) {
+  if(IS_UNTY) return;
+  eprintf("["); TyI_printAll(TyDb_top(&k->g.tyDb)); eprintf(" ]");
+}
+
 TyI* TyI_cloneNode(TyI* node, BBA* bba) {
   TyI* cloned = BBA_alloc(bba, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
   *cloned = *node; cloned->next = NULL;
@@ -406,9 +446,18 @@ void TyDb_free(Kern* k, TyI* stream) {
   TyI** root = TyDb_root(db);
   while(stream) {
     TyI* next = stream->next; // cache since we may free the node
-    BBA_free(k->g.bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
+    ASSERT(not BBA_free(k->g.bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE),
+           "TyDb_free");
     stream = next;
   }
+}
+
+void TyDb_swap(Kern* k) {
+  Stk* s = &k->g.tyDb.tyIs;
+  ASSERT(Stk_len(s) > 1, "swapping with len < 2");
+  S cached = s->dat[s->sp];
+  s->dat[s->sp] = s->dat[s->sp + 1];
+  s->dat[s->sp + 1] = cached;
 }
 
 void TyDb_drop(Kern* k) {
@@ -417,8 +466,6 @@ void TyDb_drop(Kern* k) {
   Stk_pop(&db->tyIs);
   Stk_pop(&db->done);
 }
-
-#define IS_UNTY  (C_UNTY & k->g.fnState)
 
 void tyNotMatch(TyI* require, TyI* given) {
       eprintf("!!   Given  :"); TyI_printAll(given);
@@ -431,19 +478,25 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
   S i = 0;
   while(require) {
     if(not given) {
-      eprintf("!! Detected stack underflow, need additional types:\n");
-      tyNotMatch(require_, given_);
+      if(not ERR_EXPECTED) {
+        eprintf("!! Detected stack underflow, need additional types:\n");
+        tyNotMatch(require_, given_);
+      }
       SET_ERR(errCxt);
     }
     if(not TyI_eq(require, given)) {
-      eprintf("!! Given %u Types from right doesn't match Require\n", i);
-      tyNotMatch(require_, given_);
+      if(not ERR_EXPECTED) {
+        eprintf("!! Given %u Types from right doesn't match Require\n", i);
+        tyNotMatch(require_, given_);
+      }
       SET_ERR(errCxt);
     }
     given = given->next; require = require->next; i += 1;
   }
   if(sameLen and given) {
-    eprintf("!! Type lengths differ:\n"); tyNotMatch(require_, given_);
+    if(not ERR_EXPECTED) {
+      eprintf("!! Type lengths differ:\n"); tyNotMatch(require_, given_);
+    }
     SET_ERR(errCxt);
   }
 }
@@ -451,9 +504,9 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
 // Call a function or equivalent, checking and popping inp; then pushing the out.
 void tyCall(Kern* k, TyI* inp, TyI* out) {
   if(IS_UNTY) return;
-  eprintf("?? tyCall done=%u\n", TyDb_done(k));
-  ASSERT(not TyDb_done(k), "Code after guaranteed 'ret'");
-  eprintf("?? tyCall 1\n");
+  if(TyDb_done(k)) {
+    ASSERT(not inp and not out, "Code after guaranteed 'ret'");
+  }
   TyI** root = TyDb_root(&k->g.tyDb);
 
   tyCheck(inp, *root, false, SLC("Type error during operation (i.e. function call, struct, etc)"));
@@ -464,36 +517,36 @@ void tyCall(Kern* k, TyI* inp, TyI* out) {
 // Check function return type and possibly mark as done.
 void tyRet(Kern* k, bool done) {
   if(IS_UNTY) return;
-  eprintf("?? tyRet\n");
   TyDb* db = &k->g.tyDb;
   ASSERT(not TyDb_done(k), "Code after guaranteed 'ret'");
   tyCheck(tyFn(k->g.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
   TyDb_setDone(db, done);
-  eprintf("?? tyRet end\n");
 }
 
 // Clone the current snapshot and use clone for continued mutations.
-void tyClone(Kern* k) {
+void tyClone(Kern* k, U2 depth) {
   if(IS_UNTY) return;
   TyDb* db = &k->g.tyDb;
-  TyI* stream = TyDb_top(db);
+  TyI* stream = TyDb_index(db, depth);
+  eprintf("?? tyClone %X\n", stream);
   TyDb_new(&k->g.tyDb, NULL);
-  TyDb_cloneAdd(k, stream);
+  if(stream) TyDb_cloneAdd(k, stream);
 }
 
 void tyMerge(Kern* k) {
   if(IS_UNTY) return;
   TyDb* db = &k->g.tyDb;
   ASSERT(Stk_len(&db->tyIs) > 1, "tyMerge with 1 or fewer snapshots");
-  TyI* top = TyDb_top(db);
-  TyI* scnd = (TyI*) &db->tyIs.dat[db->tyIs.sp + 1];
-  tyCheck(scnd, top, true, SLC("Type error during merge (i.e. if/else)"));
+  if(not TyDb_done(k)) {
+    tyCheck(TyDb_index(db, 1), TyDb_top(db), true,
+            SLC("Type error during merge (i.e. if/else)"));
+  }
   TyDb_drop(k);
 }
 
 
 // ***********************
-// * 3: Token scanner
+// * 4: Token scanner
 
 U1 toTokenGroup(U1 c) {
   if(c <= ' ')             return T_WHITE;
@@ -570,7 +623,7 @@ bool tokenConsume(Kern* k, Slc s) {
 
 void tokenDrop(Kern* k) {
   Buf* b = &k->g.token;
-  eprintf("?? tokenDrop: %.*s\n", Dat_fmt(*b));
+  // eprintf("?? tokenDrop: %.*s\n", Dat_fmt(*b));
   Ring_incHead(&Xr(k->g.src, asBase)->ring, b->len);
   Buf_clear(b);
 }
@@ -604,8 +657,8 @@ ParsedNumber parseU4(Slc t) {
   return p;
 }
 
-// #################################
-// # Compiler
+// ***********************
+// * 5: Compiler
 
 void lit(Buf* b, U4 v) {
   if (v <= SLIT_MAX)    { Buf_add(b, SLIT | v); }
@@ -615,14 +668,12 @@ void lit(Buf* b, U4 v) {
 }
 
 void compileLit(Kern* k, U4 v, bool asNow) {
-  eprintf("?? compilingLit: %X asNow=%b\n", v, asNow);
   if(asNow) return WS_ADD(v);
   tyCall(k, NULL, &TyIs_S);
   lit(&k->g.code, v);
 }
 
 void compileFn(Kern* k, TyFn* fn) {
-  eprintf("?? compileFn: %.*s\n", Ty_fmt((Ty*)fn));
   tyCall(k, fn->inp, fn->out);
   Buf* b = &k->g.code;
   if(isFnInline(fn)) { // inline: len before function code.
@@ -687,20 +738,10 @@ void compileVar(Kern* k, TyVar* v, bool asNow) {
 
 void compileTy(Kern* k, Ty* ty, bool asNow) {
   ASSERT(ty, "name not found");
-  eprintf("?? compileTy %.*s\n", Ty_fmt(ty));
-  if(not IS_UNTY and Stk_len(&k->g.tyDb.done)) {
-    eprintf("?? TyIs:"); TyDb_print(k); eprintf("\n");
-  }
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asNow);
   TyFn* fn = tyFn(ty);
-  if(isFnPre(fn))  {
-    eprintf("?? is Pre\n");
-    Kern_compFn(k);
-    if(not IS_UNTY and Stk_len(&k->g.tyDb.done)) {
-      eprintf("?? TyIs after pre:"); TyDb_print(k); eprintf("\n");
-    }
-  }
+  if(isFnPre(fn))  Kern_compFn(k);
 
   if(isFnSyn(fn)) {
     WS_ADD(asNow);
@@ -788,7 +829,6 @@ void single(Kern* k, bool asNow) {
   scan(k); Slc t = *Buf_asSlc(&k->g.token);
   if(not t.len) return;
   ParsedNumber n = parseU4(t);
-  eprintf("Compiling: %.*s isNum=%b\n", Dat_fmt(t), n.isNum);
   if(n.isNum) {
     tokenDrop(k);
     return compileLit(k, n.v, asNow);
@@ -804,41 +844,12 @@ void compileSrc(Kern* k) {
   }
 }
 
-// #################################
-// # Native Type Streams
-
-TYIS(/*extern*/)
-
-// #################################
-// # Native Functions
+// ***********************
+// * 6: Native Functions
 // These functions are implemented as native C code and can be executed by fngi.
 
-// #################################
-//   # Utility
-
-static inline S szIToSz(U1 szI) {
-  switch(SZ_MASK & szI) {
-    case SZ1: return 1;
-    case SZ2: return 2;
-    case SZ4: return 4;
-  }
-  assert(false);
-}
-
-S TyDict_size(TyDict* ty) {
-  if(isDictNative(ty)) return szIToSz(ty->v);
-  else                 return ty->sz;
-}
-
-S TyI_size(TyI tyI) {
-  if(TyI_refs(&tyI)) return RSIZE;
-  ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
-  return TyDict_size((TyDict*)tyI.ty);
-}
-
-// #################################
-//   # Misc
-
+// ***********************
+//   * Misc
 
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
 void N_unty(Kern* k) {
@@ -856,8 +867,8 @@ void N_ret(Kern* k) {
 void N_dropWs(Kern* k) { Stk_clear(WS); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 
-// #################################
-//   # Core syn functions
+// ***********************
+//   * Core syn functions
 
 void _N_dollar(Kern* k);
 TyFn _TyFn_dollar = TyFn_native("\x01" "$", TY_FN_SYN, (S)_N_dollar, TYI_VOID, TYI_VOID);
@@ -906,8 +917,8 @@ void _fnMetaNext(Kern* k, U2 meta) {
   k->g.metaNext |= meta;
 }
 
-// #################################
-//   # fn and fn signature
+// ***********************
+//   * fn and fn signature
 
 void N_pre(Kern* k)     {
   N_notNow(k); k->g.metaNext |= TY_FN_PRE; }
@@ -937,15 +948,11 @@ void varImpl(Kern* k, TyVar* var, S ptr) {
 
 // Used for both stk and out
 void N_stk(Kern *k) {
-  eprintf("?? N_stk\n");
   N_notNow(k);
   Sll** root;
   if(     IS_FN_STATE(FN_STATE_STK)) root = TyFn_inpRoot(tyFn(k->g.curTy));
   else if(IS_FN_STATE(FN_STATE_OUT)) root = TyFn_outRoot(tyFn(k->g.curTy));
-  else {
-    printf("?? fnState=%X\n", k->g.fnState);
-    SET_ERR(SLC("stk used after local variable inputs or in body"));
-  }
+  else { SET_ERR(SLC("stk used after local variable inputs or in body")); }
   CONSUME(":");
   Sll_add(root, TyI_asSll(scanTyI(k)));
 }
@@ -990,7 +997,6 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
   }
 
   for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
-    eprintf("?? sig inp: "); TyI_print(tyI); eprintf("\n");
     TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
     if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) srLocal(k, tyI, v->v, false);
     else if(/*isStk and*/ not IS_UNTY)               TyDb_cloneAddNode(k, tyI);
@@ -1009,17 +1015,15 @@ void N_fn(Kern* k) {
   scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
   tokenDrop(k);
   k->g.curTy = (Ty*) fn;
-  eprintf("?? N_fn: %.*s\n", TyFn_fmt(fn));
 
   Buf* code = &k->g.code;  Buf prevCode = *code;
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
 
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
-  TyDb_new(&k->g.tyDb, NULL);
+  TyDb_new(&k->g.tyDb, NULL); LOCAL_BBA(bbaDict); LOCAL_BBA(bbaTy);
   // Locals
   Stk_add(&k->g.dictStk, 0);
-  LOCAL_BBA(bbaDict); LOCAL_BBA(bbaTy);
   // BBA localBBA = (BBA) { &civ.ba }; BBA* prevBBA = k->g.bbaDict; k->g.bbaDict = &localBBA;
 
   fnSignature(k, fn, code);
@@ -1032,24 +1036,130 @@ void N_fn(Kern* k) {
     WS_ADD(/*asNow=*/false); N_ret(k); // force RET at end.
   }
 
-  TyDb_drop(k);
-  ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
-         "A type operation (i.e. if/while/etc) is incomplete in fn");
 
   // Free unused area of buffers
-  BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
+  ASSERT(not BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1),
+         "N_fn free");
 
   fn->v = (S)code->dat; fn->len = code->len;
   fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
-  END_LOCAL_BBA(bbaDict); END_LOCAL_BBA(bbaTy);
+
+  TyDb_drop(k); END_LOCAL_BBA(bbaDict); END_LOCAL_BBA(bbaTy);
   Stk_pop(&k->g.dictStk);
+  ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
+         "A type operation (i.e. if/while/etc) is incomplete in fn");
 }
 
+// ***********************
+//   * if/elif/else
 
-// #################################
-// # Registering Functions
+U2 _if(Buf* b) {
+  Buf_add(b, JLZ); Buf_add(b, 0);
+  return b->len - 1;
+}
+
+void _endIf(Buf* b, U2 i) {
+  b->dat[i] = b->len - i;
+}
+
+U2 _else(Buf* b, U2 iIf) {
+  Buf_add(b, JL); // end of if has unconditional jmp to end of else
+  Buf_add(b, 0);
+  _endIf(b, iIf); // if jmps into else block
+  return b->len - 1;
+}
+
+#define DBG_TYS(MSG) \
+    if(not IS_UNTY) { eprintf(MSG " "); dbgTyIs(k); NL; }
+
+// return wasDone
+bool tyIf(Kern* k, bool isTopIf) {
+  if(IS_UNTY) return false;
+  if(TyDb_done(k)) {
+    tyMerge(k);
+    // if(not isTopIf) {
+    //   TyDb_swap(k);
+    // }
+    return true;
+  }
+  if(not isTopIf) { // must be equal to previous if
+    DBG_TYS("?? performing non-top-if\n");
+    Stk* tyIs = &k->g.tyDb.tyIs;
+    Stk* done = &k->g.tyDb.done;
+    TyDb_swap(k); // get code at top
+    S code = Stk_pop(tyIs);
+    S codeDone = Stk_pop(done);
+    tyMerge(k);   // merge with topIf
+    Stk_add(tyIs, code);
+    Stk_add(done, codeDone);
+    TyDb_swap(k); // topIf is on top
+    DBG_TYS("?? done with shenanigans\n");
+  }
+  return false;
+}
+
+void tyElse(Kern* k, bool isTopIf, bool ifWasDone) {
+  if(IS_UNTY) return;
+  eprintf("?? tyElse isTopIf=%u  ifWasDone=%u", isTopIf, ifWasDone); DBG_TYS("");
+  if(ifWasDone and isTopIf) {
+    TyDb_swap(k); TyDb_drop(k); // else becomes new top
+  } else if (TyDb_done(k)) { // else was done
+    tyMerge(k); // merge else
+    tyMerge(k); // merge if
+  } else {
+    eprintf("?? last tyElse\n");
+    tyMerge(k); // if and else must be equal
+    TyDb_swap(k); TyDb_drop(k); // if/else becomes new top
+  }
+}
+
+// The "topIf" is the first if that doesn't have a guaranteed return (TyDb_done)
+void _N_if(Kern* k, bool isTopIf) {
+  eprintf("?? tyIf isTopIf=%u", isTopIf); DBG_TYS("");
+  if(not IS_UNTY and not isTopIf) {
+    TyDb_swap(k);
+    DBG_TYS("?? after swap");
+  }
+  Kern_compFn(k);
+  tyCall(k, &TyIs_S, NULL);
+  tyClone(k, 0);
+  DBG_TYS("?? after call and clone");
+  Buf* b = &k->g.code;
+  U2 i = _if(b);
+  REQUIRE("do"); Kern_compFn(k); // compile body
+  eprintf("?? after compFn\n");
+  bool ifWasDone = tyIf(k, isTopIf);
+  DBG_TYS("?? after tyIf");
+
+  if(CONSUME("elif")) {
+    DBG_TYS("?? elif");
+    i = _else(b, i);
+    _N_if(k, isTopIf and ifWasDone); // recurse for next elif/else
+  } else if(CONSUME("else")) {
+    DBG_TYS("?? else");
+    i = _else(b, i);
+    tyClone(k, not ifWasDone /*top if not done, else index=1*/);
+    Kern_compFn(k); // else body
+    tyElse(k, isTopIf, ifWasDone);
+  } else {
+    // There was no elif or else, stack at start+end must be identical.
+    tyMerge(k);
+  }
+  _endIf(b, i);
+}
+
+// if   (...) do (...)
+// elif (...) do (...)
+// else          (...)
+void N_if(Kern* k) {
+  N_notNow(k);
+  _N_if(k, true);
+}
+
+// ***********************
+// * 7: Registering Functions
 
 // Create a static TyFn and add it to the kern.
 // NAMELEN: the fngi name's length; NAME: the fngi name
@@ -1139,9 +1249,10 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "inline",  TY_FN_SYN, N_inline);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x07", "comment", TY_FN_COMMENT, N_comment);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "if",      TY_FN_SYN, N_if);
 
 
-  STATIC_NATIVE(&TyIs_SS, &TyIs_S, "\x09", "tAssertEq",  TY_FN_PRE, N_tAssertEq);
+  STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  TY_FN_PRE, N_tAssertEq);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
   STATIC_INLINE(&TyIs_SS, &TyIs_SS,  "\x03", "swp"  , 0       , SWP   );
@@ -1203,19 +1314,18 @@ void Kern_fns(Kern* k) {
   TASSERT_EMPTY();
 }
 
-// Test helpers
+// ***********************
+// * 8: Execution helpers
 
 void executeInstrs(Kern* k, U1* instrs) {
   cfb->ep = instrs;
   executeLoop(k);
 }
 
-
 CStr_ntLitUnchecked(replPath, "\x08", "/repl.fn");
 FileInfo replInfo = {0};
 
 U1* compileRepl(Kern* k, bool withRet) {
-  LOCAL_BBA(bbaTy);
   replInfo.path = replPath;
   k->g.srcInfo = &replInfo;
   U1* body = (U1*) BBA_alloc(&k->bbaRepl, 256, 1);
@@ -1224,18 +1334,19 @@ U1* compileRepl(Kern* k, bool withRet) {
   compileSrc(k);
   if(withRet) Buf_add(code, RET);
   if(code->len < code->cap) {
-    BBA_free(
+    ASSERT(not BBA_free(
       &k->bbaRepl,
       /*dat*/code->dat + code->len,
       /*sz*/code->cap - code->len,
-      /*alignment*/1);
+      /*alignment*/1),
+      "compileRepl free");
   }
   *code = (Buf){0};
-  END_LOCAL_BBA(bbaTy);
   return body;
 }
 
 void simpleRepl(Kern* k) {
+  REPL_START
   size_t cap;  jmp_buf local_errJmp;  jmp_buf* prev_errJmp = civ.fb->errJmp;
   Ring_var(_r, 256);  BufFile f = BufFile_init(_r, (Buf){0});
   k->g.src = File_asReader(BufFile_asFile(&f));
@@ -1245,7 +1356,7 @@ void simpleRepl(Kern* k) {
   U2 rsSp = RS->sp; U2 infoSp = cfb->info.sp;
   while(true) {
     if(setjmp(local_errJmp)) { // got panic
-      eprintf("!! Caught panic, WS: "); dbgWs(k);
+      eprintf("!! Caught panic, WS: "); dbgWs(k); NL;
       RS->sp = rsSp; cfb->info.sp = infoSp;
       Ring_clear(&f.ring); Buf_clear(&k->g.token);
     }
@@ -1257,6 +1368,8 @@ void simpleRepl(Kern* k) {
     if(0 == strcmp("EXIT", f.b.dat)) break;
     if(len-1) executeInstrs(k, compileRepl(k, true));
     eprintf("> "); dbgWs(k);
+    eprintf(" :"); TyI_printAll(TyDb_top(&k->g.tyDb)); NL;
   }
   civ.fb->errJmp = prev_errJmp;
+  REPL_END
 }
