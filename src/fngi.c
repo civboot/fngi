@@ -349,6 +349,133 @@ void executeFn(Kern* k, TyFn* fn) {
 }
 
 
+// #################################
+// # Ty checker
+
+bool TyI_eq(TyI* l, TyI* r) { return (TyI_refs(l) == TyI_refs(r)) and (l->ty == r->ty); }
+
+void TyI_print(TyI* tyI) {
+  for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
+  eprintf("%.*s", Dat_fmt(*tyI->ty->bst.key));
+}
+
+void TyI_printAll(TyI* tyI) {
+  if(not tyI) return;
+  TyI_printAll(tyI->next);
+  eprintf(" "); TyI_print(tyI);
+}
+
+TyI* TyI_cloneNode(Kern* k, TyI* node) {
+  TyI* cloned = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
+  *cloned = *node; cloned->next = NULL;
+  return cloned;
+}
+
+void TyDb_print(Kern* k) { TyI_printAll(TyDb_top(&k->g.tyDb)); }
+
+void TyDb_cloneAddNode(Kern* k, TyI* node) {
+  Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(k, node)));
+}
+
+// Clone from bottom to top, pushing onto root.
+// The result will be in the same order.
+// This is done so that freeing is done from top to bottom.
+void  TyDb_cloneAdd(Kern* k, TyI* nodes) {
+  if(not nodes) return;
+  TyDb_cloneAdd(k, nodes->next);
+  TyDb_cloneAddNode(k, nodes);
+}
+
+void TyDb_free(Kern* k, TyI* stream) {
+  TyDb* db = &k->g.tyDb;
+  TyI** root = TyDb_root(db);
+  while(stream) {
+    TyI* next = stream->next; // cache since we may free the node
+    BBA_free(&k->bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
+    stream = next;
+  }
+}
+
+void TyDb_drop(Kern* k) {
+  TyDb* db = &k->g.tyDb;
+  TyDb_free(k, TyDb_top(db));
+  Stk_pop(&db->tyIs);
+  Stk_pop(&db->done);
+}
+
+#define IS_UNTY  (C_UNTY & k->g.fnState)
+
+void tyNotMatch(TyI* require, TyI* given) {
+      eprintf("!!   Given  :"); TyI_printAll(given);
+    eprintf("\n!!   Require:"); TyI_printAll(require); eprintf("\n");
+}
+
+// Check two type stacks.
+void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
+  TyI* require = require_, *given = given_;
+  S i = 0;
+  while(require) {
+    if(not given) {
+      eprintf("!! Detected stack underflow, need additional types:\n");
+      tyNotMatch(require_, given_);
+      SET_ERR(errCxt);
+    }
+    if(not TyI_eq(require, given)) {
+      eprintf("!! Given %u Types from right doesn't match Require\n", i);
+      tyNotMatch(require_, given_);
+      SET_ERR(errCxt);
+    }
+    given = given->next; require = require->next; i += 1;
+  }
+  if(sameLen and given) {
+    eprintf("!! Type lengths differ:\n"); tyNotMatch(require_, given_);
+    SET_ERR(errCxt);
+  }
+}
+
+// Call a function or equivalent, checking and popping inp; then pushing the out.
+void tyCall(Kern* k, TyI* inp, TyI* out) {
+  if(IS_UNTY) return;
+  eprintf("?? tyCall done=%u\n", TyDb_done(k));
+  ASSERT(not TyDb_done(k), "Code after guaranteed 'ret'");
+  eprintf("?? tyCall 1\n");
+  TyI** root = TyDb_root(&k->g.tyDb);
+
+  tyCheck(inp, *root, false, SLC("Type error during operation (i.e. function call, struct, etc)"));
+  TyDb_free(k, inp);
+  TyDb_cloneAdd(k, out);
+}
+
+// Check function return type and possibly mark as done.
+void tyRet(Kern* k, bool done) {
+  if(IS_UNTY) return;
+  eprintf("?? tyRet\n");
+  TyDb* db = &k->g.tyDb;
+  ASSERT(not TyDb_done(k), "Code after guaranteed 'ret'");
+  tyCheck(tyFn(k->g.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
+  TyDb_setDone(db, done);
+  eprintf("?? tyRet end\n");
+}
+
+// Clone the current snapshot and use clone for continued mutations.
+void tyClone(Kern* k) {
+  if(IS_UNTY) return;
+  TyDb* db = &k->g.tyDb;
+  TyI* stream = TyDb_top(db);
+  TyDb_new(&k->g.tyDb, NULL);
+  TyDb_cloneAdd(k, stream);
+}
+
+void tyMerge(Kern* k) {
+  if(IS_UNTY) return;
+  TyDb* db = &k->g.tyDb;
+  ASSERT(Stk_len(&db->tyIs) > 1, "tyMerge with 1 or fewer snapshots");
+  TyI* top = TyDb_top(db);
+  TyI* scnd = (TyI*) &db->tyIs.dat[db->tyIs.sp + 1];
+  tyCheck(scnd, top, true, SLC("Type error during merge (i.e. if/else)"));
+  TyDb_drop(k);
+}
+
 
 // ***********************
 // * 3: Token scanner
@@ -475,11 +602,13 @@ void lit(Buf* b, U4 v) {
 void compileLit(Kern* k, U4 v, bool asNow) {
   eprintf("?? compilingLit: %X asNow=%b\n", v, asNow);
   if(asNow) return WS_ADD(v);
+  tyCall(k, NULL, &TyIs_S);
   lit(&k->g.code, v);
 }
 
 void compileFn(Kern* k, TyFn* fn) {
   eprintf("?? compileFn: %.*s\n", Ty_fmt((Ty*)fn));
+  tyCall(k, fn->inp, fn->out);
   Buf* b = &k->g.code;
   if(isFnInline(fn)) { // inline: len before function code.
     return Buf_extend(b, (Slc){(U1*)fn->v, .len=fn->len});
@@ -515,6 +644,7 @@ void op2(Buf* b, U1 op, U1 sz, S v) {
 }
 
 void ftLocal(Kern* k, TyI* tyI, U2 offset) {
+  tyCall(k, NULL, tyI);
   Buf* b = &k->g.code;
   if(TyI_refs(tyI)) return op1(b, FTLL, SZR, offset);
   ASSERT(not isTyFn(tyI->ty), "invalid fn local");
@@ -523,7 +653,8 @@ void ftLocal(Kern* k, TyI* tyI, U2 offset) {
   assert(false); // struct / etc
 }
 
-void srLocal(Kern* k, TyI* tyI, U2 offset) {
+void srLocal(Kern* k, TyI* tyI, U2 offset, bool checkTy) {
+  if(checkTy) tyCall(k, tyI, NULL);
   Buf* b = &k->g.code;
   if(TyI_refs(tyI)) return op1(b, SRLL, SZR, offset);
   ASSERT(not isTyFn(tyI->ty), "invalid fn local");
@@ -535,17 +666,25 @@ void srLocal(Kern* k, TyI* tyI, U2 offset) {
 void compileVar(Kern* k, TyVar* v, bool asNow) {
   if(isVarGlobal(v)) assert(false);
   ASSERT(not asNow, "'$' used with local variable");
-  if(CONSUME("=")) assert(false);
+  if(CONSUME("=")) srLocal(k, v->tyI, /*offset=*/v->v, true);
   else             ftLocal(k, v->tyI, /*offset=*/v->v);
 }
 
 void compileTy(Kern* k, Ty* ty, bool asNow) {
   ASSERT(ty, "name not found");
+  eprintf("?? compileTy %.*s\n", Ty_fmt(ty));
+  if(not IS_UNTY and Stk_len(&k->g.tyDb.done)) {
+    eprintf("?? TyIs:"); TyDb_print(k); eprintf("\n");
+  }
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asNow);
   TyFn* fn = tyFn(ty);
   if(isFnPre(fn))  {
+    eprintf("?? is Pre\n");
     Kern_compFn(k);
+    if(not IS_UNTY and Stk_len(&k->g.tyDb.done)) {
+      eprintf("?? TyIs after pre:"); TyDb_print(k); eprintf("\n");
+    }
   }
 
   if(isFnSyn(fn)) {
@@ -587,7 +726,10 @@ void Kern_addTy(Kern* k, Ty* ty) {
   ASSERT(dicts->sp < dicts->cap, "No dicts");
   Bst** root = (Bst**) &dicts->dat[dicts->sp];
   ty = (Ty*)Bst_add(root, (Bst*)ty);
-  ASSERT(not ty, "key was overwritten");
+  if(ty) {
+    eprintf("!! Overwritten key: %.*s\n", Dat_fmt(*ty->bst.key));
+    SET_ERR(SLC("key was overwritten"));
+  }
 }
 
 Ty* scanTy(Kern* k) {
@@ -648,131 +790,6 @@ void compileSrc(Kern* k) {
 }
 
 // #################################
-// # Ty checker
-
-bool TyI_eq(TyI* l, TyI* r) { return (TyI_refs(l) == TyI_refs(r)) and (l->ty == r->ty); }
-
-void TyI_print(TyI* tyI) {
-  for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
-  eprintf("%.*s", Dat_fmt(*tyI->ty->bst.key));
-}
-
-void TyI_printAll(TyI* tyI) {
-  if(not tyI) return;
-  TyI_printAll(tyI->next);
-  eprintf(" "); TyI_print(tyI);
-}
-
-void TyDb_drop(Kern* k) {
-  TyDb* db = &k->g.tyDb;
-  TyDb_free(k, TyDb_top(db));
-  Stk_pop(&db->tyIs);
-  Stk_pop(&db->done);
-}
-
-void tyNotMatch(TyI* require, TyI* given) {
-      eprintf("!!   Given  :"); TyI_printAll(given);
-    eprintf("\n!!   Require:"); TyI_printAll(require); eprintf("\n");
-}
-
-// Check two type stacks.
-void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
-  TyI* require = require_, *given = given_;
-  S i = 0;
-  while(require) {
-    if(not given) {
-      eprintf("!! Detected stack underflow, need additional types:");
-      TyI_printAll(require);
-      SET_ERR(errCxt);
-    }
-    if(not TyI_eq(require, given)) {
-      eprintf("!! Given %u Types from right doesn't match Require\n", i);
-      tyNotMatch(require_, given_);
-      SET_ERR(errCxt);
-    }
-    given = given->next; require = require->next;
-    i += 1;
-  }
-  if(sameLen and given) {
-    eprintf("!! Type lengths differ:\n"); tyNotMatch(require_, given_);
-    SET_ERR(errCxt);
-  }
-}
-
-// Call a function or equivalent, checking and popping inp; then pushing the out.
-void tyCall(Kern* k, TyI* inp, TyI* out) {
-  ASSERT(not TyDb_done(&k->g.tyDb), "Code after guaranteed 'ret'");
-  TyI** root = TyDb_root(&k->g.tyDb);
-
-  tyCheck(inp, *root, false, SLC("Type error during operation (i.e. function call, struct, etc)"));
-  TyDb_free(k, inp);
-
-  for(; out; out = out->next) {
-    TyI* tyI = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE); ASSERT(tyI, "OOM tyCall");
-    *tyI = *out;
-    Sll_add((Sll**)root, (Sll*)tyI);
-  }
-}
-
-// Check function return type and possibly mark as done.
-void tyRet(Kern* k, bool done) {
-  TyDb* db = &k->g.tyDb;
-  ASSERT(not TyDb_done(db), "Code after guaranteed 'ret'");
-  tyCheck(tyFn(k->g.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
-  TyDb_setDone(db, done);
-}
-
-TyI* TyI_cloneNode(Kern* k, TyI* node) {
-  TyI* cloned = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
-  *cloned = *node; cloned->next = NULL;
-  return cloned;
-}
-
-// Clone from bottom to top. The result will be in the same order.
-void  TyI_cloneBotToTop(Kern* k, TyI** root, TyI* node) {
-  if(not node) return;
-  TyI_cloneBotToTop(k, root, node->next);
-  Sll_add((Sll**)root, TyI_asSll(TyI_cloneNode(k, node)));
-}
-
-// Clone from top to bottom. The result will be in the same order.
-TyI* TyI_cloneTopToBot(Kern* k, TyI* node) {
-  TyI* cloned = NULL;
-  for(; node; node = node->next) {
-    TyI* next = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE);
-    ASSERT(next, "tyClone OOM");
-    if(cloned) cloned->next = next;
-    else       cloned = next;
-    node = node->next;
-  }
-  return cloned;
-}
-
-// clone in reversed order
-void TyI_cloneReversed(Kern* k, TyI** root, TyI* node) {
-  if(not node) return;
-  TyI_cloneReversed(k, root, node->next);
-
-}
-
-// Clone the current snapshot and use clone for continued mutations.
-void tyClone(Kern* k) {
-  TyDb* db = &k->g.tyDb;
-  TyI* stream = TyDb_top(db);
-  TyDb_new(&k->g.tyDb, NULL);
-  TyI_cloneBotToTop(k, TyDb_root(db), stream);
-}
-
-void tyMerge(Kern* k) {
-  TyDb* db = &k->g.tyDb;
-  ASSERT(Stk_len(&db->tyIs) > 1, "tyMerge with 1 or fewer snapshots");
-  TyI* top = TyDb_top(db);
-  TyI* scnd = (TyI*) &db->tyIs.dat[db->tyIs.sp + 1];
-  tyCheck(scnd, top, true, SLC("Type error during merge (i.e. if/else)"));
-  TyDb_drop(k);
-}
-
-// #################################
 // # Native Type Streams
 
 TYIS(/*extern*/)
@@ -807,7 +824,20 @@ S TyI_size(TyI tyI) {
 // #################################
 //   # Misc
 
+
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
+void N_unty(Kern* k) {
+  WS_POP(); // ignore asNow
+  k->g.fnState |= C_UNTY;
+  Kern_compFn(k);
+  k->g.fnState &= ~C_UNTY;
+}
+
+void N_ret(Kern* k) {
+  N_notNow(k);
+  tyRet(k, true);
+  Buf_add(&k->g.code, RET);
+}
 void N_dropWs(Kern* k) { Stk_clear(WS); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 
@@ -892,9 +922,10 @@ void varImpl(Kern* k, TyVar* var, S ptr) {
 
 // Used for both stk and out
 void N_stk(Kern *k) {
+  eprintf("?? N_stk\n");
   N_notNow(k);
   Sll** root;
-  if(IS_FN_STATE(FN_STATE_STK))      root = TyFn_inpRoot(tyFn(k->g.curTy));
+  if(     IS_FN_STATE(FN_STATE_STK)) root = TyFn_inpRoot(tyFn(k->g.curTy));
   else if(IS_FN_STATE(FN_STATE_OUT)) root = TyFn_outRoot(tyFn(k->g.curTy));
   else {
     printf("?? fnState=%X\n", k->g.fnState);
@@ -942,15 +973,22 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
     else                                  N_inp(k);
   }
 
-  TyI* tyI = ((TyFn*)k->g.curTy)->inp;
-  while(tyI) {
+  for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
+    eprintf("?? sig inp: "); TyI_print(tyI); eprintf("\n");
     TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
-    if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) srLocal(k, tyI, v->v);
-    tyI = tyI->next;
+    if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) srLocal(k, tyI, v->v, false);
+    else if(/*isStk and*/ not IS_UNTY)               TyDb_cloneAddNode(k, tyI);
   }
 
   if(fn->inp) fn->meta |= TY_FN_PRE;
 }
+
+// void tyFnStkInp(Kern* k, TyFn* fn) {
+//   if(IS_UNTY) return;
+//   for(TyI* stk = fn->inp; stk; stk = stk->next) {
+//   }
+//   TyDb_cloneAdd(k, fn->inp);
+// }
 
 // fn NAME do (... code ...)
 // future:
@@ -968,11 +1006,25 @@ void N_fn(Kern* k) {
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
 
-  fnSignature(k, fn, code);
-  SET_FN_STATE(FN_STATE_BODY);
-  Kern_compFn(k);
+  TyDb_new(&k->g.tyDb, NULL);
+  // Locals
+  Stk_add(&k->g.dictStk, 0);
+  BBA localBBA = (BBA) { &civ.ba }; BBA* prevBBA = k->g.bbaDict; k->g.bbaDict = &localBBA;
 
-  if(RET != code->dat[code->len-1]) Buf_add(code, RET); // force RET at end.
+  fnSignature(k, fn, code);
+  SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
+  SET_FN_STATE(FN_STATE_NO);
+
+  // Force a RET at the end, whether UNTY or not.
+  if( (not IS_UNTY and not TyDb_done(k))
+      or  (IS_UNTY and (RET != code->dat[code->len-1]))) {
+    WS_ADD(/*asNow=*/false); N_ret(k); // force RET at end.
+  }
+
+  TyDb_drop(k);
+  ASSERT(not Stk_len(&k->g.tyDb.done),
+         "A type operation (i.e. if/while/etc) is incomplete in fn");
+
   // Free unused area of buffers
   BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1);
 
@@ -980,6 +1032,7 @@ void N_fn(Kern* k) {
   fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
+  BBA_drop(&localBBA); k->g.bbaDict = prevBBA; Stk_pop(&k->g.dictStk);
 }
 
 
@@ -1065,16 +1118,20 @@ void Kern_fns(Kern* k) {
   STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", ","    , 0       , /*no code*/);
   STATIC_INLINE(TYI_VOID, TYI_VOID, "\x02", "->"   , 0       , /*no code*/);
 
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "\\",      TY_FN_COMMENT, N_fslash);
+
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "notNow",  TY_FN_SYN, N_notNow);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "unty",    TY_FN_SYN, N_unty);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "ret",     TY_FN_SYN, N_ret);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "$",       TY_FN_SYN, N_dollar);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "(",       TY_FN_SYN, N_paren);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "notNow",  TY_FN_SYN, N_notNow);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "\\",      TY_FN_COMMENT, N_fslash);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "pre",     TY_FN_SYN, N_pre);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "now",     TY_FN_SYN, N_now);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "syn",     TY_FN_SYN, N_syn);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "inline",  TY_FN_SYN, N_inline);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x07", "comment", TY_FN_COMMENT, N_comment);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
+
 
   STATIC_NATIVE(&TyIs_SS, &TyIs_S, "\x09", "tAssertEq",  TY_FN_PRE, N_tAssertEq);
 
@@ -1087,7 +1144,6 @@ void Kern_fns(Kern* k) {
 
   // Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
   STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "nop"  , TY_FN_PRE, NOP  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "ret"  , TY_FN_PRE, RET  );
   STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inc"  , TY_FN_PRE, INC  );
   STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc2" , TY_FN_PRE, INC2 );
   STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc4" , TY_FN_PRE, INC4 );

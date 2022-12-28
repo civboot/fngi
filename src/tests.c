@@ -61,31 +61,8 @@ END_TEST_FNGI
 Slc testCxt = SLC("test");
 #define TY_CHECK(REQ, GIV, SAMELEN) tyCheck(REQ, GIV, SAMELEN, testCxt)
 
-TEST_FNGI(tyDb, 4)
-  Kern_fns(k);
-
-  TyI_printAll(&TyIs_S);      eprintf("\n");
-  TyI_printAll(&TyIs_U4_rU4); eprintf("\n");
-  TY_CHECK(&TyIs_S, &TyIs_S,  false);
-  TY_CHECK(&TyIs_S, &TyIs_S,  true);
-  TY_CHECK(&TyIs_S, &TyIs_SS, false);
-
-  EXPECT_ERR(TY_CHECK(&TyIs_S, &TyIs_SS, true));
-  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_U4_rU4, true));
-
-  TyDb* db = &k->g.tyDb;
-
-  TyDb_new(db, NULL);
-
-  // Call a function which returns [S], the type gets put on
-  tyCall(k, NULL, &TyIs_S); TY_CHECK(&TyIs_S, TyDb_top(db), true);
-
-  // Now call a function which consumes [S], the type stack empties
-  tyCall(k, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
-
-END_TEST_FNGI
-
 TEST_FNGI(compile0, 4)
+  k->g.fnState |= C_UNTY;
   Kern_fns(k);
   TASSERT_EMPTY();
 
@@ -113,8 +90,9 @@ TEST_FNGI(compile0, 4)
   TASSERT_EMPTY();
 END_TEST_FNGI
 
-TEST_FNGI(compile1, 4)
+TEST_FNGI(compile1, 5)
   Kern_fns(k);
+  k->g.fnState |= C_UNTY;
   Ty* Ty_U2 = Kern_findTy(k, SLC("U2"));
   Ty* Ty_S  = Kern_findTy(k, SLC("S"));
 
@@ -149,6 +127,48 @@ TEST_FNGI(compile1, 4)
   COMPILE_EXEC("tAssertEq(0x10 shr 4, 1)");
 END_TEST_FNGI
 
+TEST_FNGI(tyDb, 4)
+  Kern_fns(k);
+
+  TyI_printAll(&TyIs_S);      eprintf("\n");
+  TyI_printAll(&TyIs_U4_rU4); eprintf("\n");
+  TY_CHECK(&TyIs_S, &TyIs_S,  false);
+  TY_CHECK(&TyIs_S, &TyIs_S,  true);
+  TY_CHECK(&TyIs_S, &TyIs_SS, false);
+
+  EXPECT_ERR(TY_CHECK(&TyIs_S, &TyIs_SS, true));
+  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_U4_rU4, true));
+
+  TyDb* db = &k->g.tyDb;
+
+  TyDb_new(db, NULL);
+
+  // Call a function which returns [S], the type gets put on
+  tyCall(k, NULL, &TyIs_S); TY_CHECK(&TyIs_S, TyDb_top(db), true);
+
+  // Now call a function which consumes [S], the type stack empties
+  tyCall(k, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
+
+  // ret[done] causes errors on future operations
+  k->g.curTy = Kern_findTy(k, SLC("+"));
+  tyCall(k, NULL, &TyIs_S);
+  tyRet(k, true);  TASSERT_EQ(true, TyDb_done(k));
+  EXPECT_ERR(tyCall(k, &TyIs_S, NULL));
+
+END_TEST_FNGI
+
+TEST_FNGI(compileTy, 6)
+  Kern_fns(k);
+  eprintf("?? compiling typed pop2\n");
+  COMPILE_EXEC("fn pop2    a:U1 b:U2 c:S -> \\a:U1 do (a)");
+  COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1 do (_)");
+  // Not yet working because locals is wrong.
+  // Locals tyI needs to be a clone of the one used in the fn signature,
+  // otherwise the next-chain polutes it.
+  // COMPILE_EXEC("fn add   stk:S b:S       -> \\sum:S do (_ + b)");
+
+END_TEST_FNGI
+
 TEST_FNGI(repl, 20)
   Kern_fns(k);
   simpleRepl(k);
@@ -171,6 +191,7 @@ int main(int argc, char* argv[]) {
   test_compile0();
   test_compile1();
   test_tyDb();
+  test_compileTy();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

@@ -194,8 +194,6 @@ ParsedNumber parseU4(Slc t);
 
 // #################################
 // # Compiler
-static inline bool isTyLocal(Ty* fn)  { return C_LOCAL & fn->meta; }
-
 #define IS_TY(M)   { return (M) == (TY_MASK & ty->meta); }
 static inline bool isTyConst(Ty* ty)  IS_TY(TY_CONST)
 static inline bool isTyFn(Ty* ty)     IS_TY(TY_FN)
@@ -281,22 +279,14 @@ static inline TyI* TyDb_top(TyDb* db) { return (TyI*) Stk_top(&db->tyIs); }
 static inline TyI** TyDb_root(TyDb* db) { return (TyI**) Stk_topRef(&db->tyIs); }
 
 // Get/set whether current snapshot is done (guaranteed ret)
-static inline bool TyDb_done(TyDb* db) { return (bool) Stk_top(&db->done); }
+static inline bool TyDb_done(Kern* k) { return Stk_top(&k->g.tyDb.done); }
 static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = done; }
 
 // Free from the current snapshot.
 //
 // "stream" can be either TyDb_top (freeing the entire snapshot), or a
 // separate type stream which indicates the length of items to drop.
-static inline void TyDb_free(Kern* k, TyI* stream) {
-  TyDb* db = &k->g.tyDb;
-  TyI** root = TyDb_root(db);
-  while(stream) {
-    TyI* next = stream->next; // cache since we may free the node
-    BBA_free(&k->bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
-    stream = next;
-  }
-}
+void TyDb_free(Kern* k, TyI* stream);
 
 // Drop the current snapshot
 void TyDb_drop(Kern* k);
