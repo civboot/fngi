@@ -93,22 +93,20 @@ END_TEST_FNGI
 TEST_FNGI(compile1, 5)
   Kern_fns(k);
   k->g.fnState |= C_UNTY;
-  Ty* Ty_U2 = Kern_findTy(k, SLC("U2"));
-  Ty* Ty_S  = Kern_findTy(k, SLC("S"));
 
   COMPILE_EXEC("pre fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
   COMPILE_EXEC("fn maths2 stk:U2 -> U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
   TyFn* maths2 = tyFn(Kern_findTy(k, SLC("maths2")));
-  TASSERT_EQ(Ty_U2, maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
-  TASSERT_EQ(Ty_U2, maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
+  TASSERT_EQ(&Ty_U2, maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
+  TASSERT_EQ(&Ty_U2, maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
   TASSERT_EQ(NULL, maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
 
   COMPILE_EXEC("fn maths3 x:U2 -> U2 do (x + 4) maths3(3)"); TASSERT_WS(7);
   TyFn* maths3 = tyFn(Kern_findTy(k, SLC("maths3")));
-  TASSERT_EQ(Ty_U2, maths3->inp->ty);
+  TASSERT_EQ(&Ty_U2, maths3->inp->ty);
   TASSERT_SLC_EQ("x" , CStr_asSlc(maths3->inp->name));
-  TASSERT_EQ(Ty_U2, maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
+  TASSERT_EQ(&Ty_U2, maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
   TASSERT_EQ(NULL, maths3->inp->next); TASSERT_EQ(NULL, maths3->out->next);
   TASSERT_EQ(1, maths3->lSlots);
 
@@ -118,7 +116,7 @@ TEST_FNGI(compile1, 5)
   TASSERT_SLC_EQ("c" , CStr_asSlc(pop2->inp->name));
   TASSERT_SLC_EQ("b" , CStr_asSlc(pop2->inp->next->name));
   TASSERT_SLC_EQ("a" , CStr_asSlc(pop2->inp->next->next->name));
-  TASSERT_EQ(Ty_S, pop2->inp->ty);
+  TASSERT_EQ(&Ty_S, pop2->inp->ty);
   TASSERT_EQ(2, pop2->lSlots);
 
   COMPILE_EXEC("tAssertEq(42, 42)");
@@ -129,6 +127,7 @@ END_TEST_FNGI
 
 TEST_FNGI(tyDb, 4)
   Kern_fns(k);
+  LOCAL_BBA(bbaTy);
 
   TyI_printAll(&TyIs_S);      eprintf("\n");
   TyI_printAll(&TyIs_U4_rU4); eprintf("\n");
@@ -154,18 +153,18 @@ TEST_FNGI(tyDb, 4)
   tyCall(k, NULL, &TyIs_S);
   tyRet(k, true);  TASSERT_EQ(true, TyDb_done(k));
   EXPECT_ERR(tyCall(k, &TyIs_S, NULL));
-
+  END_LOCAL_BBA(bbaTy);
 END_TEST_FNGI
 
 TEST_FNGI(compileTy, 6)
   Kern_fns(k);
   eprintf("?? compiling typed pop2\n");
-  COMPILE_EXEC("fn pop2    a:U1 b:U2 c:S -> \\a:U1 do (a)");
-  COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1 do (_)");
-  // Not yet working because locals is wrong.
-  // Locals tyI needs to be a clone of the one used in the fn signature,
-  // otherwise the next-chain polutes it.
-  // COMPILE_EXEC("fn add   stk:S b:S       -> \\sum:S do (_ + b)");
+  COMPILE_EXEC("fn pop2    a:U1 b:U2 c:S -> \\a:U1  do (a)");
+  COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1  do (_)");
+  COMPILE_EXEC("fn add   stk:U1 b:S      -> \\sum:S do (_ + b)");
+  // COMPILE_EXEC("add(42, 7)");
+  // eprintf("?? out\n");
+  // TASSERT_WS(49);
 
 END_TEST_FNGI
 

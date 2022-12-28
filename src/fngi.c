@@ -37,7 +37,6 @@ TyFn TyFn_baseCompFn = {
 
 void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
-    .bbaTy   = (BBA) { &civ.ba },
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
     .bbaRepl = (BBA) { &civ.ba },
@@ -352,7 +351,23 @@ void executeFn(Kern* k, TyFn* fn) {
 // #################################
 // # Ty checker
 
-bool TyI_eq(TyI* l, TyI* r) { return (TyI_refs(l) == TyI_refs(r)) and (l->ty == r->ty); }
+bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
+  if(TyI_refs(r) != TyI_refs(g)) return false;
+  if(r->ty == g->ty)             return true;
+  if((&Ty_S == r->ty) or (&Ty_U4 == r->ty)) {
+    if(&Ty_U1 == g->ty) return true;
+    if(&Ty_U2 == g->ty) return true;
+    if(&Ty_U4 == g->ty) return true;
+    if(&Ty_S  == g->ty) return true;
+  } else if ((&Ty_U2 == r->ty) and (&Ty_U1 == g->ty)) return true;
+  else if ((&Ty_I4 == r->ty) or (&Ty_SI == r->ty)) {
+    if(&Ty_I4 == g->ty) return true;
+    if(&Ty_SI == g->ty) return true;
+  }
+  // TODO: for structs, allow references to structs where the given has a prefix
+  // of the required.
+  return false;
+}
 
 void TyI_print(TyI* tyI) {
   for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
@@ -365,8 +380,8 @@ void TyI_printAll(TyI* tyI) {
   eprintf(" "); TyI_print(tyI);
 }
 
-TyI* TyI_cloneNode(Kern* k, TyI* node) {
-  TyI* cloned = BBA_alloc(&k->bbaTy, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
+TyI* TyI_cloneNode(TyI* node, BBA* bba) {
+  TyI* cloned = BBA_alloc(bba, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
   *cloned = *node; cloned->next = NULL;
   return cloned;
 }
@@ -374,7 +389,7 @@ TyI* TyI_cloneNode(Kern* k, TyI* node) {
 void TyDb_print(Kern* k) { TyI_printAll(TyDb_top(&k->g.tyDb)); }
 
 void TyDb_cloneAddNode(Kern* k, TyI* node) {
-  Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(k, node)));
+  Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(node, k->g.bbaTy)));
 }
 
 // Clone from bottom to top, pushing onto root.
@@ -391,7 +406,7 @@ void TyDb_free(Kern* k, TyI* stream) {
   TyI** root = TyDb_root(db);
   while(stream) {
     TyI* next = stream->next; // cache since we may free the node
-    BBA_free(&k->bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
+    BBA_free(k->g.bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
     stream = next;
   }
 }
@@ -954,7 +969,8 @@ void N_inp(Kern* k) {
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
          , "inp used after out");
   SET_FN_STATE(FN_STATE_INP);
-  Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(var->tyI));
+  TyI* tyI = TyI_cloneNode(var->tyI, k->g.bbaDict);
+  Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(tyI));
   varImpl(k, var, /*ptr=*/0);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (S)N_inp, TYI_VOID, TYI_VOID);
@@ -983,13 +999,6 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
   if(fn->inp) fn->meta |= TY_FN_PRE;
 }
 
-// void tyFnStkInp(Kern* k, TyFn* fn) {
-//   if(IS_UNTY) return;
-//   for(TyI* stk = fn->inp; stk; stk = stk->next) {
-//   }
-//   TyDb_cloneAdd(k, fn->inp);
-// }
-
 // fn NAME do (... code ...)
 // future:
 // fn ... types ... do ( ... code ... )
@@ -1006,10 +1015,12 @@ void N_fn(Kern* k) {
   *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
   ASSERT(code->dat, "Code OOM");
 
+  const U2 db_startLen = Stk_len(&k->g.tyDb.done);
   TyDb_new(&k->g.tyDb, NULL);
   // Locals
   Stk_add(&k->g.dictStk, 0);
-  BBA localBBA = (BBA) { &civ.ba }; BBA* prevBBA = k->g.bbaDict; k->g.bbaDict = &localBBA;
+  LOCAL_BBA(bbaDict); LOCAL_BBA(bbaTy);
+  // BBA localBBA = (BBA) { &civ.ba }; BBA* prevBBA = k->g.bbaDict; k->g.bbaDict = &localBBA;
 
   fnSignature(k, fn, code);
   SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
@@ -1022,7 +1033,7 @@ void N_fn(Kern* k) {
   }
 
   TyDb_drop(k);
-  ASSERT(not Stk_len(&k->g.tyDb.done),
+  ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
          "A type operation (i.e. if/while/etc) is incomplete in fn");
 
   // Free unused area of buffers
@@ -1032,7 +1043,8 @@ void N_fn(Kern* k) {
   fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
-  BBA_drop(&localBBA); k->g.bbaDict = prevBBA; Stk_pop(&k->g.dictStk);
+  END_LOCAL_BBA(bbaDict); END_LOCAL_BBA(bbaTy);
+  Stk_pop(&k->g.dictStk);
 }
 
 
@@ -1063,9 +1075,8 @@ void N_fn(Kern* k) {
   LINED(Ty).len = sizeof(LINED(code)) - 1;
 
 // For Ty that really do only take up Ty space (TY_DICT_NATIVE)
-#define V_STATIC_TY(V, NAMELEN, NAME, META, VAL) \
+#define STATIC_TY(V, NAMELEN, NAME, META, VAL) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);\
-  static Ty V;                 \
   V = (Ty) {                   \
     .bst.key = LINED(key),            \
     .meta = META,                     \
@@ -1073,19 +1084,16 @@ void N_fn(Kern* k) {
   };                                  \
   Kern_addTy(k, (Ty*)&V);
 
-#define STATIC_TY(NAMELEN, NAME, META, VAL) V_STATIC_TY(LINED(Ty))
-
-
 void Kern_fns(Kern* k) {
   // Native data types
-  V_STATIC_TY(Ty_U1, "\x02", "U1",  TY_DICT | TY_DICT_NATIVE                   , SZ1);
-  V_STATIC_TY(Ty_U2, "\x02", "U2",  TY_DICT | TY_DICT_NATIVE                   , SZ2);
-  V_STATIC_TY(Ty_U4, "\x02", "U4",  TY_DICT | TY_DICT_NATIVE                   , SZ4);
-  V_STATIC_TY(Ty_S , "\x01", "S",   TY_DICT | TY_DICT_NATIVE                   , SZR);
-  V_STATIC_TY(Ty_I1, "\x02", "I1",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ1);
-  V_STATIC_TY(Ty_I2, "\x02", "I2",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ2);
-  V_STATIC_TY(Ty_I4, "\x02", "I4",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ4);
-  V_STATIC_TY(Ty_SI, "\x02", "SI",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZR);
+  STATIC_TY(Ty_U1, "\x02", "U1",  TY_DICT | TY_DICT_NATIVE                   , SZ1);
+  STATIC_TY(Ty_U2, "\x02", "U2",  TY_DICT | TY_DICT_NATIVE                   , SZ2);
+  STATIC_TY(Ty_U4, "\x02", "U4",  TY_DICT | TY_DICT_NATIVE                   , SZ4);
+  STATIC_TY(Ty_S , "\x01", "S",   TY_DICT | TY_DICT_NATIVE                   , SZR);
+  STATIC_TY(Ty_I1, "\x02", "I1",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ1);
+  STATIC_TY(Ty_I2, "\x02", "I2",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ2);
+  STATIC_TY(Ty_I4, "\x02", "I4",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ4);
+  STATIC_TY(Ty_SI, "\x02", "SI",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZR);
   TASSERT_EMPTY();
 
   // Ty: S
@@ -1207,6 +1215,7 @@ CStr_ntLitUnchecked(replPath, "\x08", "/repl.fn");
 FileInfo replInfo = {0};
 
 U1* compileRepl(Kern* k, bool withRet) {
+  LOCAL_BBA(bbaTy);
   replInfo.path = replPath;
   k->g.srcInfo = &replInfo;
   U1* body = (U1*) BBA_alloc(&k->bbaRepl, 256, 1);
@@ -1222,6 +1231,7 @@ U1* compileRepl(Kern* k, bool withRet) {
       /*alignment*/1);
   }
   *code = (Buf){0};
+  END_LOCAL_BBA(bbaTy);
   return body;
 }
 

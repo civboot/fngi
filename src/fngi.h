@@ -145,6 +145,7 @@ typedef struct {
   Buf code;
   TyDb tyDb;
   BBA* bbaDict;
+  BBA* bbaTy;
 } Globals;
 
 typedef struct {
@@ -156,7 +157,6 @@ typedef struct {
 
 typedef struct {
   U4 _null;
-  BBA bbaTy;
   BBA bbaCode;
   BBA bbaDict;
   BBA bbaRepl;
@@ -173,6 +173,17 @@ void Kern_init(Kern* k, FnFiber* fb);
 bool FnFiber_init(FnFiber* fb);
 
 static inline S kFn(void(*native)(Kern*)) { return (S) native; }
+
+#define LOCAL_BBA(NAME) \
+  BBA  NAME       = (BBA) { &civ.ba }; \
+  BBA* prev##NAME = k->g.NAME;   \
+  k->g.NAME       = &NAME;
+
+#define END_LOCAL_BBA(NAME) \
+  BBA_drop(&NAME); \
+  k->g.NAME = prev##NAME;
+
+
 
 // ################################
 // # Execute
@@ -304,8 +315,17 @@ void tySplit(Kern* k);
 void tyMerge(Kern* k);
 void TyI_printAll(TyI* tyI);
 
+
 #define TYI_VOID  NULL
 #define TYIS(PRE) \
+  PRE Ty  Ty_U1;     \
+  PRE Ty  Ty_U2;     \
+  PRE Ty  Ty_U4;     \
+  PRE Ty  Ty_S;      \
+  PRE Ty  Ty_I1;     \
+  PRE Ty  Ty_I2;     \
+  PRE Ty  Ty_I4;     \
+  PRE Ty  Ty_SI;     \
   PRE TyI TyIs_S;      /* S          */ \
   PRE TyI TyIs_SS;     /* S, S       */ \
   PRE TyI TyIs_SSS;    /* S, S, S    */ \
