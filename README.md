@@ -1,5 +1,7 @@
 # fngi: a readable language that grows from the silicon
 
+> **WARNING:** this language is not complete. See the Goals section for more.
+
 > **UPDATE:** I'm taking a break for at least a few months while I focus on
 > work. The rewrite is going well, but it takes up too much of my time.
 
@@ -13,7 +15,7 @@ use to build a Civboot -- and have fun in the process!
 
 That language is fngi, a language inspired primarily by FORTH and C. It is
 implemented in a miniscule amount of C (fewer than 2-3k lines) and contains all
-the bells and whistles you might want form C, as well as an absurdly powerful
+the bells and whistles you might want from C, as well as an absurdly powerful
 macro system that can mutate it's own syntax at runtime -- literally it can
 built itself into a new programming language while it runs.
 
@@ -71,7 +73,7 @@ Fngi is a "macro first" language. Why? So that it can evolve to be whatever is
 needed of it.  To understand this better, go back to early programming
 languages: unix had sh and C.
 
-Unix sh is barely a lanugage. It has only a single type, the string.  It has an
+Unix sh is barely a language. It has only a single type, the string.  It has an
 extremely obtuse syntax who's sole method of operation is to dynamically execute
 scripts and modify strings. In truth, the shell "syntax" depends on a host of of
 other complex syntaxes: awk, grep, regexes, individual command lines, formats of
@@ -105,14 +107,14 @@ along the way, some of them complete.
   [round_two](./notes/round_two.md)
 - [x] Create [civc] library to build on top of, based on lessons learned
 - [ ] Create fngi
--   [X] spor VM for executing compiled instructions
--   [X] TyDb for setting up the type checker
--   [X] fn for writing type-checked functions
--   [X] if/elif/else for flow control
--   [ ] blk to create loop/while/etc.
--   [ ] var, global, struct
--   [ ] executeFile to be able to have some form of "import"
--   [ ] module to set the current dictionary path (module).
+  - [X] spor VM for executing compiled instructions
+  - [X] TyDb for setting up the type checker
+  - [X] fn for writing type-checked functions
+  - [X] if/elif/else for flow control
+  - [ ] blk to create loop/while/etc.
+  - [ ] var, global, struct
+  - [ ] executeFile to be able to have some form of "import"
+  - [ ] `mod` to set the current dictionary path (module support).
 - [ ] Create standard library
   - [ ] Allocator options and allocator stack
   - [ ] String formatting
