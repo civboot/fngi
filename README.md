@@ -47,22 +47,23 @@ Example repl sesion:
 ```
 \ Note: this is a line comment
 \ put 0xF1 and 2 on the stack (stack is in hex)
+\ After the colon is the types
 0xF1 2
-> {       F1        2}
+> {       F1        2} : S S
 
 \ add the top of the stack to 9
 + 9
-> {       F1        B}
+> {       F1        B} : S S
 
 \ drop the working stack
-dropWs
-> {}
+drp drp
+> {} :
 
 \ define a function that multiples input by 2
 \ TODO: input types
-pre fn mulTwo do ( * 2 )
+pre fn mulTwo stk:S -> S do ( * 2 )
 mulTwo(4)
-> {        8}
+> {        8} : S
 ```
 
 ## Motivation
@@ -70,7 +71,7 @@ Fngi is a "macro first" language. Why? So that it can evolve to be whatever is
 needed of it.  To understand this better, go back to early programming
 languages: unix had sh and C.
 
-Sh is barely a lanugage. It has only a single type, the string.  It has an
+Unix sh is barely a lanugage. It has only a single type, the string.  It has an
 extremely obtuse syntax who's sole method of operation is to dynamically execute
 scripts and modify strings. In truth, the shell "syntax" depends on a host of of
 other complex syntaxes: awk, grep, regexes, individual command lines, formats of
@@ -102,10 +103,15 @@ along the way, some of them complete.
 
 - [X] Make a complete fngi language, then throw it away. See
   [round_two](./notes/round_two.md)
-- [ ] Create [civc] library to build on top of, based on lessons learned
-- [ ] Create [fngi] library to avoid writing annoying boilerplate C code to do
-  basic inspectibility.
-- [ ] Create fngi (... more bullet points will be added)
+- [x] Create [civc] library to build on top of, based on lessons learned
+- [ ] Create fngi
+-   [X] spor VM for executing compiled instructions
+-   [X] TyDb for setting up the type checker
+-   [X] fn for writing type-checked functions
+-   [X] if/elif/else for flow control
+-   [ ] block to create loop/while/etc.
+-   [ ] executeFile to be able to have some form of "import"
+-   [ ] module to set the current dictionary path (module).
 - [ ] Create standard library
   - [ ] Allocator options and allocator stack
   - [ ] String formatting
