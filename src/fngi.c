@@ -741,12 +741,11 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asNow);
   TyFn* fn = tyFn(ty);
-  if(isFnPre(fn))  Kern_compFn(k);
-
   if(isFnSyn(fn)) {
     WS_ADD(asNow);
     return executeFn(k, fn);
   }
+  Kern_compFn(k); // non-syn functions consume next token
   if(isFnNow(fn)) { ASSERT(asNow, "function must be called with '$'"); }
   if(asNow) executeFn(k, fn);
   else      compileFn(k, fn);
@@ -851,6 +850,7 @@ void compileSrc(Kern* k) {
 // ***********************
 //   * Misc
 
+void N_noop(Kern* k) { WS_POP(); } // noop syn function
 void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
 void N_unty(Kern* k) {
   WS_POP(); // ignore asNow
@@ -859,11 +859,8 @@ void N_unty(Kern* k) {
   k->g.fnState &= ~C_UNTY;
 }
 
-void N_ret(Kern* k) {
-  N_notNow(k);
-  tyRet(k, true);
-  Buf_add(&k->g.code, RET);
-}
+void _N_ret(Kern* k) { tyRet(k, true); Buf_add(&k->g.code, RET); }
+void N_ret(Kern* k)  { N_notNow(k); Kern_compFn(k); _N_ret(k); }
 void N_dropWs(Kern* k) { Stk_clear(WS); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 
@@ -920,8 +917,6 @@ void _fnMetaNext(Kern* k, U2 meta) {
 // ***********************
 //   * fn and fn signature
 
-void N_pre(Kern* k)     {
-  N_notNow(k); k->g.metaNext |= TY_FN_PRE; }
 void N_now(Kern* k)     { _fnMetaNext(k,   TY_FN_NOW); }
 void N_syn(Kern* k)     { _fnMetaNext(k,   TY_FN_SYN); }
 void N_inline(Kern* k)  { _fnMetaNext(k,   TY_FN_INLINE); }
@@ -1003,8 +998,6 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
     else if(/*isStk and*/ not IS_UNTY)
       TyDb_cloneAddNode(k->g.bbaTy, TyDb_root(&k->g.tyDb), tyI);
   }
-
-  if(fn->inp) fn->meta |= TY_FN_PRE;
 }
 
 // fn NAME do (... code ...)
@@ -1034,9 +1027,7 @@ void N_fn(Kern* k) {
 
   // Force a RET at the end, whether UNTY or not.
   if( (not IS_UNTY and not TyDb_done(k))
-      or  (IS_UNTY and (RET != code->dat[code->len-1]))) {
-    WS_ADD(/*asNow=*/false); N_ret(k); // force RET at end.
-  }
+      or  (IS_UNTY and (RET != code->dat[code->len-1]))) _N_ret(k);
 
 
   // Free unused area of buffers
@@ -1221,10 +1212,10 @@ void Kern_fns(Kern* k) {
   Kern_addTy(k, (Ty*) &TyFn_inp);
 
   // Pure noop syntax sugar
-  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", "_"    , 0       , /*no code*/);
-  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", ";"    , 0       , /*no code*/);
-  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x01", ","    , 0       , /*no code*/);
-  STATIC_INLINE(TYI_VOID, TYI_VOID, "\x02", "->"   , 0       , /*no code*/);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "_"    , TY_FN_SYN       , N_noop);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", ";"    , TY_FN_SYN       , N_noop);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", ","    , TY_FN_SYN       , N_noop);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "->"   , TY_FN_SYN       , N_noop);
 
 
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "notNow",  TY_FN_SYN, N_notNow);
@@ -1233,7 +1224,6 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "$",       TY_FN_SYN, N_dollar);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "(",       TY_FN_SYN, N_paren);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "\\",      TY_FN_COMMENT, N_fslash);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "pre",     TY_FN_SYN, N_pre);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "now",     TY_FN_SYN, N_now);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "syn",     TY_FN_SYN, N_syn);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "inline",  TY_FN_SYN, N_inline);
@@ -1242,7 +1232,7 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "if",      TY_FN_SYN, N_if);
 
 
-  STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  TY_FN_PRE, N_tAssertEq);
+  STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  0, N_tAssertEq);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
   STATIC_INLINE(&TyIs_SS, &TyIs_SS,  "\x03", "swp"  , 0       , SWP   );
@@ -1252,55 +1242,55 @@ void Kern_fns(Kern* k) {
   STATIC_INLINE(&TyIs_S,  &TyIs_SS,  "\x04", "dupn" , 0       , DUPN  );
 
   // Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "nop"  , TY_FN_PRE, NOP  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inc"  , TY_FN_PRE, INC  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc2" , TY_FN_PRE, INC2 );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc4" , TY_FN_PRE, INC4 );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "dec"  , TY_FN_PRE, DEC  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inv"  , TY_FN_PRE, INV  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "neg"  , TY_FN_PRE, NEG  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "not"  , TY_FN_PRE, NOT  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i1to4", TY_FN_PRE, CI1  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i2to4", TY_FN_PRE, CI2  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "nop"  , 0, NOP  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inc"  , 0, INC  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc2" , 0, INC2 );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc4" , 0, INC4 );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "dec"  , 0, DEC  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inv"  , 0, INV  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "neg"  , 0, NEG  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "not"  , 0, NOT  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i1to4", 0, CI1  );
+  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i2to4", 0, CI2  );
 
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "+"    , TY_FN_PRE, ADD  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "-"    , TY_FN_PRE, SUB  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "%"    , TY_FN_PRE, MOD  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shl"  , TY_FN_PRE, SHL  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shr"  , TY_FN_PRE, SHR  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "msk"  , TY_FN_PRE, MSK  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "jn"   , TY_FN_PRE, JN   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "xor"  , TY_FN_PRE, XOR  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "and"  , TY_FN_PRE, AND  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "or"   , TY_FN_PRE, OR   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "=="   , TY_FN_PRE, EQ   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "!="   , TY_FN_PRE, NEQ  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", ">="   , TY_FN_PRE, GE_U );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "<"    , TY_FN_PRE, LT_U );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "ge_s" , TY_FN_PRE, GE_S );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "lt_s" , TY_FN_PRE, LT_S );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "*"    , TY_FN_PRE, MUL  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "/"    , TY_FN_PRE, DIV_U);
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "+"    , 0, ADD  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "-"    , 0, SUB  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "%"    , 0, MOD  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shl"  , 0, SHL  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shr"  , 0, SHR  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "msk"  , 0, MSK  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "jn"   , 0, JN   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "xor"  , 0, XOR  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "and"  , 0, AND  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "or"   , 0, OR   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "=="   , 0, EQ   );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "!="   , 0, NEQ  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", ">="   , 0, GE_U );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "<"    , 0, LT_U );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "ge_s" , 0, GE_S );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "lt_s" , 0, LT_S );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "*"    , 0, MUL  );
+  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "/"    , 0, DIV_U);
 
   // ftN(addr): fetch a value of sz N from address.
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft1"  , TY_FN_PRE, SZ1+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft2"  , TY_FN_PRE, SZ2+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft4"  , TY_FN_PRE, SZ4+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ftR"  , TY_FN_PRE, SZR+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe1", TY_FN_PRE, SZ1+FTBE );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe2", TY_FN_PRE, SZ2+FTBE );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe4", TY_FN_PRE, SZ4+FTBE );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBeR", TY_FN_PRE, SZR+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft1"  , 0, SZ1+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft2"  , 0, SZ2+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft4"  , 0, SZ4+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ftR"  , 0, SZR+FT   );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe1", 0, SZ1+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe2", 0, SZ2+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe4", 0, SZ4+FTBE );
+  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBeR", 0, SZR+FTBE );
 
   // srN(value, addr): store a value of sz N to address.
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr1"  , TY_FN_PRE, SZ1+SR   );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr2"  , TY_FN_PRE, SZ2+SR   );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr4"  , TY_FN_PRE, SZ4+SR   );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "srR"  , TY_FN_PRE, SZR+SR   );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe1", TY_FN_PRE, SZ1+SRBE );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe2", TY_FN_PRE, SZ2+SRBE );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe4", TY_FN_PRE, SZ4+SRBE );
-  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBeR", TY_FN_PRE, SZR+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr1"  , 0, SZ1+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr2"  , 0, SZ2+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "sr4"  , 0, SZ4+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x03", "srR"  , 0, SZR+SR   );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe1", 0, SZ1+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe2", 0, SZ2+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBe4", 0, SZ4+SRBE );
+  STATIC_INLINE(&TyIs_SS, TYI_VOID, "\x05", "srBeR", 0, SZR+SRBE );
   TASSERT_EMPTY();
 }
 

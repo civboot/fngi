@@ -86,7 +86,7 @@ TEST_FNGI(compile0, 4)
   COMPILE("fn answer do 0x42", false);
   TyFn* answer = tyFn(Kern_findTy(k, SLC("answer")));
   executeFn(k, answer);    TASSERT_WS(0x42);
-  COMPILE_EXEC("answer");  TASSERT_WS(0x42);
+  COMPILE_EXEC("answer;");  TASSERT_WS(0x42);
   TASSERT_EMPTY();
 END_TEST_FNGI
 
@@ -94,7 +94,7 @@ TEST_FNGI(compile1, 5)
   Kern_fns(k);
   k->g.fnState |= C_UNTY;
 
-  COMPILE_EXEC("pre fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
+  COMPILE_EXEC("fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
   COMPILE_EXEC("fn maths2 stk:U2 -> U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
   TyFn* maths2 = tyFn(Kern_findTy(k, SLC("maths2")));
@@ -209,8 +209,8 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("tAssertEq(0x33, ifElifRetMid(7))");
 
   COMPILE_EXEC("fn ifElifStk stk:S -> S do ("
-               "  if  (dup == 0x42) do (_)"
-               "  elif(dup == 0x11) do (drp; 0 ret;)"
+               "  if  (dup; == 0x42) do (_)"
+               "  elif(dup; == 0x11) do (drp; 0 ret;)"
                "  else (drp; 0x33)"
                ")")
   COMPILE_EXEC("tAssertEq(0x42, ifElifStk(0x42))");
@@ -222,7 +222,7 @@ TEST_FNGI(compileIf, 10)
   "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
 
   COMPILE_EXEC("fn one -> S do (" IF_ALL_RET ")");
-  COMPILE_EXEC("tAssertEq(1,    one)");
+  COMPILE_EXEC("tAssertEq(1,    one;)");
 
   // putting anything after fails, since the if/elif/else block all RET
   // this does panic, but there is some kind of memory error in dropping.

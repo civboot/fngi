@@ -218,7 +218,6 @@ static inline bool isTyVar(Ty* ty)    IS_TY(TY_VAR)
 static inline bool isTyDict(Ty* ty)   IS_TY(TY_DICT)
 #undef IS_TY
 #define IS_FN(M)   { return (M) & fn->meta; }
-static inline bool isFnPre(TyFn* fn)       IS_FN(TY_FN_PRE)
 static inline bool isFnNative(TyFn* fn)    IS_FN(TY_FN_NATIVE)
 #undef IS_FN
 #define IS_FN(M)   { return (TY_FN_TY_MASK & fn->meta) == (M); }

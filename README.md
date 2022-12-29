@@ -12,23 +12,23 @@ model built in. The language has to be able to unroll from simple beginnings
 use to build a Civboot -- and have fun in the process!
 
 That language is fngi, a language inspired primarily by FORTH and C. It is
-self-bootstrapped at runtime from spor: an assembly bytecode, interpreter and
-syntax. Spor itself is self-bootstrapped from an extremely lean native
-implementation, which is ~1-2 thousand lines of C.
+implemented in a miniscule amount of C (fewer than 2-3k lines) and contains all
+the bells and whistles you might want form C, as well as an absurdly powerful
+macro system that can mutate it's own syntax at runtime -- literally it can
+built itself into a new programming language while it runs.
 
 Fngi itself has the following space targets:
 
-- >=32KiB microcontroller/processor: can bootstrap a text-based OS providing
+- >=128KiB microcontroller/processor: can bootstrap a text-based OS providing
   human-editable source and assembly that can be recompiled on the
   microcontroller (aka self-bootstrapping). The processor does _not_ need to
   have memory-mapping, thread management, etc -- it can be a very bare-bones
   device.
-- >=4KiB microcontroller: can run pre-compiled spor assembly. Does not need to
-  be self-bootstrapping.
+- >=4KiB microcontroller: can run pre-compiled spor assembly. Will not be
+  self-bootstrapping.
 
 Read more:
 
-- [spor.md](./spor.md)
 - [fngi.md](./fngi.md)
 - [harness and zoab](./harness.md)
 - [Unstructured Notes](./notes/)
@@ -109,7 +109,8 @@ along the way, some of them complete.
 -   [X] TyDb for setting up the type checker
 -   [X] fn for writing type-checked functions
 -   [X] if/elif/else for flow control
--   [ ] block to create loop/while/etc.
+-   [ ] blk to create loop/while/etc.
+-   [ ] var, global, struct
 -   [ ] executeFile to be able to have some form of "import"
 -   [ ] module to set the current dictionary path (module).
 - [ ] Create standard library
