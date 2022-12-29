@@ -184,7 +184,7 @@ static inline S kFn(void(*native)(Kern*)) { return (S) native; }
   k->g.NAME = prev##NAME;
 
 #define REPL_START \
-  TyDb_new(&k->g.tyDb, NULL); LOCAL_BBA(bbaTy);
+  TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy);
 
 #define REPL_END \
   TyDb_drop(k); END_LOCAL_BBA(bbaTy);
@@ -313,8 +313,8 @@ void TyDb_free(Kern* k, TyI* stream);
 void TyDb_drop(Kern* k);
 
 // Create a new snapshot
-static inline void TyDb_new(TyDb* db, TyI* tyI) {
-  Stk_add(&db->tyIs, (S)tyI);
+static inline void TyDb_new(TyDb* db) {
+  Stk_add(&db->tyIs, 0);
   Stk_add(&db->done, false);
 }
 

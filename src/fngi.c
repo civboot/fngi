@@ -428,17 +428,18 @@ TyI* TyI_cloneNode(TyI* node, BBA* bba) {
 
 void TyDb_print(Kern* k) { TyI_printAll(TyDb_top(&k->g.tyDb)); }
 
-void TyDb_cloneAddNode(Kern* k, TyI* node) {
-  Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(node, k->g.bbaTy)));
+// Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(node, k->g.bbaTy)));
+void TyDb_cloneAddNode(BBA* bba, TyI** root, TyI* node) {
+  Sll_add((Sll**)root, TyI_asSll(TyI_cloneNode(node, bba)));
 }
 
 // Clone from bottom to top, pushing onto root.
 // The result will be in the same order.
 // This is done so that freeing is done from top to bottom.
-void  TyDb_cloneAdd(Kern* k, TyI* nodes) {
+void  TyDb_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
   if(not nodes) return;
-  TyDb_cloneAdd(k, nodes->next);
-  TyDb_cloneAddNode(k, nodes);
+  TyDb_cloneAdd(bba, root, nodes->next);
+  TyDb_cloneAddNode(bba, root, nodes);
 }
 
 void TyDb_free(Kern* k, TyI* stream) {
@@ -446,8 +447,8 @@ void TyDb_free(Kern* k, TyI* stream) {
   TyI** root = TyDb_root(db);
   while(stream) {
     TyI* next = stream->next; // cache since we may free the node
-    ASSERT(not BBA_free(k->g.bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE),
-           "TyDb_free");
+    Slc* err = BBA_free(k->g.bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
+    if(err) SET_ERR(*err);
     stream = next;
   }
 }
@@ -511,7 +512,7 @@ void tyCall(Kern* k, TyI* inp, TyI* out) {
 
   tyCheck(inp, *root, false, SLC("Type error during operation (i.e. function call, struct, etc)"));
   TyDb_free(k, inp);
-  TyDb_cloneAdd(k, out);
+  TyDb_cloneAdd(k->g.bbaTy, root, out);
 }
 
 // Check function return type and possibly mark as done.
@@ -528,9 +529,8 @@ void tyClone(Kern* k, U2 depth) {
   if(IS_UNTY) return;
   TyDb* db = &k->g.tyDb;
   TyI* stream = TyDb_index(db, depth);
-  eprintf("?? tyClone %X\n", stream);
-  TyDb_new(&k->g.tyDb, NULL);
-  if(stream) TyDb_cloneAdd(k, stream);
+  TyDb_new(db);
+  if(stream) TyDb_cloneAdd(k->g.bbaTy, TyDb_root(&k->g.tyDb), stream);
 }
 
 void tyMerge(Kern* k) {
@@ -998,8 +998,10 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
 
   for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
     TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
-    if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) srLocal(k, tyI, v->v, false);
-    else if(/*isStk and*/ not IS_UNTY)               TyDb_cloneAddNode(k, tyI);
+    if(v and isTyVar((Ty*)v) and not isVarGlobal(v))
+      srLocal(k, tyI, v->v, false);
+    else if(/*isStk and*/ not IS_UNTY)
+      TyDb_cloneAddNode(k->g.bbaTy, TyDb_root(&k->g.tyDb), tyI);
   }
 
   if(fn->inp) fn->meta |= TY_FN_PRE;
@@ -1021,7 +1023,7 @@ void N_fn(Kern* k) {
   ASSERT(code->dat, "Code OOM");
 
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
-  TyDb_new(&k->g.tyDb, NULL); LOCAL_BBA(bbaDict); LOCAL_BBA(bbaTy);
+  TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaDict); LOCAL_BBA(bbaTy);
   // Locals
   Stk_add(&k->g.dictStk, 0);
   // BBA localBBA = (BBA) { &civ.ba }; BBA* prevBBA = k->g.bbaDict; k->g.bbaDict = &localBBA;
@@ -1071,91 +1073,79 @@ U2 _else(Buf* b, U2 iIf) {
   return b->len - 1;
 }
 
-#define DBG_TYS(MSG) \
-    if(not IS_UNTY) { eprintf(MSG " "); dbgTyIs(k); NL; }
+#define DBG_TYS(...) \
+    if(not IS_UNTY) { eprintf(__VA_ARGS__); dbgTyIs(k); NL; }
 
-// return wasDone
-bool tyIf(Kern* k, bool isTopIf) {
+// The below algorithm looks complicated, but can be made simpler by thinking of
+// the state of TyDb at the various points.  There are two possibilities:
+//   hadTrue=true: there was a "true" if/elif/else branch that did not have a RET,
+//   aka a branch happend and control continued.
+//      TyDb -> stateToUse -> trueIfState -> outer
+//
+//   hadTrue=false: there have been no "true" if/elif/else branches, all had RET
+//      TyDb -> stateToUse -> outer
+//
+// When hadTrue, any block is immediately merged with trueIfState since they
+// have to match. Otherwise, any block that does not have RET sets hadTrue=true.
+
+bool tyIf(Kern* k, bool hadTrue) {
   if(IS_UNTY) return false;
-  if(TyDb_done(k)) {
-    tyMerge(k);
-    // if(not isTopIf) {
-    //   TyDb_swap(k);
-    // }
-    return true;
-  }
-  if(not isTopIf) { // must be equal to previous if
-    DBG_TYS("?? performing non-top-if\n");
-    Stk* tyIs = &k->g.tyDb.tyIs;
-    Stk* done = &k->g.tyDb.done;
-    TyDb_swap(k); // get code at top
-    S code = Stk_pop(tyIs);
-    S codeDone = Stk_pop(done);
-    tyMerge(k);   // merge with topIf
-    Stk_add(tyIs, code);
-    Stk_add(done, codeDone);
-    TyDb_swap(k); // topIf is on top
-    DBG_TYS("?? done with shenanigans\n");
-  }
-  return false;
-}
-
-void tyElse(Kern* k, bool isTopIf, bool ifWasDone) {
-  if(IS_UNTY) return;
-  eprintf("?? tyElse isTopIf=%u  ifWasDone=%u", isTopIf, ifWasDone); DBG_TYS("");
-  if(ifWasDone and isTopIf) {
-    TyDb_swap(k); TyDb_drop(k); // else becomes new top
-  } else if (TyDb_done(k)) { // else was done
-    tyMerge(k); // merge else
-    tyMerge(k); // merge if
+  if(hadTrue) {
+    tyMerge(k);    // check stateToUse==trueIfState
+    tyClone(k, 1); // clone outer state
+  } else if (TyDb_done(k)) {
+    tyMerge(k);    // drop stateToUse
+    tyClone(k, 0); // clone outer state
   } else {
-    eprintf("?? last tyElse\n");
-    tyMerge(k); // if and else must be equal
-    TyDb_swap(k); TyDb_drop(k); // if/else becomes new top
+    tyClone(k, 1); // stateToUse becomes trueIfState. Clone outer as stateToUse
+    hadTrue = true;
   }
+  return hadTrue;
 }
 
-// The "topIf" is the first if that doesn't have a guaranteed return (TyDb_done)
-void _N_if(Kern* k, bool isTopIf) {
-  eprintf("?? tyIf isTopIf=%u", isTopIf); DBG_TYS("");
-  if(not IS_UNTY and not isTopIf) {
-    TyDb_swap(k);
-    DBG_TYS("?? after swap");
-  }
-  Kern_compFn(k);
-  tyCall(k, &TyIs_S, NULL);
-  tyClone(k, 0);
-  DBG_TYS("?? after call and clone");
+bool _N_if(Kern* k, bool hadTrue) {
   Buf* b = &k->g.code;
   U2 i = _if(b);
-  REQUIRE("do"); Kern_compFn(k); // compile body
-  eprintf("?? after compFn\n");
-  bool ifWasDone = tyIf(k, isTopIf);
-  DBG_TYS("?? after tyIf");
+  REQUIRE("do"); Kern_compFn(k);
+  hadTrue = tyIf(k, hadTrue);
 
   if(CONSUME("elif")) {
-    DBG_TYS("?? elif");
     i = _else(b, i);
-    _N_if(k, isTopIf and ifWasDone); // recurse for next elif/else
+    Kern_compFn(k); tyCall(k, &TyIs_S, NULL);
+    ASSERT(IS_UNTY or not TyDb_done(k), "Detected done in elif test");
+    hadTrue = _N_if(k, hadTrue);
   } else if(CONSUME("else")) {
-    DBG_TYS("?? else");
     i = _else(b, i);
-    tyClone(k, not ifWasDone /*top if not done, else index=1*/);
     Kern_compFn(k); // else body
-    tyElse(k, isTopIf, ifWasDone);
-  } else {
-    // There was no elif or else, stack at start+end must be identical.
-    tyMerge(k);
+    hadTrue = tyIf(k, hadTrue);
   }
   _endIf(b, i);
+  return hadTrue;
 }
 
-// if   (...) do (...)
-// elif (...) do (...)
-// else          (...)
+void tyIfEnd(Kern* k, bool hadTrue) {
+  if(IS_UNTY) return;
+  TyDb_drop(k); // stateToUse
+  if(hadTrue) {
+    TyDb* db = &k->g.tyDb;
+    TyI* cloned = NULL;
+    TyDb_cloneAdd(k->g.bbaDict, &cloned, TyDb_top(db));
+    TyDb_drop(k);
+    TyDb_drop(k);
+    TyDb_new(db);
+    TyDb_cloneAdd(k->g.bbaTy, TyDb_root(db), cloned);
+    assert(not Sll_free((Sll*)cloned, sizeof(TyI), BBA_asArena(k->g.bbaDict)));
+  } else {
+    TyDb_setDone(&k->g.tyDb, true);
+  }
+}
+
 void N_if(Kern* k) {
   N_notNow(k);
-  _N_if(k, true);
+  Kern_compFn(k); tyCall(k, &TyIs_S, NULL);
+  ASSERT(IS_UNTY or not TyDb_done(k), "Detected done in if test");
+  tyClone(k, 0);
+  tyIfEnd(k, _N_if(k, false));
 }
 
 // ***********************

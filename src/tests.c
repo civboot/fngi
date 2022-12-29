@@ -138,7 +138,7 @@ TEST_FNGI(tyDb, 4)
 
   TyDb* db = &k->g.tyDb;
 
-  TyDb_new(db, NULL);
+  TyDb_new(db);
 
   // Call a function which returns [S], the type gets put on
   tyCall(k, NULL, &TyIs_S); TY_CHECK(&TyIs_S, TyDb_top(db), true);
@@ -164,21 +164,21 @@ TEST_FNGI(compileTy, 6)
   REPL_END
 END_TEST_FNGI
 
+#define TY_LEN  Sll_len((Sll*)TyDb_top(&k->g.tyDb))
 TEST_FNGI(compileIf, 10)
   Kern_fns(k);
-  k->g.fnState |= C_UNTY;
-
-  COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
-  COMPILE_EXEC("if(1) do 0x42 else 0x33");                 TASSERT_WS(0x42);
-  COMPILE_EXEC("if(0) do 0x42 else 0x33");                 TASSERT_WS(0x33);
-  COMPILE_EXEC("if(1) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x42);
-  COMPILE_EXEC("if(0) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x11);
-  COMPILE_EXEC("if(0) do 0x42 elif(0) do 0x11 else 0x33"); TASSERT_WS(0x33);
-
-  eprintf("# testing typedIf\n");
-#define TY_LEN  Sll_len((Sll*)TyDb_top(&k->g.tyDb))
-  k->g.fnState &= ~C_UNTY;
   REPL_START
+  // k->g.fnState |= C_UNTY;
+
+  // COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
+  // COMPILE_EXEC("if(1) do 0x42 else 0x33");                 TASSERT_WS(0x42);
+  // COMPILE_EXEC("if(0) do 0x42 else 0x33");                 TASSERT_WS(0x33);
+  // COMPILE_EXEC("if(1) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x42);
+  // COMPILE_EXEC("if(0) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x11);
+  // COMPILE_EXEC("if(0) do 0x42 elif(0) do 0x11 else 0x33"); TASSERT_WS(0x33);
+
+  // eprintf("# testing typedIf\n");
+  // k->g.fnState &= ~C_UNTY;
   COMPILE_EXEC("if(1) do ;");
   TASSERT_EQ(0, TY_LEN);
   TASSERT_EQ(0, Stk_len(WS));
@@ -190,23 +190,44 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("tAssertEq(0x22, ifRet(1))");
   COMPILE_EXEC("tAssertEq(0x33, ifRet(0))");
 
-  eprintf("?? getting real real\n");
-  COMPILE_EXEC("fn ifElifRet stk:S -> S do ("
-               "  if(dup == 0x42) do (_ ret;)"
-               "  elif(_ == 0x11) do (0 ret;)"
+  COMPILE_EXEC("fn ifElifRet x:S -> S do ("
+               "  if(  x == 0x42) do (x ret;)"
+               "  elif(x == 0x11) do (0 ret;)"
                "  else 0x33"
                ")")
   COMPILE_EXEC("tAssertEq(0x42, ifElifRet(0x42))");
   COMPILE_EXEC("tAssertEq(0,    ifElifRet(0x11))");
   COMPILE_EXEC("tAssertEq(0x33, ifElifRet(7))");
 
-  // middle returns
-  eprintf("#### MIDDLE RET\n");
-  COMPILE_EXEC("fn ifElifRet2 x:S -> S do ("
+  COMPILE_EXEC("fn ifElifRetMid x:S -> S do ("
                "  if  (x == 0x42) do (0x42)"
                "  elif(x == 0x11) do (0 ret;)"
                "  else 0x33"
                ")")
+  COMPILE_EXEC("tAssertEq(0x42, ifElifRetMid(0x42))");
+  COMPILE_EXEC("tAssertEq(0,    ifElifRetMid(0x11))");
+  COMPILE_EXEC("tAssertEq(0x33, ifElifRetMid(7))");
+
+  COMPILE_EXEC("fn ifElifStk stk:S -> S do ("
+               "  if  (dup == 0x42) do (_)"
+               "  elif(dup == 0x11) do (drp; 0 ret;)"
+               "  else (drp; 0x33)"
+               ")")
+  COMPILE_EXEC("tAssertEq(0x42, ifElifStk(0x42))");
+  COMPILE_EXEC("tAssertEq(0,    ifElifStk(0x11))");
+  COMPILE_EXEC("tAssertEq(0x33, ifElifStk(7))");
+
+
+#define IF_ALL_RET \
+  "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
+
+  COMPILE_EXEC("fn one -> S do (" IF_ALL_RET ")");
+  COMPILE_EXEC("tAssertEq(1,    one)");
+
+  // putting anything after fails, since the if/elif/else block all RET
+  // this does panic, but there is some kind of memory error in dropping.
+  // EXPECT_ERR(COMPILE_EXEC("fn bad -> S do (" IF_ALL_RET "4 )"));
+  // TyDb_drop(k); // panic means cleanup wasn't handled
 
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
