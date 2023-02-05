@@ -123,11 +123,21 @@ typedef struct {
 
 #define TYDB_DEPTH 16
 typedef struct {
-  Stk tyIs;
-  Stk done;
+  Stk tyIs; // stack of TyI, aka blocks
+  Stk done; // indication of whether block is ret/cont/break/etc
   S   tyIsDat[TYDB_DEPTH];
   S   doneDat[TYDB_DEPTH];
 } TyDb;
+
+// Flow Block (loop/while/etc)
+typedef struct _Blk {
+  struct _Blk* next;
+  S start;
+  Sll* breaks;  // store breaks to update at end
+  TyI* startTyI; // The type at start of block
+  TyI* endTyI;   // The type at end of block (including break)
+} Blk;
+static inline Sll*  Blk_asSll(Blk* this)     { return (Sll*)this; }
 
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
@@ -146,6 +156,7 @@ typedef struct {
   TyDb tyDb;
   BBA* bbaDict;
   BBA* bbaTy;
+  Blk* blk;
 } Globals;
 
 typedef struct {

@@ -173,8 +173,8 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  // Slc name = instrName(instr);
-  // eprintf("??? instr: %+10.*s: ", Dat_fmt(name)); dbgWs(k); NL;
+  Slc name = instrName(instr);
+  eprintf("??? instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -413,6 +413,26 @@ void TyI_printAll(TyI* tyI) {
   eprintf(" "); TyI_print(tyI);
 }
 
+TyI* TyI_cloneNode(TyI* node, BBA* bba) {
+  TyI* cloned = BBA_alloc(bba, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
+  *cloned = *node; cloned->next = NULL;
+  return cloned;
+}
+
+// Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(node, k->g.bbaTy)));
+void TyI_cloneAddNode(BBA* bba, TyI** root, TyI* node) {
+  Sll_add((Sll**)root, TyI_asSll(TyI_cloneNode(node, bba)));
+}
+
+// Clone from bottom to top, pushing onto root.
+// The result will be in the same order.
+// This is done so that freeing is done from top to bottom.
+void  TyI_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
+  if(not nodes) return;
+  TyI_cloneAdd(bba, root, nodes->next);
+  TyI_cloneAddNode(bba, root, nodes);
+}
+
 #define IS_UNTY  (C_UNTY & k->g.fnState)
 
 void dbgTyIs(Kern* k) {
@@ -420,27 +440,7 @@ void dbgTyIs(Kern* k) {
   eprintf("["); TyI_printAll(TyDb_top(&k->g.tyDb)); eprintf(" ]");
 }
 
-TyI* TyI_cloneNode(TyI* node, BBA* bba) {
-  TyI* cloned = BBA_alloc(bba, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
-  *cloned = *node; cloned->next = NULL;
-  return cloned;
-}
-
 void TyDb_print(Kern* k) { TyI_printAll(TyDb_top(&k->g.tyDb)); }
-
-// Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(node, k->g.bbaTy)));
-void TyDb_cloneAddNode(BBA* bba, TyI** root, TyI* node) {
-  Sll_add((Sll**)root, TyI_asSll(TyI_cloneNode(node, bba)));
-}
-
-// Clone from bottom to top, pushing onto root.
-// The result will be in the same order.
-// This is done so that freeing is done from top to bottom.
-void  TyDb_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
-  if(not nodes) return;
-  TyDb_cloneAdd(bba, root, nodes->next);
-  TyDb_cloneAddNode(bba, root, nodes);
-}
 
 void TyDb_free(Kern* k, TyI* stream) {
   TyDb* db = &k->g.tyDb;
@@ -512,7 +512,7 @@ void tyCall(Kern* k, TyI* inp, TyI* out) {
 
   tyCheck(inp, *root, false, SLC("Type error during operation (i.e. function call, struct, etc)"));
   TyDb_free(k, inp);
-  TyDb_cloneAdd(k->g.bbaTy, root, out);
+  TyI_cloneAdd(k->g.bbaTy, root, out);
 }
 
 // Check function return type and possibly mark as done.
@@ -530,7 +530,7 @@ void tyClone(Kern* k, U2 depth) {
   TyDb* db = &k->g.tyDb;
   TyI* stream = TyDb_index(db, depth);
   TyDb_new(db);
-  if(stream) TyDb_cloneAdd(k->g.bbaTy, TyDb_root(&k->g.tyDb), stream);
+  if(stream) TyI_cloneAdd(k->g.bbaTy, TyDb_root(&k->g.tyDb), stream);
 }
 
 void tyMerge(Kern* k) {
@@ -996,7 +996,7 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
     if(v and isTyVar((Ty*)v) and not isVarGlobal(v))
       srLocal(k, tyI, v->v, false);
     else if(/*isStk and*/ not IS_UNTY)
-      TyDb_cloneAddNode(k->g.bbaTy, TyDb_root(&k->g.tyDb), tyI);
+      TyI_cloneAddNode(k->g.bbaTy, TyDb_root(&k->g.tyDb), tyI);
   }
 }
 
@@ -1047,17 +1047,40 @@ void N_fn(Kern* k) {
 
 // ***********************
 //   * if/elif/else
+// Type checked if/elif/else flow.
+//
+// The basic rule is that the result type of all branches must be identical,
+// Where branches that trigger tyRet are skipped/ignored. In essence this means
+// that all branches must be identical to the first "full" (non done) branch,
+// so each subsequent branch is simply merged into this first one.
+//
+// The algorithm ends up being fairly simple, and can be understood
+// by looking at the state of TyDb at the various points. There are two
+// possible states:
+//
+//   hadFull=true: there was a "full" if/elif/else branch that did not have a RET,
+//   aka a branch happend and control continued.
+//      TyDb -> stateToUse -> fullIfState -> outer
+//
+//   hadFull=false: there have been no "full" if/elif/else branches, all had RET
+//   or some other escape.
+//      TyDb -> stateToUse -> outer
+//
+// When hadFull, any block is immediately merged with fullIfState since they
+// have to match. Otherwise, any block that does not have RET sets hadFull=true.
 
-U2 _if(Buf* b) {
+typedef struct { bool hadFull; bool hadElse; } IfState;
+
+U2 _if(Buf* b) { // flow control only (no type checking)
   Buf_add(b, JLZ); Buf_add(b, 0);
   return b->len - 1;
 }
 
-void _endIf(Buf* b, U2 i) {
+void _endIf(Buf* b, U2 i) { // flow control only
   b->dat[i] = b->len - i;
 }
 
-U2 _else(Buf* b, U2 iIf) {
+U2 _else(Buf* b, U2 iIf) { // flow control only
   Buf_add(b, JL); // end of if has unconditional jmp to end of else
   Buf_add(b, 0);
   _endIf(b, iIf); // if jmps into else block
@@ -1067,66 +1090,56 @@ U2 _else(Buf* b, U2 iIf) {
 #define DBG_TYS(...) \
     if(not IS_UNTY) { eprintf(__VA_ARGS__); dbgTyIs(k); NL; }
 
-// The below algorithm looks complicated, but can be made simpler by thinking of
-// the state of TyDb at the various points.  There are two possibilities:
-//   hadTrue=true: there was a "true" if/elif/else branch that did not have a RET,
-//   aka a branch happend and control continued.
-//      TyDb -> stateToUse -> trueIfState -> outer
-//
-//   hadTrue=false: there have been no "true" if/elif/else branches, all had RET
-//      TyDb -> stateToUse -> outer
-//
-// When hadTrue, any block is immediately merged with trueIfState since they
-// have to match. Otherwise, any block that does not have RET sets hadTrue=true.
-
-bool tyIf(Kern* k, bool hadTrue) {
-  if(IS_UNTY) return false;
-  if(hadTrue) {
-    tyMerge(k);    // check stateToUse==trueIfState
+IfState tyIf(Kern* k, IfState is) {
+  if(IS_UNTY) return is;
+  if(is.hadFull) {
+    tyMerge(k);    // check stateToUse==fullIfState
     tyClone(k, 1); // clone outer state
   } else if (TyDb_done(k)) {
     tyMerge(k);    // drop stateToUse
     tyClone(k, 0); // clone outer state
   } else {
-    tyClone(k, 1); // stateToUse becomes trueIfState. Clone outer as stateToUse
-    hadTrue = true;
+    tyClone(k, 1); // stateToUse becomes fullIfState. Clone outer as stateToUse
+    is.hadFull = true;
   }
-  return hadTrue;
+  return is;
 }
 
-bool _N_if(Kern* k, bool hadTrue) {
+IfState _N_if(Kern* k, IfState is) {
   Buf* b = &k->g.code;
   U2 i = _if(b);
   REQUIRE("do"); Kern_compFn(k);
-  hadTrue = tyIf(k, hadTrue);
+  is = tyIf(k, is);
 
   if(CONSUME("elif")) {
     i = _else(b, i);
     Kern_compFn(k); tyCall(k, &TyIs_S, NULL);
     ASSERT(IS_UNTY or not TyDb_done(k), "Detected done in elif test");
-    hadTrue = _N_if(k, hadTrue);
+    is = _N_if(k, is);
   } else if(CONSUME("else")) {
     i = _else(b, i);
     Kern_compFn(k); // else body
-    hadTrue = tyIf(k, hadTrue);
+    is = tyIf(k, is);
+    is.hadElse = true;
   }
   _endIf(b, i);
-  return hadTrue;
+  return is;
 }
 
-void tyIfEnd(Kern* k, bool hadTrue) {
+void tyIfEnd(Kern* k, IfState is) {
   if(IS_UNTY) return;
   TyDb_drop(k); // stateToUse
-  if(hadTrue) {
+  if(is.hadFull) {
     TyDb* db = &k->g.tyDb;
+    // Swap the last two types
     TyI* cloned = NULL;
-    TyDb_cloneAdd(k->g.bbaDict, &cloned, TyDb_top(db));
-    TyDb_drop(k);
-    TyDb_drop(k);
+    TyI_cloneAdd(k->g.bbaDict, &cloned, TyDb_top(db));
+    TyDb_drop(k); TyDb_drop(k);
     TyDb_new(db);
-    TyDb_cloneAdd(k->g.bbaTy, TyDb_root(db), cloned);
+    TyI_cloneAdd(k->g.bbaTy, TyDb_root(db), cloned);
     assert(not Sll_free((Sll*)cloned, sizeof(TyI), BBA_asArena(k->g.bbaDict)));
-  } else {
+    assert(not TyDb_done(k));
+  } else if (is.hadElse) {
     TyDb_setDone(&k->g.tyDb, true);
   }
 }
@@ -1136,8 +1149,102 @@ void N_if(Kern* k) {
   Kern_compFn(k); tyCall(k, &TyIs_S, NULL);
   ASSERT(IS_UNTY or not TyDb_done(k), "Detected done in if test");
   tyClone(k, 0);
-  tyIfEnd(k, _N_if(k, false));
+  tyIfEnd(k, _N_if(k, (IfState){0}));
 }
+
+// ***********************
+//   * flow block
+//
+// Blk can be used to construct loop/while/etc. Each nesting is tied to
+// a node in Globals.blk.
+//
+// The basic syntax is:
+//
+//   var x: U4 = block(
+//     var i: U4 = checkThing();
+//     if(i == 2) do continue; // looping
+//     if(i == 3) do break 2;  // return value early
+//     i // return value at end of loop.
+//   );
+//
+// The type of the first break needs to be stored as the block type, and further
+// breaks need to match this type.
+//
+// Continues need to reset the type back to the block beginning.
+//
+// Any data is allocated from bbaDict, which is the local dictionary who's
+// lifetime is only the function definition.
+
+static inline Sll** Blk_root(Kern* k) { return (Sll**) &k->g.blk; }
+
+void tyCont(Kern* k) {
+  if(IS_UNTY) return;
+  Blk* blk = k->g.blk;
+  TyDb* db = &k->g.tyDb;
+  ASSERT(not TyDb_done(k), "Cont after guaranteed 'ret'");
+  tyCheck(blk->startTyI, TyDb_top(db), /*sameLen*/true,
+          SLC("Type error: cont not identical as block start."));
+  TyDb_setDone(db, /*done*/true);
+}
+
+void N_cont(Kern* k) {
+  eprintf("??? cont\n");
+  N_notNow(k);
+  tyCont(k);
+  Buf* b = &k->g.code;
+  Buf_add(b, SZ2 | JL);
+  Buf_addBE2(b, k->g.blk->start - b->len - 1);
+  eprintf("??? cont end\n");
+}
+
+void tyBreak(Kern* k) {
+  if(IS_UNTY) return;
+  Blk* blk = k->g.blk;
+  TyDb* db = &k->g.tyDb;
+  ASSERT(not TyDb_done(k), "Break after guaranteed 'ret'");
+  if(blk->endTyI) {
+    tyCheck(blk->endTyI, TyDb_top(db), /*sameLen*/true,
+            SLC("Type error: breaks not identical type."));
+  } else {
+    TyI_cloneAdd(k->g.bbaDict, &k->g.blk->endTyI, TyDb_top(db));
+  }
+  TyDb_setDone(db, /*done*/true);
+}
+
+void N_brk(Kern* k) {
+  eprintf("??? brk\n");
+  N_notNow(k); Kern_compFn(k);
+  tyBreak(k);
+  Buf* b = &k->g.code;
+
+  Buf_add(b, SZ2 | JL); // unconditional jump to end of block
+  Sll* br = BBA_alloc(k->g.bbaDict, sizeof(Sll), RSIZE); ASSERT(br, "brk OOM");
+  Sll_add(&k->g.blk->breaks, br);  br->dat = b->len;
+  Buf_addBE2(b, 0);
+  eprintf("??? brk end\n");
+}
+
+void N_blk(Kern* k) {
+  eprintf("??? blk\n");
+  N_notNow(k);
+  Buf* b = &k->g.code;
+  Blk* blk = BBA_alloc(k->g.bbaDict, sizeof(Blk), RSIZE);
+  ASSERT(blk, "block OOM");
+  *blk = (Blk) { .start = b->len };
+  TyI_cloneAdd(k->g.bbaDict, &blk->startTyI, TyDb_top(&k->g.tyDb));
+  Sll_add(Blk_root(k), Blk_asSll(blk));
+
+  Kern_compFn(k); // compile code block
+  if(not TyDb_done(k)) {
+    tyBreak(k);
+  }
+  for(Sll* br = blk->breaks; br; br = br->next) {
+    eprintf("??? compiling brk jmp len=%u brLen=%u\n", b->len, br->dat);
+    srBE2(b->dat + br->dat, b->len - br->dat - 1);
+  }
+  eprintf("??? blk end\n");
+}
+
 
 // ***********************
 // * 7: Registering Functions
@@ -1217,7 +1324,6 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", ","    , TY_FN_SYN       , N_noop);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "->"   , TY_FN_SYN       , N_noop);
 
-
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "notNow",  TY_FN_SYN, N_notNow);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "unty",    TY_FN_SYN, N_unty);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "ret",     TY_FN_SYN, N_ret);
@@ -1230,6 +1336,9 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x07", "comment", TY_FN_COMMENT, N_comment);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "if",      TY_FN_SYN, N_if);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "cont",    TY_FN_SYN, N_cont);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "brk",     TY_FN_SYN, N_brk);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "blk",     TY_FN_SYN, N_blk);
 
 
   STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  0, N_tAssertEq);

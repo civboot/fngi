@@ -168,20 +168,22 @@ END_TEST_FNGI
 TEST_FNGI(compileIf, 10)
   Kern_fns(k);
   REPL_START
-  // k->g.fnState |= C_UNTY;
+  k->g.fnState |= C_UNTY;
 
-  // COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
-  // COMPILE_EXEC("if(1) do 0x42 else 0x33");                 TASSERT_WS(0x42);
-  // COMPILE_EXEC("if(0) do 0x42 else 0x33");                 TASSERT_WS(0x33);
-  // COMPILE_EXEC("if(1) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x42);
-  // COMPILE_EXEC("if(0) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x11);
-  // COMPILE_EXEC("if(0) do 0x42 elif(0) do 0x11 else 0x33"); TASSERT_WS(0x33);
-
-  // eprintf("# testing typedIf\n");
-  // k->g.fnState &= ~C_UNTY;
-  COMPILE_EXEC("if(1) do ;");
-  TASSERT_EQ(0, TY_LEN);
+  COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
+  COMPILE_EXEC("if(1) do 0x42 else 0x33");                 TASSERT_WS(0x42);
+  COMPILE_EXEC("if(0) do 0x42 else 0x33");                 TASSERT_WS(0x33);
+  COMPILE_EXEC("if(1) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x42);
+  COMPILE_EXEC("if(0) do 0x42 elif(1) do 0x11 else 0x33"); TASSERT_WS(0x11);
+  COMPILE_EXEC("if(0) do 0x42 elif(0) do 0x11 else 0x33"); TASSERT_WS(0x33);
   TASSERT_EQ(0, Stk_len(WS));
+  TASSERT_EQ(0, TY_LEN);
+
+  k->g.fnState = (~C_UNTY) & k->g.fnState;
+  TASSERT_EQ(0, TY_LEN); TASSERT_EQ(0, Stk_len(WS));
+
+  COMPILE_EXEC("if(1) do ;");
+  TASSERT_EQ(0, TY_LEN); TASSERT_EQ(0, Stk_len(WS));
 
   COMPILE_EXEC("if(1) do 0x42 else 0x33"); TASSERT_EQ(1, TY_LEN);
   COMPILE_EXEC("tAssertEq 0x42");          TASSERT_EQ(0, TY_LEN);
@@ -218,16 +220,34 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("tAssertEq(0x33, ifElifStk(7))");
 
 
-#define IF_ALL_RET \
-  "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
+  #define IF_ALL_RET \
+    "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
 
   COMPILE_EXEC("fn one -> S do (" IF_ALL_RET ")");
   COMPILE_EXEC("tAssertEq(1,    one;)");
+  COMPILE_EXEC("fn ifRet1 -> S do ( if(1) do ret 2; ret 4; )");
+  COMPILE_EXEC("tAssertEq(2, ifRet1,)");
 
   // putting anything after fails, since the if/elif/else block all RET
   // this does panic, but there is some kind of memory error in dropping.
   // EXPECT_ERR(COMPILE_EXEC("fn bad -> S do (" IF_ALL_RET "4 )"));
   // TyDb_drop(k); // panic means cleanup wasn't handled
+
+  REPL_END
+  TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
+END_TEST_FNGI
+
+TEST_FNGI(compileBlk, 10)
+  Kern_fns(k);
+  REPL_START
+  TASSERT_EQ(0, k->g.fnState & C_UNTY);
+  // k->g.fnState |= C_UNTY;
+
+  COMPILE_EXEC(
+      "0 blk(\n"
+      "  if(dup, >= 5) do (drp; brk 0x15)\n"
+      "  inc; cont;\n"
+      ")"); TASSERT_WS(0x15);
 
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
@@ -257,6 +277,7 @@ int main(int argc, char* argv[]) {
   test_tyDb();
   test_compileTy();
   test_compileIf();
+  test_compileBlk();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();
