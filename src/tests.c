@@ -241,13 +241,58 @@ TEST_FNGI(compileBlk, 10)
   Kern_fns(k);
   REPL_START
   TASSERT_EQ(0, k->g.fnState & C_UNTY);
-  // k->g.fnState |= C_UNTY;
 
   COMPILE_EXEC(
       "0 blk(\n"
       "  if(dup, >= 5) do (drp; brk 0x15)\n"
       "  inc; cont;\n"
       ")"); TASSERT_WS(0x15);
+
+  REPL_END
+  TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
+END_TEST_FNGI
+
+TEST_FNGI(compileVar, 10)
+  Kern_fns(k);
+  REPL_START
+  COMPILE_EXEC(
+      "fn useVar stk:S -> S do (\n"
+      "  var a: S = (_ + 7);  ret inc(a);\n"
+      ") useVar(0x42)"); TASSERT_WS(0x4A);
+  REPL_END
+END_TEST_FNGI
+
+TEST_FNGI(compileStruct, 10)
+  Kern_fns(k);
+  REPL_START
+
+  COMPILE_EXEC(
+      "fn chTy stk:S -> U2 do ( ret U2; )"
+      "chTy(0x42)"); TASSERT_WS(0x42);
+
+  COMPILE_EXEC("struct Foo [ a: U2; b: U1; c: U4 ]");
+  TyDict* Foo = (TyDict*) Kern_findTy(k, SLC("Foo"));
+  assert(Foo);
+  TASSERT_EQ(TY_DICT | TY_DICT_STRUCT, Foo->meta);
+  TASSERT_EQ(8, Foo->sz);
+  assert(TyDict_find(Foo, SLC("a")));
+
+  COMPILE_EXEC("struct A [ a: S ]");
+  COMPILE_EXEC("struct B [ a: A; b: S ]");
+  COMPILE_EXEC(
+    "fn simpleCreate a:S -> B do ("
+    "  B(A(a), 0x42)"
+    "); simpleCreate(0x33)"); TASSERT_WS(0x42); TASSERT_WS(0x33);
+  COMPILE_EXEC("destruct(simpleCreate(0x35)) tAssertEq(0x42)")
+  TASSERT_WS(0x35);
+  TASSERT_EQ(0, Stk_len(WS));
+
+  COMPILE_EXEC(
+    "fn useField a:A -> S do ( a.a + 7 )"
+    "  tAssertEq(0x18, useField(A 0x11))");
+
+  COMPILE_EXEC("fn getStruct b:B -> B do ( b ); getStruct(B(A 0x4321, 0x321))");
+  TASSERT_WS(0x321); TASSERT_WS(0x4321);
 
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
@@ -278,6 +323,8 @@ int main(int argc, char* argv[]) {
   test_compileTy();
   test_compileIf();
   test_compileBlk();
+  test_compileVar();
+  test_compileStruct();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

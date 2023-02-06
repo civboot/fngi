@@ -116,10 +116,14 @@ static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
 
 typedef struct {
   TY_BODY;
-  TyI* tyI; // fields, variants, etc
+  TyI* fields;
   U2 sz;
-  Ty* tyParent;
 } TyDict;
+
+static inline Bst*  TyDict_bst(TyDict* this)     { return (Bst*)   this->v; }
+static inline Bst** TyDict_bstRoot(TyDict* this) { return (Bst**) &this->v; }
+static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
+
 
 #define TYDB_DEPTH 16
 typedef struct {
@@ -146,8 +150,9 @@ typedef struct {
   U2 fnLocals; // locals size
   U1 fnState;
   U1 logLvlSys;  U1 logLvlUsr;
-  Ty* curTy;    // current type (fn, struct) being compiled
-  TyFn* compFn; // current function that does compilation
+  TyDict* curMod; // current parent module (mod, struct, etc)
+  Ty* curTy;      // current type (fn, struct) being compiled
+  TyFn* compFn;   // current function that does compilation
   S dictBuf[DICT_DEPTH];
   Stk dictStk;
   Reader src; FileInfo* srcInfo;
@@ -309,6 +314,9 @@ static inline TyI* TyDb_top(TyDb* db) { return (TyI*) Stk_top(&db->tyIs); }
 // Get a reference to the current snapshot
 static inline TyI** TyDb_root(TyDb* db) { return (TyI**) Stk_topRef(&db->tyIs); }
 
+// Get a reference to the current snapshot
+static inline Sll** TyDb_rootSll(TyDb* db) { return (Sll**) Stk_topRef(&db->tyIs); }
+
 // Get/set whether current snapshot is done (guaranteed ret)
 static inline bool TyDb_done(Kern* k) { return Stk_top(&k->g.tyDb.done); }
 static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = done; }
@@ -334,6 +342,7 @@ void tyRet(Kern* k, bool done);
 void tySplit(Kern* k);
 void tyMerge(Kern* k);
 void TyI_printAll(TyI* tyI);
+Ty* TyDict_find(TyDict* dict, Slc s);
 
 
 #define TYI_VOID  NULL

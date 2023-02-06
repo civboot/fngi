@@ -34,7 +34,8 @@ const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run now (knowing asNow)
 const TY_FN_INLINE  :U1 = 0x03 \ Inline function, copies bytes when compiled.
 const TY_FN_COMMENT :U1 = 0x04 \ Comment function. Executed immediately.
 
-\ TY_VAR meta bits: [10-- GL--] G=global L=local
+\ TY_VAR meta bits: [10-- G---] G=global
+\ In addition, G=0 on a struct is a field.
 const TY_VAR_GLOBAL :U1 = 0x08
 
 \ TY_DICT meta bits: [11-- -DDD] H=other D=dictType

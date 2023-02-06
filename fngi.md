@@ -153,6 +153,42 @@ implemented with syn functions.
 
 > Note: If you want to compile literal computed at compile-time use `$L(1 + 3)`
 
+## Structs
+Structs are very similar to C with the addition of stack operations.
+
+```
+\ Define a struct
+struct A [
+  a1: U4
+]
+
+struct B [
+  b1: A
+  b2: U4
+]
+
+\ Take as input and construct
+fn createB a:A -> B do (
+  // construct variable
+  var b: B = {
+    // a = a;          // this is valid
+    b1 = { a1 = a.a1 } // or construct manually
+    b2 = 32
+  }
+  b.field1 = (b.field1 + 7) // assign fields
+  ret b // put on stack
+)
+
+\ Define methods
+define B {
+  meth sum(this: &B) -> U4 do ( this.b1.a1 + this.b2 )
+}
+
+\ Use methods
+var b  : B  = { b1 = { a1 = 42 }, b2 = 33 }
+var sum: U4 = ( b.sum() + b.sum() )
+```
+
 ## Similarities to FORTH
 
 Like FORTH, fngi allows you to define functions that are either compiled or

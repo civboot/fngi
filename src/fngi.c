@@ -8,11 +8,18 @@
 // * 3: TyDb, the type database and validator
 // * 4: Token scanner
 // * 5: Compiler
+//   * lit / compileLit
+//   * Buffer (op1, op2)
+//   * compileTy (Var, Dict, Fn)
+//   * scan / scanTy
+//   * single: compile a single token + compileSrc
 // * 6: Native Functions
 //   * Misc
 //   * Core syn functions
 //   * fn and fn signature
 //   * if/elif/else
+//   * blk
+//   * struct
 // * 7: Registering Functions and Tys
 // * 8: Execution helpers
 
@@ -99,12 +106,12 @@ Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
     case TY_DICT: sz = sizeof(TyDict); break;
   }
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
-  *ty = (Ty) {
-    .bst = (Bst) { .key = key },
-    .meta = meta,
-    .line = k->g.tokenLine,
-    .file = k->g.srcInfo,
-  };
+  memset(ty, 0, sz);
+  ty->bst = (Bst) { .key = key },
+  ty->parent = (Ty*) k->g.curMod,
+  ty->meta = meta,
+  ty->line = k->g.tokenLine,
+  ty->file = k->g.srcInfo,
   Kern_addTy(k, ty);
   return ty;
 }
@@ -378,10 +385,23 @@ S TyDict_size(TyDict* ty) {
   else                 return ty->sz;
 }
 
-S TyI_size(TyI tyI) {
-  if(TyI_refs(&tyI)) return RSIZE;
-  ASSERT(isTyDict(tyI.ty), "TyI must have refs or be a dict.");
-  return TyDict_size((TyDict*)tyI.ty);
+Ty* TyDict_find(TyDict* dict, Slc s) {
+  Bst* find = TyDict_bst(dict);
+  I4 i = Bst_find(&find, s);
+  if(i) return NULL;
+  else  return (Ty*) find;
+}
+
+TyVar* TyDict_field(TyDict* d, TyI* field) {
+  TyVar* var = (TyVar*) TyDict_find(d, CStr_asSlc(field->name));
+  assert(var && isTyVar((Ty*)var) && not isVarGlobal(var));
+  return var;
+}
+
+S TyI_size(TyI* tyI) {
+  if(TyI_refs(tyI)) return RSIZE;
+  ASSERT(isTyDict(tyI->ty), "TyI must have refs or be a dict.");
+  return TyDict_size((TyDict*)tyI->ty);
 }
 
 bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
@@ -404,7 +424,10 @@ bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
 
 void TyI_print(TyI* tyI) {
   for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
-  eprintf("%.*s", Dat_fmt(*tyI->ty->bst.key));
+  if(tyI->name) {
+    eprintf("%.*s", Dat_fmt(*tyI->name));
+  }
+  eprintf(":%.*s", Dat_fmt(*tyI->ty->bst.key));
 }
 
 void TyI_printAll(TyI* tyI) {
@@ -442,14 +465,17 @@ void dbgTyIs(Kern* k) {
 
 void TyDb_print(Kern* k) { TyI_printAll(TyDb_top(&k->g.tyDb)); }
 
+void TyDb_pop(Kern* k) {
+  Slc* err = BBA_free(
+    k->g.bbaTy , Sll_pop(TyDb_rootSll(&k->g.tyDb)),
+    sizeof(TyI), RSIZE);
+  if(err) SET_ERR(*err);
+}
+
 void TyDb_free(Kern* k, TyI* stream) {
-  TyDb* db = &k->g.tyDb;
-  TyI** root = TyDb_root(db);
   while(stream) {
     TyI* next = stream->next; // cache since we may free the node
-    Slc* err = BBA_free(k->g.bbaTy, Sll_pop((Sll**)root), sizeof(TyI), RSIZE);
-    if(err) SET_ERR(*err);
-    stream = next;
+    TyDb_pop(k); stream = next;
   }
 }
 
@@ -487,7 +513,7 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
     }
     if(not TyI_eq(require, given)) {
       if(not ERR_EXPECTED) {
-        eprintf("!! Given %u Types from right doesn't match Require\n", i);
+        eprintf("!! Given %u Types don't match Require\n", i);
         tyNotMatch(require_, given_);
       }
       SET_ERR(errCxt);
@@ -544,7 +570,6 @@ void tyMerge(Kern* k) {
   TyDb_drop(k);
 }
 
-
 // ***********************
 // * 4: Token scanner
 
@@ -575,7 +600,6 @@ void skipWhitespace(Kern* k, Reader f) {
 }
 
 // Guarantees a token is in Kern.g.token
-void scan(Kern* k);
 void scanRaw(Kern* k) {
   Buf* b = &k->g.token;
   if(b->len) return; // does nothing if token wasn't cleared.
@@ -623,7 +647,6 @@ bool tokenConsume(Kern* k, Slc s) {
 
 void tokenDrop(Kern* k) {
   Buf* b = &k->g.token;
-  // eprintf("?? tokenDrop: %.*s\n", Dat_fmt(*b));
   Ring_incHead(&Xr(k->g.src, asBase)->ring, b->len);
   Buf_clear(b);
 }
@@ -660,6 +683,11 @@ ParsedNumber parseU4(Slc t) {
 // ***********************
 // * 5: Compiler
 
+static inline void Kern_compFn(Kern* k) { executeFn(k, k->g.compFn); }
+
+// ***********************
+//   * lit / compileLit
+
 void lit(Buf* b, U4 v) {
   if (v <= SLIT_MAX)    { Buf_add(b, SLIT | v); }
   else if (v <= 0xFF)   { Buf_add(b, SZ1 | LIT); Buf_add(b, v); }
@@ -671,6 +699,117 @@ void compileLit(Kern* k, U4 v, bool asNow) {
   if(asNow) return WS_ADD(v);
   tyCall(k, NULL, &TyIs_S);
   lit(&k->g.code, v);
+}
+
+// ***********************
+//   * Buffer (op1, op2)
+
+void Buf_addSz(Buf* b, S v, U1 sz) {
+  switch(SZ_MASK & v) {
+    case SZ1: return Buf_add(b, v);
+    case SZ2: return Buf_addBE2(b, v);
+    case SZ4: return Buf_addBE4(b, v);
+  }
+  SET_ERR(SLC("Buf_addSz: sz"));
+}
+
+// sized operation with 1 byte literal (i.e. FTLL, SRLL, etc)
+void op1(Buf* b, U1 op, U1 sz, S v) {
+  Buf_add(b, op | (SZ_MASK & sz));
+  Buf_add(b, v);
+}
+
+void op2(Buf* b, U1 op, U1 sz, S v) {
+  Buf_add(b, op | (SZ_MASK & sz));
+  Buf_addBE2(b, v);
+}
+
+void ftStruct(Kern* k, TyDict* d, TyI* field, U2 offset);
+
+void ftLocal(Kern* k, TyI* tyI, U2 offset, bool addTy) {
+  eprintf("??? ftLocal offset=%u", offset); TyI_printAll(tyI); printf("\n");
+  Buf* b = &k->g.code;
+  if(TyI_refs(tyI)) {
+    if(addTy) tyCall(k, NULL, tyI);
+    return op1(b, FTLL, SZR, offset);
+  }
+  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
+  ASSERT(isTyDict(tyI->ty), "invalid non-dict local");
+  TyDict* d = (TyDict*) tyI->ty;
+  if(isDictNative(d)) {
+    eprintf("??? in native\n");
+    if(addTy) tyCall(k, NULL, tyI);
+    return op1(b, FTLL, d->v, offset);
+  }
+  ASSERT(isDictStruct(d), "unknown dict type");
+  if(CONSUME(".")) {
+    eprintf("??? inside '.'"); TyI_printAll(tyI); printf("\n");
+    scan(k); ASSERT(not Kern_eof(k), "got EOF after '.'");
+    TyVar* field = (TyVar*) TyDict_find(d, *Buf_asSlc(&k->g.token));
+    tokenDrop(k);
+    assert(isTyVar((Ty*)field)); // TODO: only field implemented
+    assert(not isVarGlobal(field));
+    eprintf("??? inner fetch\n");
+    return ftLocal(k, field->tyI, offset + field->v, true);
+  }
+  if(addTy) tyCall(k, NULL, tyI);
+  ftStruct(k, d, d->fields, offset);
+}
+
+// Fetch fields in reverse order (top is at top)
+void ftStruct(Kern* k, TyDict* d, TyI* field, U2 offset) {
+  if(not field) return;
+  ftStruct(k, d, field->next, offset);
+  ftLocal(k, field, offset + TyDict_field(d, field)->v, false);
+}
+
+void srLocal(Kern* k, TyI* tyI, U2 offset, bool checkTy) {
+  eprintf("??? srLocal offset=%u", offset); TyI_printAll(tyI); printf("\n");
+  if(checkTy) tyCall(k, tyI, NULL);
+  Buf* b = &k->g.code;
+  if(TyI_refs(tyI)) return op1(b, SRLL, SZR, offset);
+  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
+  TyDict* d = (TyDict*) tyI->ty;
+  if(isDictNative(d)) {
+    return op1(b, SRLL, d->v, offset);
+  }
+  eprintf("??? srLocal struct\n");
+  for(TyI* field = d->fields; field; field = field->next) {
+    srLocal(k, field, offset + TyDict_field(d, field)->v, checkTy);
+  }
+}
+
+// ***********************
+//   * compileTy (Var, Dict, Fn)
+
+void compileVar(Kern* k, TyVar* v, bool asNow) {
+  if(isVarGlobal(v)) assert(false);
+  ASSERT(not asNow, "'$' used with local variable");
+  if(CONSUME("=")) srLocal(k, v->tyI, /*offset=*/v->v, true);
+  else             ftLocal(k, v->tyI, /*offset=*/v->v, true);
+}
+
+void compileDict(Kern* k, TyDict* ty, bool asNow) {
+  ASSERT(not asNow, "$compileDict not allowed");
+  Kern_compFn(k); // compile next token
+  if(IS_UNTY) return;
+  TyI tyI = (TyI) {.ty = (Ty*) ty};
+  TyI* top = TyDb_top(&k->g.tyDb);
+  eprintf("??? top = %X\n", top);
+  if(isDictNative(ty)) {
+    if(TyI_refs(top)) {
+      ASSERT(RSIZE == TyI_size(top), "Cannot convert pointer to less than RSIZE");
+    } else {
+      ASSERT((isTyDict(top->ty) && isDictNative((TyDict*)top->ty)),
+           "Cannot cast non-native as native.");
+    }
+    TyDb_pop(k); tyCall(k, NULL, &tyI);
+  } else {
+    assert(isDictStruct(ty));
+    eprintf("??? struct tyCall\n");
+    tyCall(k, ty->fields, &tyI);
+    eprintf("??? struct tyCall done\n");
+  }
 }
 
 void compileFn(Kern* k, TyFn* fn) {
@@ -688,58 +827,19 @@ void baseCompFn(Kern* k) {
   single(k, false);
 }
 
-static inline void Kern_compFn(Kern* k) { executeFn(k, k->g.compFn); }
 
-void Buf_addSz(Buf* b, S v, U1 sz) {
-  switch(SZ_MASK & v) {
-    case SZ1: return Buf_add(b, v);
-    case SZ2: return Buf_addBE2(b, v);
-    case SZ4: return Buf_addBE4(b, v);
+void checkName(Kern* k, bool check) {
+  if(not check) {
+    eprintf("!!! name not found token=%.*s\n", Dat_fmt(k->g.token));
+    SET_ERR(SLC("name not found"));
   }
-  SET_ERR(SLC("Buf_addSz: sz"));
-}
-
-// sized operation with 1 byte literal (i.e. FTLL, SRLL, etc)
-void op1(Buf* b, U1 op, U1 sz, S v) {
-  Buf_add(b, op | (SZ_MASK & sz));
-  Buf_add(b, v);
-}
-void op2(Buf* b, U1 op, U1 sz, S v) {
-  Buf_add(b, op | (SZ_MASK & sz));
-  Buf_addBE2(b, v);
-}
-
-void ftLocal(Kern* k, TyI* tyI, U2 offset) {
-  tyCall(k, NULL, tyI);
-  Buf* b = &k->g.code;
-  if(TyI_refs(tyI)) return op1(b, FTLL, SZR, offset);
-  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
-  TyDict* d = (TyDict*) tyI->ty;
-  if(isDictNative(d)) return op1(b, FTLL, d->v, offset);
-  assert(false); // struct / etc
-}
-
-void srLocal(Kern* k, TyI* tyI, U2 offset, bool checkTy) {
-  if(checkTy) tyCall(k, tyI, NULL);
-  Buf* b = &k->g.code;
-  if(TyI_refs(tyI)) return op1(b, SRLL, SZR, offset);
-  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
-  TyDict* d = (TyDict*) tyI->ty;
-  if(isDictNative(d)) return op1(b, SRLL, d->v, offset);
-  assert(false); // struct / etc
-}
-
-void compileVar(Kern* k, TyVar* v, bool asNow) {
-  if(isVarGlobal(v)) assert(false);
-  ASSERT(not asNow, "'$' used with local variable");
-  if(CONSUME("=")) srLocal(k, v->tyI, /*offset=*/v->v, true);
-  else             ftLocal(k, v->tyI, /*offset=*/v->v);
 }
 
 void compileTy(Kern* k, Ty* ty, bool asNow) {
-  ASSERT(ty, "name not found");
+  checkName(k, ty);
   if(isTyConst(ty)) return compileLit(k, ty->v, asNow);
   if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asNow);
+  if(isTyDict(ty))  return compileDict(k, (TyDict*) ty, asNow);
   TyFn* fn = tyFn(ty);
   if(isFnSyn(fn)) {
     WS_ADD(asNow);
@@ -750,6 +850,9 @@ void compileTy(Kern* k, Ty* ty, bool asNow) {
   if(asNow) executeFn(k, fn);
   else      compileFn(k, fn);
 }
+
+// ***********************
+//   * scan / scanTy
 
 Ty* Kern_findTy(Kern* k, Slc t) {
   Ty* ty = NULL;
@@ -823,7 +926,8 @@ TyI* scanTyI(Kern* k) {
   return tyI;
 }
 
-// Compile a single token.
+// ***********************
+//   * single: compile a single token + compileSrc
 void single(Kern* k, bool asNow) {
   scan(k); Slc t = *Buf_asSlc(&k->g.token);
   if(not t.len) return;
@@ -832,7 +936,7 @@ void single(Kern* k, bool asNow) {
     tokenDrop(k);
     return compileLit(k, n.v, asNow);
   }
-  Ty* ty = scanTy(k); ASSERT(ty, "name not found");
+  Ty* ty = scanTy(k); checkName(k, ty);
   compileTy(k, ty, asNow);
 }
 
@@ -851,7 +955,7 @@ void compileSrc(Kern* k) {
 //   * Misc
 
 void N_noop(Kern* k) { WS_POP(); } // noop syn function
-void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '%'"); }
+void N_notNow(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with '$'"); }
 void N_unty(Kern* k) {
   WS_POP(); // ignore asNow
   k->g.fnState |= C_UNTY;
@@ -861,8 +965,20 @@ void N_unty(Kern* k) {
 
 void _N_ret(Kern* k) { tyRet(k, true); Buf_add(&k->g.code, RET); }
 void N_ret(Kern* k)  { N_notNow(k); Kern_compFn(k); _N_ret(k); }
-void N_dropWs(Kern* k) { Stk_clear(WS); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
+
+void N_destruct(Kern* k) {
+  eprintf("??? destruct\n");
+  N_notNow(k);
+  Kern_compFn(k);
+  TyI* top = TyDb_top(&k->g.tyDb);
+  TyDict* ty = (TyDict*) top->ty;
+  ASSERT(isTyDict((Ty*)ty) && isDictStruct(ty), "destruct non-dict");
+  ASSERT(not TyI_refs(top), "cannot destruct reference (yet?)");
+  TyI tyI = (TyI){.ty = (Ty*)ty};
+  tyCall(k, &tyI, ty->fields);
+  eprintf("??? destruct done\n");
+}
 
 // ***********************
 //   * Core syn functions
@@ -931,11 +1047,10 @@ void synFnFound(Kern* k, Ty* ty) {
   executeFn(k, (TyFn*)ty);
 }
 
-// TyVar* varImpl(Kern* k, TyI* tyI, CStr* key, S ptr) {
 void varImpl(Kern* k, TyVar* var, S ptr) {
   if(ptr) var->v = ptr;
   else { // uses fn locals offset
-    S sz = TyI_size(*var->tyI);
+    S sz = TyI_size(var->tyI);
     var->v = align(k->g.fnLocals, alignment(sz));
     k->g.fnLocals = var->v + sz;
   }
@@ -953,12 +1068,16 @@ void N_stk(Kern *k) {
 }
 TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (S)N_stk, TYI_VOID, TYI_VOID);
 
-TyVar* varPre(Kern* k) {
+CStr* scanDedupCStr(Kern* k) {
   Ty* found = scanTy(k);
-  CStr* key; if(found) key = found->bst.key;
-             else      key = tokenCStr(k);
-  REQUIRE(":");
+  if(found) return found->bst.key;
+  else      return tokenCStr(k);
+}
+
+TyVar* varPre(Kern* k) {
+  CStr* key = scanDedupCStr(k);
   TyVar* var = (TyVar*) Ty_new(k, TY_VAR, key);
+  REQUIRE(":");
   TyI* tyI = scanTyI(k);
   tyI->name = key;
   var->tyI = tyI;
@@ -967,15 +1086,25 @@ TyVar* varPre(Kern* k) {
 
 void N_inp(Kern* k) {
   N_notNow(k);
-  TyVar* var = varPre(k);
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
          , "inp used after out");
+  TyVar* var = varPre(k);
   SET_FN_STATE(FN_STATE_INP);
   TyI* tyI = TyI_cloneNode(var->tyI, k->g.bbaDict);
   Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(tyI));
   varImpl(k, var, /*ptr=*/0);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (S)N_inp, TYI_VOID, TYI_VOID);
+
+void N_var(Kern* k) {
+  N_notNow(k); ASSERT(not IS_FN_STATE(FN_STATE_NO), "var used outside fn");
+  TyVar* v = varPre(k);
+  varImpl(k, v, /*ptr=*/0);
+  if(CONSUME("=")) {
+    Kern_compFn(k); // compile next token
+    srLocal(k, v->tyI, /*offset=*/v->v, true);
+  }
+}
 
 void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
   SET_FN_STATE(FN_STATE_STK);
@@ -1153,7 +1282,7 @@ void N_if(Kern* k) {
 }
 
 // ***********************
-//   * flow block
+//   * blk
 //
 // Blk can be used to construct loop/while/etc. Each nesting is tied to
 // a node in Globals.blk.
@@ -1188,13 +1317,11 @@ void tyCont(Kern* k) {
 }
 
 void N_cont(Kern* k) {
-  eprintf("??? cont\n");
   N_notNow(k);
   tyCont(k);
   Buf* b = &k->g.code;
   Buf_add(b, SZ2 | JL);
   Buf_addBE2(b, k->g.blk->start - b->len - 1);
-  eprintf("??? cont end\n");
 }
 
 void tyBreak(Kern* k) {
@@ -1212,7 +1339,6 @@ void tyBreak(Kern* k) {
 }
 
 void N_brk(Kern* k) {
-  eprintf("??? brk\n");
   N_notNow(k); Kern_compFn(k);
   tyBreak(k);
   Buf* b = &k->g.code;
@@ -1221,11 +1347,9 @@ void N_brk(Kern* k) {
   Sll* br = BBA_alloc(k->g.bbaDict, sizeof(Sll), RSIZE); ASSERT(br, "brk OOM");
   Sll_add(&k->g.blk->breaks, br);  br->dat = b->len;
   Buf_addBE2(b, 0);
-  eprintf("??? brk end\n");
 }
 
 void N_blk(Kern* k) {
-  eprintf("??? blk\n");
   N_notNow(k);
   Buf* b = &k->g.code;
   Blk* blk = BBA_alloc(k->g.bbaDict, sizeof(Blk), RSIZE);
@@ -1239,12 +1363,42 @@ void N_blk(Kern* k) {
     tyBreak(k);
   }
   for(Sll* br = blk->breaks; br; br = br->next) {
-    eprintf("??? compiling brk jmp len=%u brLen=%u\n", b->len, br->dat);
     srBE2(b->dat + br->dat, b->len - br->dat - 1);
   }
-  eprintf("??? blk end\n");
 }
 
+// ***********************
+//   * struct
+//
+// struct Foo [ a: U2; b: &U4 ]
+
+void field(Kern* k, TyDict* st) {
+  TyVar* var = varPre(k);
+  S sz = TyI_size(var->tyI);
+  var->v = align(st->sz, alignment(sz));
+  st->sz = var->v + sz;
+  TyI* tyI = TyI_cloneNode(var->tyI, k->g.bbaDict);
+  eprintf("??? field.tyI="); TyI_print(tyI); NL;
+  Sll_add(TyDict_fieldsRoot(st), TyI_asSll(tyI));
+}
+
+void N_struct(Kern* k) {
+  N_notNow(k);
+  TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
+  TyDict* prevMod = k->g.curMod;
+  k->g.curMod = st;
+  Stk_add(&k->g.dictStk, 0);
+  REQUIRE("[");
+  while(not CONSUME("]")) {
+    Ty* ty = Kern_findToken(k);
+    ASSERT(not Kern_eof(k), "Expected ']', reached EOF");
+    if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
+      tokenDrop(k); WS_ADD(/*asNow*/false); executeFn(k, (TyFn*)ty);
+    } else field(k, st);
+  }
+  st->v = Stk_pop(&k->g.dictStk); // update "root" of struct
+  k->g.curMod = prevMod;
+}
 
 // ***********************
 // * 7: Registering Functions
@@ -1335,13 +1489,15 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "inline",  TY_FN_SYN, N_inline);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x07", "comment", TY_FN_COMMENT, N_comment);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "var",     TY_FN_SYN, N_var);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "if",      TY_FN_SYN, N_if);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "cont",    TY_FN_SYN, N_cont);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "brk",     TY_FN_SYN, N_brk);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "blk",     TY_FN_SYN, N_blk);
-
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "struct",  TY_FN_SYN, N_struct);
 
   STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  0, N_tAssertEq);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x08", "destruct", TY_FN_SYN, N_destruct);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
   STATIC_INLINE(&TyIs_SS, &TyIs_SS,  "\x03", "swp"  , 0       , SWP   );
