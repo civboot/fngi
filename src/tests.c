@@ -90,7 +90,7 @@ TEST_FNGI(compile0, 4)
   TASSERT_EMPTY();
 END_TEST_FNGI
 
-TEST_FNGI(compile1, 5)
+TEST_FNGI(compile1, 10)
   Kern_fns(k);
   k->g.fnState |= C_UNTY;
 
@@ -102,13 +102,14 @@ TEST_FNGI(compile1, 5)
   TASSERT_EQ(&Ty_U2, maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
   TASSERT_EQ(NULL, maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
 
-  COMPILE_EXEC("fn maths3 x:U2 -> U2 do (x + 4) maths3(3)"); TASSERT_WS(7);
+  COMPILE_EXEC("fn maths3 x:U2 -> U2 do (x + 4) maths3(3)");
   TyFn* maths3 = tyFn(Kern_findTy(k, SLC("maths3")));
   TASSERT_EQ(&Ty_U2, maths3->inp->ty);
   TASSERT_SLC_EQ("x" , CStr_asSlc(maths3->inp->name));
   TASSERT_EQ(&Ty_U2, maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
   TASSERT_EQ(NULL, maths3->inp->next); TASSERT_EQ(NULL, maths3->out->next);
   TASSERT_EQ(1, maths3->lSlots);
+  TASSERT_WS(7);
 
   COMPILE_EXEC("fn pop2 a:U1 b:U2 c:S -> \\a:S do (a); pop2(0x1234 2 3)");
   TASSERT_WS(0x34);
@@ -159,7 +160,7 @@ TEST_FNGI(compileTy, 6)
   REPL_START
   COMPILE_EXEC("fn pop2    a:U1 b:U2 c:S -> \\a:U1  do (a)");
   COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1  do (_)");
-  COMPILE_EXEC("fn add   stk:U1 b:S      -> \\sum:S do (_ + b)");
+  COMPILE_EXEC("fn add   stk:S  b:S      -> \\sum:S do (_ + b)");
   COMPILE_EXEC("add(42, 7)"); TASSERT_WS(49);
   REPL_END
 END_TEST_FNGI
@@ -259,6 +260,15 @@ TEST_FNGI(compileVar, 10)
       "fn useVar stk:S -> S do (\n"
       "  var a: S = (_ + 7);  ret inc(a);\n"
       ") useVar(0x42)"); TASSERT_WS(0x4A);
+
+  COMPILE_EXEC("fn idenRef a:&S -> &S do ( a )\n");
+  COMPILE_EXEC("fn ftRef   a:&S -> S  do ( @a )\n");
+  TyFn* ftRef = (TyFn*) Kern_findTy(k, SLC("ftRef"));
+  TASSERT_EQ(1, ftRef->inp->meta);
+  TASSERT_EQ(0, ftRef->out->meta);
+
+  COMPILE_EXEC("fn useRef a:S -> S  do ( ftRef(&a) )\n");
+  COMPILE_EXEC("useRef(0x29) tAssertEq(0x29)")
   REPL_END
 END_TEST_FNGI
 

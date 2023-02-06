@@ -261,6 +261,11 @@ static inline TyDict* tyDict(Ty* ty) {
   return (TyDict*) ty;
 }
 
+static inline TyVar* tyVar(Ty* ty) {
+  ASSERT(isTyVar(ty), "expected TyVar");
+  return (TyVar*) ty;
+}
+
 Ty* Kern_findTy(Kern* k, Slc t);
 void Kern_addTy(Kern* k, Ty* ty);
 
