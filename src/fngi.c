@@ -473,6 +473,12 @@ void  TyI_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
   TyI_cloneAddNode(bba, root, nodes);
 }
 
+TyI* TyI_copy(BBA* bba, TyI* nodes) {
+  TyI* root = NULL;
+  TyI_cloneAdd(bba, &root, nodes);
+  return root;
+}
+
 #define IS_UNTY  (C_UNTY & k->g.fnState)
 
 void dbgTyIs(Kern* k) {
@@ -1157,15 +1163,10 @@ void N_fn(Kern* k) {
   ASSERT(code->dat, "Code OOM");
 
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
-  // TODO: somehow have N_inp/etc use the temporary bbaDict for the name/dict
-  // but use the "permanant" one of the type signature. We are currently wasting
-  // a bunch of memory.
-  TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy);
-  // Locals
-  Stk_add(&k->g.dictStk, 0);
+  TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy); // type stack
+  LOCAL_BBA(bbaDict); Stk_add(&k->g.dictStk, 0); // local variables
 
   fnSignature(k, fn, code);
-  LOCAL_BBA(bbaDict); // for local variables
   SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
   SET_FN_STATE(FN_STATE_NO);
 
@@ -1181,6 +1182,8 @@ void N_fn(Kern* k) {
   fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
+  fn->inp = TyI_copy(prev_bbaDict, fn->inp); // move out of bbaDict
+  fn->out = TyI_copy(prev_bbaDict, fn->out);
 
   TyDb_drop(k); END_LOCAL_BBA(bbaDict); END_LOCAL_BBA(bbaTy);
   Stk_pop(&k->g.dictStk);

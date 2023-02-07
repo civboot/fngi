@@ -192,12 +192,12 @@ static inline S kFn(void(*native)(Kern*)) { return (S) native; }
 
 #define LOCAL_BBA(NAME) \
   BBA  NAME       = (BBA) { &civ.ba }; \
-  BBA* prev##NAME = k->g.NAME;   \
+  BBA* prev_##NAME = k->g.NAME;   \
   k->g.NAME       = &NAME;
 
 #define END_LOCAL_BBA(NAME) \
   BBA_drop(&NAME); \
-  k->g.NAME = prev##NAME;
+  k->g.NAME = prev_##NAME;
 
 #define REPL_START \
   TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy);
