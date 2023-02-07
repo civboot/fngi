@@ -117,7 +117,9 @@ Fngi has the following rules for token groups.
 
 - `( ... )`: groups an execution.
 - `$`: run next token/s NOW (compile time). Can be `$( ... )`
+- `|`: is used for inline strings, i.e. `|hello world|`
 - `.`: used for name paths, i.e. `my.name.chain`.
+- `:`: used for type specifiers, i.e. `a:&U2`
 
 Otherwise a token is a group of:
 

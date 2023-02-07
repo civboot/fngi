@@ -598,11 +598,8 @@ U1 toTokenGroup(U1 c) {
   if(c == '_')             return T_HEX;
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
-  if(c == '%' || c == '\\' || c == '$' || c == '|' ||
-     c == '.' || c == ':'  || c == '&' ||
-     c == '(' || c == ')'
-
-     ) {
+  if(c == '$' || c == '|' || c == '.' || c == ':'  ||
+     c == '(' || c == ')') {
     return T_SINGLE;
   }
   return T_SYMBOL;
