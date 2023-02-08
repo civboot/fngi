@@ -135,7 +135,7 @@ TEST_FNGI(tyDb, 4)
   TY_CHECK(&TyIs_S, &TyIs_SS, false);
 
   EXPECT_ERR(TY_CHECK(&TyIs_S, &TyIs_SS, true));
-  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_U4_rU4, true));
+  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_rU1_U4, true));
 
   TyDb* db = &k->g.tyDb;
 
@@ -254,8 +254,7 @@ TEST_FNGI(compileBlk, 10)
 END_TEST_FNGI
 
 TEST_FNGI(compileVar, 10)
-  Kern_fns(k);
-  REPL_START
+  Kern_fns(k); REPL_START;
   COMPILE_EXEC(
       "fn useVar stk:S -> S do (\n"
       "  var a: S = (_ + 7);  ret inc(a);\n"
@@ -269,12 +268,17 @@ TEST_FNGI(compileVar, 10)
 
   COMPILE_EXEC("fn useRef a:S -> S  do ( ftRef(&a) )\n");
   COMPILE_EXEC("useRef(0x29) tAssertEq(0x29)")
+  COMPILE_EXEC("fn getRefs a:S -> &S &S do ( var b:U4; &a, &b )\n");
+  COMPILE_EXEC("getRefs(2);");
+  WS_POP2(S a, S b);
+  U4 localBot = RS_top(k) - 12; // 12 == size(ret addr) + size(A) + size(B)
+  TASSERT_EQ(localBot    , a);
+  TASSERT_EQ(localBot + 4, b);
   REPL_END
 END_TEST_FNGI
 
 TEST_FNGI(compileStruct, 10)
-  Kern_fns(k);
-  REPL_START
+  Kern_fns(k); REPL_START;
 
   COMPILE_EXEC(
       "fn chTy stk:S -> U2 do ( ret U2; )"
@@ -293,6 +297,7 @@ TEST_FNGI(compileStruct, 10)
     "fn simpleCreate a:S -> B do ("
     "  B(A(a), 0x42)"
     "); simpleCreate(0x33)"); TASSERT_WS(0x42); TASSERT_WS(0x33);
+
   COMPILE_EXEC("destruct(simpleCreate(0x35)) tAssertEq(0x42)")
   TASSERT_WS(0x35);
   TASSERT_EQ(0, Stk_len(WS));
@@ -303,9 +308,35 @@ TEST_FNGI(compileStruct, 10)
 
   COMPILE_EXEC("fn getStruct b:B -> B do ( b ); getStruct(B(A 0x4321, 0x321))");
   TASSERT_WS(0x321); TASSERT_WS(0x4321);
-
   REPL_END
-  TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
+END_TEST_FNGI
+
+TEST_FNGI(structDeep, 10)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("struct A [ a: S ]");
+  COMPILE_EXEC("struct B [ a: A; b: S ]");
+  COMPILE_EXEC("struct C [a: &A, b: &B]")
+  COMPILE_EXEC("fn cGetA c:&C -> S do ( c.b.a.a );");
+  COMPILE_EXEC("fn useC -> S S do (\n"
+               "  var a: A = A 1\n"
+               "  var b: B = B(A 2, 3)\n"
+               "  var c: C = C(&a, &b)\n"
+               "  c.b.a.a, cGetA(&c)\n"
+               ")");
+  COMPILE_EXEC("useC;");
+    TASSERT_WS(2); TASSERT_WS(2);
+
+  COMPILE_EXEC("fn assign -> S do (\n"
+               "  var a: A;\n"
+               "  a.a = 0x42\n"
+               "  a.a\n"
+               ")");
+  COMPILE_EXEC("assign()"); TASSERT_WS(0x42);
+
+  COMPILE_EXEC("fn assignRef a:&A do (a.a = 0x44)")
+  COMPILE_EXEC("fn useAssignRef -> S do (var a:A; assignRef(&a); a.a)");
+  COMPILE_EXEC("useAssignRef()"); TASSERT_WS(0x44);
+  REPL_END
 END_TEST_FNGI
 
 TEST_FNGI(repl, 20)
@@ -335,6 +366,7 @@ int main(int argc, char* argv[]) {
   test_compileBlk();
   test_compileVar();
   test_compileStruct();
+  test_structDeep();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

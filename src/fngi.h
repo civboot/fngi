@@ -182,7 +182,10 @@ typedef struct {
 } Kern;
 
 // ################################
-// # Init
+// # Kernel
+void dbgWs(Kern *k);
+static inline S RS_top(Kern* k) { Stk* rs = RS; return (S)&rs->dat[rs->sp]; }
+
 void Kern_init(Kern* k, FnFiber* fb);
 
 // Initialze FnFiber (beyond Fiber init).
@@ -370,9 +373,7 @@ Ty* TyDict_find(TyDict* dict, Slc s);
   PRE TyI TyIs_rU1;    /* &U1        */ \
   PRE TyI TyIs_rU2;    /* &U2        */ \
   PRE TyI TyIs_rU4;    /* &U4        */ \
-  PRE TyI TyIs_U1_rU1; /* &U1, U1    */ \
-  PRE TyI TyIs_U2_rU2; /* &U2, U2    */ \
-  PRE TyI TyIs_U4_rU4; /* &U4, U4    */
+  PRE TyI TyIs_rU1_U4; /* &U1, U4    */
 
 TYIS(extern)
 
