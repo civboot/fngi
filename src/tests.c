@@ -311,6 +311,27 @@ TEST_FNGI(compileStruct, 10)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(structBrackets, 10)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("struct A [ a1: S, a2: S ]");
+  COMPILE_EXEC("struct B [ b1: A, b2: S ]");
+  COMPILE_EXEC("fn buildA -> A do ( var a: A = { a1 = 0x33  a2 = 0x22 } a )")
+  COMPILE_EXEC("buildA()"); TASSERT_WS(0x22); TASSERT_WS(0x33);
+  COMPILE_EXEC("fn buildB -> B do ( var b: B = {\n"
+               "  b1 = { a1 = 0x35  a2 = 0x25 }\n"
+               "  b2 = 0x11\n"
+               "} b )")
+  COMPILE_EXEC("buildB()"); TASSERT_WS(0x11); TASSERT_WS(0x25); TASSERT_WS(0x35);
+  COMPILE_EXEC("fn buildBwA -> B do ( var b: B = {\n"
+               "  b1 = buildA()\n"
+               "  b2 = 0x11\n"
+               "} b )")
+  COMPILE_EXEC("buildBwA()"); TASSERT_WS(0x11); TASSERT_WS(0x22); TASSERT_WS(0x33);
+
+
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(structDeep, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("struct A [ a: S ]");
@@ -366,6 +387,7 @@ int main(int argc, char* argv[]) {
   test_compileBlk();
   test_compileVar();
   test_compileStruct();
+  test_structBrackets();
   test_structDeep();
   eprintf("# Tests complete\n");
 

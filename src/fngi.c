@@ -11,8 +11,8 @@
 //   * lit / compileLit
 //   * Buffer (op1, op2)
 //   * scan / scanTy
-//   * ftOffset
 //   * srOffset
+//   * ftOffset
 //   * compileVar, compileDict, compleFn
 //   * single: compile a single token + compileSrc
 // * 6: Native Functions
@@ -30,6 +30,7 @@
 
 #define R0        return 0;
 #define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
+#define Token_fmt()   Dat_fmt(k->g.token)
 
 #define NL eprintf("\n")
 
@@ -370,7 +371,6 @@ void executeFn(Kern* k, TyFn* fn) {
   cfb->ep = (U1*)fn->v;
   executeLoop(k);
 }
-
 
 // ***********************
 // * 3: TyDb, the type database and validator
@@ -856,6 +856,7 @@ TyI* scanTyI(Kern* k) {
 
 // ***********************
 //   * srOffset
+// Handles not only storing offset, but also parsing '{' syntax.
 
 typedef struct {
   U1 op;
@@ -866,23 +867,26 @@ typedef struct {
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st);
 
 void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
+  if(not st->notParse) {
+    if(CONSUME("{")) return srOffsetStruct(k, tyDict(tyI->ty), offset, st);
+    Kern_compFn(k);
+  }
+
   if(st->checkTy) tyCall(k, tyI, NULL);
   Buf* b = &k->g.code;
   if(TyI_refs(tyI)) return opOffset(b, st->op, SZR, offset);
-  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
+  ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
-  if(isDictNative(d)) {
-    return opOffset(b, st->op, /*szI*/d->v, offset);
-  }
-  if(not st->notParse && CONSUME("{")) {
-    return srOffsetStruct(k, d, offset, st);
-  }
+  if(isDictNative(d)) return opOffset(b, st->op, /*szI*/d->v, offset);
+  assert(isDictStruct(d));
+  // store struct fields from stack
   SrOffset recSt = { .op = st->op, .notParse = true };
   for(TyI* field = d->fields; field; field = field->next) {
     srOffset(k, field, offset + TyDict_field(d, field)->v, &recSt);
   }
 }
 
+// Implementation of '{ ... }'
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
   Buf* b = &k->g.code;
   // Clear memory first
@@ -898,19 +902,21 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
   st->clear = false;
   while(not CONSUME("}")) {
     scan(k); Ty* ty = Kern_findToken(k);
-    if(isTyFn(ty)) {
+    if(ty and isTyFn(ty)) {
       ASSERT(isFnSyn((TyFn*)ty), "non-syn function in {...}");
       executeFn(k, (TyFn*)ty);
       continue;
     }
     ty = TyDict_scanTy(k, d); ASSERT(ty, "field not found");
-    TyVar* field = tyVar(ty); REQUIRE("="); Kern_compFn(k);
+    TyVar* field = tyVar(ty); REQUIRE("=");
     srOffset(k, field->tyI, offset + field->v, st);
   }
 }
 
 // ***********************
 //   * ftOffset
+// Handles not only fetching offset, but also parsing '.' syntax.
+
 typedef struct { U1 op; bool noAddTy; bool findEqual; } FtOffset;
 
 U1 ftOpToSr(U1 ftOp) {
@@ -942,7 +948,6 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   ASSERT(isTyDict(tyI->ty), "invalid non-dict fetch");
   TyDict* d = (TyDict*) tyI->ty;
   if(st->findEqual && CONSUME("=")) {
-    Kern_compFn(k);
     SrOffset srSt = (SrOffset) {.op = ftOpToSr(st->op), .checkTy = true, .clear = true};
     return srOffset(k, tyI, offset, &srSt);
   }
@@ -1218,7 +1223,6 @@ void N_var(Kern* k) {
   TyVar* v = varPre(k);
   varImpl(k, v, /*ptr=*/0);
   if(CONSUME("=")) {
-    Kern_compFn(k); // compile next token
     SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
     srOffset(k, v->tyI, /*offset=*/v->v, &st);
   }
@@ -1236,16 +1240,14 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
        and not Slc_eq(SLC("&"), CStr_asSlc(ty->bst.key))) {
       tokenDrop(k); executeFn(k, (TyFn*)ty);
     } else if (IS_FN_STATE(FN_STATE_OUT)) N_stk(k);
-    else                                  {
-      N_inp(k);
-    }
+    else                                  N_inp(k);
   }
 
   // Walk input and store locals and push stack types
   for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
     TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
     if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) {
-      SrOffset st = (SrOffset) {.op = SRLL, .checkTy = false };
+      SrOffset st = (SrOffset) { .op = SRLL, .checkTy = false, .notParse = true };
       srOffset(k, tyI, v->v, &st);
     }
     else if(/*isStk and*/ not IS_UNTY) {
