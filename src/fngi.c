@@ -34,6 +34,9 @@
 
 #define NL eprintf("\n")
 
+/*extern*/ Kern* fngiK = NULL;
+
+void N_dbgRs(Kern* k);
 void dbgWs(Kern *k) {
   Stk* ws = WS; U2 cap = ws->cap; U2 len = cap - ws->sp;
   eprintf("{");
@@ -170,7 +173,12 @@ void xImpl(Kern* k, Ty* ty) {
   RS->sp -= fn->lSlots; // grow locals (and possibly defer)
 }
 
-TyFn catchTy;
+TyFn catchTy = (TyFn) {
+  .bst.key = (CStr*) ("\x0F" "__catchMarker__"),
+  .meta = TY_FN,
+  .v = 0,
+};
+
 void ret(Kern* k) {
   TyFn* ty = (TyFn*) INFO_POP();
   U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
@@ -347,9 +355,11 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
   while(cfb) {
     if(setjmp(local_errJmp)) { // got panic
       if(!catchPanic(k)) {
+        civ.fb->errJmp = prev_errJmp;
         Slc path = CStr_asSlcMaybe(k->g.srcInfo->path);
         eprintf("!! Uncaught panic: %.*s[%u]\n", Dat_fmt(path), k->g.srcInfo->line);
         longjmp(*prev_errJmp, 1);
+        assert(false);
       }
     }
     U1 res = executeInstr(k, popLit(k, 1));
@@ -1090,6 +1100,22 @@ void _N_ret(Kern* k) { tyRet(k, true); Buf_add(&k->g.code, RET); }
 void N_ret(Kern* k)  { N_notNow(k); Kern_compFn(k); _N_ret(k); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 
+void N_dbgRs(Kern* k) {
+  Stk* info = &cfb->info;
+  Stk* rs = RS;
+  U2 r = rs->sp;
+  U1* ep = cfb->ep;
+  for(U2 i = info->sp; i < info->cap; i++) {
+    TyFn* fn = (TyFn*) info->dat[i];
+    U1 lSlots = (fn == &catchTy) ? 0 : fn->lSlots;
+    eprintf("! - %.*s (%u bytes in)\n", Ty_fmt(fn), ep - fn->v);
+    r += lSlots;
+    ep = (U1*) rs->dat[r];
+    r += RSIZE;
+  }
+}
+
+
 void N_destruct(Kern* k) {
   N_notNow(k);
   Kern_compFn(k);
@@ -1746,6 +1772,7 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "@",       TY_FN_SYN, N_at);
 
   STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  0, N_tAssertEq);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x05", "dbgRs"    ,  0, N_dbgRs);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x08", "destruct", TY_FN_SYN, N_destruct);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
@@ -1800,6 +1827,22 @@ void Kern_fns(Kern* k) {
 
 // ***********************
 // * 8: Execution helpers
+
+void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
+  eprintf("!!! fngi return stack:\n");
+  N_dbgRs(k);
+  eprintf("!!! Code: token=\"%.*s\" line=%u\n", Dat_fmt(k->g.token), k->g.tokenLine);
+  if(sig || k->isTest) {
+    Trace_handleSig(sig, ctx);
+  }
+  exit(sig);
+}
+
+void fngiHandleSig(int sig, struct sigcontext ctx) {
+  Kern_handleSig(fngiK, sig, &ctx); exit(sig);
+}
+
+void fngiErrPrinter() { Kern_handleSig(fngiK, 0, NULL); }
 
 void executeInstrs(Kern* k, U1* instrs) {
   cfb->ep = instrs;

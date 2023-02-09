@@ -36,12 +36,13 @@
 
 #define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
+    civ.errPrinter = &fngiErrPrinter;         \
     FnFiber fnFb = {0};                       \
     Fiber_init((Fiber*)&fnFb, &localErrJmp);  \
     assert(FnFiber_init(&fnFb));              \
     civ.fb = (Fiber*)&fnFb;                   \
-    Kern _k = {0}; Kern* k = &_k;             \
-    Kern_init(k, &fnFb);
+    Kern _k = {0}; Kern* k = &_k; fngiK = k;  \
+    Kern_init(k, &fnFb); _k.isTest = true;
 
 #define END_TEST_FNGI   END_TEST_UNIX
 
@@ -173,6 +174,7 @@ typedef struct {
 
 typedef struct {
   U4 _null;
+  bool isTest;
   BBA bbaCode;
   BBA bbaDict;
   BBA bbaRepl;
@@ -181,10 +183,16 @@ typedef struct {
   FnFiber* fb;   // current fiber.
 } Kern;
 
+extern Kern* fngiK;
+
 // ################################
 // # Kernel
 void dbgWs(Kern *k);
 static inline S RS_top(Kern* k) { Stk* rs = RS; return (S)&rs->dat[rs->sp]; }
+void dbgRs(Kern* k);
+void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx);
+void fngiErrPrinter();
+void fngiHandleSig(int sig, struct sigcontext ctx);
 
 void Kern_init(Kern* k, FnFiber* fb);
 
@@ -309,7 +317,6 @@ static inline Slc Slc_fromWs(Kern* k) {
 void executeInstrs(Kern* k, U1* instrs);
 
 void simpleRepl(Kern* k);
-
 
 // Get the current snapshot
 static inline TyI* TyDb_index(TyDb* db, U2 i) {
