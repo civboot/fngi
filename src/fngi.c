@@ -1845,7 +1845,8 @@ void Kern_fns(Kern* k) {
 
 void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
   eprintf("??? Kern_handleSig k=%X sig=%u ctx=%X\n", k, sig, ctx);
-  eprintf("??? Kern_handleSig infoTop=%X\n", Stk_top(&cfb->info));
+  S startTop = Stk_top(&cfb->info);
+  eprintf("??? Kern_handleSig infoTop=%X\n", startTop);
   U2 cap = 100;
   // Trace t = (Trace) {
   //   .trace = (SBuf) { .dat = malloc(sizeof(S) * cap), .cap = cap },
@@ -1858,7 +1859,7 @@ void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
 
   // Trace t = Trace_newSig(100, sig, ctx);
   eprintf("??? Kern_handleSig infoTop2=%X\n", Stk_top(&cfb->info));
-  assert(false);
+  assert(startTop == Stk_top(&cfb->info));
   // Trace_handleSig(sig, ctx);
   eprintf("! fngi return stack:\n");
   N_dbgRs(k);
