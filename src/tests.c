@@ -366,6 +366,9 @@ TEST_FNGI(repl, 20)
 END_TEST_FNGI
 
 int main(int argc, char* argv[]) {
+  ARGV = argv;
+  SETUP_SIG((void *)Trace_handleSig);
+
   char* arg; bool repl = false;
   for(int i = 1; i < argc; arg = argv[i++]) {
     if(strcmp("--repl", arg)) repl = true;

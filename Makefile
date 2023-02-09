@@ -1,5 +1,5 @@
 CC=gcc
-FLAGS=-m32 -g -rdynamic
+FLAGS=-m32 -no-pie -g -rdynamic
 DISABLE_WARNINGS=-Wno-pointer-sign -Wno-format
 LIBS=-I../civc ../civc/civ/civ*
 FNGI_SRC=src/fngi.* src/gen/*.c src/gen/*.h

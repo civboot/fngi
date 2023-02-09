@@ -951,7 +951,6 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     SrOffset srSt = (SrOffset) {.op = ftOpToSr(st->op), .checkTy = true, .clear = true};
     return srOffset(k, tyI, offset, &srSt);
   }
-
   if(isDictNative(d)) {
     if(addTy) tyCall(k, NULL, tyI);
     return opOffset(b, st->op, d->v, offset);
