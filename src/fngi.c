@@ -1846,19 +1846,13 @@ void Kern_fns(Kern* k) {
 void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
   eprintf("??? Kern_handleSig k=%X sig=%u ctx=%X\n", k, sig, ctx);
   S startTop = Stk_top(&cfb->info);
-  eprintf("??? Kern_handleSig infoTop=%X\n", startTop);
-  U2 cap = 100;
-  // Trace t = (Trace) {
-  //   .trace = (SBuf) { .dat = malloc(sizeof(S) * cap), .cap = cap },
-  //   .ctx = ctx, .sig = sig
-  // };
-  // assert(t.trace.dat);
   void* m[100] = {0};
-  eprintf("??? trace=%X trace[0]=%u\n", m, m[0]);
+  eprintf("??? Kern_handleSig info.dat=%X\n", cfb->info.dat);
+  eprintf("??? Kern_handleSig addrOver=%X\n", cfb->info.dat + cfb->info.sp);
+  eprintf("??? Kern_handleSig trace   =%X\n", m);
+  eprintf("??? Kern_handleSig before  =%X\n", startTop);
   S len = backtrace(m, 100);
-
-  // Trace t = Trace_newSig(100, sig, ctx);
-  eprintf("??? Kern_handleSig infoTop2=%X\n", Stk_top(&cfb->info));
+  eprintf("??? Kern_handleSig after   =%X\n", Stk_top(&cfb->info));
   assert(startTop == Stk_top(&cfb->info));
   // Trace_handleSig(sig, ctx);
   eprintf("! fngi return stack:\n");
