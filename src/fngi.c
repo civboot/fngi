@@ -34,6 +34,9 @@
 
 #define NL eprintf("\n")
 
+/*extern*/ Kern* fngiK = NULL;
+
+void N_dbgRs(Kern* k);
 void dbgWs(Kern *k) {
   Stk* ws = WS; U2 cap = ws->cap; U2 len = cap - ws->sp;
   eprintf("{");
@@ -117,6 +120,7 @@ Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
     case TY_DICT: sz = sizeof(TyDict); break;
   }
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
+  eprintf("??? newty %X  %.*s\n", ty, Dat_fmt(*key));
   memset(ty, 0, sz);
   ty->bst = (Bst) { .key = key },
   ty->parent = (Ty*) k->g.curMod,
@@ -170,7 +174,12 @@ void xImpl(Kern* k, Ty* ty) {
   RS->sp -= fn->lSlots; // grow locals (and possibly defer)
 }
 
-TyFn catchTy;
+TyFn catchTy = (TyFn) {
+  .bst.key = (CStr*) ("\x0F" "__catchMarker__"),
+  .meta = TY_FN,
+  .v = 0,
+};
+
 void ret(Kern* k) {
   TyFn* ty = (TyFn*) INFO_POP();
   U1 lSlots = (ty == &catchTy) ? 0 : ty->lSlots;
@@ -313,16 +322,19 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
 
 typedef struct { U2 i; U2 rs; bool found; } PanicHandler;
 PanicHandler getPanicHandler(Kern* k) { // find the index of the panic handler
+  eprintf("??? getting panic handler\n");
   Stk* info = &cfb->info;
   PanicHandler h = {.i = info->sp, .rs = RS->sp};
   while(h.i < info->cap) {
     TyFn* fn = tyFn((void*)info->dat[h.i]);
     if(&catchTy == fn) {
+      eprintf("???   found!\n");
       h.found = true;
       return h;
     }
     h.i += 1; h.rs += fn->lSlots;
   }
+  eprintf("???   not found!\n");
   return h;
 }
 
@@ -346,10 +358,13 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
   jmp_buf* prev_errJmp = civ.fb->errJmp; civ.fb->errJmp = &local_errJmp;
   while(cfb) {
     if(setjmp(local_errJmp)) { // got panic
+      eprintf("??? got panic\n");
       if(!catchPanic(k)) {
+        civ.fb->errJmp = prev_errJmp;
         Slc path = CStr_asSlcMaybe(k->g.srcInfo->path);
         eprintf("!! Uncaught panic: %.*s[%u]\n", Dat_fmt(path), k->g.srcInfo->line);
         longjmp(*prev_errJmp, 1);
+        assert(false);
       }
     }
     U1 res = executeInstr(k, popLit(k, 1));
@@ -1088,7 +1103,33 @@ void N_unty(Kern* k) {
 
 void _N_ret(Kern* k) { tyRet(k, true); Buf_add(&k->g.code, RET); }
 void N_ret(Kern* k)  { N_notNow(k); Kern_compFn(k); _N_ret(k); }
-void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
+void N_tAssertEq(Kern* k) {
+  WS_POP2(U4 l, U4 r);
+  eprintf("??? N_tAssertEq l=%X r=%X\n", l, r);
+  N_dbgRs(k);
+  eprintf("??? N_tAssertEq end dbgRs\n");
+  TASSERT_EQ(l, r);
+}
+
+void N_dbgRs(Kern* k) {
+  eprintf("??? dbgRs k=%X  catchTy=%X\n", k, &catchTy);
+  Stk* info = &cfb->info;
+  Stk* rs = RS;
+  U2 r = rs->sp;
+  U1* ep = cfb->ep;
+  for(U2 i = info->sp; i < info->cap; i++) {
+    TyFn* fn = (TyFn*) info->dat[i];
+    eprintf("???   i=%u cap=%u  fn=%X\n", i, info->cap, fn);
+    eprintf("???   fn->v=%X\n", fn->v);
+    eprintf("! fn %.*s (%u bytes in)\n", Ty_fmt(fn), ep - fn->v);
+
+    U1 lSlots = (fn == &catchTy) ? 0 : fn->lSlots;
+    r += lSlots;
+    ep = (U1*) rs->dat[r];
+    r += RSIZE;
+  }
+}
+
 
 void N_destruct(Kern* k) {
   N_notNow(k);
@@ -1746,6 +1787,7 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "@",       TY_FN_SYN, N_at);
 
   STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",  0, N_tAssertEq);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x05", "dbgRs"    ,  0, N_dbgRs);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x08", "destruct", TY_FN_SYN, N_destruct);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
@@ -1800,6 +1842,38 @@ void Kern_fns(Kern* k) {
 
 // ***********************
 // * 8: Execution helpers
+
+void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
+  eprintf("??? Kern_handleSig k=%X sig=%u ctx=%X\n", k, sig, ctx);
+  eprintf("??? Kern_handleSig infoTop=%X\n", Stk_top(&cfb->info));
+  U2 cap = 100;
+  // Trace t = (Trace) {
+  //   .trace = (SBuf) { .dat = malloc(sizeof(S) * cap), .cap = cap },
+  //   .ctx = ctx, .sig = sig
+  // };
+  // assert(t.trace.dat);
+  void* m[100] = {0};
+  eprintf("??? trace=%X trace[0]=%u\n", m, m[0]);
+  S len = backtrace(m, 100);
+
+  // Trace t = Trace_newSig(100, sig, ctx);
+  eprintf("??? Kern_handleSig infoTop2=%X\n", Stk_top(&cfb->info));
+  assert(false);
+  // Trace_handleSig(sig, ctx);
+  eprintf("! fngi return stack:\n");
+  N_dbgRs(k);
+  eprintf("! token=\"%.*s\" line=%u\n", Dat_fmt(k->g.token), k->g.tokenLine);
+  exit(sig);
+}
+
+void fngiHandleSig(int sig, struct sigcontext ctx) {
+  Kern_handleSig(fngiK, sig, &ctx); exit(sig);
+}
+
+void fngiErrPrinter() {
+  Kern* k = fngiK;
+  eprintf("??? fngiErrPrinter: %X\n", Stk_top(&cfb->info));
+  Kern_handleSig(k, 0, NULL); }
 
 void executeInstrs(Kern* k, U1* instrs) {
   cfb->ep = instrs;

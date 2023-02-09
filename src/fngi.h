@@ -28,7 +28,9 @@
 #define WS_ADD3(A, B, C)  Stk_add3(WS, A, B, C)
 #define RS_ADD(V)         Stk_add(RS, V)
 #define RS_POP()          Stk_pop(RS)
-#define INFO_ADD(V)       Stk_add(&cfb->info, V)
+#define INFO_ADD(V)       \
+    eprintf("??? InfoAdd %u %X\n", __LINE__, V); \
+    Stk_add(&cfb->info, V)
 #define INFO_POP(V)       Stk_pop(&cfb->info)
 
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
@@ -36,11 +38,12 @@
 
 #define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
+    civ.errPrinter = &fngiErrPrinter;         \
     FnFiber fnFb = {0};                       \
     Fiber_init((Fiber*)&fnFb, &localErrJmp);  \
     assert(FnFiber_init(&fnFb));              \
     civ.fb = (Fiber*)&fnFb;                   \
-    Kern _k = {0}; Kern* k = &_k;             \
+    Kern _k = {0}; Kern* k = &_k; fngiK = k;  \
     Kern_init(k, &fnFb);
 
 #define END_TEST_FNGI   END_TEST_UNIX
@@ -181,10 +184,16 @@ typedef struct {
   FnFiber* fb;   // current fiber.
 } Kern;
 
+extern Kern* fngiK;
+
 // ################################
 // # Kernel
 void dbgWs(Kern *k);
 static inline S RS_top(Kern* k) { Stk* rs = RS; return (S)&rs->dat[rs->sp]; }
+void dbgRs(Kern* k);
+void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx);
+void fngiErrPrinter();
+void fngiHandleSig(int sig, struct sigcontext ctx);
 
 void Kern_init(Kern* k, FnFiber* fb);
 
@@ -309,7 +318,6 @@ static inline Slc Slc_fromWs(Kern* k) {
 void executeInstrs(Kern* k, U1* instrs);
 
 void simpleRepl(Kern* k);
-
 
 // Get the current snapshot
 static inline TyI* TyDb_index(TyDb* db, U2 i) {
