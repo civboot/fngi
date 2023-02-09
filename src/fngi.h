@@ -288,6 +288,7 @@ void compileSrc(Kern* k);
 //
 // Any functions/etc will still be compiled to the normal locations.
 U1*  compileRepl(Kern* k, bool withRet);
+void compilePath(Kern* k, CStr* path);
 
 // #################################
 // # Misc

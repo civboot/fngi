@@ -1,9 +1,13 @@
 # fngi: a readable language that grows from the silicon
 
-> **WARNING:** this language is not complete. See the Goals section for more.
+> **WARNING:** this language is in alpha stage. Things are expected to be
+> broken.
 
 > **UPDATE:** I'm taking a break for at least a few months while I focus on
 > work. The rewrite is going well, but it takes up too much of my time.
+>
+> However, the language is in a usable, if extremely unstable state. See
+> **Helping / Hacking** section below.
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -111,9 +115,10 @@ along the way, some of them complete.
   - [X] TyDb for setting up the type checker
   - [X] fn for writing type-checked functions
   - [X] if/elif/else for flow control
-  - [ ] blk to create loop/while/etc.
-  - [ ] var, global, struct
-  - [ ] executeFile to be able to have some form of "import"
+  - [x] blk to create loop/while/etc.
+  - [x] var, struct
+  - [x] compilePath to compile source
+  - [ ] global
   - [ ] `mod` to set the current dictionary path (module support).
 - [ ] Create standard library
   - [ ] Allocator options and allocator stack
@@ -137,16 +142,25 @@ See [civboot.org](http://civboot.org) for future goals.
 
 ## Helping / Hacking
 
-To build and run tests:
+To download this repository and it's dependencies, execute the below commands in
+a directory:
+
 ```
+git clone git@github.com:civboot/fngi.git
+git clone git@github.com:civboot/civc.git
+git clone git@github.com:civboot/cxt.git
+git clone git@github.com:civboot/zoa.git
+
+cd fngi
 make test
 ```
 
-The following dependencies must exist in the sub-directory (../). These are
-devleoped along-side civboot, so there is no need to worry about versions (just
-use latest).
-* [zoa]
-* [civc]
+fngi is still in a fairly brittle state, however many features are already
+supported:
+- The REPL can be run with `make test ARGS=--repl`
+- The syntax can be played with/tested in `tests/basic.fn`. Expect it to break
+  often! Getting some failing (and commented out) test cases is my next goal and
+  I could really use contributors.
 
 ## Contributing
 

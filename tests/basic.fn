@@ -1,0 +1,32 @@
+\ Test basic operations
+
+$tAssertEq(1, 1)
+
+fn ret1 -> S do 1
+$tAssertEq(ret1, 1);
+
+struct A [ a1: S ]
+struct B [ b1: A;  b2: S]
+struct C [ c1: &B; c2: B]
+
+\ Test structs and accessing references
+fn testStructs() do (
+  var b: B = B(A 5, 7)
+  var c: C = { c1 = &b, c2=b }
+  tAssertEq(b.b1.a1, 5)
+  tAssertEq(b.b2, 7)
+  tAssertEq(c.c1.b1.a1, 5)
+  tAssertEq(c.c2.b1.a1, 5)
+
+  c.c1.b1.a1 = 9; tAssertEq(c.c1.b1.a1, 9)
+                  tAssertEq(c.c2.b1.a1, 5)
+                  tAssertEq(b.b1.a1, 9) \ ref updated
+  c.c2.b1.a1 = 8; tAssertEq(c.c1.b1.a1, 9)
+                  tAssertEq(c.c2.b1.a1, 8)
+                  tAssertEq(b.b1.a1, 9)
+
+  var r: &B = &b; tAssertEq(r.b2, 7)
+  r.b2 = 2      ; tAssertEq(r.b2, 2); tAssertEq(b.b2, 2)
+)
+$testStructs()
+

@@ -360,6 +360,12 @@ TEST_FNGI(structDeep, 10)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(file_basic, 20)
+  Kern_fns(k);
+  CStr_ntVar(path, "\x0E", "tests/basic.fn");
+  compilePath(k, path);
+END_TEST_FNGI
+
 TEST_FNGI(repl, 20)
   Kern_fns(k);
   simpleRepl(k);
@@ -367,7 +373,7 @@ END_TEST_FNGI
 
 int main(int argc, char* argv[]) {
   ARGV = argv;
-  SETUP_SIG((void *)Trace_handleSig);
+  SETUP_SIG((void *)fngiHandleSig);
 
   char* arg; bool repl = false;
   for(int i = 1; i < argc; arg = argv[i++]) {
@@ -392,6 +398,7 @@ int main(int argc, char* argv[]) {
   test_compileStruct();
   test_structBrackets();
   test_structDeep();
+  test_file_basic();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

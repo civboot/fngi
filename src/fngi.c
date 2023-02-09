@@ -30,7 +30,7 @@
 
 #define R0        return 0;
 #define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
-#define Token_fmt()   Dat_fmt(k->g.token)
+#define TOKEN         Dat_fmt(k->g.token)
 
 #define NL eprintf("\n")
 
@@ -914,7 +914,7 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
     scan(k); Ty* ty = Kern_findToken(k);
     if(ty and isTyFn(ty)) {
       ASSERT(isFnSyn((TyFn*)ty), "non-syn function in {...}");
-      executeFn(k, (TyFn*)ty);
+      tokenDrop(k); WS_ADD(/*asNow*/false); executeFn(k, (TyFn*)ty);
       continue;
     }
     ty = TyDict_scanTy(k, d); ASSERT(ty, "field not found");
@@ -1074,6 +1074,7 @@ void single(Kern* k, bool asNow) {
 }
 
 void compileSrc(Kern* k) {
+  ASSERT(k->g.src.d, "compileSrc: src not set");
   while(true) {
     Kern_compFn(k);
     if(Kern_eof(k)) break;
@@ -1870,6 +1871,17 @@ U1* compileRepl(Kern* k, bool withRet) {
   }
   *code = (Buf){0};
   return body;
+}
+
+void compilePath(Kern* k, CStr* path) {
+  FileInfo srcInfo = (FileInfo) {.path = path };
+  k->g.srcInfo = &srcInfo;
+  Ring_var(_r, 256); UFile f = UFile_new(_r);
+  UFile_open(&f, CStr_asSlc(path), File_RDONLY);
+  TASSERT_EQ(File_DONE, f.code);
+  assert(f.fid);
+  k->g.src = File_asReader(UFile_asFile(&f));
+  compileSrc(k);
 }
 
 void simpleRepl(Kern* k) {
