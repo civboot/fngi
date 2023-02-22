@@ -161,9 +161,9 @@ typedef struct {
   Reader src; FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
-  TyDb tyDb;
+  TyDb tyDb; TyDb tyDbNow;
   BBA* bbaDict;
-  BBA* bbaTy;
+  BBA* bbaTy; BBA bbaTyNow;
   Blk* blk;
 } Globals;
 
@@ -216,7 +216,7 @@ static inline S kFn(void(*native)(Kern*)) { return (S) native; }
   TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy);
 
 #define REPL_END \
-  TyDb_drop(k); END_LOCAL_BBA(bbaTy);
+  TyDb_drop(k, &k->g.tyDb); END_LOCAL_BBA(bbaTy);
 
 
 
@@ -336,17 +336,17 @@ static inline TyI** TyDb_root(TyDb* db) { return (TyI**) Stk_topRef(&db->tyIs); 
 static inline Sll** TyDb_rootSll(TyDb* db) { return (Sll**) Stk_topRef(&db->tyIs); }
 
 // Get/set whether current snapshot is done (guaranteed ret)
-static inline bool TyDb_done(Kern* k) { return Stk_top(&k->g.tyDb.done); }
+static inline bool TyDb_done(TyDb* db) { return Stk_top(&db->done); }
 static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = done; }
 
 // Free from the current snapshot.
 //
 // "stream" can be either TyDb_top (freeing the entire snapshot), or a
 // separate type stream which indicates the length of items to drop.
-void TyDb_free(Kern* k, TyI* stream);
+void TyDb_free(Kern* k, TyI* stream, bool asNow);
 
 // Drop the current snapshot
-void TyDb_drop(Kern* k);
+void TyDb_drop(Kern* k, TyDb* db);
 
 // Create a new snapshot
 static inline void TyDb_new(TyDb* db) {

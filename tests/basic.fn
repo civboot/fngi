@@ -29,4 +29,3 @@ fn testStructs() do (
   r.b2 = 2      ; tAssertEq(r.b2, 2); tAssertEq(b.b2, 2)
 )
 $testStructs()
-

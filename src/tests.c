@@ -150,7 +150,7 @@ TEST_FNGI(tyDb, 4)
   // ret[done] causes errors on future operations
   k->g.curTy = Kern_findTy(k, SLC("+"));
   tyCall(k, NULL, &TyIs_S);
-  tyRet(k, true);  TASSERT_EQ(true, TyDb_done(k));
+  tyRet(k, true);  TASSERT_EQ(true, TyDb_done(db));
   EXPECT_ERR(tyCall(k, &TyIs_S, NULL));
   END_LOCAL_BBA(bbaTy);
 END_TEST_FNGI
