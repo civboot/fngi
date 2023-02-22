@@ -199,8 +199,8 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  // Slc name = instrName(instr);
-  // eprintf("??? instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
+  Slc name = instrName(instr);
+  eprintf("??? instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -299,11 +299,11 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case XW:  xImpl(k, (Ty*)WS_POP());     R0;
 
     case SZ1 + JL: r = popLit(k, 1); cfb->ep +=  (I1)r - 1; R0
-    case SZ2 + JL: r = popLit(k, 2); cfb->ep +=  (I2)r - 1; R0
+    case SZ2 + JL: r = popLit(k, 2); cfb->ep +=  (I2)r - 2; R0
     // case SZ4 + JL: r = popLit(k, 4); cfb->ep  = (U1*)r    ; R0
 
     case SZ1 + JLZ: r = popLit(k, 1); if(!WS_POP()) { cfb->ep += (I1)r - 1; } R0
-    case SZ2 + JLZ: r = popLit(k, 2); if(!WS_POP()) { cfb->ep += (I2)r - 1; } R0
+    case SZ2 + JLZ: r = popLit(k, 2); if(!WS_POP()) { cfb->ep += (I2)r - 2; } R0
     // case SZ4 + JLZ: r = popLit(k, 4); if(!WS_POP()) { cfb->ep  = (U1*)r;    } R0
 
     case SZ1 + JTBL: assert(false);
@@ -1353,19 +1353,19 @@ void N_fn(Kern* k) {
 typedef struct { bool hadFull; bool hadElse; } IfState;
 
 U2 _if(Buf* b) { // flow control only (no type checking)
-  Buf_add(b, JLZ); Buf_add(b, 0);
-  return b->len - 1;
+  Buf_add(b, SZ2 | JLZ); Buf_addBE2(b, 0);
+  return b->len - 2;
 }
 
 void _endIf(Buf* b, U2 i) { // flow control only
-  b->dat[i] = b->len - i;
+  srBE2(&b->dat[i], b->len - i);
 }
 
 U2 _else(Buf* b, U2 iIf) { // flow control only
-  Buf_add(b, JL); // end of if has unconditional jmp to end of else
-  Buf_add(b, 0);
+  Buf_add(b, SZ2 | JL); // end of if has unconditional jmp to end of else
+  Buf_addBE2(b, 0);
   _endIf(b, iIf); // if jmps into else block
-  return b->len - 1;
+  return b->len - 2;
 }
 
 #define DBG_TYS(...) \
@@ -1473,7 +1473,7 @@ void N_cont(Kern* k) {
   tyCont(k);
   Buf* b = &k->g.code;
   Buf_add(b, SZ2 | JL);
-  Buf_addBE2(b, k->g.blk->start - b->len - 1);
+  Buf_addBE2(b, k->g.blk->start - b->len);
 }
 
 void tyBreak(Kern* k) {
@@ -1515,7 +1515,7 @@ void N_blk(Kern* k) {
     tyBreak(k);
   }
   for(Sll* br = blk->breaks; br; br = br->next) {
-    srBE2(b->dat + br->dat, b->len - br->dat - 1);
+    srBE2(b->dat + br->dat, b->len - br->dat);
   }
 }
 
