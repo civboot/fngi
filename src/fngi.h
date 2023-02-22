@@ -85,6 +85,7 @@ typedef struct {
   TY_BODY
   TyI* inp;
   TyI* out;
+  Ty* locals;
   U2 len; // size of spor binary
   U1 lSlots;
 } TyFn;
@@ -157,7 +158,7 @@ typedef struct {
   Ty* curTy;      // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
   S dictBuf[DICT_DEPTH];
-  Stk dictStk;
+  Stk dictStk;    // Type is: &&Ty (double ref to dictionary)
   Reader src; FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;

@@ -1330,7 +1330,8 @@ void N_fn(Kern* k) {
 
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
   TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy); // type stack
-  LOCAL_BBA(bbaDict); Stk_add(&k->g.dictStk, 0); // local variables
+  // TODO: use fn->locals
+  Stk_add(&k->g.dictStk, 0); // local variables
 
   fnSignature(k, fn, code);
   SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
@@ -1348,10 +1349,9 @@ void N_fn(Kern* k) {
   fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
-  fn->inp = TyI_copy(prev_bbaDict, fn->inp); // move out of bbaDict
-  fn->out = TyI_copy(prev_bbaDict, fn->out);
 
-  TyDb_drop(k, &k->g.tyDb); END_LOCAL_BBA(bbaDict); END_LOCAL_BBA(bbaTy);
+  TyDb_drop(k, &k->g.tyDb);
+  END_LOCAL_BBA(bbaTy);
   Stk_pop(&k->g.dictStk);
   ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
          "A type operation (i.e. if/while/etc) is incomplete in fn");
