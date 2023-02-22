@@ -271,7 +271,7 @@ TEST_FNGI(compileVar, 10)
   COMPILE_EXEC("fn getRefs a:S -> &S &S do ( var b:U4; &a, &b )\n");
   COMPILE_EXEC("getRefs(2);");
   WS_POP2(S a, S b);
-  U4 localBot = RS_top(k) - 12; // 12 == size(ret addr) + size(A) + size(B)
+  U4 localBot = RS_topRef(k) - 12; // 12 == size(ret addr) + size(A) + size(B)
   TASSERT_EQ(localBot    , a);
   TASSERT_EQ(localBot + 4, b);
   REPL_END

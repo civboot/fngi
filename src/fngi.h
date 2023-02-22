@@ -190,7 +190,7 @@ extern Kern* fngiK;
 // ################################
 // # Kernel
 void dbgWs(Kern *k);
-static inline S RS_top(Kern* k) { Stk* rs = RS; return (S)&rs->dat[rs->sp]; }
+static inline S RS_topRef(Kern* k) { Stk* rs = RS; return (S)&rs->dat[rs->sp]; }
 void dbgRs(Kern* k);
 void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx);
 void fngiErrPrinter();

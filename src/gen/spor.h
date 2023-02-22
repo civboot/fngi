@@ -63,7 +63,8 @@
 #define LCL                   0x80
 #define XL                    0x81
 #define JW                    0x90
-#define XW                    0x91
+#define XLL                   0x91
+#define XRL                   0xA0
 #define JL                    0x82
 #define JLZ                   0x83
 #define JTBL                  0x84

@@ -213,7 +213,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case OVR : WS_POP2(l, r); WS_ADD3(l, r, l);          R0
     case DUP : r = WS_POP(); WS_ADD2(r, r);              R0
     case DUPN: r = WS_POP(); WS_ADD(r); WS_ADD(0 == r);  R0
-    case LR: WS_ADD(RS_top(k) + popLit(k, 1)); R0
+    case LR: WS_ADD(RS_topRef(k) + popLit(k, 2)); R0
 
     case INC : WS_ADD(WS_POP() + 1); R0
     case INC2: WS_ADD(WS_POP() + 2); R0
@@ -259,9 +259,9 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case SZ2 + FTO: WS_ADD(*(U2*) (WS_POP() + popLit(k, 1))); R0
     case SZ4 + FTO: WS_ADD(*(U4*) (WS_POP() + popLit(k, 1))); R0
 
-    case SZ1 + FTLL: WS_ADD(*(U1*) (RS_top(k) + popLit(k, 1))); R0
-    case SZ2 + FTLL: WS_ADD(*(U2*) (RS_top(k) + popLit(k, 1))); R0
-    case SZ4 + FTLL: WS_ADD(*(U4*) (RS_top(k) + popLit(k, 1))); R0
+    case SZ1 + FTLL: WS_ADD(*(U1*) (RS_topRef(k) + popLit(k, 2))); R0
+    case SZ2 + FTLL: WS_ADD(*(U2*) (RS_topRef(k) + popLit(k, 2))); R0
+    case SZ4 + FTLL: WS_ADD(*(U4*) (RS_topRef(k) + popLit(k, 2))); R0
 
     case SZ1 + SR: WS_POP2(l, r); *(U1*)l = r; R0
     case SZ2 + SR: WS_POP2(l, r); *(U2*)l = r; R0
@@ -275,9 +275,9 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case SZ2 + SRO: WS_POP2(l, r); *(U2*)(l + popLit(k, 1)) = r; R0
     case SZ4 + SRO: WS_POP2(l, r); *(U4*)(l + popLit(k, 1)) = r; R0
 
-    case SZ1 + SRLL: *(U1*) (RS_top(k) + popLit(k, 1)) = WS_POP(); R0
-    case SZ2 + SRLL: *(U2*) (RS_top(k) + popLit(k, 1)) = WS_POP(); R0
-    case SZ4 + SRLL: *(U4*) (RS_top(k) + popLit(k, 1)) = WS_POP(); R0
+    case SZ1 + SRLL: *(U1*) (RS_topRef(k) + popLit(k, 2)) = WS_POP(); R0
+    case SZ2 + SRLL: *(U2*) (RS_topRef(k) + popLit(k, 2)) = WS_POP(); R0
+    case SZ4 + SRLL: *(U4*) (RS_topRef(k) + popLit(k, 2)) = WS_POP(); R0
 
     case SZ1 + LIT: WS_ADD(popLit(k, 1)); R0
     case SZ2 + LIT: WS_ADD(popLit(k, 2)); R0
@@ -294,9 +294,15 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
   //     ASSERT((I4)CS.sp - r > 0, "Locals oob");
   //     CS.sp -= r;
   //     R0
-    case XL:  xImpl(k, (Ty*)popLit(k, 4));    R0
-    // case JW:  cfb->ep = (U1*)WS_POP();  R0;
-    case XW:  xImpl(k, (Ty*)WS_POP());     R0;
+    case XL:  xImpl(k, (Ty*) popLit(k, 4));    R0
+    case XLL: xImpl(k, (Ty*) (RS_topRef(k) + popLit(k, 2)));     R0;
+    // The role must be in locals as {&MRole, &Data}
+    case XRL: {
+      S* role = (S*) (RS_topRef(k) + popLit(k, 2));
+      WS_ADD((S)(role + 1)); // push &Data onto stack
+      xImpl(k, (Ty*) role[popLit(k, 1)]);
+      return 0;
+    }
 
     case SZ1 + JL: r = popLit(k, 1); cfb->ep +=  (I1)r - 1; R0
     case SZ2 + JL: r = popLit(k, 2); cfb->ep +=  (I2)r - 2; R0
@@ -779,7 +785,9 @@ void opOffset(Buf* b, U1 op, U1 sz, U2 offset) {
     if     (FTO == op) return Buf_add(b, FT | (SZ_MASK & sz));
     else if(SRO == op) return Buf_add(b, SR | (SZ_MASK & sz));
   }
-  op1(b, op, sz, offset);
+  if      (FTO  == op || SRO  == op) op1(b, op, sz, offset);
+  else if (FTLL == op || SRLL == op) op2(b, op, sz, offset);
+  else assert(false);
 }
 
 // Compile a call
@@ -902,7 +910,7 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
   // Clear memory first
   if(st->clear) {
     switch(st->op) {
-      case SRLL: op1(b, LR, 0, offset); break;
+      case SRLL: op2(b, LR, 0, offset); break;
       case SRO: Buf_add(b, DUP);        break;
       default: assert(false);
     }
@@ -1637,13 +1645,13 @@ void N_amp(Kern* k) {
   Buf* b = &k->g.code;
   if(PEEK(".")) {
     assert(TyI_refs(tyI)); // should be guaranteed
-    op1(b, FTLL, SZR, offset);
+    op2(b, FTLL, SZR, offset);
     return ampRef(k, tyI);
   }
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
   tyCall(k, NULL, &out);
-  op1(b, LR, 0, offset);
+  op2(b, LR, 0, offset);
 }
 
 void N_at(Kern* k) {
