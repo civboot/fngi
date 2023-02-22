@@ -1,4 +1,4 @@
-#include "civ/civ.h"
+#include "civ.h"
 #include <execinfo.h>
 
 #define BT_SIZE   128

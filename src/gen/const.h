@@ -4,7 +4,7 @@
 * DO NOT EDIT MANUALLY
 */
 
-#include "civ/civ.h"
+#include "civ.h"
 
 #define CSZ_CATCH             0xFF
 #define T_NUM                 0x00

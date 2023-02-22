@@ -121,7 +121,7 @@ Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
   }
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   memset(ty, 0, sz);
-  ty->bst = (Bst) { .key = key },
+  ty->bst = (CBst) { .key = key },
   ty->parent = (Ty*) k->g.curMod,
   ty->meta = meta,
   ty->line = k->g.tokenLine,
@@ -415,8 +415,8 @@ S TyDict_size(TyDict* ty) {
 }
 
 Ty* TyDict_find(TyDict* dict, Slc s) {
-  Bst* find = TyDict_bst(dict);
-  I4 i = Bst_find(&find, s);
+  CBst* find = TyDict_bst(dict);
+  I4 i = CBst_find(&find, s);
   if(i) return NULL;
   else  return (Ty*) find;
 }
@@ -795,7 +795,7 @@ Ty* Kern_findTy(Kern* k, Slc t) {
   Stk* dicts = &k->g.dictStk;
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
     ty = (Ty*)dicts->dat[i];
-    I4 res = Bst_find((Bst**)&ty, t);
+    I4 res = CBst_find((CBst**)&ty, t);
     if((0 == res) && (ty != NULL)) return ty;
   }
   return NULL;
@@ -813,13 +813,13 @@ void scan(Kern* k) {
   }
 }
 
-// Bst* Bst_add(Bst** root, Bst* add);
+// CBst* CBst_add(CBst** root, CBst* add);
 void Kern_addTy(Kern* k, Ty* ty) {
   ty->bst.l = NULL; ty->bst.r = NULL;
   Stk* dicts = &k->g.dictStk;
   ASSERT(dicts->sp < dicts->cap, "No dicts");
-  Bst** root = (Bst**) &dicts->dat[dicts->sp];
-  ty = (Ty*)Bst_add(root, (Bst*)ty);
+  CBst** root = (CBst**) &dicts->dat[dicts->sp];
+  ty = (Ty*)CBst_add(root, (CBst*)ty);
   if(ty) {
     eprintf("!! Overwritten key: %.*s\n", Dat_fmt(*ty->bst.key));
     SET_ERR(SLC("key was overwritten"));

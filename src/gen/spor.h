@@ -4,7 +4,7 @@
 * DO NOT EDIT MANUALLY
 */
 
-#include "civ/civ.h"
+#include "civ.h"
 
 #define NOP                   0x00
 #define RETZ                  0x01

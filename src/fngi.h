@@ -1,7 +1,7 @@
 #ifndef __FNGI_H
 #define __FNGI_H
 
-#include "civ/civ_unix.h"
+#include "civ_unix.h"
 #include "./gen/const.h"
 #include "./gen/spor.h"
 
@@ -63,7 +63,7 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
 #define TY_BODY \
-  Bst          bst;  /* symbol name and dict search. */ \
+  CBst          bst;  /* symbol name and dict search. */ \
   struct _Ty*  parent;  \
   U2           meta; /* specifies node type */ \
   U2           line; /* src code line of definition. */ \
@@ -123,8 +123,8 @@ typedef struct {
   U2 sz;
 } TyDict;
 
-static inline Bst*  TyDict_bst(TyDict* this)     { return (Bst*)   this->v; }
-static inline Bst** TyDict_bstRoot(TyDict* this) { return (Bst**) &this->v; }
+static inline CBst*  TyDict_bst(TyDict* this)     { return (CBst*)   this->v; }
+static inline CBst** TyDict_bstRoot(TyDict* this) { return (CBst**) &this->v; }
 static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
 
 
