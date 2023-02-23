@@ -359,6 +359,14 @@ TEST_FNGI(structDeep, 10)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(mod, 10)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("mod foo ( fn one -> S do 1 )");
+  COMPILE_EXEC("imm#tAssertEq(1, foo.one())");
+  COMPILE_EXEC("using foo ( imm#tAssertEq(1, one()) )");
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(file_basic, 20)
   Kern_fns(k);
   N_assertWsEmpty(k);
@@ -398,6 +406,7 @@ int main(int argc, char* argv[]) {
   test_compileStruct();
   test_structBrackets();
   test_structDeep();
+  test_mod();
   test_file_basic();
   eprintf("# Tests complete\n");
 

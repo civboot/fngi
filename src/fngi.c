@@ -437,6 +437,7 @@ static inline S szToSzI(U1 sz) {
 }
 
 S TyDict_size(TyDict* ty) {
+  ASSERT(not isDictMod(ty), "attempted size of TY_DICT_MOD");
   if(isDictNative(ty)) return szIToSz(ty->v);
   else                 return ty->sz;
 }
@@ -841,7 +842,7 @@ void opCall(Kern* k, TyFn* fn) {
 // ***********************
 //   * scan / scanTy
 
-Ty* Kern_findTy(Kern* k, Slc t) {
+Ty* Kern_findTy(Kern* k, Slc t) { // You probably want to use scanTy
   Ty* ty = NULL;
   DictStk* dicts = &k->g.dictStk;
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
@@ -851,6 +852,8 @@ Ty* Kern_findTy(Kern* k, Slc t) {
   }
   return NULL;
 }
+
+// You probably want to use scanTy
 Ty* Kern_findToken(Kern* k) { return Kern_findTy(k, *Buf_asSlc(&k->g.token)); }
 
 // Scan, immediately executing comment functions
@@ -938,6 +941,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   if(TyI_refs(tyI)) return opOffset(b, st->op, SZR, offset);
   ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
+  ASSERT(not isDictMod(d), "cannot store in mod");
   if(isDictNative(d)) return opOffset(b, st->op, /*szI*/d->v, offset);
   assert(isDictStruct(d));
   // store struct fields from stack
@@ -1007,7 +1011,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   }
   ASSERT(not isTyFn(tyI->ty), "invalid fn local");
   ASSERT(isTyDict(tyI->ty), "invalid non-dict fetch");
-  TyDict* d = (TyDict*) tyI->ty;
+  TyDict* d = (TyDict*) tyI->ty; ASSERT(not isDictMod(d), "cannot fetch in mod");
   if(st->findEqual && CONSUME("=")) {
     SrOffset srSt = (SrOffset) {.op = ftOpToSr(st->op), .checkTy = true, .clear = true};
     return srOffset(k, tyI, offset, &srSt);
@@ -1051,14 +1055,25 @@ void compileVar(Kern* k, TyVar* v, bool asImm) {
   }
 }
 
-void compileDict(Kern* k, TyDict* ty, bool asImm) {
-  ASSERT(not asImm, "imm#compileDict not allowed");
+// Return the next member through '.', or NULL if there is no '.'
+Ty* nextDot(Kern* k, TyDict* d) {
+  eprintf("??? nextDot\n");
+  if(not CONSUME(".")) return NULL;
+  eprintf("??? nextDot 2\n");
+  Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "member not found");
+  eprintf("??? nextDot: ty=%.*s\n", Ty_fmt(ty));
+  return ty;
+}
+
+void compileDict(Kern* k, TyDict* d, bool asImm) {
+  ASSERT(not asImm, "imm#compileDict not implemented");
+  assert(not isDictMod(d));
   TyDb* db = tyDb(k, false);
   Kern_compFn(k); // compile next token
   if(IS_UNTY) return;
-  TyI tyI = (TyI) {.ty = (Ty*) ty};
+  TyI tyI = (TyI) {.ty = (Ty*) d};
   TyI* top = TyDb_top(db);
-  if(isDictNative(ty)) {
+  if(isDictNative(d)) {
     if(TyI_refs(top)) {
       ASSERT(RSIZE == TyI_sz(top), "Cannot convert pointer to less than RSIZE");
     } else {
@@ -1067,8 +1082,8 @@ void compileDict(Kern* k, TyDict* ty, bool asImm) {
     }
     TyDb_pop(k, db); tyCall(k, db, NULL, &tyI);
   } else {
-    assert(isDictStruct(ty));
-    tyCall(k, tyDb(k, false), ty->fields, &tyI);
+    assert(isDictStruct(d));
+    tyCall(k, tyDb(k, false), d->fields, &tyI);
   }
 }
 
@@ -1096,9 +1111,19 @@ void checkName(Kern* k, bool check) {
 }
 
 void compileTy(Kern* k, Ty* ty, bool asImm) {
+  eprintf("!!! compileTy: %.*s\n", Ty_fmt(ty));
   checkName(k, ty);
-  if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
-  if(isTyDict(ty))  return compileDict(k, (TyDict*) ty, asImm);
+  do {
+    if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
+    if(isTyDict(ty)) {
+      TyDict* d = (TyDict*) ty;
+      if(isDictMod(d)) {
+        ty = nextDot(k, d); ASSERT(ty, "Generics not yet implemented");
+        continue;
+      }
+      return compileDict(k, (TyDict*) ty, asImm);
+    }
+  } while(0);
   ASSERT(isTyFn(ty), "Unknown type meta"); TyFn* fn = (TyFn*)ty;
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
@@ -1243,6 +1268,37 @@ void _fnMetaNext(Kern* k, U2 meta) {
          "fn can only be one main type: imm, syn, inline, comment");
   k->g.metaNext |= meta;
 }
+
+void _usingAsserts(TyDict* d) {
+  ASSERT(isTyDict((Ty*) d), "Cannot use 'using' with non-dict");
+  ASSERT(not isDictNative(d), "Cannot use 'using' with native dict");
+}
+
+void _using(Kern* k, TyDict* d) {
+  assert(not isDictNative(d));
+  DictStk_add(&k->g.dictStk, (TyRoot){.root = (Ty**) &d->v });
+  Kern_compFn(k);
+  DictStk_pop(&k->g.dictStk);
+}
+
+void N_mod(Kern* k) {
+  N_notImm(k);
+  TyDict* d = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_MOD, NULL);
+  _using(k, d);
+}
+
+void N_using(Kern* k) {
+  N_notImm(k);
+  TyDict* next = (TyDict*) scanTy(k);
+  eprintf("??? next=%X\n", next);
+  ASSERT(next, "dict not found");
+  TyDict* d;
+  do {
+    d = next; _usingAsserts(d); next = (TyDict*) nextDot(k, d);
+  } while(next);
+  _using(k, d);
+}
+
 // ***********************
 //   * fn and fn signature
 
@@ -1639,18 +1695,19 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   TyDict* d = (TyDict*) top->ty; assert(d);
   ASSERT(isTyDict((Ty*)d), "invalid '.', the value on the stack is not a TyDict");
   ASSERT(not isDictNative(d), "invalid '.' on native type");
+  ASSERT(not isDictMod(d), "accessing mod through ref");
 
   Buf* b = &k->g.code;
   // Trim the refs to be only 1
   while(refs > 1) { Buf_add(b, FT | SZR); }
   TyDb_pop(k, db);
 
-  Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "field not found");
+  Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "member not found");
   if(isTyVar(ty)) {
-    TyVar* field = (TyVar*) ty;
-    ASSERT(not isVarGlobal(field), "invalid '.', accessing constant through ref");
+    TyVar* var = (TyVar*) ty;
+    ASSERT(not isVarGlobal(var), "invalid '.', accessing constant through ref");
     FtOffset st = (FtOffset) {.op = FTO, .findEqual = true};
-    ftOffset(k, field->tyI, field->v, &st);
+    ftOffset(k, var->tyI, var->v, &st);
     return;
   }
   // Call the method
@@ -1738,10 +1795,10 @@ void N_at(Kern* k) {
   TyI* top = TyDb_top(db); U2 refs = TyI_refs(top);
   ASSERT(refs, "invalid '@', the value on the stack is not a reference");
   if(refs > 1) Buf_add(&k->g.code, FT | SZR);
-  else if (not isTyDict(top->ty)) {
-    SET_ERR(SLC("Cannot fetch non-dict type"));
-  } else {
+  else if (not isTyDict(top->ty)) { SET_ERR(SLC("Cannot fetch non-dict type")); }
+  else {
     TyDict* d = (TyDict*) top->ty;
+    ASSERT(not isDictMod(d), "Cannot @mod");
     if(isDictNative(d)) Buf_add(&k->g.code, FT | (SZ_MASK & d->v));
     else assert(false);
   }
@@ -1838,6 +1895,8 @@ void Kern_fns(Kern* k) {
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "imm",     TY_FN_SYN, N_imm);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "(",       TY_FN_SYN, N_paren);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "\\",      TY_FN_COMMENT, N_fslash);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "mod",     TY_FN_SYN, N_mod);
+  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x05", "using",   TY_FN_SYN, N_using);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "fnTy",    TY_FN_SYN, N_fnTy);
   STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "var",     TY_FN_SYN, N_var);

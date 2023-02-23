@@ -273,6 +273,7 @@ static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 #undef IS_FN
 #define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
+static inline bool isDictMod(TyDict* ty)       IS_DICT(TY_DICT_MOD)
 static inline bool isDictStruct(TyDict* ty)    IS_DICT(TY_DICT_STRUCT)
 #undef IS_DICT
 static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }
