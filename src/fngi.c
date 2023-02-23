@@ -53,6 +53,24 @@ void dbgWs(Kern *k) {
 // * 1: Initialization
 // Starting global types and kernel. Creating new types on allocator.
 
+// DictStk
+
+TyRoot DictStk_pop(DictStk* stk) {
+  ASSERT(stk->sp < stk->cap, "DictStk underflow");
+  return stk->dat[stk->sp ++];
+}
+
+TyRoot DictStk_top(DictStk* stk) {
+  ASSERT(stk->sp < stk->cap, "Stk_top OOB");
+  return stk->dat[stk->sp];
+}
+
+void DictStk_add(DictStk* stk, TyRoot r) {
+  ASSERT(stk->sp, "DictStk overflow");
+  stk->dat[-- stk->sp] = r;
+}
+
+
 bool FnFiber_init(FnFiber* fb) {
   U4* dat = (U4*) BA_alloc(&civ.ba);
   if(not dat) return false;
@@ -74,6 +92,7 @@ void TyDb_init(TyDb* db) {
   db->done = Stk_init(db->doneDat, TYDB_DEPTH);
 }
 
+
 void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
     .bbaCode = (BBA) { &civ.ba },
@@ -82,15 +101,14 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .fb = fb,
     .g = {
       .compFn = &TyFn_baseCompFn,
-      .dictStk = Stk_init(k->g.dictBuf, DICT_DEPTH),
+      .dictStk = (DictStk) { .dat = k->g.dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
       .bbaDict = &k->bbaDict,
       .bbaTyNow = (BBA) { &civ.ba },
     }, 0
   };
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbNow);
-  assert(0 == k->g.dictBuf[DICT_DEPTH - 1]);
-  Stk_add(&k->g.dictStk, 0);
+  DictStk_add(&k->g.dictStk, (TyRoot){ .root = &k->dict });
 }
 
 bool Kern_eof(Kern* k) { return Reader_eof(k->g.src); }
@@ -818,9 +836,9 @@ void opCall(Kern* k, TyFn* fn) {
 
 Ty* Kern_findTy(Kern* k, Slc t) {
   Ty* ty = NULL;
-  Stk* dicts = &k->g.dictStk;
+  DictStk* dicts = &k->g.dictStk;
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
-    ty = (Ty*)dicts->dat[i];
+    ty = *dicts->dat[i].root;
     I4 res = CBst_find((CBst**)&ty, t);
     if((0 == res) && (ty != NULL)) return ty;
   }
@@ -842,10 +860,10 @@ void scan(Kern* k) {
 // CBst* CBst_add(CBst** root, CBst* add);
 void Kern_addTy(Kern* k, Ty* ty) {
   ty->bst.l = NULL; ty->bst.r = NULL;
-  Stk* dicts = &k->g.dictStk;
+  DictStk* dicts = &k->g.dictStk;
   ASSERT(dicts->sp < dicts->cap, "No dicts");
-  CBst** root = (CBst**) &dicts->dat[dicts->sp];
-  ty = (Ty*)CBst_add(root, (CBst*)ty);
+  Ty** root = DictStk_top(dicts).root;
+  ty = (Ty*)CBst_add((CBst**)root, (CBst*)ty);
   if(ty) {
     eprintf("!! Overwritten key: %.*s\n", Dat_fmt(*ty->bst.key));
     SET_ERR(SLC("key was overwritten"));
@@ -1330,8 +1348,7 @@ void N_fn(Kern* k) {
 
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
   TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy); // type stack
-  // TODO: use fn->locals
-  Stk_add(&k->g.dictStk, 0); // local variables
+  DictStk_add(&k->g.dictStk, (TyRoot){.root = &fn->locals }); // local variables
 
   fnSignature(k, fn, code);
   SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
@@ -1352,7 +1369,7 @@ void N_fn(Kern* k) {
 
   TyDb_drop(k, &k->g.tyDb);
   END_LOCAL_BBA(bbaTy);
-  Stk_pop(&k->g.dictStk);
+  DictStk_pop(&k->g.dictStk);
   ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
          "A type operation (i.e. if/while/etc) is incomplete in fn");
 }
@@ -1557,7 +1574,7 @@ void N_struct(Kern* k) {
   TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
   TyDict* prevMod = k->g.curMod;
   k->g.curMod = st;
-  Stk_add(&k->g.dictStk, 0);
+  DictStk_add(&k->g.dictStk, (TyRoot){.root = (Ty**)&st->v});
   REQUIRE("[");
   while(not CONSUME("]")) {
     Ty* ty = Kern_findToken(k);
@@ -1566,7 +1583,7 @@ void N_struct(Kern* k) {
       tokenDrop(k); WS_ADD(/*asNow*/false); executeFn(k, (TyFn*)ty);
     } else field(k, st);
   }
-  st->v = Stk_pop(&k->g.dictStk); // update "root" of struct
+  DictStk_pop(&k->g.dictStk);
   k->g.curMod = prevMod;
 }
 

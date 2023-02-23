@@ -147,6 +147,9 @@ typedef struct _Blk {
 } Blk;
 static inline Sll*  Blk_asSll(Blk* this)     { return (Sll*)this; }
 
+typedef struct { Ty** root; }                                TyRoot;
+typedef struct { TyRoot* dat;   U2 sp;   U2 cap;           } DictStk;
+
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
@@ -157,8 +160,8 @@ typedef struct {
   TyDict* curMod; // current parent module (mod, struct, etc)
   Ty* curTy;      // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
-  S dictBuf[DICT_DEPTH];
-  Stk dictStk;    // Type is: &&Ty (double ref to dictionary)
+  TyRoot dictBuf[DICT_DEPTH];
+  DictStk dictStk;    // Type is: &&Ty (double ref to dictionary)
   Reader src; FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
