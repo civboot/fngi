@@ -127,7 +127,7 @@ END_TEST_FNGI
 
 TEST_FNGI(tyDb, 4)
   Kern_fns(k);
-  LOCAL_BBA(bbaTy);
+  LOCAL_TYDB_BBA(tyDb);
 
   TY_CHECK(&TyIs_S, &TyIs_S,  false);
   TY_CHECK(&TyIs_S, &TyIs_S,  true);
@@ -141,17 +141,17 @@ TEST_FNGI(tyDb, 4)
   TyDb_new(db);
 
   // Call a function which returns [S], the type gets put on
-  tyCall(k, NULL, &TyIs_S); TY_CHECK(&TyIs_S, TyDb_top(db), true);
+  tyCall(k, db, NULL, &TyIs_S); TY_CHECK(&TyIs_S, TyDb_top(db), true);
 
   // Now call a function which consumes [S], the type stack empties
-  tyCall(k, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
+  tyCall(k, db, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
 
   // ret[done] causes errors on future operations
   k->g.curTy = Kern_findTy(k, SLC("+"));
-  tyCall(k, NULL, &TyIs_S);
-  tyRet(k, true);  TASSERT_EQ(true, TyDb_done(db));
-  EXPECT_ERR(tyCall(k, &TyIs_S, NULL));
-  END_LOCAL_BBA(bbaTy);
+  tyCall(k, db, NULL, &TyIs_S);
+  tyRet(k, db, true);  TASSERT_EQ(true, TyDb_done(db));
+  EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL));
+  END_LOCAL_TYDB_BBA(tyDb);
 END_TEST_FNGI
 
 TEST_FNGI(compileTy, 6)

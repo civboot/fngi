@@ -19,7 +19,6 @@ const FN_STATE_OUT  :U4 = 0x0004 \ can declare outputs
 
 \ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
 const TY_MASK       :U1 = 0xC0 \ upper two bits determine type
-const TY_CONST      :U1 = 0x00 \ constant, the value is used directly if ty is native
 const TY_VAR        :U1 = 0x40 \ variable (local, global, struct field, etc). Has varMeta
 const TY_FN         :U1 = 0x80 \ function, can be called and has an fnMeta
 const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
@@ -34,10 +33,11 @@ const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run imm (knowing asImm)
 const TY_FN_INLINE  :U1 = 0x03 \ Inline function, copies bytes when compiled.
 const TY_FN_COMMENT :U1 = 0x04 \ Comment function. Executed immediately.
 
-\ TY_VAR meta bits: [10-- GC--] G=global C=constant
+\ TY_VAR meta bits: [10-- GCI-] G=global C=constant I=initialized
 \ G=0 on a struct/enum is a field, G=0 on a fn is a local
 const TY_VAR_GLOBAL :U1 = 0x08
 const TY_VAR_CONST  :U1 = 0x04
+const TY_VAR_INIT   :U1 = 0x02
 
 \ TY_DICT meta bits: [11-- -DDD] H=other D=dictType
 const TY_DICT_MSK    :U1 = 0x07

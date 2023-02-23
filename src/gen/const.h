@@ -21,7 +21,6 @@
 #define FN_STATE_INP          0x03
 #define FN_STATE_OUT          0x04
 #define TY_MASK               0xC0
-#define TY_CONST              0x00
 #define TY_VAR                0x40
 #define TY_FN                 0x80
 #define TY_DICT               0xC0
@@ -34,6 +33,7 @@
 #define TY_FN_COMMENT         0x04
 #define TY_VAR_GLOBAL         0x08
 #define TY_VAR_CONST          0x04
+#define TY_VAR_INIT           0x02
 #define TY_DICT_MSK           0x07
 #define TY_DICT_NATIVE        0x00
 #define TY_DICT_BITMAP        0x01

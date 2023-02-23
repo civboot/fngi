@@ -107,6 +107,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
     }, 0
   };
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
+  k->g.tyDbImm.bba = &k->g.bbaTyImm;
   DictStk_add(&k->g.dictStk, (TyRoot){ .root = &k->dict });
 }
 
@@ -504,7 +505,6 @@ TyI* TyI_cloneNode(TyI* node, BBA* bba) {
   return cloned;
 }
 
-// Sll_add((Sll**)TyDb_root(&k->g.tyDb), TyI_asSll(TyI_cloneNode(node, k->g.bbaTy)));
 void TyI_cloneAddNode(BBA* bba, TyI** root, TyI* node) {
   Sll_add((Sll**)root, TyI_asSll(TyI_cloneNode(node, bba)));
 }
@@ -526,27 +526,30 @@ TyI* TyI_copy(BBA* bba, TyI* nodes) {
 
 #define IS_UNTY  (C_UNTY & k->g.fnState)
 
-void dbgTyIs(Kern* k) {
+void dbgTyIs(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
-  eprintf("["); TyI_printAll(TyDb_top(&k->g.tyDb)); eprintf(" ]");
+  eprintf("["); TyI_printAll(TyDb_top(db)); eprintf(" ]");
 }
 
-void TyDb_print(Kern* k) { TyI_printAll(TyDb_top(&k->g.tyDb)); }
+void TyDb_print(Kern* k, TyDb* db) { TyI_printAll(TyDb_top(db)); }
 
-void TyDb_pop(Kern* k, bool asImm) {
-  BBA* bba; Sll** root;
-  if(asImm) { bba = &k->g.bbaTyImm; root = TyDb_rootSll(&k->g.tyDbImm); }
-  else      { bba = k->g.bbaTy;     root = TyDb_rootSll(&k->g.tyDb);    }
-
-  Slc* err = BBA_free(bba, Sll_pop(root), sizeof(TyI), RSIZE);
+void TyDb_pop(Kern* k, TyDb* db) {
+  Sll** root = TyDb_rootSll(db);
+  Slc* err = BBA_free(db->bba, Sll_pop(root), sizeof(TyI), RSIZE);
   if(err) SET_ERR(*err);
 }
 
-void TyDb_free(Kern* k, TyI* stream, bool asImm) {
+void TyDb_free(Kern* k, TyDb* db, TyI* stream) {
   while(stream) {
     stream = stream->next;
-    TyDb_pop(k, asImm);
+    TyDb_pop(k, db);
   }
+}
+
+void TyDb_drop(Kern* k, TyDb* db) {
+  TyDb_free(k, db, TyDb_top(db));
+  Stk_pop(&db->tyIs);
+  Stk_pop(&db->done);
 }
 
 // Drop the item below the top of stack while still preserving proper drop order.
@@ -555,15 +558,9 @@ void TyDb_nip(Kern* k, TyDb* db) {
   TyI* top = NULL; TyI_cloneAdd(k->g.bbaDict, &top, TyDb_top(db));
   TyDb_drop(k, db); TyDb_drop(k, db); // drop both top and second
   TyDb_new(db); // re-add top
-  TyI_cloneAdd(k->g.bbaTy, TyDb_root(db), top);
+  TyI_cloneAdd(db->bba, TyDb_root(db), top);
   assert(not Sll_free((Sll*)top, sizeof(TyI), BBA_asArena(k->g.bbaDict)));
   assert(not TyDb_done(db));
-}
-
-void TyDb_drop(Kern* k, TyDb* db) {
-  TyDb_free(k, TyDb_top(db), false);
-  Stk_pop(&db->tyIs);
-  Stk_pop(&db->done);
 }
 
 void tyNotMatch(TyI* require, TyI* given) {
@@ -600,50 +597,37 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
   }
 }
 
-void tyCallEither(Kern* k, TyI* inp, TyI* out, bool asImm) {
-  if(IS_UNTY) return;
-  if(not asImm and TyDb_done(&k->g.tyDb)) {
-    ASSERT(not inp and not out, "Code after guaranteed 'ret'");
-  }
-  TyI** root; BBA* bba;
-  if(asImm) {
-    root = TyDb_root(&k->g.tyDbImm);
-    bba = &k->g.bbaTyImm;
-  }
-  else      { root = TyDb_root(&k->g.tyDb);    bba = k->g.bbaTy; }
-
+void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
   Slc err;
-  if(asImm) err = SLC("Type error during asImm (compile time execution, i.e. using '$')");
-  else      err = SLC("Type error during compilation (i.e. function call, struct, etc)");
+  if(db == &k->g.tyDbImm)    err = SLC("Type error during asImm (compile time execution, i.e. using '$')");
+  else if (db == &k->g.tyDb) err = SLC("Type error during compilation (i.e. function call, struct, etc)");
+  else                       err = SLC("Type error during unknown context (not imm or function)");
+  if(IS_UNTY) return;
+  if(TyDb_done(db)) ASSERT(not inp and not out, "Code after guaranteed 'ret'");
+  TyI** root = TyDb_root(db);
   tyCheck(inp, *root, false, err);
-  TyDb_free(k, inp, asImm);
-  TyI_cloneAdd(bba, root, out);
+  TyDb_free(k, db, inp);
+  TyI_cloneAdd(db->bba, root, out);
 }
 
-// Call a function or equivalent, checking and popping inp; then pushing the out.
-void tyCall(Kern* k, TyI* inp, TyI* out) { return tyCallEither(k, inp, out, false); }
-
 // Check function return type and possibly mark as done.
-void tyRet(Kern* k, bool done) {
+void tyRet(Kern* k, TyDb* db, bool done) {
   if(IS_UNTY) return;
-  TyDb* db = &k->g.tyDb;
   ASSERT(not TyDb_done(db), "Code after guaranteed 'ret'");
   tyCheck(tyFn(k->g.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
   TyDb_setDone(db, done);
 }
 
 // Clone the current snapshot and use clone for continued mutations.
-void tyClone(Kern* k, U2 depth) {
+void tyClone(Kern* k, TyDb* db, U2 depth) {
   if(IS_UNTY) return;
-  TyDb* db = &k->g.tyDb;
   TyI* stream = TyDb_index(db, depth);
   TyDb_new(db);
-  if(stream) TyI_cloneAdd(k->g.bbaTy, TyDb_root(&k->g.tyDb), stream);
+  if(stream) TyI_cloneAdd(db->bba, TyDb_root(db), stream);
 }
 
-void tyMerge(Kern* k) {
+void tyMerge(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
-  TyDb* db = &k->g.tyDb;
   ASSERT(Stk_len(&db->tyIs) > 1, "tyMerge with 1 or fewer snapshots");
   if(not TyDb_done(db)) {
     tyCheck(TyDb_index(db, 1), TyDb_top(db), true,
@@ -807,7 +791,7 @@ void lit(Buf* b, U4 v) {
 }
 
 void compileLit(Kern* k, U4 v, bool asImm) {
-  tyCallEither(k, NULL, &TyIs_S, asImm);
+  tyCall(k, tyDb(k, asImm), NULL, &TyIs_S);
   if(asImm) {
     return WS_ADD(v);
   }
@@ -949,7 +933,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
     Kern_compFn(k);
   }
 
-  if(st->checkTy) tyCall(k, tyI, NULL);
+  if(st->checkTy) tyCall(k, tyDb(k, false), tyI, NULL);
   Buf* b = &k->g.code;
   if(TyI_refs(tyI)) return opOffset(b, st->op, SZR, offset);
   ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
@@ -1008,9 +992,9 @@ void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st);
 
 void _tyFtOffsetRefs(Kern* k, TyI* tyI, FtOffset* st) {
   if(st->noAddTy) return;
-  if(st->op == FTLL) return tyCall(k, NULL, tyI);
+  if(st->op == FTLL) return tyCall(k, tyDb(k, false), NULL, tyI);
   assert(st->op == FTO); assert(not tyI->next);
-  tyCall(k, NULL, tyI);
+  tyCall(k, tyDb(k, false), NULL, tyI);
 }
 
 // Fetch an offset using st->op operation.
@@ -1029,7 +1013,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     return srOffset(k, tyI, offset, &srSt);
   }
   if(isDictNative(d)) {
-    if(addTy) tyCall(k, NULL, tyI);
+    if(addTy) tyCall(k, tyDb(k, false), NULL, tyI);
     return opOffset(b, st->op, d->v, offset);
   }
   ASSERT(isDictStruct(d), "unknown dict type");
@@ -1040,7 +1024,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     assert(not isVarGlobal(field));
     return ftOffset(k, field->tyI, offset + field->v, st);
   }
-  if(addTy) tyCall(k, NULL, tyI);
+  if(addTy) tyCall(k, tyDb(k, false), NULL, tyI);
   st->noAddTy = true;
   ftOffsetStruct(k, d, d->fields, offset, st);
 }
@@ -1069,10 +1053,11 @@ void compileVar(Kern* k, TyVar* v, bool asImm) {
 
 void compileDict(Kern* k, TyDict* ty, bool asImm) {
   ASSERT(not asImm, "imm#compileDict not allowed");
+  TyDb* db = tyDb(k, false);
   Kern_compFn(k); // compile next token
   if(IS_UNTY) return;
   TyI tyI = (TyI) {.ty = (Ty*) ty};
-  TyI* top = TyDb_top(&k->g.tyDb);
+  TyI* top = TyDb_top(db);
   if(isDictNative(ty)) {
     if(TyI_refs(top)) {
       ASSERT(RSIZE == TyI_sz(top), "Cannot convert pointer to less than RSIZE");
@@ -1080,15 +1065,15 @@ void compileDict(Kern* k, TyDict* ty, bool asImm) {
       ASSERT((isTyDict(top->ty) && isDictNative((TyDict*)top->ty)),
            "Cannot cast non-native as native.");
     }
-    TyDb_pop(k, false); tyCall(k, NULL, &tyI);
+    TyDb_pop(k, db); tyCall(k, db, NULL, &tyI);
   } else {
     assert(isDictStruct(ty));
-    tyCall(k, ty->fields, &tyI);
+    tyCall(k, tyDb(k, false), ty->fields, &tyI);
   }
 }
 
 void compileFn(Kern* k, TyFn* fn) {
-  tyCall(k, fn->inp, fn->out);
+  tyCall(k, tyDb(k, false), fn->inp, fn->out);
   Buf* b = &k->g.code;
   if(isFnInline(fn)) { // inline: len before function code.
     return Buf_extend(b, (Slc){(U1*)fn->v, .len=fn->len});
@@ -1112,18 +1097,14 @@ void checkName(Kern* k, bool check) {
 
 void compileTy(Kern* k, Ty* ty, bool asImm) {
   checkName(k, ty);
-  if(isTyConst(ty)) return compileLit(k, ty->v, asImm);
   if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
   if(isTyDict(ty))  return compileDict(k, (TyDict*) ty, asImm);
-  TyFn* fn = tyFn(ty);
-  if(isFnSyn(fn)) {
-    WS_ADD(asImm);
-    return executeFn(k, fn);
-  }
+  ASSERT(isTyFn(ty), "Unknown type meta"); TyFn* fn = (TyFn*)ty;
+  if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
-  if(isFnImm(fn)) { ASSERT(asImm, "function must be called with 'imm#'"); }
+  if(isFnImm(fn)) { ASSERT(asImm, "fn must be called with 'imm#'"); }
   if(asImm) {
-    tyCallEither(k, fn->inp, fn->out, asImm);
+    tyCall(k, tyDb(k, asImm), fn->inp, fn->out);
     executeFn(k, fn);
   } else      compileFn(k, fn);
 }
@@ -1144,13 +1125,14 @@ void single(Kern* k, bool asImm) {
 
 void compileSrc(Kern* k) {
   ASSERT(k->g.src.d, "compileSrc: src not set");
-  TyDb_new(&k->g.tyDbImm);
+  TyDb* db = tyDb(k, true);
+  TyDb_new(db);
   while(true) {
     Kern_compFn(k);
     if(Kern_eof(k)) break;
   }
-  tyCheck(NULL, TyDb_top(&k->g.tyDbImm), true, SLC("Type error of asImm in src"));
-  TyDb_drop(k, &k->g.tyDbImm);
+  tyCheck(NULL, TyDb_top(db), true, SLC("Type error of asImm in src"));
+  TyDb_drop(k, db);
 }
 
 // ***********************
@@ -1159,6 +1141,15 @@ void compileSrc(Kern* k) {
 
 // ***********************
 //   * Misc
+
+// Reserve space on k->g.code. Return the previous value, which should be
+// replaced when done.
+Buf Kern_reserveCode(Kern* k, S sz) {
+  Buf* code = &k->g.code;  Buf prevCode = *code;
+  *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
+  ASSERT(code->dat, "Code OOM");
+  return prevCode;
+}
 
 void N_noop(Kern* k) { WS_POP(); } // noop syn function
 void N_notImm(Kern* k) { ASSERT(not WS_POP(), "cannot be executed with 'imm#'"); }
@@ -1169,7 +1160,7 @@ void N_unty(Kern* k) {
   k->g.fnState &= ~C_UNTY;
 }
 
-void _N_ret(Kern* k) { tyRet(k, true); Buf_add(&k->g.code, RET); }
+void _N_ret(Kern* k) { tyRet(k, tyDb(k, false), true); Buf_add(&k->g.code, RET); }
 void N_ret(Kern* k)  { N_notImm(k); Kern_compFn(k); _N_ret(k); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 void N_assertWsEmpty(Kern* k) {
@@ -1193,16 +1184,15 @@ void N_dbgRs(Kern* k) {
   }
 }
 
-
 void N_destruct(Kern* k) {
-  N_notImm(k);
+  N_notImm(k); TyDb* db = tyDb(k, false);
   Kern_compFn(k);
-  TyI* top = TyDb_top(&k->g.tyDb);
+  TyI* top = TyDb_top(db);
   TyDict* ty = (TyDict*) top->ty;
   ASSERT(isTyDict((Ty*)ty) && isDictStruct(ty), "destruct non-dict");
   ASSERT(not TyI_refs(top), "cannot destruct reference (yet?)");
   TyI tyI = (TyI){.ty = (Ty*)ty};
-  tyCall(k, &tyI, ty->fields);
+  tyCall(k, db, &tyI, ty->fields);
 }
 
 // ***********************
@@ -1259,7 +1249,7 @@ void _fnMetaNext(Kern* k, U2 meta) {
 // fnTy#IMM to make next function immediate, etc.
 void N_fnTy(Kern* k)   {
   N_notImm(k); CONSUME("#");
-  single(k, true); tyCallEither(k, &TyIs_S, NULL, true);
+  single(k, true); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
   S meta = WS_POP();
   ASSERT(not (TY_FN_TY_MASK & k->g.metaNext),
          "fn can only be one main type: imm, syn, inline, comment");
@@ -1275,13 +1265,10 @@ void synFnFound(Kern* k, Ty* ty) {
   executeFn(k, (TyFn*)ty);
 }
 
-void varImpl(Kern* k, TyVar* var, S ptr) {
-  if(ptr) var->v = ptr;
-  else { // uses fn locals offset
-    S sz = TyI_sz(var->tyI);
-    var->v = align(k->g.fnLocals, alignment(sz));
-    k->g.fnLocals = var->v + sz;
-  }
+void localImpl(Kern* k, TyVar* var) {
+  S sz = TyI_sz(var->tyI);
+  var->v = align(k->g.fnLocals, alignment(sz));
+  k->g.fnLocals = var->v + sz;
 }
 
 // Used for both stk and out
@@ -1320,22 +1307,44 @@ void N_inp(Kern* k) {
   SET_FN_STATE(FN_STATE_INP);
   TyI* tyI = TyI_cloneNode(var->tyI, k->g.bbaDict);
   Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(tyI));
-  varImpl(k, var, /*ptr=*/0);
+  localImpl(k, var);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (S)N_inp, TYI_VOID, TYI_VOID);
 
-void N_var(Kern* k) {
-  N_notImm(k); ASSERT(not IS_FN_STATE(FN_STATE_NO), "var used outside fn");
-  TyVar* v = varPre(k);
-  varImpl(k, v, /*ptr=*/0);
+
+void _varGlobal(Kern* k, TyVar* v) {
+  S sz = TyI_sz(v->tyI);
+  Buf prevCode = Kern_reserveCode(k, sz); Buf* code = &k->g.code;
+  if(CONSUME("=")) {
+    SrOffset st = (SrOffset) {.op = SRO, .checkTy = true };
+    // FIXME: this thing is such a pain.
+    //        I'm not compiling instructions -- I'm storing immediately.
+    //        I need to add the ability to use tyDbImm/etc, as well as have
+    //        srOffset work with absolute addresses immediately.
+    // srOffset(k, v->tyI, /*offset=*/v->v, &st);
+
+  }
+  *code = prevCode;
+}
+
+void _varLocal(Kern* k, TyVar* v) {
+  localImpl(k, v);
   if(CONSUME("=")) {
     SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
     srOffset(k, v->tyI, /*offset=*/v->v, &st);
   }
 }
 
+void N_var(Kern* k) {
+  N_notImm(k);
+  TyVar* v = varPre(k);
+  if(IS_FN_STATE(FN_STATE_NO))  _varGlobal(k, v);
+  else                          _varLocal(k, v);
+}
+
 void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
   SET_FN_STATE(FN_STATE_STK);
+  TyDb* db = tyDb(k, false);
   while(true) {
     if(CONSUME("do")) break;
     if(CONSUME("->")) SET_FN_STATE(FN_STATE_OUT);
@@ -1357,7 +1366,7 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
       srOffset(k, tyI, v->v, &st);
     }
     else if(/*isStk and*/ not IS_UNTY) {
-      TyI_cloneAddNode(k->g.bbaTy, TyDb_root(&k->g.tyDb), tyI);
+      TyI_cloneAddNode(db->bba, TyDb_root(db), tyI);
     }
   }
 }
@@ -1373,12 +1382,12 @@ void N_fn(Kern* k) {
   tokenDrop(k);
   k->g.curTy = (Ty*) fn;
 
-  Buf* code = &k->g.code;  Buf prevCode = *code;
-  *code = Buf_new(BBA_asArena(&k->bbaCode), FN_ALLOC);
-  ASSERT(code->dat, "Code OOM");
+  Buf* code = &k->g.code;  Buf prevCode = Kern_reserveCode(k, FN_ALLOC);
 
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
-  TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy); // type stack
+  TyDb_new(&k->g.tyDb);
+  LOCAL_TYDB_BBA(tyDb); TyDb* db = tyDb(k, false);
+
   DictStk_add(&k->g.dictStk, (TyRoot){.root = &fn->locals }); // local variables
 
   fnSignature(k, fn, code);
@@ -1386,7 +1395,7 @@ void N_fn(Kern* k) {
   SET_FN_STATE(FN_STATE_NO);
 
   // Force a RET at the end, whether UNTY or not.
-  if( (not IS_UNTY and not TyDb_done(&k->g.tyDb))
+  if( (not IS_UNTY and not TyDb_done(db))
       or  (IS_UNTY and (RET != code->dat[code->len-1]))) _N_ret(k);
 
   // Free unused area of buffers
@@ -1398,11 +1407,11 @@ void N_fn(Kern* k) {
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
 
-  TyDb_drop(k, &k->g.tyDb);
-  END_LOCAL_BBA(bbaTy);
-  DictStk_pop(&k->g.dictStk);
+  TyDb_drop(k, db);
   ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
          "A type operation (i.e. if/while/etc) is incomplete in fn");
+  END_LOCAL_TYDB_BBA(tyDb);
+  DictStk_pop(&k->g.dictStk);
 }
 
 // ***********************
@@ -1451,21 +1460,23 @@ U2 _else(Buf* b, U2 iIf) { // flow control only
     if(not IS_UNTY) { eprintf(__VA_ARGS__); dbgTyIs(k); NL; }
 
 IfState tyIf(Kern* k, IfState is) {
+  TyDb* db = tyDb(k, false);
   if(IS_UNTY) return is;
   if(is.hadFull) {
-    tyMerge(k);    // check stateToUse==fullIfState
-    tyClone(k, 1); // clone outer state
-  } else if (TyDb_done(&k->g.tyDb)) {
-    tyMerge(k);    // drop stateToUse
-    tyClone(k, 0); // clone outer state
+    tyMerge(k, db);    // check stateToUse==fullIfState
+    tyClone(k, db, 1); // clone outer state
+  } else if (TyDb_done(db)) {
+    tyMerge(k, db);    // drop stateToUse
+    tyClone(k, db, 0); // clone outer state
   } else {
-    tyClone(k, 1); // stateToUse becomes fullIfState. Clone outer as stateToUse
+    tyClone(k, db, 1); // stateToUse becomes fullIfState. Clone outer as stateToUse
     is.hadFull = true;
   }
   return is;
 }
 
 IfState _N_if(Kern* k, IfState is) {
+  TyDb* db = tyDb(k, false);
   Buf* b = &k->g.code;
   U2 i = _if(b);
   REQUIRE("do"); Kern_compFn(k);
@@ -1473,8 +1484,8 @@ IfState _N_if(Kern* k, IfState is) {
 
   if(CONSUME("elif")) {
     i = _else(b, i);
-    Kern_compFn(k); tyCall(k, &TyIs_S, NULL);
-    ASSERT(IS_UNTY or not TyDb_done(&k->g.tyDb), "Detected done in elif test");
+    Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
+    ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in elif test");
     is = _N_if(k, is);
   } else if(CONSUME("else")) {
     i = _else(b, i);
@@ -1488,17 +1499,17 @@ IfState _N_if(Kern* k, IfState is) {
 
 void tyIfEnd(Kern* k, IfState is) {
   if(IS_UNTY) return;
-  TyDb* db = &k->g.tyDb;
+  TyDb* db = tyDb(k, false);
   TyDb_drop(k, db); // stateToUse
   if(is.hadFull)       TyDb_nip(k, db);
-  else if (is.hadElse) TyDb_setDone(&k->g.tyDb, true);
+  else if (is.hadElse) TyDb_setDone(db, true);
 }
 
 void N_if(Kern* k) {
-  N_notImm(k);
-  Kern_compFn(k); tyCall(k, &TyIs_S, NULL);
-  ASSERT(IS_UNTY or not TyDb_done(&k->g.tyDb), "Detected done in if test");
-  tyClone(k, 0);
+  N_notImm(k); TyDb* db = tyDb(k, false);
+  Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
+  ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in if test");
+  tyClone(k, db, 0);
   tyIfEnd(k, _N_if(k, (IfState){0}));
 }
 
@@ -1527,10 +1538,9 @@ void N_if(Kern* k) {
 
 static inline Sll** Blk_root(Kern* k) { return (Sll**) &k->g.blk; }
 
-void tyCont(Kern* k) {
+void tyCont(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
   Blk* blk = k->g.blk;
-  TyDb* db = &k->g.tyDb;
   ASSERT(not TyDb_done(db), "Cont after guaranteed 'ret'");
   tyCheck(blk->startTyI, TyDb_top(db), /*sameLen*/true,
           SLC("Type error: cont not identical as block start."));
@@ -1539,16 +1549,15 @@ void tyCont(Kern* k) {
 
 void N_cont(Kern* k) {
   N_notImm(k);
-  tyCont(k);
+  tyCont(k, tyDb(k, false));
   Buf* b = &k->g.code;
   Buf_add(b, SZ2 | JL);
   Buf_addBE2(b, k->g.blk->start - b->len);
 }
 
-void tyBreak(Kern* k) {
+void tyBreak(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
   Blk* blk = k->g.blk;
-  TyDb* db = &k->g.tyDb;
   ASSERT(not TyDb_done(db), "Break after guaranteed 'ret'");
   if(blk->endTyI) {
     tyCheck(blk->endTyI, TyDb_top(db), /*sameLen*/true,
@@ -1561,7 +1570,7 @@ void tyBreak(Kern* k) {
 
 void N_brk(Kern* k) {
   N_notImm(k); Kern_compFn(k);
-  tyBreak(k);
+  tyBreak(k, tyDb(k, false));
   Buf* b = &k->g.code;
 
   Buf_add(b, SZ2 | JL); // unconditional jump to end of block
@@ -1571,16 +1580,16 @@ void N_brk(Kern* k) {
 }
 
 void N_blk(Kern* k) {
-  N_notImm(k);
+  N_notImm(k); TyDb* db = tyDb(k, false);
   Buf* b = &k->g.code;
   Blk* blk = BBA_alloc(k->g.bbaDict, sizeof(Blk), RSIZE);
   ASSERT(blk, "block OOM");
   *blk = (Blk) { .start = b->len };
-  TyI_cloneAdd(k->g.bbaDict, &blk->startTyI, TyDb_top(&k->g.tyDb));
+  TyI_cloneAdd(k->g.bbaDict, &blk->startTyI, TyDb_top(db));
   Sll_add(Blk_root(k), Blk_asSll(blk));
 
   Kern_compFn(k); // compile code block
-  if(not TyDb_done(&k->g.tyDb)) tyBreak(k); // implicit break checks blk type
+  if(not TyDb_done(db)) tyBreak(k, db); // implicit break checks blk type
   for(Sll* br = blk->breaks; br; br = br->next) {
     srBE2(b->dat + br->dat, b->len - br->dat);
   }
@@ -1622,9 +1631,9 @@ void N_struct(Kern* k) {
 //   * '.', '&', '@'
 
 void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
-  N_notImm(k);
+  N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
-  TyI* top = TyDb_top(&k->g.tyDb);
+  TyI* top = TyDb_top(db);
   U2 refs = TyI_refs(top);
   ASSERT(refs, "invalid '.', the value on the stack is not a reference");
   TyDict* d = (TyDict*) top->ty; assert(d);
@@ -1634,7 +1643,7 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   Buf* b = &k->g.code;
   // Trim the refs to be only 1
   while(refs > 1) { Buf_add(b, FT | SZR); }
-  TyDb_pop(k, false); // TODO: asImm
+  TyDb_pop(k, db);
 
   Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "field not found");
   if(isTyVar(ty)) {
@@ -1646,7 +1655,7 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   }
   // Call the method
   TyI this = (TyI) { .ty = (Ty*)d, .meta = /*refs*/1 };
-  tyCall(k, NULL, &this);
+  tyCall(k, db, NULL, &this);
   compileTy(k, ty, false);
 }
 
@@ -1655,6 +1664,7 @@ void ampRef(Kern* k, TyI* tyI) {
   ASSERT(PEEK("."), "invalid &, non-variable/struct");
   Buf* b = &k->g.code;
   U2 offset = 0; U2 refs = TyI_refs(tyI);
+  TyDb* db = tyDb(k, false);
   while(true) {
     if(CONSUME(".")) {
       while(refs > 1) {
@@ -1666,9 +1676,9 @@ void ampRef(Kern* k, TyI* tyI) {
     } else {
       ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
       if(offset) { lit(b, offset); Buf_add(b, ADD); }
-      TyDb_drop(k, &k->g.tyDb);
+      TyDb_drop(k, db);
       TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
-      return tyCall(k, NULL, &out);
+      return tyCall(k, db, NULL, &out);
     }
   }
 }
@@ -1686,11 +1696,11 @@ void ampRef(Kern* k, TyI* tyI) {
 //
 // The last one requires a fetch
 void N_amp(Kern* k) {
-  N_notImm(k);
+  N_notImm(k); TyDb* db = tyDb(k, false);
   scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "not found");
   if(not isTyVar(ty)) {
     Kern_compFn(k);
-    return ampRef(k, TyDb_top(&k->g.tyDb));
+    return ampRef(k, TyDb_top(db));
   }
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
@@ -1709,15 +1719,15 @@ void N_amp(Kern* k) {
   }
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
-  tyCall(k, NULL, &out);
+  tyCall(k, tyDb(k, false), NULL, &out);
   op2(b, LR, 0, offset);
 }
 
 void N_at(Kern* k) {
-  N_notImm(k);
+  N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   Kern_compFn(k);
-  // TyI* tyI = TyDb_top(&k->g.tyDb);
+  // TyI* tyI = TyDb_top(db);
   // ASSERT(TyI_refs(tyI), "invalid '@', the value on the stack is not a reference");
   // FtOffset st = (FtOffset) { .op = FTO, .findEqual = true };
   // ftOffset(k, tyI, 0, &st);
@@ -1725,7 +1735,7 @@ void N_at(Kern* k) {
   if(CONSUME("=")) {
     assert(false);
   }
-  TyI* top = TyDb_top(&k->g.tyDb); U2 refs = TyI_refs(top);
+  TyI* top = TyDb_top(db); U2 refs = TyI_refs(top);
   ASSERT(refs, "invalid '@', the value on the stack is not a reference");
   if(refs > 1) Buf_add(&k->g.code, FT | SZR);
   else if (not isTyDict(top->ty)) {
@@ -1738,7 +1748,7 @@ void N_at(Kern* k) {
 
   TyI inp = (TyI) { .ty = (Ty*)top->ty, .meta = top->meta };
   TyI out = (TyI) { .ty = (Ty*)top->ty, .meta = top->meta - 1};
-  tyCall(k, &inp, &out);
+  tyCall(k, tyDb(k, false), &inp, &out);
 }
 
 // ***********************
@@ -1955,7 +1965,7 @@ void compilePath(Kern* k, CStr* path) {
 }
 
 void simpleRepl(Kern* k) {
-  REPL_START
+  REPL_START;  TyDb* db = tyDb(k, false);
   size_t cap;  jmp_buf local_errJmp;  jmp_buf* prev_errJmp = civ.fb->errJmp;
   Ring_var(_r, 256);  BufFile f = BufFile_init(_r, (Buf){0});
   k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &f };
@@ -1977,7 +1987,7 @@ void simpleRepl(Kern* k) {
     if(0 == strcmp("EXIT", f.b.dat)) break;
     if(len-1) executeInstrs(k, compileRepl(k, true));
     eprintf("> "); dbgWs(k);
-    eprintf(" :"); TyI_printAll(TyDb_top(&k->g.tyDb)); NL;
+    eprintf(" :"); TyI_printAll(TyDb_top(db)); NL;
   }
   civ.fb->errJmp = prev_errJmp;
   REPL_END

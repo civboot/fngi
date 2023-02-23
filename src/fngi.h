@@ -136,6 +136,7 @@ typedef struct { MSpReader* m; void* d; } SpReader;
 
 #define TYDB_DEPTH 16
 typedef struct {
+  BBA* bba;
   Stk tyIs; // stack of TyI, aka blocks
   Stk done; // indication of whether block is ret/cont/break/etc
   S   tyIsDat[TYDB_DEPTH];
@@ -172,9 +173,8 @@ typedef struct {
   FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
-  TyDb tyDb; TyDb tyDbImm;
+  TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
   BBA* bbaDict;
-  BBA* bbaTy; BBA bbaTyImm;
   Blk* blk;
 } Globals;
 
@@ -219,20 +219,20 @@ bool FnFiber_init(FnFiber* fb);
 
 static inline S kFn(void(*native)(Kern*)) { return (S) native; }
 
-#define LOCAL_BBA(NAME) \
-  BBA  NAME       = (BBA) { &civ.ba }; \
-  BBA* prev_##NAME = k->g.NAME;   \
-  k->g.NAME       = &NAME;
+#define LOCAL_TYDB_BBA(NAME) \
+  BBA  bba_##NAME       = (BBA) { &civ.ba }; \
+  BBA* prevBba_##NAME   = k->g.NAME.bba;   \
+  k->g.NAME.bba     = &bba_##NAME;
 
-#define END_LOCAL_BBA(NAME) \
-  BBA_drop(&NAME); \
-  k->g.NAME = prev_##NAME;
+#define END_LOCAL_TYDB_BBA(NAME) \
+  BBA_drop(&bba_##NAME); \
+  k->g.NAME.bba     = prevBba_##NAME;
 
 #define REPL_START \
-  TyDb_new(&k->g.tyDb); LOCAL_BBA(bbaTy);
+  TyDb_new(&k->g.tyDb); LOCAL_TYDB_BBA(tyDb);
 
 #define REPL_END \
-  TyDb_drop(k, &k->g.tyDb); END_LOCAL_BBA(bbaTy);
+  TyDb_drop(k, &k->g.tyDb); END_LOCAL_TYDB_BBA(tyDb);
 
 
 
@@ -257,7 +257,6 @@ ParsedNumber parseU4(Slc t);
 // #################################
 // # Compiler
 #define IS_TY(M)   { return (M) == (TY_MASK & ty->meta); }
-static inline bool isTyConst(Ty* ty)  IS_TY(TY_CONST)
 static inline bool isTyFn(Ty* ty)     IS_TY(TY_FN)
 static inline bool isTyVar(Ty* ty)    IS_TY(TY_VAR)
 static inline bool isTyDict(Ty* ty)   IS_TY(TY_DICT)
@@ -372,7 +371,7 @@ static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = 
 //
 // "stream" can be either TyDb_top (freeing the entire snapshot), or a
 // separate type stream which indicates the length of items to drop.
-void TyDb_free(Kern* k, TyI* stream, bool asImm);
+void TyDb_free(Kern* k, TyDb* db, TyI* stream);
 
 // Drop the current snapshot
 void TyDb_drop(Kern* k, TyDb* db);
@@ -383,11 +382,12 @@ static inline void TyDb_new(TyDb* db) {
   Stk_add(&db->done, false);
 }
 
+static inline TyDb* tyDb(Kern* k, bool asImm) { return asImm ? &k->g.tyDbImm : &k->g.tyDb; }
 void tyCheck(TyI* require, TyI* given, bool sameLen, Slc errCxt);
-void tyCall(Kern* k, TyI* inp, TyI* out);
-void tyRet(Kern* k, bool done);
+void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out);
+void tyRet(Kern* k, TyDb* db, bool done);
 void tySplit(Kern* k);
-void tyMerge(Kern* k);
+void tyMerge(Kern* k, TyDb* db);
 void TyI_printAll(TyI* tyI);
 Ty* TyDict_find(TyDict* dict, Slc s);
 
