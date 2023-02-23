@@ -97,12 +97,14 @@ const SZ4     :Int = 0x20
 const FT   :Int = 0x40   \ {addr} -> {value}  |FeTch value from addr
 const FTBE :Int = 0x41   \ {addr} -> {value}  |FeTch value from addr (big endian)
 const FTO  :Int = 0x42   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
-const FTLL :Int = 0x43   \ {} -> {local}      |FeTch from LP + U1 literal offset
-const SR   :Int = 0x44   \ {addr value} -> {} |Store value at addr
-const SRBE :Int = 0x45   \ {addr value} -> {} |Store value at addr (big endian)
-const SRO  :Int = 0x46   \ {addr value} -> {} |Store value at addr + U1 literal offset
-const SRLL :Int = 0x47   \ {value} -> {}      |StoRe value at LP + U1 literal offset
-const LIT  :Int = 0x48   \ {} -> {literal}    |Literal (U1, U2 or U4)
+const FTLL :Int = 0x43   \ {} -> {local}      |FeTch Literal Local
+const FTGL :Int = 0x44   \ {} -> {local}      |FeTch Global Literal
+const SR   :Int = 0x45   \ {addr value} -> {} |Store value at addr
+const SRBE :Int = 0x46   \ {addr value} -> {} |Store value at addr (big endian)
+const SRO  :Int = 0x47   \ {addr value} -> {} |Store value at addr + U1 literal offset
+const SRGL :Int = 0x48   \ {addr value} -> {} |Store Global Literal
+const SRLL :Int = 0x49   \ {value} -> {}      |StoRe Literal Local
+const LIT  :Int = 0x4A   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ # [1.e] Jmp
 \

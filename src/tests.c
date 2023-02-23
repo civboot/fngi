@@ -125,6 +125,12 @@ TEST_FNGI(compile1, 10)
   COMPILE_EXEC("tAssertEq(0x10 shr 4, 1)");
 END_TEST_FNGI
 
+TEST_FNGI(comment, 10)
+  Kern_fns(k);
+  COMPILE_EXEC("\\1 \\(foo bar) \\(3 4 5)\n\\ 1 2 3 this is a line\n\\3");
+  TASSERT_EQ(0, Stk_len(WS));
+END_TEST_FNGI
+
 TEST_FNGI(tyDb, 4)
   Kern_fns(k);
   LOCAL_TYDB_BBA(tyDb);
@@ -359,6 +365,29 @@ TEST_FNGI(structDeep, 10)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(global, 10)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("var a:S = 32");
+  TyVar* a = tyVar(Kern_findTy(k, SLC("a")));
+  TASSERT_EQ(0, Stk_len(WS));
+  TASSERT_EQ(32, ftSzI((U1*)a->v, SZR));
+  COMPILE_EXEC("imm#tAssertEq(32, a)");
+  COMPILE_EXEC("tAssertEq(32, a)");
+
+  COMPILE_EXEC("struct Foo [ a: S; b: S; c: S]");
+  COMPILE_EXEC("var foo:Foo = Foo(7, 3, 12)");
+  TASSERT_EQ(0, Stk_len(WS));
+  TyVar* foo = tyVar(Kern_findTy(k, SLC("foo")));
+  TASSERT_EQ(7, ftSzI((U1*)foo->v, SZR));
+
+  COMPILE_EXEC("tAssertEq(7, foo.a)   tAssertEq(3, foo.b)");
+  COMPILE_EXEC("imm#tAssertEq(7, foo.a)");
+  COMPILE_EXEC("foo.a = 0x444 tAssertEq(0x444, foo.a)");
+  COMPILE_EXEC("imm#( tAssertEq(0x444, foo.a); tAssertEq(3, foo.b) )");
+  COMPILE_EXEC("assertWsEmpty;");
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(mod, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("mod foo ( fn one -> S do 1 )");
@@ -398,6 +427,7 @@ int main(int argc, char* argv[]) {
   test_scan();
   test_compile0();
   test_compile1();
+  test_comment();
   test_tyDb();
   test_compileTy();
   test_compileIf();
@@ -406,6 +436,7 @@ int main(int argc, char* argv[]) {
   test_compileStruct();
   test_structBrackets();
   test_structDeep();
+  test_global();
   test_mod();
   test_file_basic();
   eprintf("# Tests complete\n");

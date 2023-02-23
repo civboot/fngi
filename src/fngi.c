@@ -283,6 +283,22 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case SZ2 + FTLL: WS_ADD(*(U2*) (RS_topRef(k) + popLit(k, 2))); R0
     case SZ4 + FTLL: WS_ADD(*(U4*) (RS_topRef(k) + popLit(k, 2))); R0
 
+    case SZ1 + FTGL:
+    case SZ2 + FTGL:
+    case SZ4 + FTGL: {
+      TyVar* g = (TyVar*) popLit(k, 4);
+      WS_ADD(ftSzI((U1*)g->v + popLit(k, 2), SZ_MASK & instr));
+      return 0;
+    }
+
+    case SZ1 + SRGL:
+    case SZ2 + SRGL:
+    case SZ4 + SRGL: {
+      TyVar* g = (TyVar*) popLit(k, 4);
+      srSzI((U1*)g->v + popLit(k, 2), SZ_MASK & instr, WS_POP());
+      return 0;
+    }
+
     case SZ1 + SR: WS_POP2(l, r); *(U1*)l = r; R0
     case SZ2 + SR: WS_POP2(l, r); *(U2*)l = r; R0
     case SZ4 + SR: WS_POP2(l, r); *(U4*)l = r; R0
@@ -817,21 +833,49 @@ void op1(Buf* b, U1 op, U1 sz, S v) {
   Buf_add(b, v);
 }
 
-void op2(Buf* b, U1 op, U1 sz, S v) {
-  Buf_add(b, op | (SZ_MASK & sz));
+void op2(Buf* b, U1 op, U1 szI, S v) {
+  Buf_add(b, op | (SZ_MASK & szI));
   Buf_addBE2(b, v);
 }
 
+void op42(Buf* b, U1 op, U1 szI, S v4, S v2) {
+  Buf_add(b, op | (SZ_MASK & szI));
+  Buf_addBE4(b, v4); Buf_addBE2(b, v2);
+}
+
 // Compile an operation offset
-void opOffset(Buf* b, U1 op, U1 sz, U2 offset) {
+void opCompile(Buf* b, U1 op, U1 szI, U2 offset, TyVar* global) {
   assert(op != FT && op != SR);
   if(0 == offset) {
-    if     (FTO == op) return Buf_add(b, FT | (SZ_MASK & sz));
-    else if(SRO == op) return Buf_add(b, SR | (SZ_MASK & sz));
+    if     (FTO == op) return Buf_add(b, FT | (SZ_MASK & szI));
+    else if(SRO == op) return Buf_add(b, SR | (SZ_MASK & szI));
   }
-  if      (FTO  == op || SRO  == op) op1(b, op, sz, offset);
-  else if (FTLL == op || SRLL == op) op2(b, op, sz, offset);
+  if      (FTO  == op || SRO  == op) op1(b, op, szI, offset);
+  else if (FTLL == op || SRLL == op) op2(b, op, szI, offset);
+  else if (FTGL == op || SRGL == op) op42(b, op, szI, (S)global, offset);
   else assert(false);
+}
+
+void opImm(Kern* k, U1 op, U1 szI, U2 offset, TyVar* g) {
+  switch(op) {
+    case FTGL: WS_ADD(ftSzI((U1*)g->v     + offset, szI)); return;
+    case SRGL:        srSzI((U1*)g->v     + offset, szI, WS_POP()); return;
+    case FTO:  WS_ADD(ftSzI((U1*)WS_POP() + offset, szI)); return;
+    case SRO: {
+      S v = WS_POP();
+      S addr = g ? g->v : WS_POP();
+      return srSzI((U1*)addr + offset, szI, v);
+    }
+  }
+  assert(false);
+}
+
+// Perform an offset operation.
+// If 'b' is provided, then the operation is compiled. Else it is executed
+// immediately.
+void opOffset(Kern* k, Buf* b, U1 op, U1 szI, U2 offset, TyVar* g) {
+  if(b)  opCompile(b, op, szI, offset, g);
+  else   opImm(    k, op, szI, offset, g);
 }
 
 // Compile a call
@@ -927,6 +971,8 @@ typedef struct {
   bool checkTy;
   bool clear;
   bool notParse; // parse=look for '{'
+  bool asImm;
+  TyVar* global;
 } SrOffset;
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st);
 
@@ -936,16 +982,17 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
     Kern_compFn(k);
   }
 
-  if(st->checkTy) tyCall(k, tyDb(k, false), tyI, NULL);
-  Buf* b = &k->g.code;
-  if(TyI_refs(tyI)) return opOffset(b, st->op, SZR, offset);
+  Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
+  if(st->checkTy) tyCall(k, db, tyI, NULL);
+  if(TyI_refs(tyI)) return opOffset(k, b, st->op, SZR, offset, st->global);
   ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
   ASSERT(not isDictMod(d), "cannot store in mod");
-  if(isDictNative(d)) return opOffset(b, st->op, /*szI*/d->v, offset);
+  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/d->v, offset, st->global);
   assert(isDictStruct(d));
-  // store struct fields from stack
-  SrOffset recSt = { .op = st->op, .notParse = true };
+  SrOffset recSt = *st; // Note: we CANNOT modify 'st', since (unlike ftOffset)
+                        // it may be re-used in next field.
+  recSt.checkTy = false; recSt.clear = false; recSt.notParse = true;
   for(TyI* field = d->fields; field; field = field->next) {
     srOffset(k, field, offset + TyDict_field(d, field)->v, &recSt);
   }
@@ -982,21 +1029,24 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
 //   * ftOffset
 // Handles not only fetching offset, but also parsing '.' syntax.
 
-typedef struct { U1 op; bool noAddTy; bool findEqual; } FtOffset;
+typedef struct {
+  U1 op; bool noAddTy; bool findEqual; bool asImm; TyVar* global;
+} FtOffset;
 
 U1 ftOpToSr(U1 ftOp) {
   switch(ftOp) {
     case FTO: return SRO;
     case FTLL: return SRLL;
+    case FTGL: return SRGL;
   }
   assert(false);
 }
 
 void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st);
 
-void _tyFtOffsetRefs(Kern* k, TyI* tyI, FtOffset* st) {
+void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
   if(st->noAddTy) return;
-  if(st->op == FTLL) return tyCall(k, tyDb(k, false), NULL, tyI);
+  if(st->op == FTLL) return tyCall(k, db, NULL, tyI);
   assert(st->op == FTO); assert(not tyI->next);
   tyCall(k, tyDb(k, false), NULL, tyI);
 }
@@ -1004,21 +1054,26 @@ void _tyFtOffsetRefs(Kern* k, TyI* tyI, FtOffset* st) {
 // Fetch an offset using st->op operation.
 // This defines the basic syntax for `foo.bar = baz`
 void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
-  bool addTy = not st->noAddTy; Buf* b = &k->g.code;
+  bool addTy = not st->noAddTy;
+  Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
   if(TyI_refs(tyI)) {
-    _tyFtOffsetRefs(k, tyI, st);
-    return opOffset(b, st->op, SZR, offset);
+    _tyFtOffsetRefs(k, db, tyI, st);
+    return opOffset(k, b, st->op, SZR, offset, st->global);
   }
   ASSERT(not isTyFn(tyI->ty), "invalid fn local");
   ASSERT(isTyDict(tyI->ty), "invalid non-dict fetch");
   TyDict* d = (TyDict*) tyI->ty; ASSERT(not isDictMod(d), "cannot fetch in mod");
   if(st->findEqual && CONSUME("=")) {
-    SrOffset srSt = (SrOffset) {.op = ftOpToSr(st->op), .checkTy = true, .clear = true};
+    SrOffset srSt = (SrOffset) {
+      .op = ftOpToSr(st->op),
+      .checkTy = true, .clear = true, .asImm = st->asImm,
+      .global = st->global,
+    };
     return srOffset(k, tyI, offset, &srSt);
   }
   if(isDictNative(d)) {
-    if(addTy) tyCall(k, tyDb(k, false), NULL, tyI);
-    return opOffset(b, st->op, d->v, offset);
+    if(addTy) tyCall(k, db, NULL, tyI);
+    return opOffset(k, b, st->op, d->v, offset, st->global);
   }
   ASSERT(isDictStruct(d), "unknown dict type");
   if(CONSUME(".")) {
@@ -1028,7 +1083,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     assert(not isVarGlobal(field));
     return ftOffset(k, field->tyI, offset + field->v, st);
   }
-  if(addTy) tyCall(k, tyDb(k, false), NULL, tyI);
+  if(addTy) tyCall(k, db, NULL, tyI);
   st->noAddTy = true;
   ftOffsetStruct(k, d, d->fields, offset, st);
 }
@@ -1044,33 +1099,32 @@ void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
 //   * compileTy (Var, Dict, Fn)
 
 void compileVar(Kern* k, TyVar* v, bool asImm) {
-  if(isVarGlobal(v)) assert(false);
-  ASSERT(not asImm, "'imm#' used with local variable");
+  TyVar* global = isVarGlobal(v) ? v : NULL;
+  if(asImm) ASSERT(global, "'imm#' used with local variable");
   if(CONSUME("=")) {
-    SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
-    srOffset(k, v->tyI, /*offset=*/v->v, &st);
+    SrOffset st = (SrOffset) {
+      .op = global ? SRGL : SRLL, .checkTy = true, .asImm = asImm, .global = global
+    };
+    srOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
   } else {
-    FtOffset st = (FtOffset) {.op = FTLL, .findEqual = true };
-    ftOffset(k, v->tyI, /*offset=*/v->v, &st);
+    FtOffset st = (FtOffset) {
+      .op = global ? FTGL : FTLL, .findEqual = true, .asImm = asImm, .global = global};
+    ftOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
   }
 }
 
 // Return the next member through '.', or NULL if there is no '.'
 Ty* nextDot(Kern* k, TyDict* d) {
-  eprintf("??? nextDot\n");
   if(not CONSUME(".")) return NULL;
-  eprintf("??? nextDot 2\n");
   Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "member not found");
-  eprintf("??? nextDot: ty=%.*s\n", Ty_fmt(ty));
   return ty;
 }
 
 void compileDict(Kern* k, TyDict* d, bool asImm) {
-  ASSERT(not asImm, "imm#compileDict not implemented");
   assert(not isDictMod(d));
-  TyDb* db = tyDb(k, false);
   Kern_compFn(k); // compile next token
   if(IS_UNTY) return;
+  TyDb* db = tyDb(k, asImm);
   TyI tyI = (TyI) {.ty = (Ty*) d};
   TyI* top = TyDb_top(db);
   if(isDictNative(d)) {
@@ -1083,7 +1137,7 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
     TyDb_pop(k, db); tyCall(k, db, NULL, &tyI);
   } else {
     assert(isDictStruct(d));
-    tyCall(k, tyDb(k, false), d->fields, &tyI);
+    tyCall(k, db, d->fields, &tyI);
   }
 }
 
@@ -1138,6 +1192,7 @@ void compileTy(Kern* k, Ty* ty, bool asImm) {
 //   * single: compile a single token + compileSrc
 void single(Kern* k, bool asImm) {
   scan(k); Slc t = *Buf_asSlc(&k->g.token);
+  eprintf("!!! single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
   if(not t.len) return;
   ParsedNumber n = parseU4(t);
   if(n.isNum) {
@@ -1227,12 +1282,15 @@ void _N_imm(Kern* k);
 TyFn _TyFn_imm = TyFn_native("\x04" "_imm", TY_FN_SYN, (S)_N_imm, TYI_VOID, TYI_VOID);
 void _N_imm(Kern* k) { if(Kern_eof(k)) return;  single(k, true); }
 
-void N_imm(Kern*k) {
-  N_notImm(k);
-  CONSUME("#");
+// Compile a token (and all sub-tokens) with asImm=true
+void compImm(Kern* k) {
   TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_imm;
   executeFn(k, &_TyFn_imm);
   k->g.compFn = cfn;
+}
+
+void N_imm(Kern*k) {
+  N_notImm(k); CONSUME("#"); compImm(k);
 }
 
 void N_paren(Kern* k) {
@@ -1250,8 +1308,8 @@ void _N_fslash(Kern* k) {
   TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_fslash;
   scanRaw(k);
   // Execute next token if it is '(', else drop it.
-  if(tokenEq(k, SLC("("))) single(k, true);
-  else                           tokenDrop(k);
+  if(tokenEq(k, SLC("("))) single(k, false);
+  else                     tokenDrop(k);
   k->g.compFn = cfn;
 }
 
@@ -1290,7 +1348,6 @@ void N_mod(Kern* k) {
 void N_using(Kern* k) {
   N_notImm(k);
   TyDict* next = (TyDict*) scanTy(k);
-  eprintf("??? next=%X\n", next);
   ASSERT(next, "dict not found");
   TyDict* d;
   do {
@@ -1305,7 +1362,7 @@ void N_using(Kern* k) {
 // fnTy#IMM to make next function immediate, etc.
 void N_fnTy(Kern* k)   {
   N_notImm(k); CONSUME("#");
-  single(k, true); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
+  compImm(k); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
   S meta = WS_POP();
   ASSERT(not (TY_FN_TY_MASK & k->g.metaNext),
          "fn can only be one main type: imm, syn, inline, comment");
@@ -1367,20 +1424,19 @@ void N_inp(Kern* k) {
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (S)N_inp, TYI_VOID, TYI_VOID);
 
-
 void _varGlobal(Kern* k, TyVar* v) {
+  v->meta |= TY_VAR_GLOBAL;
   S sz = TyI_sz(v->tyI);
-  Buf prevCode = Kern_reserveCode(k, sz); Buf* code = &k->g.code;
+  Buf prevCode = Kern_reserveCode(k, sz);
+  v->v = (S) k->g.code.dat;
+  k->g.code.len = sz; // mark as totally used.
   if(CONSUME("=")) {
-    SrOffset st = (SrOffset) {.op = SRO, .checkTy = true };
-    // FIXME: this thing is such a pain.
-    //        I'm not compiling instructions -- I'm storing immediately.
-    //        I need to add the ability to use tyDbImm/etc, as well as have
-    //        srOffset work with absolute addresses immediately.
-    // srOffset(k, v->tyI, /*offset=*/v->v, &st);
-
+    compImm(k);
+    SrOffset st = (SrOffset) {.op = SRGL, .checkTy = true, .asImm = true, .global = v};
+    srOffset(k, v->tyI, /*offset*/0, &st);
+    v->meta |= TY_VAR_INIT;
   }
-  *code = prevCode;
+  k->g.code = prevCode;
 }
 
 void _varLocal(Kern* k, TyVar* v) {
@@ -1725,7 +1781,7 @@ void ampRef(Kern* k, TyI* tyI) {
   while(true) {
     if(CONSUME(".")) {
       while(refs > 1) {
-        opOffset(b, FTO, SZR, offset); offset = 0; refs -= 1;
+        opOffset(k, b, FTO, SZR, offset, NULL); offset = 0; refs -= 1;
       }
       TyVar* var = tyVar(TyDict_find(tyDict(var->tyI->ty), tokenSlc(k)));
       assert(not isVarGlobal(var));

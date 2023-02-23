@@ -317,6 +317,27 @@ static inline Slc Slc_fromWs(Kern* k) {
   return (Slc){dat, .len=WS_POP()};
 }
 
+static inline S ftSzI(U1* addr, U1 szI) {
+  S out;
+  switch(szI) {
+    case SZ1: out = *(U1*)addr; break;
+    case SZ2: out = *(U2*)addr; break;
+    case SZ4: out = *(U4*)addr; break;
+    default: assert(false);
+  }
+  eprintf("??? ftSzI from %X: %X\n", addr, out);
+  return out;
+}
+
+static inline void srSzI(U1* addr, U1 szI, S v) {
+  eprintf("??? srSzI addr=%X szI=%X v=%X\n", addr, szI, v);
+  switch(szI) {
+    case SZ1: *(U1*)addr = v; return;
+    case SZ2: *(U2*)addr = v; return;
+    case SZ4: *(U4*)addr = v; return;
+  }
+  assert(false);
+}
 
 // ################################
 // # Fngi Roles

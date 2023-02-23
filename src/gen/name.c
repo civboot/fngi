@@ -60,6 +60,9 @@ Slc instrName(U1 instr) {
     case FTLL + SZ1      : return Slc_ntLit("FTLL1");
     case FTLL + SZ2      : return Slc_ntLit("FTLL2");
     case FTLL + SZ4      : return Slc_ntLit("FTLL4");
+    case FTGL + SZ1      : return Slc_ntLit("FTGL1");
+    case FTGL + SZ2      : return Slc_ntLit("FTGL2");
+    case FTGL + SZ4      : return Slc_ntLit("FTGL4");
     case SR + SZ1        : return Slc_ntLit("SR1");
     case SR + SZ2        : return Slc_ntLit("SR2");
     case SR + SZ4        : return Slc_ntLit("SR4");
@@ -69,6 +72,9 @@ Slc instrName(U1 instr) {
     case SRO + SZ1       : return Slc_ntLit("SRO1");
     case SRO + SZ2       : return Slc_ntLit("SRO2");
     case SRO + SZ4       : return Slc_ntLit("SRO4");
+    case SRGL + SZ1      : return Slc_ntLit("SRGL1");
+    case SRGL + SZ2      : return Slc_ntLit("SRGL2");
+    case SRGL + SZ4      : return Slc_ntLit("SRGL4");
     case SRLL + SZ1      : return Slc_ntLit("SRLL1");
     case SRLL + SZ2      : return Slc_ntLit("SRLL2");
     case SRLL + SZ4      : return Slc_ntLit("SRLL4");
