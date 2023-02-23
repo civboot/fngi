@@ -1,9 +1,10 @@
 \ Test basic operations
+imm#assertWsEmpty;
 
-$tAssertEq(1, 1)
+imm#tAssertEq(1, 1)
 
 fn ret1 -> S do 1
-$tAssertEq(ret1, 1);
+imm#tAssertEq(ret1, 1);
 
 struct A [ a1: S ]
 struct B [ b1: A;  b2: S]
@@ -28,4 +29,6 @@ fn testStructs() do (
   var r: &B = &b; tAssertEq(r.b2, 7)
   r.b2 = 2      ; tAssertEq(r.b2, 2); tAssertEq(b.b2, 2)
 )
-$testStructs()
+imm#testStructs;
+
+imm#assertWsEmpty;

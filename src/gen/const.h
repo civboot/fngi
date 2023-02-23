@@ -28,11 +28,12 @@
 #define TY_FN_NATIVE          0x20
 #define TY_FN_TY_MASK         0x07
 #define TY_FN_NORMAL          0x00
-#define TY_FN_NOW             0x01
+#define TY_FN_IMM             0x01
 #define TY_FN_SYN             0x02
 #define TY_FN_INLINE          0x03
 #define TY_FN_COMMENT         0x04
 #define TY_VAR_GLOBAL         0x08
+#define TY_VAR_CONST          0x04
 #define TY_DICT_MSK           0x07
 #define TY_DICT_NATIVE        0x00
 #define TY_DICT_BITMAP        0x01

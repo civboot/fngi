@@ -24,18 +24,18 @@ syn keyword elInstr
       \ ge_s gt_s le_s lt_s
       \ nextgroup=elSymbol
 
-syn match elSymbol    '[^()%$'._a-zA-Z0-9]' nextgroup=elSpecial
-syn match elSpecial   '[()%$'.]' nextgroup=elDecimal
+syn match elSymbol    '[^()%#'._a-zA-Z0-9]' nextgroup=elSpecial
+syn match elSpecial   '[()%#'.]' nextgroup=elDecimal
 syn match elDecimal    '_0-9' nextgroup=elHex
 syn match elHex       '0x_0-9a-fA-F' nextgroup=elBin
-syn match elBin       '0b01' nextgroup=elNow
-syn match elNow       '$[_0-9a-zA-Z]\+' nextgroup=elCommentLn
+syn match elBin       '0b01' nextgroup=elImm
+syn match elImm       'imm#[_0-9a-zA-Z]\+' nextgroup=elCommentLn
 syn match elCommentToken '\\\w\+' nextgroup=elCommentLine
 syn match elCommentLn '\\\(\ .*\)\?$' nextgroup=elCommentBlk
 syn match elCommentBlk '\\[(].\{-}[)]' nextgroup=elStrRaw
 syn match elStrRaw     '|.*|'
 
-let b:current_syntax = "sporeASM"
+let b:current_syntax = "fngi"
 
 hi def link elInstr         PreProc
 hi def link elSymbol        Type
@@ -43,7 +43,7 @@ hi def link elSpecial       Keyword
 hi def link elDecimal       Constant
 hi def link elHex           Constant
 hi def link elBin           Constant
-hi def link elNow           Macro
+hi def link elImm           Macro
 hi def link elCommentLn     Comment
 hi def link elCommentToken  Comment
 hi def link elCommentBlk    Comment

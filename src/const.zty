@@ -28,15 +28,16 @@ const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
 const TY_FN_NATIVE  :U1  = 0x20  \ is a native function (i.e. C)
 
 const TY_FN_TY_MASK :U1 = 0x07 \ Function type mask
-const TY_FN_NORMAL  :U1 = 0x00 \ Normally compiled, can use $ to make NOW
-const TY_FN_NOW     :U1 = 0x01 \ Required to be run as NOW (must use $)
-const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run now (knowing asNow)
+const TY_FN_NORMAL  :U1 = 0x00 \ Normally compiled, can use 'imm#' to make IMM
+const TY_FN_IMM     :U1 = 0x01 \ Required to be run as IMM (must use 'imm#')
+const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run imm (knowing asImm)
 const TY_FN_INLINE  :U1 = 0x03 \ Inline function, copies bytes when compiled.
 const TY_FN_COMMENT :U1 = 0x04 \ Comment function. Executed immediately.
 
-\ TY_VAR meta bits: [10-- G---] G=global
-\ In addition, G=0 on a struct is a field.
+\ TY_VAR meta bits: [10-- GC--] G=global C=constant
+\ G=0 on a struct/enum is a field, G=0 on a fn is a local
 const TY_VAR_GLOBAL :U1 = 0x08
+const TY_VAR_CONST  :U1 = 0x04
 
 \ TY_DICT meta bits: [11-- -DDD] H=other D=dictType
 const TY_DICT_MSK    :U1 = 0x07

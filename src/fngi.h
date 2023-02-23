@@ -172,9 +172,9 @@ typedef struct {
   FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
-  TyDb tyDb; TyDb tyDbNow;
+  TyDb tyDb; TyDb tyDbImm;
   BBA* bbaDict;
-  BBA* bbaTy; BBA bbaTyNow;
+  BBA* bbaTy; BBA bbaTyImm;
   Blk* blk;
 } Globals;
 
@@ -267,7 +267,7 @@ static inline bool isFnNative(TyFn* fn)    IS_FN(TY_FN_NATIVE)
 #undef IS_FN
 #define IS_FN(M)   { return (TY_FN_TY_MASK & fn->meta) == (M); }
 static inline bool isFnNormal(TyFn* fn)    IS_FN(TY_FN_NORMAL)
-static inline bool isFnNow(TyFn* fn)       IS_FN(TY_FN_NOW)
+static inline bool isFnImm(TyFn* fn)       IS_FN(TY_FN_IMM)
 static inline bool isFnSyn(TyFn* fn)       IS_FN(TY_FN_SYN)
 static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
@@ -299,7 +299,7 @@ Ty* Kern_findTy(Kern* k, Slc t);
 void Kern_addTy(Kern* k, Ty* ty);
 
 void Kern_fns(Kern* k);
-void single(Kern* k, bool asNow);
+void single(Kern* k, bool asImm);
 void compileSrc(Kern* k);
 
 // Compile a stream to bbaRepl, returning the start.
@@ -372,7 +372,7 @@ static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = 
 //
 // "stream" can be either TyDb_top (freeing the entire snapshot), or a
 // separate type stream which indicates the length of items to drop.
-void TyDb_free(Kern* k, TyI* stream, bool asNow);
+void TyDb_free(Kern* k, TyI* stream, bool asImm);
 
 // Drop the current snapshot
 void TyDb_drop(Kern* k, TyDb* db);
@@ -415,5 +415,7 @@ Ty* TyDict_find(TyDict* dict, Slc s);
   PRE TyI TyIs_rU1_U4; /* &U1, U4    */
 
 TYIS(extern)
+
+void N_assertWsEmpty(Kern* k);
 
 #endif // __FNGI_H

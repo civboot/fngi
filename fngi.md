@@ -115,11 +115,12 @@ Fngi has the following rules for token groups.
 
 "Single tokens": these tokens are never grouped together
 
-- `( ... )`: groups an execution.
-- `$`: run next token/s NOW (compile time). Can be `$( ... )`
-- `|`: is used for inline strings, i.e. `|hello world|`
-- `.`: used for name paths, i.e. `my.name.chain`.
+- `( ... )`: groups an execution
 - `:`: used for type specifiers, i.e. `a:&U2`
+- `|`: is used for inline strings, i.e. `|hello world|`
+- `#`: used as sugar for syntax-altering functions like `imm#`, `compile#`, etc
+       used directly for raw strings, i.e. `##|this has #||# in it|##`
+- `.`: used for name paths, i.e. `my.name.chain`
 
 Otherwise a token is a group of:
 
@@ -133,22 +134,23 @@ Functions can be defined for any token that is not purely numeric
   (ascii character)`
 - Valid function names:  `+++  0b12 (not binary)  123xx (not decimal)`
 
-## Fngi "macros": SYN and NOW
+## Fngi "macros": SYN and `imm#`
 
-Fngi allows any function to be run "NOW" at compile time. In spor this is
-done using `$token` and it is very similar in fngi.
+Fngi allows any function to be run "immediately" at compile time. This is done
+using the syn function `imm#` ('#' can be used as syntactic sugar by other
+syntax-altering functions).
 
-In fngi, `$token(1, 2)` will run not only `token` NOW, but also it's args and
-anything inside of it's args. This is because `$` set's itself as the "compile
-fn" for a single token. `$`'s compile function just passes `asNow=true` for
-every token that is compiled.
+In fngi, `imm#token(1, 2)` will run not only `token` immediately (at compile
+time), but also it's args and anything inside of it's args. This is because
+`imm` sets itself as the "compile fn" for a single token. `imm`'s compile function
+just passes `asImm=true` for every token that is compiled.
 
-Some functions are defined as NOW, which means they will panic if executed
+Some functions are defined as IMM, which means they will panic if executed
 without `$` (or in a `$(...)` block).
 
 Other functions are defined as SYN, and these are the true workhorses of fngi
-syntax.  A SYN function is (1) always run NOW and (2) get's passed whether it
-was called with asNow.
+syntax.  A SYN function is (1) always run immediately and (2) get's passed
+whether it was called with asImm.
 
 All fngi syntax besides literals, variable handling, and function calling is
 implemented with syn functions.
@@ -193,10 +195,10 @@ var sum: U4 = ( b.sum() + b.sum() )
 
 ## Similarities to FORTH
 
-Like FORTH, fngi allows you to define functions that are either compiled or
-run NOW (affecting compilation, often called "macros" in other languages). Also
-like FORTH, fngi's functions operate by push/poping from a working stack and
-using a call stack to track calls/returns.
+Like FORTH, fngi allows you to define functions that are either compiled or run
+immediately (affecting compilation, often called "macros" in other languages).
+Also like FORTH, fngi's functions operate by push/poping from a working stack
+and using a call stack to track calls/returns.
 
 Both FORTH and fngi have very low implementation requirements. Fngi is
 implemented in about 2-3k lines of C, which is within the same order of

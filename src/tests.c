@@ -361,6 +361,7 @@ END_TEST_FNGI
 
 TEST_FNGI(file_basic, 20)
   Kern_fns(k);
+  N_assertWsEmpty(k);
   CStr_ntVar(path, "\x0E", "tests/basic.fn");
   compilePath(k, path);
 END_TEST_FNGI
