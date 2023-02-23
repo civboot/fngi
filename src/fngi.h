@@ -128,6 +128,11 @@ static inline CBst*  TyDict_bst(TyDict* this)     { return (CBst*)   this->v; }
 static inline CBst** TyDict_bstRoot(TyDict* this) { return (CBst**) &this->v; }
 static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
 
+typedef struct {
+  TyFn*  read;  // this:&This -> ()
+  TyFn* asBase; // this:&This -> &BaseFile
+} MSpReader;
+typedef struct { MSpReader* m; void* d; } SpReader;
 
 #define TYDB_DEPTH 16
 typedef struct {
@@ -162,7 +167,9 @@ typedef struct {
   TyFn* compFn;   // current function that does compilation
   TyRoot dictBuf[DICT_DEPTH];
   DictStk dictStk;    // Type is: &&Ty (double ref to dictionary)
-  Reader src; FileInfo* srcInfo;
+  SpReader src;
+  // Reader src;
+  FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
   TyDb tyDb; TyDb tyDbNow;
@@ -190,6 +197,11 @@ typedef struct {
 } Kern;
 
 extern Kern* fngiK;
+
+extern MSpReader mSpReader_UFile;
+extern MSpReader mSpReader_BufFile;
+BaseFile* SpReader_asBase(Kern* k, SpReader r);
+U1*       SpReader_get(Kern* k, SpReader r, U2 i);
 
 // ################################
 // # Kernel
@@ -306,13 +318,26 @@ static inline Slc Slc_fromWs(Kern* k) {
 }
 
 
+// ################################
+// # Fngi Roles
+
+// Sp_XrN: Execute Spor Role with N arguments
+#define Sp_Xr0(ROLE, METHOD) \
+  do { WS_ADD((ROLE).d); executeFn(k, (ROLE).METHOD); } while (0)
+
+#define Sp_Xr1(ROLE, METHOD, A0) \
+  do { WS_ADD((ROLE).d); WS_ADD(A0); executeFn(k, (ROLE).METHOD); } while (0)
+
+#define Sp_Xr2(ROLE, METHOD, A0, A1) \
+  do { WS_ADD((ROLE).d); WS_ADD2(A0, A1); executeFn(k, (ROLE).METHOD); } while (0)
+
+
 // #################################
 // # Test Helpers
 
 #define _COMPILE_VARS(CODE) \
   BufFile_var(LINED(bf), 64, CODE); \
-  Reader LINED(f) = File_asReader(BufFile_asFile(&LINED(bf))); \
-  k->g.src = LINED(f);
+  k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &LINED(bf) };
 
 #define COMPILE_NAMED(NAME, CODE, withRet) \
   _COMPILE_VARS(CODE); U1* NAME = compileRepl(k, withRet)

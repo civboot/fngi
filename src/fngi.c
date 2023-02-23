@@ -1,4 +1,3 @@
-// C Bootstrapping of fngi programming language.
 //
 // Table of Contents:
 //
@@ -111,7 +110,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
   DictStk_add(&k->g.dictStk, (TyRoot){ .root = &k->dict });
 }
 
-bool Kern_eof(Kern* k) { return Reader_eof(k->g.src); }
+bool Kern_eof(Kern* k) { return BaseFile_eof(SpReader_asBase(k, k->g.src)); }
 
 Slc tokenSlc(Kern* k) {
   scan(k); ASSERT(not Kern_eof(k), "got EOF after '.'");
@@ -670,10 +669,33 @@ U1 toTokenGroup(U1 c) {
   return T_SYMBOL;
 }
 
-void skipWhitespace(Kern* k, Reader f) {
-  Ring* r = &Xr(f, asBase)->ring;
+/*extern*/ MSpReader mSpReader_UFile = (MSpReader) {
+  // TODO: actually implement
+};
+
+/*extern*/ MSpReader mSpReader_BufFile = (MSpReader) {
+  // TODO: actually implement
+};
+
+BaseFile* SpReader_asBase(Kern* k, SpReader r) {
+  if(r.m == &mSpReader_UFile)   return UFile_asBase((UFile*) r.d);
+  if(r.m == &mSpReader_BufFile) return BufFile_asBase((BufFile*) r.d);
+  assert(false); // not implemented
+}
+
+U1* SpReader_get(Kern* k, SpReader r, U2 i) {
+  File f = (File) { .m = NULL, .d = r.d };
+  if(r.m == &mSpReader_UFile)         f.m = UFile_mFile();
+  else if (r.m == &mSpReader_BufFile) f.m = BufFile_mFile();
+  if(f.m) return Reader_get(File_asReader(f), i);
+  assert(false); // not implemented
+  return (U1*)WS_POP();
+}
+
+void skipWhitespace(Kern* k, SpReader f) {
+  Ring* r = &SpReader_asBase(k, f)->ring;
   while(true) {
-    U1* c = Reader_get(f, 0);
+    U1* c = SpReader_get(k, f, 0);
     if(c == NULL) return;
     if(*c > ' ')  return;
     if(*c == '\n') k->g.srcInfo->line += 1;
@@ -685,14 +707,14 @@ void skipWhitespace(Kern* k, Reader f) {
 void scanRaw(Kern* k) {
   Buf* b = &k->g.token;
   if(b->len) return; // does nothing if token wasn't cleared.
-  Reader f = k->g.src;
+  SpReader f = k->g.src;
   skipWhitespace(k, f);
-  U1* c = Reader_get(f, 0); if(c == NULL) return;
+  U1* c = SpReader_get(k, f, 0); if(c == NULL) return;
   const U1 firstTg = toTokenGroup(*c);
   Buf_add(b, *c);
   if(T_SINGLE == firstTg) return;
   while(true) {
-    c = Reader_get(f, b->len); if(c == NULL) return;
+    c = SpReader_get(k, f, b->len); if(c == NULL) return;
     U1 tg = toTokenGroup(*c);
     if (tg == firstTg) {}
     else if ((tg <= T_ALPHA) && (firstTg <= T_ALPHA)) {}
@@ -704,9 +726,9 @@ void scanRaw(Kern* k) {
 
 // Scan a line into token
 void scanLine(Kern* k) {
-  Reader f = k->g.src; Buf* b = &k->g.token;
+  SpReader f = k->g.src; Buf* b = &k->g.token;
   for(U2 i = 0; true; i++) {
-    U1* c = Reader_get(f, b->len);
+    U1* c = SpReader_get(k, f, b->len);
     if((NULL == c) or ('\n' == *c)) return;
     ASSERT(b->len < b->cap, "Line too long");
     _Buf_add(b, *c);
@@ -715,7 +737,7 @@ void scanLine(Kern* k) {
 
 void tokenDrop(Kern* k) {
   Buf* b = &k->g.token;
-  Ring_incHead(&Xr(k->g.src, asBase)->ring, b->len);
+  Ring_incHead(&SpReader_asBase(k, k->g.src)->ring, b->len);
   Buf_clear(b);
 }
 
@@ -1214,7 +1236,7 @@ void _N_fslash(Kern* k) {
 }
 
 void N_fslash(Kern* k) {
-  U1* c = Reader_get(k->g.src, 0); ASSERT(c, "Comment: got EOF");
+  U1* c = SpReader_get(k, k->g.src, 0); ASSERT(c, "Comment: got EOF");
   if('\n' == *c) return; // immediate newline
   if(' ' == *c) { scanLine(k); return tokenDrop(k); }
   return _N_fslash(k);
@@ -1916,7 +1938,7 @@ void compilePath(Kern* k, CStr* path) {
   UFile_open(&f, CStr_asSlc(path), File_RDONLY);
   TASSERT_EQ(File_DONE, f.code);
   assert(f.fid);
-  k->g.src = File_asReader(UFile_asFile(&f));
+  k->g.src = (SpReader) {.m = &mSpReader_UFile, .d = &f };
   compileSrc(k);
 }
 
@@ -1924,7 +1946,7 @@ void simpleRepl(Kern* k) {
   REPL_START
   size_t cap;  jmp_buf local_errJmp;  jmp_buf* prev_errJmp = civ.fb->errJmp;
   Ring_var(_r, 256);  BufFile f = BufFile_init(_r, (Buf){0});
-  k->g.src = File_asReader(BufFile_asFile(&f));
+  k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &f };
 
   civ.fb->errJmp = &local_errJmp;
   eprintf(  "Simple REPL: type EXIT to exit\n");
