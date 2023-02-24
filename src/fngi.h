@@ -36,6 +36,8 @@
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
 #define TASSERT_EMPTY()   TASSERT_EQ(0, Stk_len(WS))
 
+#define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
+
 #define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
     civ.errPrinter = &fngiErrPrinter;         \
@@ -68,9 +70,8 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
   U2           meta; /* specifies node type */ \
   U2           line; /* src code line of definition. */ \
   FileInfo*    file; /* source file */ \
-  S            v;    /* either a value or pointer (depends on node type/etc) */
 
-typedef struct _Ty { TY_BODY } Ty;
+typedef struct _Ty { TY_BODY; S v; } Ty;
 
 typedef struct _TyI {
   struct _TyI*   next;
@@ -79,10 +80,11 @@ typedef struct _TyI {
   Ty*   ty;
 } TyI;
 
-typedef struct { TY_BODY; TyI* tyI; } TyVar;
+typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 
 typedef struct {
   TY_BODY
+  S v; // TODO: U1*
   TyI* inp;
   TyI* out;
   Ty* locals;
@@ -120,6 +122,7 @@ static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
 
 typedef struct {
   TY_BODY;
+  Ty* v;
   TyI* fields;
   U2 sz;
 } TyDict;
@@ -415,7 +418,10 @@ Ty* TyDict_find(TyDict* dict, Slc s);
 
 
 #define TYI_VOID  NULL
+
 #define TYIS(PRE) \
+  PRE Ty  Ty_UNSET;   \
+  PRE TyI TyIs_UNSET; \
   PRE Ty  Ty_U1;     \
   PRE Ty  Ty_U2;     \
   PRE Ty  Ty_U4;     \
@@ -434,7 +440,7 @@ Ty* TyDict_find(TyDict* dict, Slc s);
   PRE TyI TyIs_rU1;    /* &U1        */ \
   PRE TyI TyIs_rU2;    /* &U2        */ \
   PRE TyI TyIs_rU4;    /* &U4        */ \
-  PRE TyI TyIs_rU1_U4; /* &U1, U4    */
+  PRE TyI TyIs_rU1_U4; /* &U1, U4    */ \
 
 TYIS(extern)
 

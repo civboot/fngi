@@ -28,7 +28,6 @@
 #include "./fngi.h"
 
 #define R0        return 0;
-#define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
 #define TOKEN         Dat_fmt(k->g.token)
 
 #define NL eprintf("\n")
@@ -60,7 +59,7 @@ TyRoot DictStk_pop(DictStk* stk) {
 }
 
 TyRoot DictStk_top(DictStk* stk) {
-  ASSERT(stk->sp < stk->cap, "Stk_top OOB");
+  ASSERT(stk->sp < stk->cap, "DictStk_top OOB");
   return stk->dat[stk->sp];
 }
 
@@ -454,7 +453,7 @@ static inline S szToSzI(U1 sz) {
 
 S TyDict_size(TyDict* ty) {
   ASSERT(not isDictMod(ty), "attempted size of TY_DICT_MOD");
-  if(isDictNative(ty)) return szIToSz(ty->v);
+  if(isDictNative(ty)) return szIToSz((S)ty->v);
   else                 return ty->sz;
 }
 
@@ -466,8 +465,7 @@ Ty* TyDict_find(TyDict* dict, Slc s) {
 }
 
 Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
-    scan(k);
-    Ty* ty = TyDict_find(dict, tokenSlc(k));
+    scan(k); Ty* ty = TyDict_find(dict, tokenSlc(k));
     if(not ty) return NULL;
     tokenDrop(k); return ty;
 }
@@ -925,7 +923,7 @@ void Kern_addTy(Kern* k, Ty* ty) {
 }
 
 Ty* scanTy(Kern* k) {
-  scan(k);  Ty* ty = Kern_findToken(k);
+  scan(k); Ty* ty = Kern_findToken(k);
   if(not ty) return NULL;
   tokenDrop(k);
   return ty;
@@ -988,7 +986,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
   ASSERT(not isDictMod(d), "cannot store in mod");
-  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/d->v, offset, st->global);
+  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->v, offset, st->global);
   assert(isDictStruct(d));
   SrOffset recSt = *st; // Note: we CANNOT modify 'st', since (unlike ftOffset)
                         // it may be re-used in next field.
@@ -1073,7 +1071,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   }
   if(isDictNative(d)) {
     if(addTy) tyCall(k, db, NULL, tyI);
-    return opOffset(k, b, st->op, d->v, offset, st->global);
+    return opOffset(k, b, st->op, (S)d->v, offset, st->global);
   }
   ASSERT(isDictStruct(d), "unknown dict type");
   if(CONSUME(".")) {
@@ -1159,7 +1157,7 @@ void baseCompFn(Kern* k) {
 
 void checkName(Kern* k, bool check) {
   if(not check) {
-    eprintf("!!! name not found token: `%.*s`\n", Dat_fmt(k->g.token));
+    eprintf("!!! name not found token: '%.*s'\n", TOKEN);
     SET_ERR(SLC("name not found"));
   }
 }
@@ -1199,7 +1197,8 @@ void single(Kern* k, bool asImm) {
     tokenDrop(k);
     return compileLit(k, n.v, asImm);
   }
-  Ty* ty = scanTy(k); checkName(k, ty);
+  Ty* ty = scanTy(k);
+  checkName(k, ty);
   compileTy(k, ty, asImm);
 }
 
@@ -1454,9 +1453,8 @@ void N_var(Kern* k) {
   else                          _varLocal(k, v);
 }
 
-void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
+void fnSignature(Kern* k, TyFn* fn) {
   SET_FN_STATE(FN_STATE_STK);
-  TyDb* db = tyDb(k, false);
   while(true) {
     if(CONSUME("do")) break;
     if(CONSUME("->")) SET_FN_STATE(FN_STATE_OUT);
@@ -1469,8 +1467,11 @@ void fnSignature(Kern* k, TyFn* fn, Buf* b/*code*/) {
     } else if (IS_FN_STATE(FN_STATE_OUT)) N_stk(k);
     else                                  N_inp(k);
   }
+}
 
-  // Walk input and store locals and push stack types
+// Walk input and store locals and push stack types
+void fnInputs(Kern* k, TyFn* fn) {
+  TyDb* db = tyDb(k, false);
   for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
     TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
     if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) {
@@ -1502,7 +1503,7 @@ void N_fn(Kern* k) {
 
   DictStk_add(&k->g.dictStk, (TyRoot){.root = &fn->locals }); // local variables
 
-  fnSignature(k, fn, code);
+  fnSignature(k, fn); fnInputs(k, fn);
   SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
   SET_FN_STATE(FN_STATE_NO);
 
@@ -1855,7 +1856,7 @@ void N_at(Kern* k) {
   else {
     TyDict* d = (TyDict*) top->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
-    if(isDictNative(d)) Buf_add(&k->g.code, FT | (SZ_MASK & d->v));
+    if(isDictNative(d)) Buf_add(&k->g.code, FT | (SZ_MASK & (S)d->v));
     else assert(false);
   }
 
@@ -1865,55 +1866,70 @@ void N_at(Kern* k) {
 }
 
 // ***********************
-//   * Globals + Constants
+//   * Export to fngi
 
+// setFnTy myFn: U4 -> U2 do;
+void N_setFnTy(Kern* k) {
+  N_notImm(k);
+  TyFn* fn = tyFn(scanTy(k)); CONSUME(":");
+  ASSERT(fn->inp == &TyIs_UNSET && fn->out == &TyIs_UNSET, "fn types are not unset");
+  fnSignature(k, fn);
+}
+
+void N_single(Kern* k) { single(k, WS_POP()); }
+void N_compileTy(Kern* k) {
+  WS_POP2(S ty, bool asImm); compileTy(k, (Ty*)ty, asImm);
+}
+void N_compileLit(Kern* k) {
+  WS_POP2(U4 v, bool asImm); compileLit(k, v, asImm);
+}
+void N_findTy(Kern* k) {
+  WS_POP2(S dat, S len);
+  WS_ADD((S)Kern_findTy(k, (Slc){.dat = (U1*)dat, .len = len}));
+}
 
 // ***********************
 // * 7: Registering Functions
 
-// Create a static TyFn and add it to the kern.
-// NAMELEN: the fngi name's length; NAME: the fngi name
-// META: the meta to use;  VAL: the native value to add
-#define STATIC_FNTY(INP, OUT, NAMELEN, NAME, META, VAL) \
+#define ADD_ANY_VAR(VAR, TY, NAMELEN, NAME, META, V) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);\
-  static TyFn LINED(Ty);                \
-  LINED(Ty) = (TyFn) {                  \
+  VAR = (TY) {          \
     .bst.key = LINED(key),              \
-    .meta =  TY_FN | META,              \
-    .v = VAL,                           \
-    .inp = INP, .out = OUT              \
+    .meta =  META,                      \
+    .v = V,                             \
   };                                    \
-  Kern_addTy(k, (Ty*)&LINED(Ty));
+  Kern_addTy(k, (Ty*)&VAR);
 
-#define STATIC_NATIVE(INP, OUT, NAMELEN, NAME, META, KFN) \
-    STATIC_FNTY(INP, OUT, NAMELEN, NAME, TY_FN_NATIVE | (META), kFn(KFN))
+#define ADD_ANY_CREATE(TY, NAMELEN, NAME, META, V) \
+  static TY LINED(ty);                  \
+  ADD_ANY_VAR(LINED(ty), TY, NAMELEN, NAME, META, V)
 
-#define STATIC_INLINE(INP, OUT, NAMELEN, NAME, META, ...)               \
+#define ADD_TY_NATIVE(VAR, NAMELEN, NAME, META, VAL) \
+  ADD_ANY_VAR(VAR, Ty, NAMELEN, NAME, TY_DICT | TY_DICT_NATIVE | META, VAL)
+
+#define ADD_FN(NAMELEN, NAME, META, V, INP, OUT) \
+  ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | TY_FN_NATIVE | (META), (S)V); \
+  LINED(ty).inp = INP; LINED(ty).out = OUT;
+
+#define ADD_INLINE_FN(NAMELEN, NAME, META, INP, OUT, ...)     \
   assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);                 \
   static U1 LINED(code)[] = {__VA_ARGS__ __VA_OPT__(,) RET};  \
-  STATIC_FNTY(INP, OUT, NAMELEN, NAME, TY_FN_INLINE | (META), (S)LINED(code)); \
-  LINED(Ty).len = sizeof(LINED(code)) - 1;
-
-// For Ty that really do only take up Ty space (TY_DICT_NATIVE)
-#define STATIC_TY(V, NAMELEN, NAME, META, VAL) \
-  CStr_ntVar(LINED(key), NAMELEN, NAME);\
-  V = (Ty) {                   \
-    .bst.key = LINED(key),            \
-    .meta = META,                     \
-    .v = VAL,                         \
-  };                                  \
-  Kern_addTy(k, (Ty*)&V);
+  ADD_FN(NAMELEN, NAME, TY_FN_INLINE | (META), (S)LINED(code), INP, OUT); \
+  LINED(ty).len = sizeof(LINED(code)) - 1;
 
 void Kern_fns(Kern* k) {
   // Native data types
-  STATIC_TY(Ty_U1, "\x02", "U1",  TY_DICT | TY_DICT_NATIVE                   , SZ1);
-  STATIC_TY(Ty_U2, "\x02", "U2",  TY_DICT | TY_DICT_NATIVE                   , SZ2);
-  STATIC_TY(Ty_U4, "\x02", "U4",  TY_DICT | TY_DICT_NATIVE                   , SZ4);
-  STATIC_TY(Ty_S , "\x01", "S",   TY_DICT | TY_DICT_NATIVE                   , SZR);
-  STATIC_TY(Ty_I1, "\x02", "I1",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ1);
-  STATIC_TY(Ty_I2, "\x02", "I2",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ2);
-  STATIC_TY(Ty_I4, "\x02", "I4",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZ4);
-  STATIC_TY(Ty_SI, "\x02", "SI",  TY_DICT | TY_DICT_NATIVE | TY_NATIVE_SIGNED, SZR);
+  ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , SZR + 1);
+  TyIs_UNSET = (TyI) { .ty = &Ty_UNSET };
+
+  ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , SZ1);
+  ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , SZ2);
+  ADD_TY_NATIVE(Ty_U4, "\x02", "U4",  0               , SZ4);
+  ADD_TY_NATIVE(Ty_S , "\x01", "S",   0               , SZR);
+  ADD_TY_NATIVE(Ty_I1, "\x02", "I1",  TY_NATIVE_SIGNED, SZ1);
+  ADD_TY_NATIVE(Ty_I2, "\x02", "I2",  TY_NATIVE_SIGNED, SZ2);
+  ADD_TY_NATIVE(Ty_I4, "\x02", "I4",  TY_NATIVE_SIGNED, SZ4);
+  ADD_TY_NATIVE(Ty_SI, "\x02", "SI",  TY_NATIVE_SIGNED, SZR);
   TASSERT_EMPTY();
 
   // Ty: S
@@ -1939,84 +1955,92 @@ void Kern_fns(Kern* k) {
   Kern_addTy(k, (Ty*) &TyFn_inp);
   Kern_addTy(k, (Ty*) &TyFn_memclr);
 
-  // Pure noop syntax sugar
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "_"    , TY_FN_SYN       , N_noop);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", ";"    , TY_FN_SYN       , N_noop);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", ","    , TY_FN_SYN       , N_noop);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "->"   , TY_FN_SYN       , N_noop);
-
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "notImm",  TY_FN_SYN, N_notImm);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "unty",    TY_FN_SYN, N_unty);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "ret",     TY_FN_SYN, N_ret);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "imm",     TY_FN_SYN, N_imm);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "(",       TY_FN_SYN, N_paren);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "\\",      TY_FN_COMMENT, N_fslash);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "mod",     TY_FN_SYN, N_mod);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x05", "using",   TY_FN_SYN, N_using);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "fn",      TY_FN_SYN, N_fn);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "fnTy",    TY_FN_SYN, N_fnTy);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "var",     TY_FN_SYN, N_var);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x02", "if",      TY_FN_SYN, N_if);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x04", "cont",    TY_FN_SYN, N_cont);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "brk",     TY_FN_SYN, N_brk);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x03", "blk",     TY_FN_SYN, N_blk);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x06", "struct",  TY_FN_SYN, N_struct);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", ".",       TY_FN_SYN, N_dot);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "&",       TY_FN_SYN, N_amp);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x01", "@",       TY_FN_SYN, N_at);
-
-  STATIC_NATIVE(&TyIs_SS, TYI_VOID, "\x09", "tAssertEq",     0, N_tAssertEq);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x0D", "assertWsEmpty", 0, N_assertWsEmpty);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x05", "dbgRs"    ,     0, N_dbgRs);
-  STATIC_NATIVE(TYI_VOID, TYI_VOID, "\x08", "destruct", TY_FN_SYN, N_destruct);
+  ADD_FN("\x01", "\\"           , TY_FN_COMMENT   , N_fslash   , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", "_"            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", ";"            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", ","            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x02", "->"           , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x06", "notImm"       , TY_FN_SYN       , N_notImm   , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "unty"         , TY_FN_SYN       , N_unty     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "ret"          , TY_FN_SYN       , N_ret      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "imm"          , TY_FN_SYN       , N_imm      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", "("            , TY_FN_SYN       , N_paren    , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x05", "using"        , TY_FN_SYN       , N_using    , TYI_VOID, TYI_VOID);
+  ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "fnTy"         , TY_FN_SYN       , N_fnTy     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "brk"          , TY_FN_SYN       , N_brk      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
+  ADD_FN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
+  ADD_FN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
+  ADD_FN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
+  ADD_FN("\x0D", "assertWsEmpty", 0               , N_assertWsEmpty, TYI_VOID, TYI_VOID);
+  // FIXME: getting weird error
+  ADD_FN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
-  STATIC_INLINE(&TyIs_SS, &TyIs_SS,  "\x03", "swp"  , 0       , SWP   );
-  STATIC_INLINE(&TyIs_S,  TYI_VOID,  "\x03", "drp"  , 0       , DRP   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_SSS, "\x03", "ovr"  , 0       , OVR   );
-  STATIC_INLINE(&TyIs_S,  &TyIs_SS,  "\x03", "dup"  , 0       , DUP   );
-  STATIC_INLINE(&TyIs_S,  &TyIs_SS,  "\x04", "dupn" , 0       , DUPN  );
+  ADD_INLINE_FN("\x03", "swp"  , 0       , &TyIs_SS, &TyIs_SS,   SWP   );
+  ADD_INLINE_FN("\x03", "drp"  , 0       , &TyIs_S,  TYI_VOID,   DRP   );
+  ADD_INLINE_FN("\x03", "ovr"  , 0       , &TyIs_SS, &TyIs_SSS,  OVR   );
+  ADD_INLINE_FN("\x03", "dup"  , 0       , &TyIs_S,  &TyIs_SS,   DUP   );
+  ADD_INLINE_FN("\x04", "dupn" , 0       , &TyIs_S,  &TyIs_SS,   DUPN  );
 
   // Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "nop"  , 0, NOP  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inc"  , 0, INC  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc2" , 0, INC2 );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x04", "inc4" , 0, INC4 );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "dec"  , 0, DEC  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "inv"  , 0, INV  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "neg"  , 0, NEG  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x03", "not"  , 0, NOT  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i1to4", 0, CI1  );
-  STATIC_INLINE(&TyIs_S,  &TyIs_S, "\x05", "i2to4", 0, CI2  );
+  ADD_INLINE_FN("\x03", "nop"  , 0       , &TyIs_S,  &TyIs_S, NOP     );
+  ADD_INLINE_FN("\x03", "inc"  , 0       , &TyIs_S,  &TyIs_S, INC     );
+  ADD_INLINE_FN("\x04", "inc2" , 0       , &TyIs_S,  &TyIs_S, INC2    );
+  ADD_INLINE_FN("\x04", "inc4" , 0       , &TyIs_S,  &TyIs_S, INC4    );
+  ADD_INLINE_FN("\x03", "dec"  , 0       , &TyIs_S,  &TyIs_S, DEC     );
+  ADD_INLINE_FN("\x03", "inv"  , 0       , &TyIs_S,  &TyIs_S, INV     );
+  ADD_INLINE_FN("\x03", "neg"  , 0       , &TyIs_S,  &TyIs_S, NEG     );
+  ADD_INLINE_FN("\x03", "not"  , 0       , &TyIs_S,  &TyIs_S, NOT     );
+  ADD_INLINE_FN("\x05", "i1to4", 0       , &TyIs_S,  &TyIs_S, CI1     );
+  ADD_INLINE_FN("\x05", "i2to4", 0       , &TyIs_S,  &TyIs_S, CI2     );
+  ADD_INLINE_FN("\x01", "+"    , 0       , &TyIs_SS, &TyIs_S, ADD     );
+  ADD_INLINE_FN("\x01", "-"    , 0       , &TyIs_SS, &TyIs_S, SUB     );
+  ADD_INLINE_FN("\x01", "%"    , 0       , &TyIs_SS, &TyIs_S, MOD     );
+  ADD_INLINE_FN("\x03", "shl"  , 0       , &TyIs_SS, &TyIs_S, SHL     );
+  ADD_INLINE_FN("\x03", "shr"  , 0       , &TyIs_SS, &TyIs_S, SHR     );
+  ADD_INLINE_FN("\x03", "msk"  , 0       , &TyIs_SS, &TyIs_S, MSK     );
+  ADD_INLINE_FN("\x02", "jn"   , 0       , &TyIs_SS, &TyIs_S, JN      );
+  ADD_INLINE_FN("\x03", "xor"  , 0       , &TyIs_SS, &TyIs_S, XOR     );
+  ADD_INLINE_FN("\x03", "and"  , 0       , &TyIs_SS, &TyIs_S, AND     );
+  ADD_INLINE_FN("\x02", "or"   , 0       , &TyIs_SS, &TyIs_S, OR      );
+  ADD_INLINE_FN("\x02", "=="   , 0       , &TyIs_SS, &TyIs_S, EQ      );
+  ADD_INLINE_FN("\x02", "!="   , 0       , &TyIs_SS, &TyIs_S, NEQ     );
+  ADD_INLINE_FN("\x02", ">="   , 0       , &TyIs_SS, &TyIs_S, GE_U    );
+  ADD_INLINE_FN("\x01", "<"    , 0       , &TyIs_SS, &TyIs_S, LT_U    );
+  ADD_INLINE_FN("\x04", "ge_s" , 0       , &TyIs_SS, &TyIs_S, GE_S    );
+  ADD_INLINE_FN("\x04", "lt_s" , 0       , &TyIs_SS, &TyIs_S, LT_S    );
+  ADD_INLINE_FN("\x01", "*"    , 0       , &TyIs_SS, &TyIs_S, MUL     );
+  ADD_INLINE_FN("\x01", "/"    , 0       , &TyIs_SS, &TyIs_S, DIV_U   );
 
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "+"    , 0, ADD  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "-"    , 0, SUB  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "%"    , 0, MOD  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shl"  , 0, SHL  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "shr"  , 0, SHR  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "msk"  , 0, MSK  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "jn"   , 0, JN   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "xor"  , 0, XOR  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x03", "and"  , 0, AND  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "or"   , 0, OR   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "=="   , 0, EQ   );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", "!="   , 0, NEQ  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x02", ">="   , 0, GE_U );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "<"    , 0, LT_U );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "ge_s" , 0, GE_S );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x04", "lt_s" , 0, LT_S );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "*"    , 0, MUL  );
-  STATIC_INLINE(&TyIs_SS, &TyIs_S, "\x01", "/"    , 0, DIV_U);
+  ADD_INLINE_FN("\x03", "ft1"  , 0       , &TyIs_S, &TyIs_S , SZ1+FT  );
+  ADD_INLINE_FN("\x03", "ft2"  , 0       , &TyIs_S, &TyIs_S , SZ2+FT  );
+  ADD_INLINE_FN("\x03", "ft4"  , 0       , &TyIs_S, &TyIs_S , SZ4+FT  );
+  ADD_INLINE_FN("\x03", "ftR"  , 0       , &TyIs_S, &TyIs_S , SZR+FT  );
+  ADD_INLINE_FN("\x05", "ftBe1", 0       , &TyIs_S, &TyIs_S , SZ1+FTBE);
+  ADD_INLINE_FN("\x05", "ftBe2", 0       , &TyIs_S, &TyIs_S , SZ2+FTBE);
+  ADD_INLINE_FN("\x05", "ftBe4", 0       , &TyIs_S, &TyIs_S , SZ4+FTBE);
+  ADD_INLINE_FN("\x05", "ftBeR", 0       , &TyIs_S, &TyIs_S , SZR+FTBE);
 
-  // ftN(addr): fetch a value of sz N from address.
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft1"  , 0, SZ1+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft2"  , 0, SZ2+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ft4"  , 0, SZ4+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x03", "ftR"  , 0, SZR+FT   );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe1", 0, SZ1+FTBE );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe2", 0, SZ2+FTBE );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBe4", 0, SZ4+FTBE );
-  STATIC_INLINE(&TyIs_S, &TyIs_S, "\x05", "ftBeR", 0, SZR+FTBE );
+  static TyDict comp; // these are all inside comp
+  ADD_ANY_VAR(comp, TyDict, "\x04", "comp", TY_DICT | TY_DICT_MOD, /*v=*/0);
+  DictStk_add(&k->g.dictStk, (TyRoot){ .root = &comp.v });
+  ADD_FN("\x06", "single"     , 0   , N_single     , &TyIs_S, TYI_VOID);
+  ADD_FN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
+  ADD_FN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
+  ADD_FN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
+  DictStk_pop(&k->g.dictStk);
+  // assert(&comp.v == (S)DictStk_pop(&k->g.dictStk).root);
+
   TASSERT_EMPTY();
 }
 
