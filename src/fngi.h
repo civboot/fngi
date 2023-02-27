@@ -25,6 +25,7 @@
 
 #define WS_POP()          Stk_pop(WS)
 #define WS_POP2(A, B)     Stk_pop2(WS, A, B)
+#define WS_POP3(A, B, C)  Stk_pop3(WS, A, B, C)
 #define WS_ADD(V)         Stk_add(WS, V)
 #define WS_ADD2(A, B)     Stk_add2(WS, A, B)
 #define WS_ADD3(A, B, C)  Stk_add3(WS, A, B, C)
@@ -425,6 +426,10 @@ Ty* TyDict_find(TyDict* dict, Slc s);
 #define TYIS(PRE) \
   PRE Ty  Ty_UNSET;   \
   PRE TyI TyIs_UNSET; \
+  PRE Ty  Ty_Any;   \
+  PRE TyI TyIs_rAny; \
+  PRE TyI TyIs_rAnyS; \
+  PRE TyI TyIs_rAnySS; \
   PRE Ty  Ty_U1;     \
   PRE Ty  Ty_U2;     \
   PRE Ty  Ty_U4;     \

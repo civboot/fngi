@@ -1,0 +1,10 @@
+\ Core types operating directly on data
+
+struct Buf [ dat:&U1  len:U2  cap:U2 ]
+struct Slc [ dat:&U1  len:U2         ]
+
+loc:Buf (
+  meth get self:&Buf i:S -> U1 do (
+    @ptrAdd(self.dat, self.i, self.len)
+  )
+)

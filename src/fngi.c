@@ -548,6 +548,11 @@ TyI* TyI_copy(BBA* bba, TyI* nodes) {
   return root;
 }
 
+void Kern_typed(Kern *k, bool typed) {
+  if(typed) k->g.fnState &= ~C_UNTY;
+  else      k->g.fnState |= C_UNTY;
+}
+
 #define IS_UNTY  (C_UNTY & k->g.fnState)
 
 void dbgTyIs(Kern* k, TyDb* db) {
@@ -1181,6 +1186,10 @@ Ty* nextDot(Kern* k, TyDict* d) {
   return ty;
 }
 
+void assertRefCast(TyI* top) {
+  ASSERT(RSIZE == TyI_sz(top), "Cannot convert type to pointer unless sz=RSIZE");
+}
+
 void compileDict(Kern* k, TyDict* d, bool asImm) {
   assert(not isDictMod(d));
   Kern_compFn(k); // compile next token
@@ -1189,9 +1198,8 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
   TyI tyI = (TyI) {.ty = (Ty*) d};
   TyI* top = TyDb_top(db);
   if(isDictNative(d)) {
-    if(TyI_refs(top)) {
-      ASSERT(RSIZE == TyI_sz(top), "Cannot convert pointer to less than RSIZE");
-    } else {
+    if(TyI_refs(top)) assertRefCast(top);
+    else {
       ASSERT((isTyDict(top->ty) && isDictNative((TyDict*)top->ty)),
            "Cannot cast non-native as native.");
     }
@@ -1880,10 +1888,14 @@ void ampRef(Kern* k, TyI* tyI) {
 void N_amp(Kern* k) {
   N_notImm(k); TyDb* db = tyDb(k, false);
   scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "not found");
-  if(not isTyVar(ty)) {
+  if(isTyVar(ty)) { }
+  else if (isTyDict(ty)) {
     Kern_compFn(k);
-    return ampRef(k, TyDb_top(db));
-  }
+    assertRefCast(TyDb_top(db));
+    TyI to = { .ty = (ty), .meta = 1 };
+    TyDb_pop(k, db); tyCall(k, db, NULL, &to);
+    return;
+  } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
   assert(not isVarGlobal(var)); // TODO
@@ -1895,7 +1907,7 @@ void N_amp(Kern* k) {
   }
   Buf* b = &k->g.code;
   if(PEEK(".")) {
-    assert(TyI_refs(tyI)); // should be guaranteed
+    assert(TyI_refs(tyI));
     op2(b, FTLL, SZR, offset);
     return ampRef(k, tyI);
   }
@@ -1909,11 +1921,6 @@ void N_at(Kern* k) {
   N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   Kern_compFn(k);
-  // TyI* tyI = TyDb_top(db);
-  // ASSERT(TyI_refs(tyI), "invalid '@', the value on the stack is not a reference");
-  // FtOffset st = (FtOffset) { .op = FTO, .findEqual = true };
-  // ftOffset(k, tyI, 0, &st);
-
   if(CONSUME("=")) {
     assert(false);
   }
@@ -1931,6 +1938,40 @@ void N_at(Kern* k) {
   TyI inp = (TyI) { .ty = (Ty*)top->ty, .meta = top->meta };
   TyI out = (TyI) { .ty = (Ty*)top->ty, .meta = top->meta - 1};
   tyCall(k, tyDb(k, false), &inp, &out);
+}
+
+void N_ptrAddRaw(Kern* k) {
+  S sz = WS_POP(); WS_POP3(S ptr, S i, S bound);
+  ASSERT(i < bound, "ptrAdd OOB");
+  WS_ADD(ptr + (i * sz));
+}
+TyFn TyFn_ptrAddRaw = {
+  .bst.key = (CStr*) ("\x09" "ptrAddRaw"),
+  .meta = TY_FN | TY_FN_NATIVE,
+  .v = (S)N_ptrAddRaw,
+  .inp = &TyIs_UNSET, .out = &TyIs_UNSET
+};
+
+void N_ptrAdd(Kern* k) {
+  bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
+  ASSERT(not IS_UNTY, "ptrAdd requires type checking");
+  Kern_compFn(k);
+  TyI* tyI = TyDb_top(db);
+  if(not tyI || not tyI->next || not tyI->next->next) {
+    // invalid type
+    tyCall(k, db, &TyIs_rAnySS, &TyIs_rAny); assert(false);
+  }
+  TyI* ptrTy = tyI->next->next;
+  ASSERT(TyI_refs(ptrTy), "ptrAdd requires the ptr to be a reference");
+  TyI inp[3]; inp[0] = (TyI) {.ty = ptrTy->ty, .meta = ptrTy->meta };
+              inp[1] = (TyI) {.ty = &Ty_S, .next = &inp[0]};
+              inp[2] = (TyI) {.ty = &Ty_S, .next = &inp[1]};
+  tyCall(k, db, &inp[2], &inp[0]);
+  TyI derefTyI = {.ty = ptrTy->ty, .meta = ptrTy->meta - 1};
+  lit(&k->g.code, TyI_sz(&derefTyI));
+  Kern_typed(k, false);
+  compileFn(k, &TyFn_ptrAddRaw, asImm);
+  Kern_typed(k, true);
 }
 
 // ***********************
@@ -1988,7 +2029,11 @@ void N_findTy(Kern* k) {
 void Kern_fns(Kern* k) {
   // Native data types
   ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , SZR + 1);
-  TyIs_UNSET = (TyI) { .ty = &Ty_UNSET };
+  ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , SZR + 1);
+  TyIs_UNSET  = (TyI) { .ty = &Ty_UNSET };
+  TyIs_rAny   = (TyI) { .ty = &Ty_Any, .meta = 1 };
+  TyIs_rAnyS  = (TyI) { .ty = &Ty_S, .next = &TyIs_rAny };
+  TyIs_rAnySS = (TyI) { .ty = &Ty_S, .next = &TyIs_rAnyS };
 
   ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , SZ1);
   ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , SZ2);
@@ -2048,6 +2093,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
+  ADD_FN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
   ADD_FN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
   ADD_FN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);

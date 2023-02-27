@@ -424,6 +424,17 @@ TEST_FNGI(method, 20)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(prelib, 20) // tests necessary for libraries
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("4"); TASSERT_WS(4);
+  COMPILE_EXEC("fn getPtrs x:S -> &S, &S do (&x, ptrAdd(&x, 1, 10)) getPtrs(5)")
+  WS_POP2(S x, S xPlus1);
+  TASSERT_EQ(x + sizeof(S), xPlus1);
+  COMPILE_EXEC("fn ftPtr a:S b:S -> S do ( @ptrAdd(&a, 1, 2) ) ftPtr(0xBAD, 0x733) ");
+  TASSERT_WS(0x733);
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(file_basic, 20)
   Kern_fns(k);
   N_assertWsEmpty(k);
@@ -468,6 +479,7 @@ int main(int argc, char* argv[]) {
   test_mod();
   test_structDeep();
   test_method();
+  test_prelib();
   test_file_basic();
   eprintf("# Tests complete\n");
 
