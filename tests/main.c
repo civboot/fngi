@@ -9,7 +9,9 @@ TEST(basic)
 END_TEST
 
 TEST_FNGI(init, 10)
+  eprintf("??? here cfb=%p\n", cfb);
   TASSERT_EQ(WS_DEPTH, WS->cap);
+  eprintf("??? here 2\n");
   TASSERT_EQ(WS->sp,   WS->cap);
 
   WS_ADD(4); TASSERT_WS(4);
@@ -28,7 +30,7 @@ static inline void _xFn(Kern* k, TyFn fn) { executeFn(k, &fn); }
 TEST_FNGI(call, 1)
   // Running some code
 
-  TyFn_static(fiveFn, 0, 0, (S)((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
+  TyFn_static(fiveFn, 0, 0, ((U1[]){SLIT + 2, SLIT + 3, ADD, RET}) );
   executeFn(k, &fiveFn);       TASSERT_WS(5);
 
   // Calling a function
@@ -105,15 +107,15 @@ TEST_FNGI(compile1, 10)
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
   COMPILE_EXEC("fn maths2 stk:U2 -> U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
   TyFn* maths2 = tyFn(Kern_findTy(k, SLC("maths2")));
-  TASSERT_EQ(&Ty_U2, maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
-  TASSERT_EQ(&Ty_U2, maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
-  TASSERT_EQ(NULL, maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
+  TASSERT_EQ(&Ty_U2, (TyDict*)maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
+  TASSERT_EQ(&Ty_U2, (TyDict*)maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
+  TASSERT_EQ(NULL, (TyDict*)maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
 
   COMPILE_EXEC("fn maths3 x:U2 -> U2 do (x + 4) maths3(3)");
   TyFn* maths3 = tyFn(Kern_findTy(k, SLC("maths3")));
-  TASSERT_EQ(&Ty_U2, maths3->inp->ty);
+  TASSERT_EQ(&Ty_U2, (TyDict*)maths3->inp->ty);
   TASSERT_SLC_EQ("x" , CStr_asSlc(maths3->inp->name));
-  TASSERT_EQ(&Ty_U2, maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
+  TASSERT_EQ(&Ty_U2, (TyDict*)maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
   TASSERT_EQ(NULL, maths3->inp->next); TASSERT_EQ(NULL, maths3->out->next);
   TASSERT_EQ(1, maths3->lSlots);
   TASSERT_WS(7);
@@ -124,7 +126,7 @@ TEST_FNGI(compile1, 10)
   TASSERT_SLC_EQ("c" , CStr_asSlc(pop2->inp->name));
   TASSERT_SLC_EQ("b" , CStr_asSlc(pop2->inp->next->name));
   TASSERT_SLC_EQ("a" , CStr_asSlc(pop2->inp->next->next->name));
-  TASSERT_EQ(&Ty_S, pop2->inp->ty);
+  TASSERT_EQ(&Ty_S, (TyDict*)pop2->inp->ty);
   TASSERT_EQ(2, pop2->lSlots);
 
   COMPILE_EXEC("tAssertEq(42, 42)");
@@ -442,6 +444,12 @@ TEST_FNGI(file_basic, 20)
   compilePath(k, path);
 END_TEST_FNGI
 
+// TEST_FNGI(file_dat, 20)
+//   Kern_fns(k);
+//   CStr_ntVar(path, "\x0A", "src/dat.fn");
+//   // compilePath(k, path);
+// END_TEST_FNGI
+
 TEST_FNGI(repl, 20)
   Kern_fns(k);
   simpleRepl(k);
@@ -481,6 +489,7 @@ int main(int argc, char* argv[]) {
   test_method();
   test_prelib();
   test_file_basic();
+  // test_file_dat();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

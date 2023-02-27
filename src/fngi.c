@@ -53,17 +53,17 @@ void dbgWs(Kern *k) {
 
 // DictStk
 
-TyRoot DictStk_pop(DictStk* stk) {
+TyDict* DictStk_pop(DictStk* stk) {
   ASSERT(stk->sp < stk->cap, "DictStk underflow");
   return stk->dat[stk->sp ++];
 }
 
-TyRoot DictStk_top(DictStk* stk) {
+TyDict* DictStk_top(DictStk* stk) {
   ASSERT(stk->sp < stk->cap, "DictStk_top OOB");
   return stk->dat[stk->sp];
 }
 
-void DictStk_add(DictStk* stk, TyRoot r) {
+void DictStk_add(DictStk* stk, TyDict* r) {
   ASSERT(stk->sp, "DictStk overflow");
   stk->dat[-- stk->sp] = r;
 }
@@ -82,7 +82,7 @@ void baseCompFn(Kern* k);
 TyFn TyFn_baseCompFn = {
   .bst.key = (CStr*) ("\x0A" "baseCompFn"),
   .meta = TY_FN | TY_FN_NATIVE,
-  .v = (S)baseCompFn,
+  .code = (U1*)baseCompFn,
 };
 
 void TyDb_init(TyDb* db) {
@@ -92,7 +92,7 @@ void TyDb_init(TyDb* db) {
 
 void DictStk_reset(Kern* k) {
   k->g.dictStk.sp = k->g.dictStk.cap;
-  DictStk_add(&k->g.dictStk, (TyRoot){ .root = &k->dict });
+  DictStk_add(&k->g.dictStk, &k->g.rootDict);
 }
 
 void Kern_init(Kern* k, FnFiber* fb) {
@@ -107,7 +107,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
       .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
       .bbaDict = &k->bbaDict,
       .bbaTyImm = (BBA) { &civ.ba },
-    }, 0
+    },
   };
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
   k->g.tyDbImm.bba = &k->g.bbaTyImm;
@@ -183,7 +183,7 @@ U4 popLit(Kern* k, U1 size) {
 
 // Make sure to check isFnNative first!
 static inline void executeNative(Kern* k, TyFn* fn) {
-  ((void(*)(Kern*)) fn->v)(k);
+  ((void(*)(Kern*)) fn->code)(k);
 }
 
 void xImpl(Kern* k, Ty* ty) {
@@ -192,14 +192,14 @@ void xImpl(Kern* k, Ty* ty) {
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
   INFO_ADD((S)fn);
   RS_ADD((S)cfb->ep);
-  cfb->ep = (U1*)ty->v;
+  cfb->ep = fn->code;
   RS->sp -= fn->lSlots; // grow locals (and possibly defer)
 }
 
 TyFn catchTy = (TyFn) {
   .bst.key = (CStr*) ("\x0F" "__catchMarker__"),
   .meta = TY_FN,
-  .v = 0,
+  .code = NULL,
 };
 
 void ret(Kern* k) {
@@ -212,7 +212,7 @@ void ret(Kern* k) {
 void jmpImpl(Kern* k, void* ty) {
   TyFn* fn = tyFn(ty);
   ASSERT(0 == fn->lSlots, "jmp to fn with locals");
-  cfb->ep = (U1*)fn->v;
+  cfb->ep = fn->code;
 }
 
 void slcImpl(Kern* k, U1 sz) {
@@ -429,7 +429,7 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 void executeFn(Kern* k, TyFn* fn) {
   // eprintf("!!! executeFn %.*s: ", Ty_fmt(fn)); dbgWs(k); NL;
   if(isFnNative(fn)) return executeNative(k, fn);
-  cfb->ep = (U1*)fn->v;
+  cfb->ep = fn->code;
   executeLoop(k);
 }
 
@@ -462,7 +462,7 @@ static inline S szToSzI(U1 sz) {
 
 S TyDict_size(TyDict* ty) {
   ASSERT(not isDictMod(ty), "attempted size of TY_DICT_MOD");
-  if(isDictNative(ty)) return szIToSz((S)ty->v);
+  if(isDictNative(ty)) return szIToSz((S)ty->children);
   else                 return ty->sz;
 }
 
@@ -494,15 +494,15 @@ S TyI_sz(TyI* tyI) {
 bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
   if(TyI_refs(r) != TyI_refs(g)) return false;
   if(r->ty == g->ty)             return true;
-  if((&Ty_S == r->ty) or (&Ty_U4 == r->ty)) {
-    if(&Ty_U1 == g->ty) return true;
-    if(&Ty_U2 == g->ty) return true;
-    if(&Ty_U4 == g->ty) return true;
-    if(&Ty_S  == g->ty) return true;
-  } else if ((&Ty_U2 == r->ty) and (&Ty_U1 == g->ty)) return true;
-  else if ((&Ty_I4 == r->ty) or (&Ty_SI == r->ty)) {
-    if(&Ty_I4 == g->ty) return true;
-    if(&Ty_SI == g->ty) return true;
+  if(((Ty*)&Ty_S == r->ty) or ((Ty*)&Ty_U4 == r->ty)) {
+    if((Ty*)&Ty_U1 == g->ty) return true;
+    if((Ty*)&Ty_U2 == g->ty) return true;
+    if((Ty*)&Ty_U4 == g->ty) return true;
+    if((Ty*)&Ty_S  == g->ty) return true;
+  } else if (((Ty*)&Ty_U2 == r->ty) and ((Ty*)&Ty_U1 == g->ty)) return true;
+  else if (((Ty*)&Ty_I4 == r->ty) or ((Ty*)&Ty_SI == r->ty)) {
+    if((Ty*)&Ty_I4 == g->ty) return true;
+    if((Ty*)&Ty_SI == g->ty) return true;
   }
   // TODO: for structs, allow references to structs where the given has a prefix
   // of the required.
@@ -807,7 +807,7 @@ static inline void Kern_compFn(Kern* k) { executeFn(k, k->g.compFn); }
 void N_memclr(Kern* k) { // mem:&U1, len:U4
   U4 len = WS_POP(); memset((void*)WS_POP(), 0, len);
 }
-TyFn TyFn_memclr = TyFn_native("\x06" "memclr", 0, (S)N_memclr, &TyIs_rU1_U4, TYI_VOID);
+TyFn TyFn_memclr = TyFn_native("\x06" "memclr", 0, (U1*)N_memclr, &TyIs_rU1_U4, TYI_VOID);
 
 // ***********************
 //   * lit / compileLit
@@ -911,7 +911,7 @@ Ty* Kern_findTy(Kern* k, Slc t) { // You probably want to use scanTy
   Ty* ty = NULL;
   DictStk* dicts = &k->g.dictStk;
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
-    ty = *dicts->dat[i].root;
+    ty = dicts->dat[i]->children;
     I4 res = CBst_find((CBst**)&ty, t);
     if((0 == res) && (ty != NULL)) return ty;
   }
@@ -937,7 +937,7 @@ void Kern_addTy(Kern* k, Ty* ty) {
   ty->bst.l = NULL; ty->bst.r = NULL;
   DictStk* dicts = &k->g.dictStk;
   ASSERT(dicts->sp < dicts->cap, "No dicts");
-  Ty** root = DictStk_top(dicts).root;
+  Ty** root = &DictStk_top(dicts)->children;
   ty = (Ty*)CBst_add((CBst**)root, (CBst*)ty);
   if(ty) {
     eprintf("!! Overwritten key: %.*s\n", Dat_fmt(*ty->bst.key));
@@ -1009,7 +1009,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
   ASSERT(not isDictMod(d), "cannot store in mod");
-  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->v, offset, st->global);
+  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->children, offset, st->global);
   assert(isDictStruct(d));
   SrOffset recSt = *st; // Note: we CANNOT modify 'st', since (unlike ftOffset)
                         // it may be re-used in next field.
@@ -1098,7 +1098,7 @@ void compileFn(Kern* k, TyFn* fn, bool asImm) {
   tyCall(k, tyDb(k, asImm), fn->inp, fn->out);
   if(asImm) return executeFn(k, fn);
   Buf* b = &k->g.code;
-  if(isFnInline(fn)) return Buf_extend(b, (Slc){(U1*)fn->v, .len=fn->len});
+  if(isFnInline(fn)) return Buf_extend(b, (Slc){fn->code, .len=fn->len});
   Buf_add(b, XL); Buf_addBE4(b, (U4)fn);
 }
 
@@ -1137,7 +1137,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   }
   if(isDictNative(d)) {
     if(addTy) tyCall(k, db, NULL, tyI);
-    return opOffset(k, b, st->op, (S)d->v, offset, st->global);
+    return opOffset(k, b, st->op, (S)d->children, offset, st->global);
   }
   ASSERT(isDictStruct(d), "unknown dict type");
   if(CONSUME(".")) {
@@ -1315,7 +1315,7 @@ void N_dbgRs(Kern* k) {
   for(U2 i = info->sp; i < info->cap; i++) {
     TyFn* fn = (TyFn*) info->dat[i];
     U1 lSlots = (fn == &catchTy) ? 0 : fn->lSlots;
-    eprintf("! - %.*s (%u bytes in)\n", Ty_fmt(fn), ep - fn->v);
+    eprintf("! - %.*s (%u bytes in)\n", Ty_fmt(fn), ep - fn->code);
     r += lSlots;
     ep = (U1*) rs->dat[r];
     r += RSIZE;
@@ -1337,7 +1337,7 @@ void N_destruct(Kern* k) {
 //   * Core syn functions
 
 void _N_imm(Kern* k);
-TyFn _TyFn_imm = TyFn_native("\x04" "_imm", TY_FN_SYN, (S)_N_imm, TYI_VOID, TYI_VOID);
+TyFn _TyFn_imm = TyFn_native("\x04" "_imm", TY_FN_SYN, (U1*)_N_imm, TYI_VOID, TYI_VOID);
 void _N_imm(Kern* k) { if(Kern_eof(k)) return;  single(k, true); }
 
 // Compile a token (and all sub-tokens) with asImm=true
@@ -1361,7 +1361,7 @@ void N_paren(Kern* k) {
 }
 
 void _N_fslash(Kern* k);
-TyFn _TyFn_fslash = TyFn_native("\x07" "_fslash", 0, (S)_N_fslash, TYI_VOID, TYI_VOID);
+TyFn _TyFn_fslash = TyFn_native("\x07" "_fslash", 0, (U1*)_N_fslash, TYI_VOID, TYI_VOID);
 void _N_fslash(Kern* k) {
   TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_fslash;
   scanRaw(k);
@@ -1401,7 +1401,7 @@ TyDict* _locGet(Kern *k) {
 
 void _loc(Kern* k, TyDict* d) {
   assert(not isDictNative(d));
-  DictStk_add(&k->g.dictStk, (TyRoot){.root = &d->v });
+  DictStk_add(&k->g.dictStk, d);
   Kern_compFn(k);
   DictStk_pop(&k->g.dictStk);
 }
@@ -1420,7 +1420,7 @@ void N_loc(Kern* k) {
 void N_fileloc(Kern* k) { // loc that stays for whole file
   N_notImm(k); REQUIRE(":");
   TyDict* d = _locGet(k);
-  DictStk_add(&k->g.dictStk, (TyRoot){.root = &d->v });
+  DictStk_add(&k->g.dictStk, d);
 }
 
 // ***********************
@@ -1461,7 +1461,7 @@ void N_stk(Kern *k) {
   CONSUME(":");
   Sll_add(root, TyI_asSll(scanTyI(k)));
 }
-TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (S)N_stk, TYI_VOID, TYI_VOID);
+TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (U1*)N_stk, TYI_VOID, TYI_VOID);
 
 CStr* scanDedupCStr(Kern* k) {
   Ty* found = scanTy(k);
@@ -1489,7 +1489,7 @@ void N_inp(Kern* k) {
   Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(tyI));
   localImpl(k, var);
 }
-TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (S)N_inp, TYI_VOID, TYI_VOID);
+TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_VOID);
 
 void _varGlobal(Kern* k, TyVar* v) {
   v->meta |= TY_VAR_GLOBAL;
@@ -1569,7 +1569,7 @@ void N_fn(Kern* k) {
   TyDb_new(&k->g.tyDb);
   LOCAL_TYDB_BBA(tyDb); TyDb* db = tyDb(k, false);
 
-  DictStk_add(&k->g.dictStk, (TyRoot){.root = &fn->locals }); // local variables
+  DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
 
   fnSignature(k, fn); fnInputs(k, fn);
   SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
@@ -1583,7 +1583,7 @@ void N_fn(Kern* k) {
   ASSERT(not BBA_free(&k->bbaCode, code->dat + code->len, code->cap - code->len, 1),
          "N_fn free");
 
-  fn->v = (S)code->dat; fn->len = code->len;
+  fn->code = code->dat; fn->len = code->len;
   fn->lSlots = align(k->g.fnLocals, RSIZE) / RSIZE;
   k->g.fnLocals = 0; k->g.metaNext = 0;
   *code = prevCode;
@@ -1804,7 +1804,7 @@ void N_struct(Kern* k) {
   TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
   TyDict* prevMod = k->g.curMod;
   k->g.curMod = st;
-  DictStk_add(&k->g.dictStk, (TyRoot){.root = (Ty**)&st->v});
+  DictStk_add(&k->g.dictStk, st);
   REQUIRE("[");
   while(not CONSUME("]")) {
     Ty* ty = Kern_findToken(k);
@@ -1931,7 +1931,7 @@ void N_at(Kern* k) {
   else {
     TyDict* d = (TyDict*) top->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
-    if(isDictNative(d)) Buf_add(&k->g.code, FT | (SZ_MASK & (S)d->v));
+    if(isDictNative(d)) Buf_add(&k->g.code, FT | (SZ_MASK & (S)d->children));
     else assert(false);
   }
 
@@ -1946,10 +1946,8 @@ void N_ptrAddRaw(Kern* k) {
   WS_ADD(ptr + (i * sz));
 }
 TyFn TyFn_ptrAddRaw = {
-  .bst.key = (CStr*) ("\x09" "ptrAddRaw"),
-  .meta = TY_FN | TY_FN_NATIVE,
-  .v = (S)N_ptrAddRaw,
-  .inp = &TyIs_UNSET, .out = &TyIs_UNSET
+  .bst.key = (CStr*) ("\x09" "ptrAddRaw"), .meta = TY_FN | TY_FN_NATIVE,
+  .code = (U1*)N_ptrAddRaw, .inp = &TyIs_Unsafe, .out = &TyIs_Unsafe
 };
 
 void N_ptrAdd(Kern* k) {
@@ -1964,8 +1962,8 @@ void N_ptrAdd(Kern* k) {
   TyI* ptrTy = tyI->next->next;
   ASSERT(TyI_refs(ptrTy), "ptrAdd requires the ptr to be a reference");
   TyI inp[3]; inp[0] = (TyI) {.ty = ptrTy->ty, .meta = ptrTy->meta };
-              inp[1] = (TyI) {.ty = &Ty_S, .next = &inp[0]};
-              inp[2] = (TyI) {.ty = &Ty_S, .next = &inp[1]};
+              inp[1] = (TyI) {.ty = (Ty*)&Ty_S, .next = &inp[0]};
+              inp[2] = (TyI) {.ty = (Ty*)&Ty_S, .next = &inp[1]};
   tyCall(k, db, &inp[2], &inp[0]);
   TyI derefTyI = {.ty = ptrTy->ty, .meta = ptrTy->meta - 1};
   lit(&k->g.code, TyI_sz(&derefTyI));
@@ -2000,24 +1998,24 @@ void N_findTy(Kern* k) {
 // ***********************
 // * 7: Registering Functions
 
-#define ADD_ANY_VAR(VAR, TY, NAMELEN, NAME, META, V) \
+#define ADD_ANY_VAR(VAR, TY, NAMELEN, NAME, META, VNAME, V) \
   CStr_ntVar(LINED(key), NAMELEN, NAME);\
   VAR = (TY) {          \
     .bst.key = LINED(key),              \
     .meta =  META,                      \
-    .v = V,                             \
+    .VNAME = V,                         \
   };                                    \
   Kern_addTy(k, (Ty*)&VAR);
 
-#define ADD_ANY_CREATE(TY, NAMELEN, NAME, META, V) \
+#define ADD_ANY_CREATE(TY, NAMELEN, NAME, META, VNAME, V) \
   static TY LINED(ty);                  \
-  ADD_ANY_VAR(LINED(ty), TY, NAMELEN, NAME, META, V)
+  ADD_ANY_VAR(LINED(ty), TY, NAMELEN, NAME, META, VNAME, V)
 
 #define ADD_TY_NATIVE(VAR, NAMELEN, NAME, META, VAL) \
-  ADD_ANY_VAR(VAR, Ty, NAMELEN, NAME, TY_DICT | TY_DICT_NATIVE | META, VAL)
+  ADD_ANY_VAR(VAR, TyDict, NAMELEN, NAME, TY_DICT | TY_DICT_NATIVE | META, children, VAL)
 
-#define ADD_FN(NAMELEN, NAME, META, V, INP, OUT) \
-  ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | TY_FN_NATIVE | (META), (S)V); \
+#define ADD_FN(NAMELEN, NAME, META, CODE, INP, OUT) \
+  ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | TY_FN_NATIVE | (META), code, (U1*)CODE); \
   LINED(ty).inp = INP; LINED(ty).out = OUT;
 
 #define ADD_INLINE_FN(NAMELEN, NAME, META, INP, OUT, ...)     \
@@ -2028,40 +2026,43 @@ void N_findTy(Kern* k) {
 
 void Kern_fns(Kern* k) {
   // Native data types
-  ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , SZR + 1);
-  ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , SZR + 1);
-  TyIs_UNSET  = (TyI) { .ty = &Ty_UNSET };
-  TyIs_rAny   = (TyI) { .ty = &Ty_Any, .meta = 1 };
-  TyIs_rAnyS  = (TyI) { .ty = &Ty_S, .next = &TyIs_rAny };
-  TyIs_rAnySS = (TyI) { .ty = &Ty_S, .next = &TyIs_rAnyS };
+  ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (Ty*)(SZR + 1));
 
-  ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , SZ1);
-  ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , SZ2);
-  ADD_TY_NATIVE(Ty_U4, "\x02", "U4",  0               , SZ4);
-  ADD_TY_NATIVE(Ty_S , "\x01", "S",   0               , SZR);
-  ADD_TY_NATIVE(Ty_I1, "\x02", "I1",  TY_NATIVE_SIGNED, SZ1);
-  ADD_TY_NATIVE(Ty_I2, "\x02", "I2",  TY_NATIVE_SIGNED, SZ2);
-  ADD_TY_NATIVE(Ty_I4, "\x02", "I4",  TY_NATIVE_SIGNED, SZ4);
-  ADD_TY_NATIVE(Ty_SI, "\x02", "SI",  TY_NATIVE_SIGNED, SZR);
+  TyIs_UNSET  = (TyI) { .ty = (Ty*)&Ty_UNSET  };
+  TyIs_Unsafe = (TyI) { .ty = (Ty*)&Ty_Unsafe };
+  TyIs_rAny   = (TyI) { .ty = (Ty*)&Ty_Any, .meta = 1 };
+  TyIs_rAnyS  = (TyI) { .ty = (Ty*)&Ty_S, .next = &TyIs_rAny };
+  TyIs_rAnySS = (TyI) { .ty = (Ty*)&Ty_S, .next = &TyIs_rAnyS };
+
+  ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , (Ty*)SZ1);
+  ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , (Ty*)SZ2);
+  ADD_TY_NATIVE(Ty_U4, "\x02", "U4",  0               , (Ty*)SZ4);
+  ADD_TY_NATIVE(Ty_S , "\x01", "S",   0               , (Ty*)SZR);
+  ADD_TY_NATIVE(Ty_I1, "\x02", "I1",  TY_NATIVE_SIGNED, (Ty*)SZ1);
+  ADD_TY_NATIVE(Ty_I2, "\x02", "I2",  TY_NATIVE_SIGNED, (Ty*)SZ2);
+  ADD_TY_NATIVE(Ty_I4, "\x02", "I4",  TY_NATIVE_SIGNED, (Ty*)SZ4);
+  ADD_TY_NATIVE(Ty_SI, "\x02", "SI",  TY_NATIVE_SIGNED, (Ty*)SZR);
   TASSERT_EMPTY();
 
   // Ty: S
-  TyIs_S = (TyI) { .ty = &Ty_S };
+  TyIs_S = (TyI) { .ty = (Ty*)&Ty_S };
   // Ty: S, s
-  TyIs_SS = (TyI) { .next = &TyIs_S, .ty = &Ty_S };
+  TyIs_SS = (TyI) { .next = &TyIs_S, .ty = (Ty*)&Ty_S };
   // Ty: S, s, S
-  TyIs_SSS = (TyI) { .next = &TyIs_SS, .ty = &Ty_S };
+  TyIs_SSS = (TyI) { .next = &TyIs_SS, .ty = (Ty*)&Ty_S };
 
-  TyIs_U1 = (TyI) { .ty = &Ty_U1 };
-  TyIs_U2 = (TyI) { .ty = &Ty_U2 };
-  TyIs_U4 = (TyI) { .ty = &Ty_U4 };
-  TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = &Ty_U4 };
+  TyIs_U1 = (TyI) { .ty = (Ty*)&Ty_U1 };
+  TyIs_U2 = (TyI) { .ty = (Ty*)&Ty_U2 };
+  TyIs_U4 = (TyI) { .ty = (Ty*)&Ty_U4 };
+  TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = (Ty*)&Ty_U4 };
 
-  TyIs_rU1 = (TyI) { .ty = &Ty_U1, .meta = 1 };
-  TyIs_rU2 = (TyI) { .ty = &Ty_U2, .meta = 1 };
-  TyIs_rU4 = (TyI) { .ty = &Ty_U4, .meta = 1 };
+  TyIs_rU1 = (TyI) { .ty = (Ty*)&Ty_U1, .meta = 1 };
+  TyIs_rU2 = (TyI) { .ty = (Ty*)&Ty_U2, .meta = 1 };
+  TyIs_rU4 = (TyI) { .ty = (Ty*)&Ty_U4, .meta = 1 };
 
-  TyIs_rU1_U4 = (TyI) {.ty = &Ty_U4, .next = &TyIs_rU4};
+  TyIs_rU1_U4 = (TyI) {.ty = (Ty*)&Ty_U4, .next = &TyIs_rU4};
 
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
   Kern_addTy(k, (Ty*) &TyFn_stk);
@@ -2148,8 +2149,8 @@ void Kern_fns(Kern* k) {
   ADD_INLINE_FN("\x05", "ftBeR", 0       , &TyIs_S, &TyIs_S , SZR+FTBE);
 
   static TyDict comp; // these are all inside comp
-  ADD_ANY_VAR(comp, TyDict, "\x04", "comp", TY_DICT | TY_DICT_MOD, /*v=*/0);
-  DictStk_add(&k->g.dictStk, (TyRoot){ .root = &comp.v });
+  ADD_ANY_VAR(comp, TyDict, "\x04", "comp", TY_DICT | TY_DICT_MOD, children, /*v=*/0);
+  DictStk_add(&k->g.dictStk, &comp);
   ADD_FN("\x06", "single"     , 0   , N_single     , &TyIs_S, TYI_VOID);
   ADD_FN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
   ADD_FN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);

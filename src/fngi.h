@@ -85,10 +85,10 @@ typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 
 typedef struct {
   TY_BODY
-  S v; // TODO: U1*
+  Ty* locals;
+  U1* code;
   TyI* inp;
   TyI* out;
-  Ty* locals;
   U2 len; // size of spor binary
   U1 lSlots;
 } TyFn;
@@ -96,7 +96,7 @@ typedef struct {
 #define TyFn_native(CNAME, META, NFN, INP, OUT) {       \
   .bst.key = (CStr*) ( CNAME ),             \
   .meta = TY_FN | TY_FN_NATIVE | (META),    \
-  .v = NFN, \
+  .code = NFN, \
   .inp = INP, .out = OUT \
 }
 
@@ -105,7 +105,7 @@ typedef struct {
   static TyFn NAME;               \
   NAME = (TyFn) {                 \
     .meta = TY_FN | META,       \
-    .v = DAT,                   \
+    .code = DAT,                   \
     .lSlots = LSLOTS,             \
   };
 
@@ -113,23 +113,23 @@ static inline Sll** TyFn_inpRoot(TyFn* this) { return (Sll**)&this->inp; }
 static inline Sll** TyFn_outRoot(TyFn* this) { return (Sll**)&this->out; }
 static inline Sll*  TyI_asSll(TyI* this)     { return (Sll*)this; }
 
-static inline TyFn litFn(U1* dat, U2 meta, U2 lSlots) {
+static inline TyFn litFn(U1* code, U2 meta, U2 lSlots) {
   return (TyFn) {
     .meta = TY_FN | meta,
-    .v = (S)dat,
+    .code = code,
     .lSlots = lSlots,
   };
 }
 
 typedef struct {
   TY_BODY;
-  Ty* v;
+  Ty* children;
   TyI* fields;
   U2 sz;
 } TyDict;
 
-static inline CBst*  TyDict_bst(TyDict* this)     { return (CBst*)   this->v; }
-static inline CBst** TyDict_bstRoot(TyDict* this) { return (CBst**) &this->v; }
+static inline CBst*  TyDict_bst(TyDict* this)     { return (CBst*)   this->children; }
+static inline CBst** TyDict_bstRoot(TyDict* this) { return (CBst**) &this->children; }
 static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
 
 typedef struct {
@@ -157,8 +157,7 @@ typedef struct _Blk {
 } Blk;
 static inline Sll*  Blk_asSll(Blk* this)     { return (Sll*)this; }
 
-typedef struct { Ty** root; }                                TyRoot;
-typedef struct { TyRoot* dat;   U2 sp;   U2 cap;           } DictStk;
+typedef struct { TyDict** dat;   U2 sp;   U2 cap;           } DictStk;
 
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
@@ -170,7 +169,8 @@ typedef struct {
   TyDict* curMod; // current parent module (mod, struct, etc)
   Ty* curTy;      // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
-  TyRoot dictBuf[DICT_DEPTH];
+  TyDict rootDict;
+  TyDict* dictBuf[DICT_DEPTH];
   DictStk dictStk;    // Type is: &&Ty (double ref to dictionary)
   SpReader src;
   // Reader src;
@@ -196,7 +196,6 @@ typedef struct {
   BBA bbaDict;
   BBA bbaRepl;
   Globals g;     // kernel globals
-  Ty*   dict;    // kernel dictionary (root)
   FnFiber* fb;   // current fiber.
 } Kern;
 
@@ -222,7 +221,7 @@ void Kern_init(Kern* k, FnFiber* fb);
 // Initialze FnFiber (beyond Fiber init).
 bool FnFiber_init(FnFiber* fb);
 
-static inline S kFn(void(*native)(Kern*)) { return (S) native; }
+static inline U1* kFn(void(*native)(Kern*)) { return (U1*) native; }
 
 #define LOCAL_TYDB_BBA(NAME) \
   BBA  bba_##NAME       = (BBA) { &civ.ba }; \
@@ -424,20 +423,22 @@ Ty* TyDict_find(TyDict* dict, Slc s);
 #define TYI_VOID  NULL
 
 #define TYIS(PRE) \
-  PRE Ty  Ty_UNSET;   \
-  PRE TyI TyIs_UNSET; \
-  PRE Ty  Ty_Any;   \
-  PRE TyI TyIs_rAny; \
-  PRE TyI TyIs_rAnyS; \
+  PRE TyDict  Ty_UNSET;    \
+  PRE TyDict  Ty_Any;      \
+  PRE TyDict  Ty_Unsafe;   \
+  PRE TyI TyIs_UNSET;  \
+  PRE TyI TyIs_Unsafe; \
+  PRE TyI TyIs_rAny;   \
+  PRE TyI TyIs_rAnyS;  \
   PRE TyI TyIs_rAnySS; \
-  PRE Ty  Ty_U1;     \
-  PRE Ty  Ty_U2;     \
-  PRE Ty  Ty_U4;     \
-  PRE Ty  Ty_S;      \
-  PRE Ty  Ty_I1;     \
-  PRE Ty  Ty_I2;     \
-  PRE Ty  Ty_I4;     \
-  PRE Ty  Ty_SI;     \
+  PRE TyDict  Ty_U1;     \
+  PRE TyDict  Ty_U2;     \
+  PRE TyDict  Ty_U4;     \
+  PRE TyDict  Ty_S;      \
+  PRE TyDict  Ty_I1;     \
+  PRE TyDict  Ty_I2;     \
+  PRE TyDict  Ty_I4;     \
+  PRE TyDict  Ty_SI;     \
   PRE TyI TyIs_S;      /* S          */ \
   PRE TyI TyIs_SS;     /* S, S       */ \
   PRE TyI TyIs_SSS;    /* S, S, S    */ \
