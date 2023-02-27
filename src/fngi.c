@@ -233,6 +233,11 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case DUP : r = WS_POP(); WS_ADD2(r, r);              R0
     case DUPN: r = WS_POP(); WS_ADD(r); WS_ADD(0 == r);  R0
     case LR: WS_ADD(RS_topRef(k) + popLit(k, 2)); R0
+    case GR: {
+      TyVar* g = (TyVar*) popLit(k, 4);
+      WS_ADD(g->v + popLit(k, 2));
+      return 0;
+    }
 
     case INC : WS_ADD(WS_POP() + 1); R0
     case INC2: WS_ADD(WS_POP() + 2); R0
@@ -590,7 +595,7 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
   while(require) {
     if(not given) {
       if(not ERR_EXPECTED) {
-        eprintf("!! Detected stack underflow, need additional types:\n");
+        eprintf("!! Type stack underflow:\n");
         tyNotMatch(require_, given_);
       }
       SET_ERR(errCxt);
@@ -850,7 +855,14 @@ void opCompile(Buf* b, U1 op, U1 szI, U2 offset, TyVar* global) {
   }
   if      (FTO  == op || SRO  == op) op1(b, op, szI, offset);
   else if (FTLL == op || SRLL == op) op2(b, op, szI, offset);
-  else if (FTGL == op || SRGL == op) op42(b, op, szI, (S)global, offset);
+  else if (LR   == op) op2(b, LR, 0, offset);
+  else if (FTGL == op || SRGL == op) {
+    assert(global);
+    op42(b, op, szI, (S)global, offset);
+  } else if (GR   == op) {
+    assert(global);
+    op42(b, GR, 0, (S)global, offset);
+  }
   else assert(false);
 }
 
@@ -864,7 +876,9 @@ void opImm(Kern* k, U1 op, U1 szI, U2 offset, TyVar* g) {
       S addr = g ? g->v : WS_POP();
       return srSzI((U1*)addr + offset, szI, v);
     }
+    case GR: WS_ADD(g->v); return;
   }
+  eprintf("unknown op=0x%X '%.*s'\n", op, Dat_fmt(instrName(op)));
   assert(false);
 }
 
@@ -1026,6 +1040,17 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
 // ***********************
 //   * ftOffset
 // Handles not only fetching offset, but also parsing '.' syntax.
+//
+// For example:
+// struct A [ U4 v; method aDo self: &A, x: U4 -> U4 do ( self.v + x ) ]
+// struct B [ U4 b; A a; method bDo(self: &B) do ( self.a.aDo(self.b) ) ]
+//
+// var b: B = (A 3, 4);
+//            \ + compileVar(name="b")
+//            \ + ftOffset(b.tyI, offset=0)
+//            \   + ftOffset(a.tyI, offset=4)
+//            \   + compileMethod
+// tAssertEq(6, b.a.aDo(3)
 
 typedef struct {
   U1 op; bool noAddTy; bool findEqual; bool asImm; TyVar* global;
@@ -1040,13 +1065,45 @@ U1 ftOpToSr(U1 ftOp) {
   assert(false);
 }
 
+U1 ftOpToRef(U1 ftOp) {
+  switch(ftOp) {
+    case FTLL: return LR;
+    case FTGL: return GR;
+  }
+  assert(false);
+}
+
 void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st);
 
+// Handle type operations of refs.
+// In both cases (FTO and FTLL) we just put the tyI on the stack
+// For FTO, the dot compiler already reduced the number of references.
 void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
   if(st->noAddTy) return;
   if(st->op == FTLL) return tyCall(k, db, NULL, tyI);
   assert(st->op == FTO); assert(not tyI->next);
-  tyCall(k, tyDb(k, false), NULL, tyI);
+  tyCall(k, db, NULL, tyI);
+}
+
+void compileFn(Kern* k, TyFn* fn, bool asImm) {
+  tyCall(k, tyDb(k, asImm), fn->inp, fn->out);
+  if(asImm) return executeFn(k, fn);
+  Buf* b = &k->g.code;
+  if(isFnInline(fn)) return Buf_extend(b, (Slc){(U1*)fn->v, .len=fn->len});
+  Buf_add(b, XL); Buf_addBE4(b, (U4)fn);
+}
+
+// Just pushes &self onto the stack and calls the method.
+void compileMethod(Kern* k, TyDict* d, TyFn* meth, U2 offset, FtOffset* st) {
+  Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
+  assert(not st->noAddTy); // invariant
+  if(isFnMethod(meth)) {
+    TyI self = { .ty = (Ty*)d, .meta = /*refs*/1 };
+    tyCall(k, db, TYI_VOID, &self);
+    opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
+  }
+  Kern_compFn(k);
+  compileFn(k, meth, st->asImm);
 }
 
 // Fetch an offset using st->op operation.
@@ -1075,11 +1132,13 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   }
   ASSERT(isDictStruct(d), "unknown dict type");
   if(CONSUME(".")) {
-    TyVar* field = (TyVar*) TyDict_find(d, tokenSlc(k));
-    tokenDrop(k);
-    assert(isTyVar((Ty*)field)); // TODO: only field implemented
-    assert(not isVarGlobal(field));
-    return ftOffset(k, field->tyI, offset + field->v, st);
+    Ty* f = TyDict_scanTy(k, d);
+    ASSERT(f, "member not found");
+    if(isTyVar(f)) {
+      TyVar* field = (TyVar*)f;
+      assert(not isVarGlobal(field));
+      return ftOffset(k, field->tyI, offset + field->v, st);
+    } else return compileMethod(k, d, tyFn(f), offset, st);
   }
   if(addTy) tyCall(k, db, NULL, tyI);
   st->noAddTy = true;
@@ -1139,15 +1198,6 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
   }
 }
 
-void compileFn(Kern* k, TyFn* fn) {
-  tyCall(k, tyDb(k, false), fn->inp, fn->out);
-  Buf* b = &k->g.code;
-  if(isFnInline(fn)) { // inline: len before function code.
-    return Buf_extend(b, (Slc){(U1*)fn->v, .len=fn->len});
-  }
-  Buf_add(b, XL); Buf_addBE4(b, (U4)fn);
-}
-
 void single(Kern* k, bool asImm);
 void baseCompFn(Kern* k) {
   if(Kern_eof(k)) return;
@@ -1180,10 +1230,7 @@ void compileTy(Kern* k, Ty* ty, bool asImm) {
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
   if(isFnImm(fn)) { ASSERT(asImm, "fn must be called with 'imm#'"); }
-  if(asImm) {
-    tyCall(k, tyDb(k, asImm), fn->inp, fn->out);
-    executeFn(k, fn);
-  } else      compileFn(k, fn);
+  compileFn(k, fn, asImm);
 }
 
 // ***********************
@@ -1493,7 +1540,7 @@ void N_fn(Kern* k) {
   // Create TyFn based on NAME
   scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
   tokenDrop(k);
-  k->g.curTy = (Ty*) fn;
+  Ty* prevTy = k->g.curTy; k->g.curTy = (Ty*) fn;
 
   Buf* code = &k->g.code;  Buf prevCode = Kern_reserveCode(k, FN_ALLOC);
 
@@ -1525,6 +1572,15 @@ void N_fn(Kern* k) {
          "A type operation (i.e. if/while/etc) is incomplete in fn");
   END_LOCAL_TYDB_BBA(tyDb);
   DictStk_pop(&k->g.dictStk);
+  k->g.curTy = prevTy;
+}
+
+
+void N_meth(Kern* k) {
+  TyDict* mod = k->g.curMod;
+  ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod), "'meth' can only be in struct");
+  k->g.metaNext |= TY_FN_METHOD;
+  N_fn(k);
 }
 
 // ***********************
@@ -1758,7 +1814,6 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   // Trim the refs to be only 1
   while(refs > 1) { Buf_add(b, FT | SZR); }
   TyDb_pop(k, db);
-
   Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "member not found");
   if(isTyVar(ty)) {
     TyVar* var = (TyVar*) ty;
@@ -1769,7 +1824,7 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   }
   // Call the method
   TyI this = (TyI) { .ty = (Ty*)d, .meta = /*refs*/1 };
-  tyCall(k, db, NULL, &this);
+  tyCall(k, db, NULL, &this); // put back on ty stack (from TyDb_pop above)
   compileTy(k, ty, false);
 }
 
@@ -1968,6 +2023,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "using"        , TY_FN_SYN       , N_using    , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "fnTy"         , TY_FN_SYN       , N_fnTy     , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);

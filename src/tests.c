@@ -404,6 +404,26 @@ TEST_FNGI(structDeep, 12)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(method, 20)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("struct A [ v:S; meth aDo self: &A, x: S -> S do ( self.v + x ) ]")
+  COMPILE_EXEC("fn callADo x:S a:A -> S do ( a.aDo(x) )");
+  COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
+
+  COMPILE_EXEC("using A ( fn nonMeth x: S -> S do ( 7 + x ) )")
+  COMPILE_EXEC("fn callNonMeth x:S a:A -> S do ( a.nonMeth(x) )");
+  COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
+
+  COMPILE_EXEC("var a:A = A 5");
+  COMPILE_EXEC("tAssertEq(5, a.v)");
+  COMPILE_EXEC("tAssertEq(13, a.aDo(8))");
+  COMPILE_EXEC("tAssertEq(14, a.nonMeth(7))");
+
+  COMPILE_EXEC("imm#tAssertEq(13, a.aDo(8))");
+  COMPILE_EXEC("imm#tAssertEq(14, a.nonMeth(7))");
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(file_basic, 20)
   Kern_fns(k);
   N_assertWsEmpty(k);
@@ -447,6 +467,7 @@ int main(int argc, char* argv[]) {
   test_global();
   test_mod();
   test_structDeep();
+  test_method();
   test_file_basic();
   eprintf("# Tests complete\n");
 

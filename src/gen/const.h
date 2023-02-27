@@ -25,6 +25,7 @@
 #define TY_FN                 0x80
 #define TY_DICT               0xC0
 #define TY_FN_NATIVE          0x20
+#define TY_FN_METHOD          0x10
 #define TY_FN_TY_MASK         0x07
 #define TY_FN_NORMAL          0x00
 #define TY_FN_IMM             0x01

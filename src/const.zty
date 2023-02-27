@@ -23,8 +23,9 @@ const TY_VAR        :U1 = 0x40 \ variable (local, global, struct field, etc). Ha
 const TY_FN         :U1 = 0x80 \ function, can be called and has an fnMeta
 const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
 
-\ TY_FN meta bits: [01N- -FFF] N=native D=defer P=pre F=fnTy
+\ TY_FN meta bits: [01NM -FFF] N=native M=method F=fnTy
 const TY_FN_NATIVE  :U1  = 0x20  \ is a native function (i.e. C)
+const TY_FN_METHOD  :U1  = 0x10  \ is a method on a struct
 
 const TY_FN_TY_MASK :U1 = 0x07 \ Function type mask
 const TY_FN_NORMAL  :U1 = 0x00 \ Normally compiled, can use 'imm#' to make IMM
