@@ -215,6 +215,7 @@ void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx);
 void fngiErrPrinter();
 void fngiHandleSig(int sig, struct sigcontext ctx);
 
+void DictStk_reset(Kern* k);
 void Kern_init(Kern* k, FnFiber* fb);
 
 // Initialze FnFiber (beyond Fiber init).
@@ -235,7 +236,8 @@ static inline S kFn(void(*native)(Kern*)) { return (S) native; }
   TyDb_new(&k->g.tyDb); LOCAL_TYDB_BBA(tyDb);
 
 #define REPL_END \
-  TyDb_drop(k, &k->g.tyDb); END_LOCAL_TYDB_BBA(tyDb);
+  TyDb_drop(k, &k->g.tyDb); END_LOCAL_TYDB_BBA(tyDb); \
+  DictStk_reset(k);
 
 
 

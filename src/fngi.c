@@ -90,6 +90,10 @@ void TyDb_init(TyDb* db) {
   db->done = Stk_init(db->doneDat, TYDB_DEPTH);
 }
 
+void DictStk_reset(Kern* k) {
+  k->g.dictStk.sp = k->g.dictStk.cap;
+  DictStk_add(&k->g.dictStk, (TyRoot){ .root = &k->dict });
+}
 
 void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
@@ -107,7 +111,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
   };
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
   k->g.tyDbImm.bba = &k->g.bbaTyImm;
-  DictStk_add(&k->g.dictStk, (TyRoot){ .root = &k->dict });
+  DictStk_reset(k);
 }
 
 bool Kern_eof(Kern* k) { return BaseFile_eof(SpReader_asBase(k, k->g.src)); }
@@ -619,9 +623,9 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
 
 void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
   Slc err;
-  if(db == &k->g.tyDbImm)    err = SLC("Type error during asImm (compile time execution, i.e. using '$')");
-  else if (db == &k->g.tyDb) err = SLC("Type error during compilation (i.e. function call, struct, etc)");
-  else                       err = SLC("Type error during unknown context (not imm or function)");
+  if(db == &k->g.tyDbImm)    err = SLC("Type error at imm");
+  else if (db == &k->g.tyDb) err = SLC("Type error at fn compilation");
+  else                       err = SLC("Type error at UNKNOWN");
   if(IS_UNTY) return;
   if(TyDb_done(db)) ASSERT(not inp and not out, "Code after guaranteed 'ret'");
   TyI** root = TyDb_root(db);
@@ -1336,7 +1340,7 @@ void compImm(Kern* k) {
 }
 
 void N_imm(Kern*k) {
-  N_notImm(k); CONSUME("#"); compImm(k);
+  N_notImm(k); REQUIRE("#"); compImm(k);
 }
 
 void N_paren(Kern* k) {
@@ -1373,14 +1377,23 @@ void _fnMetaNext(Kern* k, U2 meta) {
   k->g.metaNext |= meta;
 }
 
-void _usingAsserts(TyDict* d) {
-  ASSERT(isTyDict((Ty*) d), "Cannot use 'using' with non-dict");
-  ASSERT(not isDictNative(d), "Cannot use 'using' with native dict");
+TyDict* _locGet(Kern *k) {
+  TyDict* next = (TyDict*) scanTy(k);
+  ASSERT(next, "name not found");
+  TyDict* d;
+  do {
+    d = next;
+    ASSERT(isTyDict((Ty*) d), "Cannot use 'use' with non-dict");
+    ASSERT(not isDictNative(d), "Cannot use 'use' with native dict");
+    next = (TyDict*) nextDot(k, d);
+  } while(next);
+  return d;
 }
 
-void _using(Kern* k, TyDict* d) {
+
+void _loc(Kern* k, TyDict* d) {
   assert(not isDictNative(d));
-  DictStk_add(&k->g.dictStk, (TyRoot){.root = (Ty**) &d->v });
+  DictStk_add(&k->g.dictStk, (TyRoot){.root = &d->v });
   Kern_compFn(k);
   DictStk_pop(&k->g.dictStk);
 }
@@ -1388,18 +1401,18 @@ void _using(Kern* k, TyDict* d) {
 void N_mod(Kern* k) {
   N_notImm(k);
   TyDict* d = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_MOD, NULL);
-  _using(k, d);
+  _loc(k, d);
 }
 
-void N_using(Kern* k) {
-  N_notImm(k);
-  TyDict* next = (TyDict*) scanTy(k);
-  ASSERT(next, "dict not found");
-  TyDict* d;
-  do {
-    d = next; _usingAsserts(d); next = (TyDict*) nextDot(k, d);
-  } while(next);
-  _using(k, d);
+void N_loc(Kern* k) {
+  N_notImm(k); REQUIRE(":");
+  _loc(k, _locGet(k));
+}
+
+void N_fileloc(Kern* k) { // loc that stays for whole file
+  N_notImm(k); REQUIRE(":");
+  TyDict* d = _locGet(k);
+  DictStk_add(&k->g.dictStk, (TyRoot){.root = &d->v });
 }
 
 // ***********************
@@ -1407,7 +1420,7 @@ void N_using(Kern* k) {
 
 // fnTy#IMM to make next function immediate, etc.
 void N_fnTy(Kern* k)   {
-  N_notImm(k); CONSUME("#");
+  N_notImm(k); REQUIRE("#");
   compImm(k); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
   S meta = WS_POP();
   ASSERT(not (TY_FN_TY_MASK & k->g.metaNext),
@@ -2021,7 +2034,8 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x03", "imm"          , TY_FN_SYN       , N_imm      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "("            , TY_FN_SYN       , N_paren    , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x05", "using"        , TY_FN_SYN       , N_using    , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "loc"          , TY_FN_SYN       , N_loc      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "fnTy"         , TY_FN_SYN       , N_fnTy     , TYI_VOID, TYI_VOID);
@@ -2157,6 +2171,7 @@ void compilePath(Kern* k, CStr* path) {
   assert(f.fid);
   k->g.src = (SpReader) {.m = &mSpReader_UFile, .d = &f };
   compileSrc(k);
+  DictStk_reset(k);
 }
 
 void simpleRepl(Kern* k) {

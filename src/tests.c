@@ -372,7 +372,7 @@ TEST_FNGI(mod, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("mod foo ( fn one -> S do 1 )");
   COMPILE_EXEC("imm#tAssertEq(1, foo.one())");
-  COMPILE_EXEC("using foo ( imm#tAssertEq(1, one()) )");
+  COMPILE_EXEC("loc:foo ( imm#tAssertEq(1, one()) )");
   REPL_END
 END_TEST_FNGI
 
@@ -410,7 +410,7 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("fn callADo x:S a:A -> S do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
 
-  COMPILE_EXEC("using A ( fn nonMeth x: S -> S do ( 7 + x ) )")
+  COMPILE_EXEC("loc:A( fn nonMeth x:S -> S do ( 7 + x ) )")
   COMPILE_EXEC("fn callNonMeth x:S a:A -> S do ( a.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
 
