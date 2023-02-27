@@ -2,8 +2,8 @@
 #define __FNGI_H
 
 #include "civ_unix.h"
-#include "./gen/const.h"
-#include "./gen/spor.h"
+#include "const.h" // from gen/
+#include "spor.h"  // from gen/
 
 #define FNGI_VERSION "0.1.0"
 
