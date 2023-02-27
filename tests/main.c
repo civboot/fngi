@@ -1,5 +1,5 @@
 
-#include "./fngi.h"
+#include "fngi.h"
 
 TEST(basic)
   TASSERT_EQ(7,    cToU1('7'));

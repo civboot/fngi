@@ -1,10 +1,10 @@
 CC=gcc
 FLAGS=-m32 -no-pie -g -rdynamic
 DISABLE_WARNINGS=-Wno-pointer-sign -Wno-format
-LIBS=-I../civc/src ../civc/src/civ*
+LIBS=-Isrc/ -I../civc/src ../civc/src/civ*
 FNGI_SRC=src/fngi.* src/gen/*.c src/gen/*.h
-TEST_SRC=src/tests.c
-OUT=bin/tests
+TEST_SRC=tests/main.c
+OUT=bin/test
 ARGS=
 
 all: test
