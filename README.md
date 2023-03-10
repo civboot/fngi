@@ -2,12 +2,9 @@
 
 > **WARNING:** this language is in alpha stage. Things are expected to be
 > broken.
-
-> **UPDATE:** I'm taking a break for at least a few months while I focus on
-> work. The rewrite is going well, but it takes up too much of my time.
 >
-> However, the language is in a usable, if extremely unstable state. See
-> **Helping / Hacking** section below.
+> However, the language is in a usable, if extremely unstable state. Please see
+> the issue tracker for how to help, or ask on [discord][discord].
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -41,6 +38,23 @@ Read more:
 
 > Fngi and civboot should be considred an
 > [Obsolete Technology](http://xkcd.com/1891)
+
+## Building
+You need the 32 bit toolchain to build fngi (to use `-m32` flag in gcc).
+On ubuntu this is installed with `sudo apt-get install gcc-multilib`
+
+You then need the source code for the below repos in a single directory.
+use either the ssh or http forms below
+```
+cd ~/my_personal_project_directory/
+git clone git@github.com:civboot/fngi.git  # https://github.com/civboot/fngi.git
+git clone git@github.com:civboot/civc.git  # https://github.com/civboot/civc.git
+git clone git@github.com:civboot/cxt.git   # https://github.com/civboot/cxt.git
+git clone git@github.com:civboot/zoa.git   # https://github.com/civboot/zoa.git
+
+cd fngi
+make test
+```
 
 ## REPL
 You can open a very basic REPL with:
@@ -139,28 +153,7 @@ See [civboot.org](http://civboot.org) for future goals.
 
 [zoa]: http://github.com/civboot/zoa
 [civc]: http://github.com/civboot/civc
-
-## Helping / Hacking
-
-To download this repository and it's dependencies, execute the below commands in
-a directory:
-
-```
-git clone git@github.com:civboot/fngi.git
-git clone git@github.com:civboot/civc.git
-git clone git@github.com:civboot/cxt.git
-git clone git@github.com:civboot/zoa.git
-
-cd fngi
-make test
-```
-
-fngi is still in a fairly brittle state, however many features are already
-supported:
-- The REPL can be run with `make test ARGS=--repl`
-- The syntax can be played with/tested in `tests/basic.fn`. Expect it to break
-  often! Getting some failing (and commented out) test cases is my next goal and
-  I could really use contributors.
+[discord]: https://discord.com/channels/1083089060765118464/1083089061553639477
 
 ## Contributing
 
