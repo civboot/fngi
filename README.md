@@ -4,7 +4,8 @@
 > broken.
 >
 > However, the language is in a usable, if extremely unstable state. Please see
-> the issue tracker for how to help, or ask on [discord][discord].
+> the issue tracker for how to help, or ask on [discord][discord] (click
+> [here][discord invite] to get an invite).
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
@@ -154,6 +155,7 @@ See [civboot.org](http://civboot.org) for future goals.
 [zoa]: http://github.com/civboot/zoa
 [civc]: http://github.com/civboot/civc
 [discord]: https://discord.com/channels/1083089060765118464/1083089061553639477
+[discord invite]: https://discord.com/invite/2DYwsbJ84H
 
 ## Contributing
 
