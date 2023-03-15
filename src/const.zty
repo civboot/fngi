@@ -48,6 +48,6 @@ const TY_DICT_BITMAP :U1 = 0x02
 const TY_DICT_STRUCT :U1 = 0x03
 const TY_DICT_ENUM   :U1 = 0x04
 
-// TODO: TyI needs a TYI_STK flag for inp
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
+const TYI_AUTO         :U1 = 0x08
