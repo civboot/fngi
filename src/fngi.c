@@ -952,7 +952,7 @@ Ty* scanTy(Kern* k) {
   return ty;
 }
 
-typedef struct { Ty* ty; U1 refs; } TySpec;
+typedef struct { Ty* ty; U1 refs; U2 arrLen; } TySpec;
 TySpec scanTySpec(Kern *k) {
   TySpec s = {0};
   while(true) {
@@ -961,7 +961,19 @@ TySpec scanTySpec(Kern *k) {
   }
   ASSERT(s.refs <= TY_REFS, "number of '&' must be <= 3");
 
-  s.ty = scanTy(k);
+  if(CONSUME("Arr")) {
+    ASSERT(not s.refs, "cannot be reference to array, just use more &");
+    REQUIRE("["); ParsedNumber n = {0};
+    if(CONSUME("?")) n.v = ARR_LEN_Q;
+    else {
+      n = parseU4(*Buf_asSlc(&k->g.token)); tokenDrop(k);
+      ASSERT(n.isNum and n.v, "first array element must be a number > 0");
+    }
+    CONSUME(","); s = scanTySpec(k); REQUIRE("]");
+    ASSERT(not s.arrLen, "nested arrays not allowed");
+    s.arrLen = n.v;
+  } else s.ty = scanTy(k);
+
   if(not s.ty) {
     eprintf("!! Type not found: %.*s\n", Dat_fmt(k->g.token));
     SET_ERR(SLC("Type not found"));
@@ -972,12 +984,13 @@ TySpec scanTySpec(Kern *k) {
   return s;
 }
 
-TyI* scanTyI(Kern* k) {
+typedef struct { TyI* tyI; U2 arrLen; } ScanTyI;
+ScanTyI scanTyI(Kern* k) {
   TySpec s = scanTySpec(k);
   TyI* tyI = (TyI*) BBA_alloc(k->g.bbaDict, sizeof(TyI), RSIZE);
   ASSERT(tyI, "scanTyI: OOM");
   *tyI = (TyI) { .meta = s.refs, .ty = s.ty };
-  return tyI;
+  return (ScanTyI) { .tyI = tyI, .arrLen = s.arrLen };
 }
 
 // ***********************
@@ -1442,12 +1455,6 @@ void synFnFound(Kern* k, Ty* ty) {
   executeFn(k, (TyFn*)ty);
 }
 
-void localImpl(Kern* k, TyVar* var) {
-  S sz = TyI_sz(var->tyI);
-  var->v = align(k->g.fnLocals, alignment(sz));
-  k->g.fnLocals = var->v + sz;
-}
-
 // Used for both stk and out
 void N_stk(Kern *k) {
   N_notImm(k);
@@ -1456,7 +1463,8 @@ void N_stk(Kern *k) {
   else if(IS_FN_STATE(FN_STATE_OUT)) root = TyFn_outRoot(tyFn(k->g.curTy));
   else { SET_ERR(SLC("stk used after local variable inputs or in body")); }
   CONSUME(":");
-  Sll_add(root, TyI_asSll(scanTyI(k)));
+  ScanTyI s = scanTyI(k); ASSERT(not s.arrLen, "Stk input cannot be array");
+  Sll_add(root, TyI_asSll(s.tyI));
 }
 TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (U1*)N_stk, TYI_VOID, TYI_VOID);
 
@@ -1466,32 +1474,39 @@ CStr* scanDedupCStr(Kern* k) {
   else      return tokenCStr(k);
 }
 
-TyVar* varPre(Kern* k) {
+typedef struct { TyVar* var; S sz; S els; } VarPre;
+VarPre varPre(Kern* k) {
   CStr* key = scanDedupCStr(k);
-  TyVar* var = (TyVar*) Ty_new(k, TY_VAR, key);
-  REQUIRE(":");
-  TyI* tyI = scanTyI(k);
-  tyI->name = key;
-  var->tyI = tyI;
-  return var;
+  TyVar* v = (TyVar*) Ty_new(k, TY_VAR, key);
+  REQUIRE(":"); ScanTyI s = scanTyI(k);
+  s.tyI->name = key; v->tyI = s.tyI;
+
+  S sz = TyI_sz(s.tyI); sz = align(sz, alignment(sz));
+  return (VarPre) { .var = v, .sz = sz, .els = s.arrLen ? s.arrLen : 1 };
+}
+
+void localImpl(Kern* k, VarPre* pre) {
+  // calculate var offset and update fnLocals offset.
+  pre->var->v = align(k->g.fnLocals, alignment(pre->sz));
+  k->g.fnLocals = pre->var->v + (pre->els * pre->sz);
 }
 
 void N_inp(Kern* k) {
   N_notImm(k);
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
          , "inp used after out");
-  TyVar* var = varPre(k);
+  VarPre pre = varPre(k);
   SET_FN_STATE(FN_STATE_INP);
-  TyI* tyI = TyI_cloneNode(var->tyI, k->g.bbaDict);
+  TyI* tyI = TyI_cloneNode(pre.var->tyI, k->g.bbaDict);
   Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(tyI));
-  localImpl(k, var);
+  localImpl(k, &pre);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_VOID);
 
-void _varGlobal(Kern* k, TyVar* v) {
+void _varGlobal(Kern* k, VarPre* pre) {
+  TyVar* v = pre->var;
   v->meta |= TY_VAR_GLOBAL;
-  S sz = TyI_sz(v->tyI);
-  v->v = (S) BBA_alloc(&k->bbaCode, sz, /*align*/ sz);
+  v->v = (S) BBA_alloc(&k->bbaCode, pre->els * pre->sz, /*align*/pre->sz);
   ASSERT(v->v, "Global OOM");
   if(CONSUME("=")) {
     compImm(k);
@@ -1501,19 +1516,20 @@ void _varGlobal(Kern* k, TyVar* v) {
   }
 }
 
-void _varLocal(Kern* k, TyVar* v) {
-  localImpl(k, v);
+void _varLocal(Kern* k, VarPre* pre) {
+  localImpl(k, pre);
   if(CONSUME("=")) {
     SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
-    srOffset(k, v->tyI, /*offset=*/v->v, &st);
+    srOffset(k, pre->var->tyI, /*offset=*/pre->var->v, &st);
   }
 }
 
 void N_var(Kern* k) {
   N_notImm(k);
-  TyVar* v = varPre(k);
-  if(IS_FN_STATE(FN_STATE_NO))  _varGlobal(k, v);
-  else                          _varLocal(k, v);
+  VarPre pre = varPre(k);
+  ASSERT(pre.els < ARR_LEN_Q, "Arr of size ? not allowed in var");
+  if(IS_FN_STATE(FN_STATE_NO))  _varGlobal(k, &pre);
+  else                          _varLocal(k, &pre);
 }
 
 void fnSignature(Kern* k, TyFn* fn) {
@@ -1785,13 +1801,14 @@ void N_blk(Kern* k) {
 //
 // struct Foo [ a: U2; b: &U4 ]
 
-void field(Kern* k, TyDict* st) {
-  TyVar* var = varPre(k);
-  S sz = TyI_sz(var->tyI);
-  var->v = align(st->sz, alignment(sz));
-  st->sz = var->v + sz;
-  TyI* tyI = TyI_cloneNode(var->tyI, k->g.bbaDict);
+bool field(Kern* k, TyDict* st) {
+  VarPre pre = varPre(k); TyVar* v = pre.var;
+  v->v = align(st->sz, alignment(pre.sz));
+  TyI* tyI = TyI_cloneNode(v->tyI, k->g.bbaDict);
   Sll_add(TyDict_fieldsRoot(st), TyI_asSll(tyI));
+  if(pre.els == ARR_LEN_Q) return true;
+  st->sz = v->v + (pre.els * pre.sz);
+  return false;
 }
 
 void N_struct(Kern* k) {
@@ -1800,13 +1817,14 @@ void N_struct(Kern* k) {
   TyDict* prevMod = k->g.curMod;
   k->g.curMod = st;
   DictStk_add(&k->g.dictStk, st);
-  REQUIRE("[");
+  REQUIRE("["); bool hasUnsized = false;
   while(not CONSUME("]")) {
     Ty* ty = Kern_findToken(k);
     ASSERT(not Kern_eof(k), "Expected ']', reached EOF");
+    ASSERT(not hasUnsized, "Detected field after unsized field.");
     if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
       tokenDrop(k); WS_ADD(/*asImm*/false); executeFn(k, (TyFn*)ty);
-    } else field(k, st);
+    } else hasUnsized = field(k, st);
   }
   DictStk_pop(&k->g.dictStk);
   k->g.curMod = prevMod;

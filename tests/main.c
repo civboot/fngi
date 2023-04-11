@@ -447,6 +447,25 @@ TEST_FNGI(ptr, 20) // tests necessary for libraries
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(arr, 20) // tests necessary for libraries
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC(
+    "fn simpleArr x:S -> S do (\n"
+    "  var a: Arr [3 S]\n"
+    "  var b: S = 0x42\n"
+    "  a = 3; @ptrAdd(&a, 1, 3) = 4; @ptrAdd(&a, 2, 3) = 5;\n"
+    "  tAssertEq(0x42, b)\n"
+    "  @ptrAdd(&a, 3, 4) = 9; \\ note: setting b\n"
+    "  tAssertEq(9, b)\n"
+    "  @ptrAdd(&a, x, 3)\n"
+    ")");
+  COMPILE_EXEC("simpleArr 0"); TASSERT_WS(3);
+  COMPILE_EXEC("simpleArr 1"); TASSERT_WS(4);
+  COMPILE_EXEC("simpleArr 2"); TASSERT_WS(5);
+
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(file_basic, 20)
   Kern_fns(k);
   N_assertWsEmpty(k);
@@ -498,6 +517,7 @@ int main(int argc, char* argv[]) {
   test_structDeep();
   test_method();
   test_ptr();
+  test_arr();
   test_file_basic();
   // test_file_dat();
   eprintf("# Tests complete\n");

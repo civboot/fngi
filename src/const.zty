@@ -50,4 +50,4 @@ const TY_DICT_ENUM   :U1 = 0x04
 
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
-const TYI_AUTO         :U1 = 0x08
+const ARR_LEN_Q        :U2 = 0xFFFF
