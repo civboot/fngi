@@ -43,4 +43,5 @@
 #define TY_DICT_ENUM          0x04
 #define TY_NATIVE_SIGNED      0x08
 #define TY_REFS               0x03
+#define TYI_AUTO              0x08
 

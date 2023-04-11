@@ -952,15 +952,13 @@ Ty* scanTy(Kern* k) {
   return ty;
 }
 
-typedef struct { Ty* ty; U1 refs; U1 derefs; } TySpec;
+typedef struct { Ty* ty; U1 refs; } TySpec;
 TySpec scanTySpec(Kern *k) {
   TySpec s = {0};
   while(true) {
     if     (CONSUME("&")) s.refs += 1;
-    else if(CONSUME("@")) s.derefs += 1;
     else break;
   }
-  ASSERT(not s.derefs,           "invalid deref on type spec");
   ASSERT(s.refs <= TY_REFS, "number of '&' must be <= 3");
 
   s.ty = scanTy(k);
@@ -968,7 +966,7 @@ TySpec scanTySpec(Kern *k) {
     eprintf("!! Type not found: %.*s\n", Dat_fmt(k->g.token));
     SET_ERR(SLC("Type not found"));
   }
-  if(isTyDict(s.ty)) eprintf("");
+  if(isTyDict(s.ty)) {}
   else if(isTyFn(s.ty)) ASSERT(s.refs > 0, "type spec on fn must be a reference");
   else SET_ERR(SLC("type spec must be a Dict or &Fn"))
   return s;
@@ -976,7 +974,6 @@ TySpec scanTySpec(Kern *k) {
 
 TyI* scanTyI(Kern* k) {
   TySpec s = scanTySpec(k);
-  ASSERT(not s.derefs, "derefs not allowed in Ty");
   TyI* tyI = (TyI*) BBA_alloc(k->g.bbaDict, sizeof(TyI), RSIZE);
   ASSERT(tyI, "scanTyI: OOM");
   *tyI = (TyI) { .meta = s.refs, .ty = s.ty };
@@ -1494,16 +1491,14 @@ TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_V
 void _varGlobal(Kern* k, TyVar* v) {
   v->meta |= TY_VAR_GLOBAL;
   S sz = TyI_sz(v->tyI);
-  Buf prevCode = Kern_reserveCode(k, sz);
-  v->v = (S) k->g.code.dat;
-  k->g.code.len = sz; // mark as totally used.
+  v->v = (S) BBA_alloc(&k->bbaCode, sz, /*align*/ sz);
+  ASSERT(v->v, "Global OOM");
   if(CONSUME("=")) {
     compImm(k);
     SrOffset st = (SrOffset) {.op = SRGL, .checkTy = true, .asImm = true, .global = v};
     srOffset(k, v->tyI, /*offset*/0, &st);
     v->meta |= TY_VAR_INIT;
   }
-  k->g.code = prevCode;
 }
 
 void _varLocal(Kern* k, TyVar* v) {
@@ -1940,7 +1935,7 @@ void N_at(Kern* k) {
   tyCall(k, tyDb(k, false), &inp, &out);
 }
 
-void N_ptrAddRaw(Kern* k) {
+void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
   S sz = WS_POP(); WS_POP3(S ptr, S i, S bound);
   ASSERT(i < bound, "ptrAdd OOB");
   WS_ADD(ptr + (i * sz));
@@ -1950,7 +1945,7 @@ TyFn TyFn_ptrAddRaw = {
   .code = (U1*)N_ptrAddRaw, .inp = &TyIs_Unsafe, .out = &TyIs_Unsafe
 };
 
-void N_ptrAdd(Kern* k) {
+void N_ptrAdd(Kern* k) { // ptrAdd(ptr, index, cap)
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "ptrAdd requires type checking");
   Kern_compFn(k);

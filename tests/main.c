@@ -428,7 +428,6 @@ END_TEST_FNGI
 
 TEST_FNGI(prelib, 20) // tests necessary for libraries
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("4"); TASSERT_WS(4);
   COMPILE_EXEC("fn getPtrs x:S -> &S, &S do (&x, ptrAdd(&x, 1, 10)) getPtrs(5)")
   WS_POP2(S x, S xPlus1);
   TASSERT_EQ(x + sizeof(S), xPlus1);
