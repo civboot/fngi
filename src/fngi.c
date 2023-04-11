@@ -466,11 +466,19 @@ S TyDict_size(TyDict* ty) {
   else                 return ty->sz;
 }
 
+Ty* Ty_unalias(Ty* ty) {
+  while(true) {
+    if(not isTyVar(ty))             return ty;
+    if(not isVarAlias((TyVar*) ty)) return ty;
+    ty = (Ty*) ((TyVar*)ty)->v;
+  }
+}
+
 Ty* TyDict_find(TyDict* dict, Slc s) {
   CBst* find = TyDict_bst(dict);
   I4 i = CBst_find(&find, s);
   if(i) return NULL;
-  else  return (Ty*) find;
+  else  return Ty_unalias((Ty*) find);
 }
 
 Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
@@ -913,7 +921,7 @@ Ty* Kern_findTy(Kern* k, Slc t) { // You probably want to use scanTy
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
     ty = dicts->dat[i]->children;
     I4 res = CBst_find((CBst**)&ty, t);
-    if((0 == res) && (ty != NULL)) return ty;
+    if((0 == res) && (ty != NULL)) return Ty_unalias(ty);
   }
   return NULL;
 }
@@ -1532,6 +1540,13 @@ void N_var(Kern* k) {
   else                          _varLocal(k, &pre);
 }
 
+void N_alias(Kern* k) {
+  N_notImm(k);
+  CStr* key = scanDedupCStr(k);
+  TyVar* v = (TyVar*) Ty_new(k, TY_VAR | TY_VAR_ALIAS, key);
+  REQUIRE(":"); v->v = (S) scanTy(k);
+}
+
 void fnSignature(Kern* k, TyFn* fn) {
   SET_FN_STATE(FN_STATE_STK);
   while(true) {
@@ -2103,6 +2118,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "fnTy"         , TY_FN_SYN       , N_fnTy     , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "brk"          , TY_FN_SYN       , N_brk      , TYI_VOID, TYI_VOID);

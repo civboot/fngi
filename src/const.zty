@@ -34,8 +34,9 @@ const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run imm (knowing asImm)
 const TY_FN_INLINE  :U1 = 0x03 \ Inline function, copies bytes when compiled.
 const TY_FN_COMMENT :U1 = 0x04 \ Comment function. Executed immediately.
 
-\ TY_VAR meta bits: [10-- GCI-] G=global C=constant I=initialized
+\ TY_VAR meta bits: [10A- GCI-] A=alias G=global C=constant I=initialized
 \ G=0 on a struct/enum is a field, G=0 on a fn is a local
+const TY_VAR_ALIAS  :U1 = 0x20
 const TY_VAR_GLOBAL :U1 = 0x08
 const TY_VAR_CONST  :U1 = 0x04
 const TY_VAR_INIT   :U1 = 0x02

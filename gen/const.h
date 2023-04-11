@@ -32,6 +32,7 @@
 #define TY_FN_SYN             0x02
 #define TY_FN_INLINE          0x03
 #define TY_FN_COMMENT         0x04
+#define TY_VAR_ALIAS          0x20
 #define TY_VAR_GLOBAL         0x08
 #define TY_VAR_CONST          0x04
 #define TY_VAR_INIT           0x02

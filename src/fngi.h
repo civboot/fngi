@@ -282,8 +282,9 @@ static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
 static inline bool isDictMod(TyDict* ty)       IS_DICT(TY_DICT_MOD)
 static inline bool isDictStruct(TyDict* ty)    IS_DICT(TY_DICT_STRUCT)
 #undef IS_DICT
+static inline bool isVarAlias(TyVar* v)  { return TY_VAR_ALIAS  & v->meta; }
 static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }
-static inline U1   TyI_refs(TyI* tyI) { return TY_REFS & tyI->meta; }
+static inline U1   TyI_refs(TyI* tyI)    { return TY_REFS & tyI->meta; }
 
 static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");

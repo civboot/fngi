@@ -326,6 +326,18 @@ TEST_FNGI(compileStruct, 10)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(alias, 10)
+  Kern_fns(k); REPL_START;
+
+  COMPILE_EXEC("struct A [ a: S ]  alias Aa:A\n"
+    "fn useAlias a:Aa -> A do (\n"
+    "  Aa(a.a)\n"
+    "); useAlias(A(0x30))\n"); TASSERT_WS(0x30);
+
+  REPL_END
+END_TEST_FNGI
+
+
 TEST_FNGI(structBrackets, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("struct A [ a1: S, a2: S ]");
@@ -511,6 +523,7 @@ int main(int argc, char* argv[]) {
   test_compileBlk();
   test_compileVar();
   test_compileStruct();
+  test_alias();
   test_structBrackets();
   test_global();
   test_mod();
