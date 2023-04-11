@@ -426,12 +426,23 @@ TEST_FNGI(method, 20)
   REPL_END
 END_TEST_FNGI
 
-TEST_FNGI(prelib, 20) // tests necessary for libraries
+TEST_FNGI(ptr, 20) // tests necessary for libraries
   Kern_fns(k); REPL_START
+  // Get the value at a pointer
+  COMPILE_EXEC("fn ftPtr a:S -> S do ( @(&a) ) ftPtr(0x42)");
+  TASSERT_WS(0x42);
+
+  // Set the value at a pointer, then get it
+  COMPILE_EXEC("fn srPtr a:S -> S do ( \\set @(&a) = (a + 3); a ) srPtr(3)");
+  TASSERT_WS(6);
+
+  // Just get pointer and an offset of 1
   COMPILE_EXEC("fn getPtrs x:S -> &S, &S do (&x, ptrAdd(&x, 1, 10)) getPtrs(5)")
   WS_POP2(S x, S xPlus1);
   TASSERT_EQ(x + sizeof(S), xPlus1);
-  COMPILE_EXEC("fn ftPtr a:S b:S -> S do ( @ptrAdd(&a, 1, 2) ) ftPtr(0xBAD, 0x733) ");
+
+  // Get a value at the pointer index 1
+  COMPILE_EXEC("fn ftPtr1 a:S b:S -> S do ( @ptrAdd(&a, 1, 2) ) ftPtr1(0xBAD, 0x733) ");
   TASSERT_WS(0x733);
   REPL_END
 END_TEST_FNGI
@@ -486,7 +497,7 @@ int main(int argc, char* argv[]) {
   test_mod();
   test_structDeep();
   test_method();
-  test_prelib();
+  test_ptr();
   test_file_basic();
   // test_file_dat();
   eprintf("# Tests complete\n");

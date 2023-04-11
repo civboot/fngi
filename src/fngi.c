@@ -1915,24 +1915,28 @@ void N_amp(Kern* k) {
 void N_at(Kern* k) {
   N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
-  Kern_compFn(k);
-  if(CONSUME("=")) {
-    assert(false);
-  }
-  TyI* top = TyDb_top(db); U2 refs = TyI_refs(top);
+  Kern_compFn(k);  U1 instr = FT;
+  if(CONSUME("="))    instr = SR;
+  TyI* ref = TyDb_top(db); U2 refs = TyI_refs(ref);
   ASSERT(refs, "invalid '@', the value on the stack is not a reference");
-  if(refs > 1) Buf_add(&k->g.code, FT | SZR);
-  else if (not isTyDict(top->ty)) { SET_ERR(SLC("Cannot fetch non-dict type")); }
+  if(SR == instr) Kern_compFn(k); // compile value to store
+  if(refs > 1) Buf_add(&k->g.code, instr | SZR);
+  else if (not isTyDict(ref->ty)) { SET_ERR(SLC("Cannot ft/sr non-dict type")); }
   else {
-    TyDict* d = (TyDict*) top->ty;
+    TyDict* d = (TyDict*) ref->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
-    if(isDictNative(d)) Buf_add(&k->g.code, FT | (SZ_MASK & (S)d->children));
-    else assert(false);
+    if(isDictNative(d)) Buf_add(&k->g.code, instr | (SZ_MASK & (S)d->children));
+    else assert(false); // struct not implemented
   }
 
-  TyI inp = (TyI) { .ty = (Ty*)top->ty, .meta = top->meta };
-  TyI out = (TyI) { .ty = (Ty*)top->ty, .meta = top->meta - 1};
-  tyCall(k, tyDb(k, false), &inp, &out);
+  TyI inp = (TyI) { .ty = (Ty*)ref->ty, .meta = ref->meta };
+  if(instr == SR) {
+    TyI inp2 = *TyDb_top(db); inp2.next = &inp;
+    tyCall(k, db, &inp2, NULL);
+  } else {
+    TyI out = (TyI) { .ty = (Ty*)ref->ty, .meta = ref->meta - 1};
+    tyCall(k, db, &inp, &out);
+  }
 }
 
 void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
