@@ -20,6 +20,7 @@
 #define FN_STATE_STK          0x02
 #define FN_STATE_INP          0x03
 #define FN_STATE_OUT          0x04
+#define TY_UNSIZED            0xFFFF
 #define TY_MASK               0xC0
 #define TY_VAR                0x40
 #define TY_FN                 0x80
@@ -44,5 +45,4 @@
 #define TY_DICT_ENUM          0x04
 #define TY_NATIVE_SIGNED      0x08
 #define TY_REFS               0x03
-#define ARR_LEN_Q             0xFFFF
 

@@ -17,6 +17,8 @@ const FN_STATE_STK  :U4 = 0x0002 \ can declare stk inputs
 const FN_STATE_INP  :U4 = 0x0003 \ can declare inp inputs
 const FN_STATE_OUT  :U4 = 0x0004 \ can declare outputs
 
+const TY_UNSIZED    :U2 = 0xFFFF
+
 \ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
 const TY_MASK       :U1 = 0xC0 \ upper two bits determine type
 const TY_VAR        :U1 = 0x40 \ variable (local, global, struct field, etc). Has varMeta
@@ -51,4 +53,3 @@ const TY_DICT_ENUM   :U1 = 0x04
 
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
-const ARR_LEN_Q        :U2 = 0xFFFF

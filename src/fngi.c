@@ -972,7 +972,7 @@ TySpec scanTySpec(Kern *k) {
   if(CONSUME("Arr")) {
     ASSERT(not s.refs, "cannot be reference to array, just use more &");
     REQUIRE("["); ParsedNumber n = {0};
-    if(CONSUME("?")) n.v = ARR_LEN_Q;
+    if(CONSUME("?")) n.v = TY_UNSIZED;
     else {
       n = parseU4(*Buf_asSlc(&k->g.token)); tokenDrop(k);
       ASSERT(n.isNum and n.v, "first array element must be a number > 0");
@@ -1535,7 +1535,7 @@ void _varLocal(Kern* k, VarPre* pre) {
 void N_var(Kern* k) {
   N_notImm(k);
   VarPre pre = varPre(k);
-  ASSERT(pre.els < ARR_LEN_Q, "Arr of size ? not allowed in var");
+  ASSERT(pre.els < TY_UNSIZED, "Arr of size ? not allowed in var");
   if(IS_FN_STATE(FN_STATE_NO))  _varGlobal(k, &pre);
   else                          _varLocal(k, &pre);
 }
@@ -1821,7 +1821,7 @@ bool field(Kern* k, TyDict* st) {
   v->v = align(st->sz, alignment(pre.sz));
   TyI* tyI = TyI_cloneNode(v->tyI, k->g.bbaDict);
   Sll_add(TyDict_fieldsRoot(st), TyI_asSll(tyI));
-  if(pre.els == ARR_LEN_Q) return true;
+  if(pre.els == TY_UNSIZED) return true;
   st->sz = v->v + (pre.els * pre.sz);
   return false;
 }
@@ -1829,8 +1829,8 @@ bool field(Kern* k, TyDict* st) {
 void N_struct(Kern* k) {
   N_notImm(k);
   TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
-  TyDict* prevMod = k->g.curMod;
-  k->g.curMod = st;
+  Ty* prevTy = k->g.curTy;        k->g.curTy = (Ty*) st;
+  TyDict* prevMod = k->g.curMod;  k->g.curMod = st;
   DictStk_add(&k->g.dictStk, st);
   REQUIRE("["); bool hasUnsized = false;
   while(not CONSUME("]")) {
@@ -1842,7 +1842,8 @@ void N_struct(Kern* k) {
     } else hasUnsized = field(k, st);
   }
   DictStk_pop(&k->g.dictStk);
-  k->g.curMod = prevMod;
+  if(hasUnsized) st->sz = TY_UNSIZED;
+  k->g.curMod = prevMod; k->g.curTy = prevTy;
 }
 
 // ***********************
