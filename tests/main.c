@@ -418,6 +418,23 @@ TEST_FNGI(structDeep, 12)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(structSuper, 12)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("struct A [ a: S ]");
+  COMPILE_EXEC("struct B [ super: A; b: S ]");
+
+  COMPILE_EXEC("fn useB b:B -> S S do (\n"
+               "  b.b, b.a\n"
+               ")");
+  COMPILE_EXEC("useB(B(A(0x11), 0x12))"); TASSERT_WS(0x11); TASSERT_WS(0x12);
+
+  COMPILE_EXEC("fn thing do ( var a:A = { a = 0x15 } ) ");
+  COMPILE_EXEC("fn newB -> B do ( var b:B = { a = 0x15  b = 0x16 } b)");
+  COMPILE_EXEC("useB(newB;)");            TASSERT_WS(0x15); TASSERT_WS(0x16);
+
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(method, 20)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("struct A [ v:S; meth aDo self: &A, x: S -> S do ( self.v + x ) ]")
@@ -528,6 +545,7 @@ int main(int argc, char* argv[]) {
   test_global();
   test_mod();
   test_structDeep();
+  test_structSuper();
   test_method();
   test_ptr();
   test_arr();

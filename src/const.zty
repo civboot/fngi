@@ -53,3 +53,6 @@ const TY_DICT_ENUM   :U1 = 0x04
 
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
+
+\ TYI meta bits: [U--- --RR] U=unsized R=refs
+const TYI_UNSIZED      :U1 = 0x80

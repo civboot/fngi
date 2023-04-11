@@ -32,6 +32,8 @@
 
 #define NL eprintf("\n")
 
+Slc SUPER = SLC("super");
+
 /*extern*/ Kern* fngiK = NULL;
 
 void N_dbgRs(Kern* k);
@@ -460,10 +462,17 @@ static inline S szToSzI(U1 sz) {
   assert(false);
 }
 
+bool TyI_unsized(TyI* tyI);
+bool TyDict_unsized(TyDict* ty) {
+  if(isDictNative(ty)) return false;
+  return TyI_unsized(ty->fields); // check last field
+}
+
+// Return the KNOWN TyDict size. Callers must also check TyDict_unsized.
 S TyDict_size(TyDict* ty) {
   ASSERT(not isDictMod(ty), "attempted size of TY_DICT_MOD");
   if(isDictNative(ty)) return szIToSz((S)ty->children);
-  else                 return ty->sz;
+  return ty->sz;
 }
 
 Ty* Ty_unalias(Ty* ty) {
@@ -475,10 +484,16 @@ Ty* Ty_unalias(Ty* ty) {
 }
 
 Ty* TyDict_find(TyDict* dict, Slc s) {
-  CBst* find = TyDict_bst(dict);
-  I4 i = CBst_find(&find, s);
-  if(i) return NULL;
-  else  return Ty_unalias((Ty*) find);
+  while(true) {
+    CBst* find = TyDict_bst(dict);
+    I4 i = CBst_find(&find, s);
+    if(i or not find) {
+      if(Slc_eq(SUPER, s)) return NULL; // prevent recursion
+      Ty* super = TyDict_find(dict, SUPER);
+      if(not super) return NULL;
+      dict = tyDict(tyVar(super)->tyI->ty);
+    } else  return Ty_unalias((Ty*) find);
+  }
 }
 
 Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
@@ -491,6 +506,14 @@ TyVar* TyDict_field(TyDict* d, TyI* field) {
   TyVar* var = (TyVar*) TyDict_find(d, CStr_asSlc(field->name));
   assert(var && isTyVar((Ty*)var) && not isVarGlobal(var));
   return var;
+}
+
+// Get the type size. Returns TY_UNSIZED if size is dynamic.
+bool TyI_unsized(TyI* tyI) {
+  if(TyI_refs(tyI))           return false;
+  if(TYI_UNSIZED & tyI->meta) return true;
+  ASSERT(isTyDict(tyI->ty), "TyI non-ref must be dict");
+  return TyDict_unsized((TyDict*)tyI->ty);
 }
 
 S TyI_sz(TyI* tyI) {
@@ -997,7 +1020,8 @@ ScanTyI scanTyI(Kern* k) {
   TySpec s = scanTySpec(k);
   TyI* tyI = (TyI*) BBA_alloc(k->g.bbaDict, sizeof(TyI), RSIZE);
   ASSERT(tyI, "scanTyI: OOM");
-  *tyI = (TyI) { .meta = s.refs, .ty = s.ty };
+  U1 meta = (TY_UNSIZED == s.arrLen) ? TYI_UNSIZED : 0;
+  *tyI = (TyI) { .meta = meta | s.refs, .ty = s.ty };
   return (ScanTyI) { .tyI = tyI, .arrLen = s.arrLen };
 }
 
@@ -1015,6 +1039,7 @@ typedef struct {
 } SrOffset;
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st);
 
+
 void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   if(not st->notParse) {
     if(CONSUME("{")) return srOffsetStruct(k, tyDict(tyI->ty), offset, st);
@@ -1022,7 +1047,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   }
 
   Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
-  if(st->checkTy) tyCall(k, db, tyI, NULL);
+  if(st->checkTy)   tyCall(k, db, tyI, NULL);
   if(TyI_refs(tyI)) return opOffset(k, b, st->op, SZR, offset, st->global);
   ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
@@ -1205,6 +1230,7 @@ Ty* nextDot(Kern* k, TyDict* d) {
 }
 
 void assertRefCast(TyI* top) {
+  ASSERT(not TyI_unsized(top), "Cannot convert unsized type to pointer");
   ASSERT(RSIZE == TyI_sz(top), "Cannot convert type to pointer unless sz=RSIZE");
 }
 
@@ -1535,7 +1561,7 @@ void _varLocal(Kern* k, VarPre* pre) {
 void N_var(Kern* k) {
   N_notImm(k);
   VarPre pre = varPre(k);
-  ASSERT(pre.els < TY_UNSIZED, "Arr of size ? not allowed in var");
+  ASSERT(not TyI_unsized(pre.var->tyI), "Var must have a known size");
   if(IS_FN_STATE(FN_STATE_NO))  _varGlobal(k, &pre);
   else                          _varLocal(k, &pre);
 }
@@ -1816,14 +1842,17 @@ void N_blk(Kern* k) {
 //
 // struct Foo [ a: U2; b: &U4 ]
 
-bool field(Kern* k, TyDict* st) {
+void field(Kern* k, TyDict* st) {
   VarPre pre = varPre(k); TyVar* v = pre.var;
   v->v = align(st->sz, alignment(pre.sz));
   TyI* tyI = TyI_cloneNode(v->tyI, k->g.bbaDict);
   Sll_add(TyDict_fieldsRoot(st), TyI_asSll(tyI));
-  if(pre.els == TY_UNSIZED) return true;
-  st->sz = v->v + (pre.els * pre.sz);
-  return false;
+  if(TyI_unsized(pre.var->tyI)) {
+    st->sz = v->v + pre.sz;
+  } else {
+    assert(TY_UNSIZED != pre.els);
+    st->sz = v->v + (pre.els * pre.sz);
+  }
 }
 
 void N_struct(Kern* k) {
@@ -1839,7 +1868,14 @@ void N_struct(Kern* k) {
     ASSERT(not hasUnsized, "Detected field after unsized field.");
     if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
       tokenDrop(k); WS_ADD(/*asImm*/false); executeFn(k, (TyFn*)ty);
-    } else hasUnsized = field(k, st);
+    } else {
+      field(k, st);
+      hasUnsized |= TyI_unsized(st->fields);
+      if(Slc_eq(SUPER, Slc_frCStr(st->fields->name))) {
+        ASSERT(not st->fields->next, "super must be the first field");
+        ASSERT(not TyI_refs(st->fields), "can not be super of reference");
+      }
+    }
   }
   DictStk_pop(&k->g.dictStk);
   if(hasUnsized) st->sz = TY_UNSIZED;
@@ -1992,14 +2028,15 @@ void N_ptrAdd(Kern* k) { // ptrAdd(ptr, index, cap)
     // invalid type
     tyCall(k, db, &TyIs_rAnySS, &TyIs_rAny); assert(false);
   }
-  TyI* ptrTy = tyI->next->next;
-  ASSERT(TyI_refs(ptrTy), "ptrAdd requires the ptr to be a reference");
+  TyI* ptrTy = tyI->next->next; U1 refs = TyI_refs(ptrTy);
+  ASSERT(refs, "ptrAdd requires the ptr to be a reference");
+  ASSERT(refs > 1 || not TyI_unsized(ptrTy), "ptrAdd cannot work on unsized types");
   TyI inp[3]; inp[0] = (TyI) {.ty = ptrTy->ty, .meta = ptrTy->meta };
               inp[1] = (TyI) {.ty = (Ty*)&Ty_S, .next = &inp[0]};
               inp[2] = (TyI) {.ty = (Ty*)&Ty_S, .next = &inp[1]};
   tyCall(k, db, &inp[2], &inp[0]);
-  TyI derefTyI = {.ty = ptrTy->ty, .meta = ptrTy->meta - 1};
-  lit(&k->g.code, TyI_sz(&derefTyI));
+  TyI derefPtr = {.ty = ptrTy->ty, .meta = ptrTy->meta - 1};
+  lit(&k->g.code, TyI_sz(&derefPtr));
   Kern_typed(k, false);
   compileFn(k, &TyFn_ptrAddRaw, asImm);
   Kern_typed(k, true);
