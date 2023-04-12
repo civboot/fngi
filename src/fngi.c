@@ -483,6 +483,12 @@ Ty* Ty_unalias(Ty* ty) {
   }
 }
 
+TyDict* tyStruct(Ty* ty) {
+  TyDict* d = tyDict(ty);
+  ASSERT(isDictStruct(d), "require struct");
+  return d;
+}
+
 Ty* TyDict_find(TyDict* dict, Slc s) {
   while(true) {
     CBst* find = TyDict_bst(dict);
@@ -523,20 +529,26 @@ S TyI_sz(TyI* tyI) {
 }
 
 bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
-  if(TyI_refs(r) != TyI_refs(g)) return false;
-  if(r->ty == g->ty)             return true;
-  if(((Ty*)&Ty_S == r->ty) or ((Ty*)&Ty_U4 == r->ty)) {
-    if((Ty*)&Ty_U1 == g->ty) return true;
-    if((Ty*)&Ty_U2 == g->ty) return true;
-    if((Ty*)&Ty_U4 == g->ty) return true;
-    if((Ty*)&Ty_S  == g->ty) return true;
-  } else if (((Ty*)&Ty_U2 == r->ty) and ((Ty*)&Ty_U1 == g->ty)) return true;
-  else if (((Ty*)&Ty_I4 == r->ty) or ((Ty*)&Ty_SI == r->ty)) {
-    if((Ty*)&Ty_I4 == g->ty) return true;
-    if((Ty*)&Ty_SI == g->ty) return true;
+  if(TyI_refs(r) != TyI_refs(g))           return false;
+  if(r->ty == g->ty)                       return true;
+  if(!isTyDict(r->ty) || !isTyDict(g->ty)) return false;
+  TyDict* rd = (TyDict*)r->ty; TyDict* gd = (TyDict*)g->ty;
+  if((&Ty_S == rd) or (&Ty_U4 == rd)) {
+    return (  (&Ty_U1 == gd) or (&Ty_U2 == gd)
+           or (&Ty_U4 == gd) or (&Ty_S  == gd) );
+  } else if ((&Ty_U2 == rd) and (&Ty_U1 == gd)) {
+    return true;
+  } else if ((&Ty_I4 == rd) or (&Ty_SI == rd)) {
+    return (&Ty_I4 == gd) or (&Ty_SI == gd);
   }
-  // TODO: for structs, allow references to structs where the given has a prefix
-  // of the required.
+  if(isDictStruct(rd) and isDictStruct(gd)) {
+    while(true) {
+      Ty* super = TyDict_find(gd, SUPER);
+      if(not super) return false;
+      gd = tyStruct(tyVar(super)->tyI->ty);
+      if(rd == gd) return true;
+    }
+  }
   return false;
 }
 
@@ -630,7 +642,7 @@ void tyNotMatch(TyI* require, TyI* given) {
 
 // Check two type stacks.
 void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
-  TyI* require = require_, *given = given_;
+  TyI* require = require_; TyI* given = given_;
   S i = 0;
   while(require) {
     if(not given) {
@@ -1515,7 +1527,8 @@ VarPre varPre(Kern* k) {
   REQUIRE(":"); ScanTyI s = scanTyI(k);
   s.tyI->name = key; v->tyI = s.tyI;
 
-  S sz = TyI_sz(s.tyI); sz = align(sz, alignment(sz));
+  S sz = TyI_sz(s.tyI);
+  if(s.arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
   return (VarPre) { .var = v, .sz = sz, .els = s.arrLen ? s.arrLen : 1 };
 }
 

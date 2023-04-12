@@ -432,6 +432,22 @@ TEST_FNGI(structSuper, 12)
   COMPILE_EXEC("fn newB -> B do ( var b:B = { a = 0x15  b = 0x16 } b)");
   COMPILE_EXEC("useB(newB;)");            TASSERT_WS(0x15); TASSERT_WS(0x16);
 
+  COMPILE_EXEC("struct _Slc [ dat:&U1  len:U2 ]");
+  COMPILE_EXEC("struct _Buf [ super:_Slc  cap:U2 ]");
+  TyDict* s = tyDict(Kern_findTy(k, SLC("_Slc")));
+  TyDict* b = tyDict(Kern_findTy(k, SLC("_Buf")));
+  TASSERT_EQ(6, s->sz); TASSERT_EQ(8, b->sz);
+
+  // Prove the type-checker allows either a Slc or a Buf
+  COMPILE_EXEC("fn ignoreSlc s:&_Slc do ()");
+  COMPILE_EXEC(
+      "fn passStuff do (\n"
+      "  var s:_Slc;  var b:_Buf;\n"
+      "  ignoreSlc(&s)\n"
+      "  ignoreSlc(&b)\n"
+    ")");
+
+
   REPL_END
 END_TEST_FNGI
 
