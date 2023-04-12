@@ -2008,7 +2008,7 @@ void N_amp(Kern* k) {
   op2(b, LR, 0, offset);
 }
 
-void N_at(Kern* k) {
+void N_at(Kern* k) { // '@', aka dereference
   N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   Kern_compFn(k);  U1 instr = FT;

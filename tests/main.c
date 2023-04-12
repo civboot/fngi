@@ -496,7 +496,8 @@ TEST_FNGI(ptr, 20) // tests necessary for libraries
 END_TEST_FNGI
 
 TEST_FNGI(arr, 20) // tests necessary for libraries
-  Kern_fns(k); REPL_START
+  Kern_fns(k);
+  REPL_START
   COMPILE_EXEC(
     "fn simpleArr x:S -> S do (\n"
     "  var a: Arr [3 S]\n"
@@ -525,6 +526,21 @@ TEST_FNGI(dat, 20)
   Kern_fns(k);
   CStr_ntVar(path, "\x0A", "src/dat.fn");
   compilePath(k, path);
+
+  REPL_START
+  // COMPILE_EXEC(
+  //   "fn useSlc -> U1 do (\n"
+  //   "  var dat:Arr[12 U1]\n"
+  //   "  dat                  = 0ch \n"
+  //   "  @ptrAdd(&dat, 1, 12) = 0ce \n"
+  //   "  @ptrAdd(&dat, 2, 12) = 0cl \n"
+  //   "  var s: SlcU1 = Slc(dat, 12)\n"
+  //   "  tAssertEq(0ch, s.get(0))\n"
+  //   "  tAssertEq(0ce, s.get(1))\n"
+  //   "  s.get(2)\n"
+  //   ")"); TASSERT_WS('l');
+
+  REPL_END
 END_TEST_FNGI
 
 TEST_FNGI(repl, 20)
