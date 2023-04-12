@@ -177,6 +177,9 @@ TEST_FNGI(compileTy, 6)
   COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1  do (_)");
   COMPILE_EXEC("fn add   stk:S  b:S      -> \\sum:S do (_ + b)");
   COMPILE_EXEC("add(42, 7)"); TASSERT_WS(49);
+
+  COMPILE_EXEC("fn addUs stk:U1 b:U2 -> \\a:S  do (_ + b)");
+  COMPILE_EXEC("addUs(cast:U1(0x12) cast:U2(0x34))"); TASSERT_WS(0x46);
   REPL_END
 END_TEST_FNGI
 
@@ -438,16 +441,16 @@ TEST_FNGI(structSuper, 12)
   TyDict* b = tyDict(Kern_findTy(k, SLC("_Buf")));
   TASSERT_EQ(6, s->sz); TASSERT_EQ(8, b->sz);
 
-  // Prove the type-checker allows either a Slc or a Buf
+  // Prove the type-checker allows either a Slc or Buf pointer.
   COMPILE_EXEC("fn ignoreSlc s:&_Slc do ()");
+  COMPILE_EXEC("fn ignoreBuf s:&_Buf do ()");
   COMPILE_EXEC(
       "fn passStuff do (\n"
       "  var s:_Slc;  var b:_Buf;\n"
-      "  ignoreSlc(&s)\n"
-      "  ignoreSlc(&b)\n"
+      "  ignoreSlc(&s)\n"  // note: ignoreBuf(&s) causes a compiler error
+      "  ignoreBuf(cast:&_Buf(&s))\n" // cast allows it (not really valid)
+      "  ignoreSlc(&b)  ignoreBuf(&b)\n"
     ")");
-
-
   REPL_END
 END_TEST_FNGI
 
@@ -518,11 +521,11 @@ TEST_FNGI(file_basic, 20)
   compilePath(k, path);
 END_TEST_FNGI
 
-// TEST_FNGI(file_dat, 20)
-//   Kern_fns(k);
-//   CStr_ntVar(path, "\x0A", "src/dat.fn");
-//   // compilePath(k, path);
-// END_TEST_FNGI
+TEST_FNGI(dat, 20)
+  Kern_fns(k);
+  CStr_ntVar(path, "\x0A", "src/dat.fn");
+  compilePath(k, path);
+END_TEST_FNGI
 
 TEST_FNGI(repl, 20)
   Kern_fns(k);
@@ -566,7 +569,7 @@ int main(int argc, char* argv[]) {
   test_ptr();
   test_arr();
   test_file_basic();
-  // test_file_dat();
+  test_dat();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

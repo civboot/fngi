@@ -1458,8 +1458,21 @@ TyDict* _withGet(Kern *k) {
 void _with(Kern* k, TyDict* d) {
   assert(not isDictNative(d));
   DictStk_add(&k->g.dictStk, d);
+  TyDict* prevMod = k->g.curMod;  k->g.curMod = d;
   Kern_compFn(k);
   DictStk_pop(&k->g.dictStk);
+  k->g.curMod = prevMod;
+}
+
+void N_cast(Kern* k) {
+  bool asImm = WS_POP(); REQUIRE(":"); TyDb* db = tyDb(k, asImm);
+  ScanTyI s = scanTyI(k); ASSERT(not s.arrLen, "Array not allowed in cast");
+  Kern_compFn(k);
+  TyI from = *TyDb_top(db); from.next = NULL;
+  TyI to   = *s.tyI;        to.next   = NULL;
+  ASSERT(TyI_eq(&from, &to) or TyI_eq(&to, &from), "cast of non-compatible types");
+  tyCall(k, db, &from, &to);
+  BBA_free(k->g.bbaDict, s.tyI, sizeof(TyI), RSIZE);
 }
 
 void N_mod(Kern* k) {
@@ -2162,6 +2175,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x03", "ret"          , TY_FN_SYN       , N_ret      , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "imm"          , TY_FN_SYN       , N_imm      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "("            , TY_FN_SYN       , N_paren    , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "cast"         , TY_FN_SYN       , N_cast     , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "with"         , TY_FN_SYN       , N_with     , TYI_VOID, TYI_VOID);
   ADD_FN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
