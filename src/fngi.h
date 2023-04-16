@@ -257,7 +257,7 @@ void scan(Kern* k);
 void tokenDrop(Kern* k); // clear token and update src.ring
 U1 cToU1(U1 c); // return 0-15 or 0xFF if not a hex integer.
 typedef struct { bool isNum; U4 v; } ParsedNumber;
-ParsedNumber parseU4(Slc t);
+ParsedNumber parseU4(Kern* k, Slc t);
 
 // #################################
 // # Compiler

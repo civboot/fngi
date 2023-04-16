@@ -6,6 +6,7 @@ TEST(basic)
   TASSERT_EQ(0xB,  cToU1('b'));
   TASSERT_EQ(0xB,  cToU1('B'));
   TASSERT_EQ(0xFF, cToU1('-'));
+
 END_TEST
 
 TEST_FNGI(init, 10)
@@ -89,6 +90,13 @@ TEST_FNGI(compile0, 4)
   executeFn(k, answer);    TASSERT_WS(0x42);
   COMPILE_EXEC("answer;");  TASSERT_WS(0x42);
   TASSERT_EMPTY();
+
+  COMPILE_EXEC("0x44");     TASSERT_WS(0x44);
+  COMPILE_EXEC("char:d");   TASSERT_WS('d');
+  COMPILE_EXEC("char:\\n"); TASSERT_WS('\n');
+  COMPILE_EXEC("char:\\t"); TASSERT_WS('\t');
+  COMPILE_EXEC("char: ");   TASSERT_WS(' ');
+  COMPILE_EXEC("char:\\ "); TASSERT_WS(' ');
 END_TEST_FNGI
 
 TEST_FNGI(inlineFns, 4)

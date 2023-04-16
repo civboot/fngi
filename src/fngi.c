@@ -823,14 +823,13 @@ U1 cToU1(U1 c) {
 }
 
 // Attempt to parse a number from the token
-ParsedNumber parseU4(Slc t) {
+ParsedNumber parseU4(Kern* k, Slc t) {
   ParsedNumber p = {0};
-  U1 base = 10, i = 0;
+  U1 base = 10; U2 i = 0;
   if(t.len > 2) {
     Slc s = Slc_slc(&t, 0, 2);
     if(Slc_eq(SLC("0b"), s)) { base = 2;  i = 2; }
     if(Slc_eq(SLC("0x"), s)) { base = 16; i = 2; }
-    if(Slc_eq(SLC("0c"), s)) { assert(false); } // character
   }
   for(;i < t.len; i++) {
     if('_' == t.dat[i]) continue;
@@ -1009,7 +1008,7 @@ TySpec scanTySpec(Kern *k) {
     REQUIRE("["); ParsedNumber n = {0};
     if(CONSUME("?")) n.v = TY_UNSIZED;
     else {
-      n = parseU4(*Buf_asSlc(&k->g.token)); tokenDrop(k);
+      n = parseU4(k, *Buf_asSlc(&k->g.token)); tokenDrop(k);
       ASSERT(n.isNum and n.v, "first array element must be a number > 0");
     }
     CONSUME(","); s = scanTySpec(k); REQUIRE("]");
@@ -1307,7 +1306,7 @@ void single(Kern* k, bool asImm) {
   scan(k); Slc t = *Buf_asSlc(&k->g.token);
   eprintf("!!! single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
   if(not t.len) return;
-  ParsedNumber n = parseU4(t);
+  ParsedNumber n = parseU4(k, t);
   if(n.isNum) {
     tokenDrop(k);
     return compileLit(k, n.v, asImm);
@@ -2068,6 +2067,47 @@ void N_ptrAdd(Kern* k) { // ptrAdd(ptr, index, cap)
   Kern_typed(k, true);
 }
 
+// void skipWhitespace(Kern* k, SpReader f) {
+//   Ring* r = &SpReader_asBase(k, f)->ring;
+//   while(true) {
+//     U1* c = SpReader_get(k, f, 0);
+//     if(c == NULL) return;
+//     if(*c > ' ')  return;
+//     if(*c == '\n') k->g.srcInfo->line += 1;
+//     Ring_incHead(r, 1);
+//   }
+// }
+
+typedef struct { U1 c; bool unknownEsc; } CharNextEsc;
+CharNextEsc charNextEsc(Kern* k, SpReader f) {
+  Ring* r = &SpReader_asBase(k, f)->ring;
+  U1* c = SpReader_get(k, f, 0);
+  ASSERT(c, "expected character, got EOF");
+  Ring_incHead(r, 1);
+  if('\\' != *c) return (CharNextEsc) { .c = *c };
+
+  c = SpReader_get(k, f, 0);
+  ASSERT(c, "expected character after '\\', got EOF");
+  Ring_incHead(r, 1);
+  if('t' == *c)      return (CharNextEsc) { .c = '\t' };
+  if('n' == *c)      return (CharNextEsc) { .c = '\n' };
+  if(' ' == *c)      return (CharNextEsc) { .c = ' '  };
+  if('x' == *c) {
+    c = SpReader_get(k, f, 1); ASSERT(c, "expected two characters after '\\'");
+    U1 hex = (Ring_get(r, 0) << 8) | Ring_get(r, 1);
+    Ring_incHead(r, 2);
+    return (CharNextEsc) { .c = hex };
+  }
+  return (CharNextEsc) { .c = *c, .unknownEsc = true };
+}
+
+void N_char(Kern* k) {
+  bool asImm = WS_POP(); REQUIRE(":");
+  CharNextEsc c = charNextEsc(k, k->g.src);
+  ASSERT(not c.unknownEsc, "Unknown escape in char");
+  compileLit(k, c.c, asImm);
+}
+
 // ***********************
 //   * Export to fngi
 
@@ -2197,7 +2237,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
   ADD_FN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
   ADD_FN("\x0D", "assertWsEmpty", 0               , N_assertWsEmpty, TYI_VOID, TYI_VOID);
-  // FIXME: getting weird error
+  ADD_FN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);
   ADD_FN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
