@@ -270,11 +270,10 @@ TEST_FNGI(compileBlk, 10)
   TASSERT_EQ(0, k->g.fnState & C_UNTY);
 
   COMPILE_EXEC(
-      "0 blk(\n"
+      "S(0) blk(\n"
       "  if(dup, >= 5) do (drp; brk 0x15)\n"
       "  inc; cont;\n"
       ")"); TASSERT_WS(0x15);
-
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
 END_TEST_FNGI
@@ -536,17 +535,18 @@ TEST_FNGI(dat, 20)
   compilePath(k, path);
 
   REPL_START
-  // COMPILE_EXEC(
-  //   "fn useSlc -> U1 do (\n"
-  //   "  var dat:Arr[12 U1]\n"
-  //   "  dat                  = 0ch \n"
-  //   "  @ptrAdd(&dat, 1, 12) = 0ce \n"
-  //   "  @ptrAdd(&dat, 2, 12) = 0cl \n"
-  //   "  var s: SlcU1 = Slc(dat, 12)\n"
-  //   "  tAssertEq(0ch, s.get(0))\n"
-  //   "  tAssertEq(0ce, s.get(1))\n"
-  //   "  s.get(2)\n"
-  //   ")"); TASSERT_WS('l');
+  COMPILE_EXEC(
+    "fn useSlc -> U1 do (\n"
+    "  var dat:Arr[12 U1]\n"
+    "  dat                  = char:h \n"
+    "  @ptrAdd(&dat, 1, 12) = char:i \n"
+    "  @ptrAdd(&dat, 2, 12) = char:p \n"
+    "  var s: SlcU1 = SlcU1(&dat, U2(12))\n"
+    "  tAssertEq(char:h, s.get(0))\n"
+    "  tAssertEq(char:i, s.get(1))\n"
+    "  s.get(2)\n"
+    ")");
+  COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
   REPL_END
 END_TEST_FNGI

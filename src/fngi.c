@@ -861,8 +861,11 @@ void lit(Buf* b, U4 v) {
   else                  { Buf_add(b, SZ4 | LIT); Buf_addBE4(b, v); }
 }
 
-void compileLit(Kern* k, U4 v, bool asImm) {
-  tyCall(k, tyDb(k, asImm), NULL, &TyIs_S);
+void compileLit(Kern* k, S v, bool asImm) {
+  TyI* tyI; if (v <= 0xFF)   tyI = &TyIs_U1;
+       else if (v <= 0xFFFF) tyI = &TyIs_U2;
+       else                  tyI = &TyIs_S;
+  tyCall(k, tyDb(k, asImm), NULL, tyI);
   if(asImm) {
     return WS_ADD(v);
   }
