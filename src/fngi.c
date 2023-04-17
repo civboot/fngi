@@ -102,6 +102,8 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
     .bbaRepl = (BBA) { &civ.ba },
+    .bbaSllArena = (BBA) { &civ.ba },
+    .sllArena = (SllArena) { .arena = BBA_asArena(&k->bbaSllArena) },
     .fb = fb,
     .g = {
       .compFn = &TyFn_baseCompFn,
@@ -111,6 +113,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
       .bbaTyImm = (BBA) { &civ.ba },
     },
   };
+  fb->sllArena = &k->sllArena;
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
   k->g.tyDbImm.bba = &k->g.bbaTyImm;
   DictStk_reset(k);
@@ -2111,6 +2114,41 @@ void N_char(Kern* k) {
   compileLit(k, c.c, asImm);
 }
 
+#define STRING_MAX 512
+Slc parseSlcU1(Kern* k) {
+  Arena* a = ARENA_TOP;
+  eprintf("??? Arena=%p\n", a);
+  Buf b = Buf_new(*ARENA_TOP, STRING_MAX);
+  bool ignoringWhite = true;
+  CharNextEsc c;
+  while(true) {
+    c = charNextEsc(k, k->g.src);
+    if(c.c == '|') {
+      if(c.unknownEsc) Buf_add(&b, '|');
+      else             break;
+    }
+    else if(c.c == ' ') {
+      if(c.unknownEsc) ignoringWhite = false;
+      else if(ignoringWhite) continue;
+    } else if (c.unknownEsc) {
+      SET_ERR(SLC("Unknown escaped character"));
+    } else if (c.c == '\n') ignoringWhite = true;
+    else                    ignoringWhite = false;
+    Buf_add(&b, c.c);
+  }
+  Buf_freeEnd(&b, *ARENA_TOP);
+  return *Buf_asSlc(&b);
+}
+
+TyI TyI_SlcU1;
+void N_pipe(Kern* k) { // SlcU1 literal, aka |this is a string|
+  bool asImm = WS_POP();
+  Slc s = parseSlcU1(k);
+  if(asImm) { WS_ADD2((S)s.dat, s.len); }
+  else      { lit(&k->g.code, (S)s.dat); lit(&k->g.code, s.len); }
+  tyCall(k, tyDb(k, asImm), NULL, &TyI_SlcU1);
+}
+
 // ***********************
 //   * Export to fngi
 
@@ -2241,6 +2279,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
   ADD_FN("\x0D", "assertWsEmpty", 0               , N_assertWsEmpty, TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x01", "|"            , TY_FN_SYN       , N_pipe     , TYI_VOID, TYI_VOID);
   ADD_FN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
@@ -2298,6 +2337,11 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
   DictStk_pop(&k->g.dictStk);
   // assert(&comp.v == (S)DictStk_pop(&k->g.dictStk).root);
+  //
+  REPL_START
+  COMPILE_EXEC("struct SlcU1 [ dat:&U1  len:U2 ]");
+  TyI_SlcU1 = (TyI) { .ty = Kern_findTy(k, SLC("SlcU1")) }; assert(TyI_SlcU1.ty);
+  REPL_END
 
   TASSERT_EMPTY();
 }

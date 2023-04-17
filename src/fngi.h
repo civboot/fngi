@@ -100,7 +100,6 @@ typedef struct {
   .inp = INP, .out = OUT \
 }
 
-
 #define TyFn_static(NAME, META, LSLOTS, DAT) \
   static TyFn NAME;               \
   NAME = (TyFn) {                 \
@@ -159,6 +158,10 @@ static inline Sll*  Blk_asSll(Blk* this)     { return (Sll*)this; }
 
 typedef struct { TyDict** dat;   U2 sp;   U2 cap;           } DictStk;
 
+typedef struct _SllArena { struct _SllArena* next;  Arena arena; } SllArena;
+
+static inline Sll* SllArena_asSll(SllArena* this) { return (Sll*)this; }
+
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
@@ -184,6 +187,7 @@ typedef struct {
 
 typedef struct {
   Fiber fb;
+  SllArena* sllArena;
   U1* ep;             // execution pointer
   Stk ws; Stk rs;     // working and return stack
   Stk info;           // info stack
@@ -195,6 +199,8 @@ typedef struct {
   BBA bbaCode;
   BBA bbaDict;
   BBA bbaRepl;
+  BBA bbaSllArena;
+  SllArena sllArena;
   Globals g;     // kernel globals
   FnFiber* fb;   // current fiber.
 } Kern;
@@ -222,6 +228,16 @@ void Kern_init(Kern* k, FnFiber* fb);
 bool FnFiber_init(FnFiber* fb);
 
 static inline U1* kFn(void(*native)(Kern*)) { return (U1*) native; }
+
+static inline void SllArena_add(Kern* k, SllArena* arena) {
+  Sll_add((Sll**)&k->fb->sllArena, SllArena_asSll(arena));
+}
+
+static inline SllArena* SllArena_pop(Kern* k) {
+  return (SllArena*) Sll_pop((Sll**)&k->fb->sllArena);
+}
+
+#define ARENA_TOP (&k->fb->sllArena->arena)
 
 #define LOCAL_TYDB_BBA(NAME) \
   BBA  bba_##NAME       = (BBA) { &civ.ba }; \

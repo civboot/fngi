@@ -1,6 +1,7 @@
 \ Core types operating directly on data
 
-struct SlcU1 [ dat:&U1  len:U2 ]
+\ Note: declared by native
+\ struct SlcU1 [ dat:&U1  len:U2 ]
 
 with:SlcU1 (
   meth get self:&SlcU1 i:S -> U1 do (

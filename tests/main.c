@@ -548,6 +548,13 @@ TEST_FNGI(dat, 20)
     ")");
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
+  COMPILE_EXEC(
+    "fn getSlc -> SlcU1 do (\n"
+    "  |hello slc|\n"
+    ")");
+  COMPILE_EXEC("getSlc;"); WS_POP2(S dat, U2 len);
+  Slc result = (Slc) {(U1*)dat, len};
+   TASSERT_SLC_EQ("hello slc", result);
   REPL_END
 END_TEST_FNGI
 
