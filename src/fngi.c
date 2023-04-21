@@ -241,6 +241,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case OVR : WS_POP2(l, r); WS_ADD3(l, r, l);          R0
     case DUP : r = WS_POP(); WS_ADD2(r, r);              R0
     case DUPN: r = WS_POP(); WS_ADD(r); WS_ADD(0 == r);  R0
+    case OWR : WS_ADD((S) ((OwnedValue*)popLit(k, 4))->ref);  R0
     case LR: WS_ADD(RS_topRef(k) + popLit(k, 2)); R0
     case GR: {
       TyVar* g = (TyVar*) popLit(k, 4);
@@ -723,7 +724,7 @@ U1 toTokenGroup(U1 c) {
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
   if(c == '#' || c == '|' || c == '.' || c == ':'  ||
-     c == '(' || c == ')') {
+     c == '(' || c == ')' || c == '&') {
     return T_SINGLE;
   }
   return T_SYMBOL;
@@ -1004,12 +1005,14 @@ typedef struct { Ty* ty; U1 refs; U2 arrLen; } TySpec;
 TySpec scanTySpec(Kern *k) {
   TySpec s = {0};
   while(true) {
-    if     (CONSUME("&")) s.refs += 1;
+    if(CONSUME("?"))      s.arrLen = TY_UNSIZED;
+    else if(CONSUME("&")) s.refs += 1;
     else break;
   }
   ASSERT(s.refs <= TY_REFS, "number of '&' must be <= 3");
 
   if(CONSUME("Arr")) {
+    ASSERT(not s.arrLen, "Use Arr[? Ty] not ?Arr[Ty]");
     ASSERT(not s.refs, "cannot be reference to array, just use more &");
     REQUIRE("["); ParsedNumber n = {0};
     if(CONSUME("?")) n.v = TY_UNSIZED;
@@ -2145,7 +2148,16 @@ void N_pipe(Kern* k) { // SlcU1 literal, aka |this is a string|
   bool asImm = WS_POP();
   Slc s = parseSlcU1(k);
   if(asImm) { WS_ADD2((S)s.dat, s.len); }
-  else      { lit(&k->g.code, (S)s.dat); lit(&k->g.code, s.len); }
+  else      {
+    OwnedValue* owned = Xr(*ARENA_TOP,alloc, sizeof(OwnedValue), RSIZE);
+    Ownership*  ship = Xr(*ARENA_TOP,alloc,  sizeof(Ownership),  RSIZE);
+    ASSERT(owned, "String OOM"); ASSERT(ship, "String OOM");
+    *owned = (OwnedValue) { .ref = s.dat, .ty = &Ty_U1, .ownership = ship };
+    *ship = (Ownership) { .offset = 0, .len = s.len };
+
+    Buf* b = &k->g.code; Buf_add(b, OWR); Buf_addBE4(b, (S)owned);
+    lit(&k->g.code, s.len);
+  }
   tyCall(k, tyDb(k, asImm), NULL, &TyI_SlcU1);
 }
 

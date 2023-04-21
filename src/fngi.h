@@ -66,7 +66,7 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
 #define TY_BODY \
-  CBst          bst;  /* symbol name and dict search. */ \
+  CBst         bst;  /* symbol name and dict search. */ \
   struct _Ty*  parent;  \
   U2           meta; /* specifies node type */ \
   U2           line; /* src code line of definition. */ \
@@ -130,6 +130,14 @@ typedef struct {
 static inline CBst*  TyDict_bst(TyDict* this)     { return (CBst*)   this->children; }
 static inline CBst** TyDict_bstRoot(TyDict* this) { return (CBst**) &this->children; }
 static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
+
+typedef struct _Ownership {
+  struct _Ownership* next;
+  U2 meta; U2 offset;
+  S len;
+} Ownership;
+typedef struct { void* ref; TyDict* ty; Ownership* ownership; } OwnedValue;
+
 
 typedef struct {
   TyFn*  read;  // this:&This -> ()

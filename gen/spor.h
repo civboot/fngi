@@ -17,8 +17,9 @@
 #define DUPN                  0x08
 #define DV                    0x09
 #define RG                    0x0A
-#define LR                    0x0B
-#define GR                    0x0C
+#define OWR                   0x0B
+#define LR                    0x0C
+#define GR                    0x0D
 #define IEND                  0x0F
 #define INC                   0x10
 #define INC2                  0x11

@@ -18,6 +18,7 @@ Slc instrName(U1 instr) {
     case DUPN            : return Slc_ntLit("DUPN");
     case DV              : return Slc_ntLit("DV");
     case RG              : return Slc_ntLit("RG");
+    case OWR             : return Slc_ntLit("OWR");
     case LR              : return Slc_ntLit("LR");
     case GR              : return Slc_ntLit("GR");
     case IEND            : return Slc_ntLit("IEND");

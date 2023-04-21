@@ -45,8 +45,9 @@ const DUP  :Int = 0x07 \ {l   -> l l}    duplicate
 const DUPN :Int = 0x08 \ {l   -> l l==0} DUP then NOT
 const DV   :Int = 0x09 \ Device Operation (U1 literal)
 const RG   :Int = 0x0A \ {-> v} Register  (U1 literal)
-const LR   :Int = 0x0B \ {-> &local}  local reference  (U2 literal)
-const GR   :Int = 0x0C \ {-> &global} global reference (U4+U2 literals)
+const OWR  :Int = 0x0B \ {-> &OwnedValue} owned reference
+const LR   :Int = 0x0C \ {-> &local}  local reference  (U2 literal)
+const GR   :Int = 0x0D \ {-> &global} global reference (U4+U2 literals)
 const IEND :Int = 0x0F \ not actual instr, used in tests.
 
 \ # [1.b] Operations: One Inp -> One Out

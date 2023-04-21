@@ -519,6 +519,9 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
   COMPILE_EXEC("simpleArr 1"); TASSERT_WS(4);
   COMPILE_EXEC("simpleArr 2"); TASSERT_WS(5);
 
+  COMPILE_EXEC("fn unknown x:?&S do ( )")
+  TyFn* unknown = tyFn(Kern_findTy(k, SLC("unknown")));
+  assert(TYI_UNSIZED & unknown->inp->meta);
   REPL_END
 END_TEST_FNGI
 

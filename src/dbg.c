@@ -5,7 +5,7 @@
 void printTrace() {
   void*    array[BT_SIZE];
   int      size    = backtrace(array, BT_SIZE);
-  char**   strings =  backtrace_symbols(array, size);
+  char**   strings = backtrace_symbols(array, size);
   assert(strings); // No debug symbols found
   for(int i = 0; i < size; i++) printf("%s\n", strings[i]);
   free(strings);
