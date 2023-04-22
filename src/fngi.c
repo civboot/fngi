@@ -2127,12 +2127,12 @@ Slc parseSlcU1(Kern* k) {
   while(true) {
     c = charNextEsc(k, k->g.src);
     if(c.c == '|') {
-      if(c.unknownEsc) Buf_add(&b, '|');
-      else             break;
+      if(c.unknownEsc) {}
+      else             break; // '|' -> done
     }
     else if(c.c == ' ') {
       if(c.unknownEsc) ignoringWhite = false;
-      else if(ignoringWhite) continue;
+      else if(ignoringWhite) continue; // don't add to buffer
     } else if (c.unknownEsc) {
       SET_ERR(SLC("Unknown escaped character"));
     } else if (c.c == '\n') ignoringWhite = true;
