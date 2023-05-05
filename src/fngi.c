@@ -102,8 +102,8 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .bbaCode = (BBA) { &civ.ba },
     .bbaDict = (BBA) { &civ.ba },
     .bbaRepl = (BBA) { &civ.ba },
-    .bbaSllArena = (BBA) { &civ.ba },
-    .sllArena = (SllArena) { .arena = BBA_asArena(&k->bbaSllArena) },
+    .bbaSllArena  = (BBA) { &civ.ba },
+    .sllArena = (SllSpArena) { .arena = BBA_asSpArena(&k->bbaSllArena) },
     .fb = fb,
     .g = {
       .compFn = &TyFn_baseCompFn,
@@ -433,8 +433,11 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  // eprintf("!!! executeFn %.*s: ", Ty_fmt(fn)); dbgWs(k); NL;
-  if(isFnNative(fn)) return executeNative(k, fn);
+  eprintf("!!! executeFn %X\n", fn);
+  if(isFnNative(fn)) {
+    eprintf("??? executing native\n");
+    return executeNative(k, fn);
+  }
   cfb->ep = fn->code;
   executeLoop(k);
 }
@@ -715,6 +718,9 @@ void tyMerge(Kern* k, TyDb* db) {
 // ***********************
 // * 4: Token scanner
 
+// ********
+//   * 4.b: Token scanner
+
 U1 toTokenGroup(U1 c) {
   if(c <= ' ')             return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
@@ -724,34 +730,12 @@ U1 toTokenGroup(U1 c) {
   if('g' <= c && c <= 'z') return T_ALPHA;
   if('G' <= c && c <= 'Z') return T_ALPHA;
   if(c == '#' || c == '|' || c == '.' || c == ':'  ||
-     c == '(' || c == ')' || c == '&') {
+     c == '(' || c == ')' || c == '&' || c == ';') {
     return T_SINGLE;
   }
   return T_SYMBOL;
 }
 
-/*extern*/ MSpReader mSpReader_UFile = (MSpReader) {
-  // TODO: actually implement
-};
-
-/*extern*/ MSpReader mSpReader_BufFile = (MSpReader) {
-  // TODO: actually implement
-};
-
-BaseFile* SpReader_asBase(Kern* k, SpReader r) {
-  if(r.m == &mSpReader_UFile)   return UFile_asBase((UFile*) r.d);
-  if(r.m == &mSpReader_BufFile) return BufFile_asBase((BufFile*) r.d);
-  assert(false); // not implemented
-}
-
-U1* SpReader_get(Kern* k, SpReader r, U2 i) {
-  File f = (File) { .m = NULL, .d = r.d };
-  if(r.m == &mSpReader_UFile)         f.m = UFile_mFile();
-  else if (r.m == &mSpReader_BufFile) f.m = BufFile_mFile();
-  if(f.m) return Reader_get(File_asReader(f), i);
-  assert(false); // not implemented
-  return (U1*)WS_POP();
-}
 
 void skipWhitespace(Kern* k, SpReader f) {
   Ring* r = &SpReader_asBase(k, f)->ring;
@@ -818,6 +802,9 @@ bool tokenConsume(Kern* k, Slc s) {
 #define PEEK(T)     tokenPeek(k, SLC(T))
 #define CONSUME(T)  tokenConsume(k, SLC(T))
 #define REQUIRE(T)  ASSERT(CONSUME(T), "Expected: '" T "'")
+
+// ********
+//   * 4.c: Number Scanner
 
 U1 cToU1(U1 c) {
   if('0' <= c && c <= '9') return c - '0';
@@ -2117,11 +2104,22 @@ void N_char(Kern* k) {
   compileLit(k, c.c, asImm);
 }
 
+Buf SpBuf_new(Kern* k, SpArena a, U2 cap) {
+  Sp_Xr2(a,alloc, cap, 1);
+  return (Buf) { .dat = (U1*) WS_POP(), .cap = cap, };
+}
+
+Slc* SpBuf_freeEnd(Kern* k, Buf* b, SpArena a) {
+  U2 sz = b->cap - b->len;  if(not sz) return NULL;
+  Sp_Xr3(a,free, (S)b->dat + b->len, sz, 1);
+  Slc* out = (Slc*) WS_POP();
+  if(not out) b->cap = b->len;
+  return out;
+}
+
 #define STRING_MAX 512
 Slc parseSlcU1(Kern* k) {
-  Arena* a = ARENA_TOP;
-  eprintf("??? Arena=%p\n", a);
-  Buf b = Buf_new(*ARENA_TOP, STRING_MAX);
+  Buf b = SpBuf_new(k, *ARENA_TOP, STRING_MAX);
   bool ignoringWhite = true;
   CharNextEsc c;
   while(true) {
@@ -2139,7 +2137,7 @@ Slc parseSlcU1(Kern* k) {
     else                    ignoringWhite = false;
     Buf_add(&b, c.c);
   }
-  Buf_freeEnd(&b, *ARENA_TOP);
+  SpBuf_freeEnd(k, &b, *ARENA_TOP);
   return *Buf_asSlc(&b);
 }
 
@@ -2149,8 +2147,10 @@ void N_pipe(Kern* k) { // SlcU1 literal, aka |this is a string|
   Slc s = parseSlcU1(k);
   if(asImm) { WS_ADD2((S)s.dat, s.len); }
   else      {
-    OwnedValue* owned = Xr(*ARENA_TOP,alloc, sizeof(OwnedValue), RSIZE);
-    Ownership*  ship = Xr(*ARENA_TOP,alloc,  sizeof(Ownership),  RSIZE);
+    Sp_Xr2(*ARENA_TOP,alloc, sizeof(OwnedValue), RSIZE);
+    OwnedValue* owned = (OwnedValue*) WS_POP();
+    Sp_Xr2(*ARENA_TOP,alloc, sizeof(Ownership),  RSIZE);
+    Ownership*  ship  = (Ownership*) WS_POP();
     ASSERT(owned, "String OOM"); ASSERT(ship, "String OOM");
     *owned = (OwnedValue) { .ref = s.dat, .ty = &Ty_U1, .ownership = ship };
     *ship = (Ownership) { .offset = 0, .len = s.len };
@@ -2184,6 +2184,51 @@ void N_findTy(Kern* k) {
   WS_ADD((S)Kern_findTy(k, (Slc){.dat = (U1*)dat, .len = len}));
 }
 
+// ********
+//   * Role definitions for spor
+// In civc, role methods are a struct of pointers to functions.
+// In spor, role methods are a struct of pointers to TyFns.
+
+// The actual method globals are defined in Kern_fns()
+/*extern*/ MSpArena  mSpArena_BBA      = {};
+/*extern*/ MSpReader mSpReader_UFile   = {};
+/*extern*/ MSpReader mSpReader_BufFile = {};
+
+// this:&This -> ()
+void N_BBA_drop(Kern* k) { BBA* bba = (BBA*)WS_POP(); BBA_drop(bba); }
+
+// this:&This -> S
+void N_BBA_maxAlloc(Kern* k) { BBA* bba = (BBA*)WS_POP(); WS_ADD(BBA_maxAlloc(bba)); }
+
+// this:&This sz:S alignment:U2 -> Ref
+void N_BBA_alloc(Kern* k) {
+  WS_POP2(S sz, U2 alignment); BBA* bba = (BBA*)WS_POP();
+  WS_ADD((S)BBA_alloc(bba, sz, alignment));
+}
+
+// this:&This dat:Ref sz:S alignment:U2 -> Ref
+void N_BBA_free(Kern* k) {
+  WS_POP3(S dat, S sz, U2 alignment); BBA* bba = (BBA*)WS_POP();
+  WS_ADD((S)BBA_free(bba, (void*)dat, sz, alignment));
+}
+
+BaseFile* SpReader_asBase(Kern* k, SpReader r) {
+  if(r.m == &mSpReader_UFile)   return UFile_asBase((UFile*) r.d);
+  if(r.m == &mSpReader_BufFile) return BufFile_asBase((BufFile*) r.d);
+  assert(false); // not implemented
+}
+
+U1* SpReader_get(Kern* k, SpReader r, U2 i) {
+  File f = (File) { .m = NULL, .d = r.d };
+  if(r.m == &mSpReader_UFile)         f.m = UFile_mFile();
+  else if (r.m == &mSpReader_BufFile) f.m = BufFile_mFile();
+  if(f.m) return Reader_get(File_asReader(f), i);
+  assert(false); // not implemented
+  return (U1*)WS_POP();
+}
+
+
+
 // ***********************
 // * 7: Registering Functions
 
@@ -2212,6 +2257,7 @@ void N_findTy(Kern* k) {
   static U1 LINED(code)[] = {__VA_ARGS__ __VA_OPT__(,) RET};  \
   ADD_FN(NAMELEN, NAME, TY_FN_INLINE | (META), (S)LINED(code), INP, OUT); \
   LINED(ty).len = sizeof(LINED(code)) - 1;
+
 
 void Kern_fns(Kern* k) {
   // Native data types
@@ -2348,15 +2394,37 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
   ADD_FN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
   DictStk_pop(&k->g.dictStk);
+
   // assert(&comp.v == (S)DictStk_pop(&k->g.dictStk).root);
-  //
+
+  TASSERT_EMPTY();
+}
+
+#define FN_OVERRIDE(TY_FN, C_FN) _fnOverride(tyFn(TY_FN), C_FN)
+TyFn* _fnOverride(TyFn* fn, void (*cFn)(Kern*)) {
+    fn->meta |= TY_FN_NATIVE;
+    fn->code = (U1*) cFn;
+    return fn;
+}
+
+void Dat_mod(Kern* k) {
   REPL_START
   COMPILE_EXEC("struct SlcU1 [ dat:&U1  len:U2 ]");
   TyI_SlcU1 = (TyI) { .ty = Kern_findTy(k, SLC("SlcU1")) }; assert(TyI_SlcU1.ty);
   REPL_END
 
-  TASSERT_EMPTY();
+  CStr_ntVar(path, "\x0A", "src/dat.fn"); compilePath(k, path);
+
+  TyDict* tyBBA = tyDict(Kern_findTy(k, SLC("BBA")));
+
+  mSpArena_BBA = (MSpArena) {
+    .drop     = FN_OVERRIDE(TyDict_find(tyBBA, SLC("drop")),     &N_BBA_drop),
+    .alloc    = FN_OVERRIDE(TyDict_find(tyBBA, SLC("alloc")),    &N_BBA_alloc),
+    .free     = FN_OVERRIDE(TyDict_find(tyBBA, SLC("free")),     &N_BBA_free),
+    .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, SLC("maxAlloc")), &N_BBA_maxAlloc),
+  };
 }
+
 
 // ***********************
 // * 8: Execution helpers

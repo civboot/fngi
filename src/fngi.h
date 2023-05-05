@@ -58,6 +58,55 @@ Slc instrName(U1 instr);
 U1* szName(U1 szI);
 
 // ################################
+// # Fngi Roles
+struct _Kern;
+struct _TyFn;
+
+// Sp_XrN: Execute Spor Role with N arguments
+#define Sp_Xr0(ROLE, METHOD) \
+  do { WS_ADD((S) (ROLE).d);                      executeFn(k, (ROLE).m->METHOD); } \
+  while (0)
+
+#define Sp_Xr1(ROLE, METHOD, A0) \
+  do { WS_ADD((S) (ROLE).d); WS_ADD(A0);          executeFn(k, (ROLE).m->METHOD); } \
+  while (0)
+
+#define Sp_Xr2(ROLE, METHOD, A0, A1) \
+  do { WS_ADD((S) (ROLE).d); WS_ADD2(A0, A1);     executeFn(k, (ROLE).m->METHOD); } \
+  while (0)
+
+#define Sp_Xr3(ROLE, METHOD, A0, A1, A2) \
+  do { WS_ADD((S) (ROLE).d); WS_ADD3(A0, A1, A2); executeFn(k, (ROLE).m->METHOD); } \
+  while (0)
+
+// Spore version of Arena
+typedef struct {
+  struct _TyFn*  drop;     // this:&This -> ()
+  struct _TyFn*  alloc;    // this:&This sz:S alignment:U2 -> Ref
+  struct _TyFn*  free;     // this:&This dat:Ref sz:S alignment:U2 -> ()
+  struct _TyFn*  maxAlloc; // this:&This -> S
+} MSpArena;
+typedef struct { MSpArena* m; void* d; } SpArena;
+
+extern MSpArena mSpArena_BBA;
+
+static inline SpArena BBA_asSpArena(BBA* bba) {
+  return (SpArena) { .m = &mSpArena_BBA, .d = bba };
+}
+
+// Spore version of Reader
+typedef struct {
+  struct _TyFn*  read;   // this:&This -> ()
+  struct _TyFn*  asBase; // this:&This -> &BaseFile
+} MSpReader;
+typedef struct { MSpReader* m; void* d; } SpReader;
+
+extern MSpReader mSpReader_UFile;
+extern MSpReader mSpReader_BufFile;
+BaseFile* SpReader_asBase(struct _Kern* k, SpReader r);
+U1*       SpReader_get(struct _Kern* k, SpReader r, U2 i);
+
+// ################################
 // # Types
 
 typedef struct { CStr* path; U2 line; } FileInfo;
@@ -83,7 +132,7 @@ typedef struct _TyI {
 
 typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 
-typedef struct {
+typedef struct _TyFn {
   TY_BODY
   Ty* locals;
   U1* code;
@@ -138,13 +187,6 @@ typedef struct _Ownership {
 } Ownership;
 typedef struct { void* ref; TyDict* ty; Ownership* ownership; } OwnedValue;
 
-
-typedef struct {
-  TyFn*  read;  // this:&This -> ()
-  TyFn* asBase; // this:&This -> &BaseFile
-} MSpReader;
-typedef struct { MSpReader* m; void* d; } SpReader;
-
 #define TYDB_DEPTH 16
 typedef struct {
   BBA* bba;
@@ -166,9 +208,10 @@ static inline Sll*  Blk_asSll(Blk* this)     { return (Sll*)this; }
 
 typedef struct { TyDict** dat;   U2 sp;   U2 cap;           } DictStk;
 
-typedef struct _SllArena { struct _SllArena* next;  Arena arena; } SllArena;
+typedef struct _SllSpArena
+{ struct _SllSpArena* next;  SpArena arena; } SllSpArena;
 
-static inline Sll* SllArena_asSll(SllArena* this) { return (Sll*)this; }
+static inline Sll* SllSpArena_asSll(SllSpArena* this) { return (Sll*)this; }
 
 typedef struct {
   U2 glen; U2 gcap; // global data used and cap
@@ -195,30 +238,26 @@ typedef struct {
 
 typedef struct {
   Fiber fb;
-  SllArena* sllArena;
+  SllSpArena* sllArena;
   U1* ep;             // execution pointer
   Stk ws; Stk rs;     // working and return stack
   Stk info;           // info stack
 } FnFiber;
 
-typedef struct {
+typedef struct _Kern {
   U4 _null;
   bool isTest;
   BBA bbaCode;
   BBA bbaDict;
   BBA bbaRepl;
   BBA bbaSllArena;
-  SllArena sllArena;
+  SllSpArena sllArena;
   Globals g;     // kernel globals
   FnFiber* fb;   // current fiber.
 } Kern;
 
 extern Kern* fngiK;
 
-extern MSpReader mSpReader_UFile;
-extern MSpReader mSpReader_BufFile;
-BaseFile* SpReader_asBase(Kern* k, SpReader r);
-U1*       SpReader_get(Kern* k, SpReader r, U2 i);
 
 // ################################
 // # Kernel
@@ -236,14 +275,6 @@ void Kern_init(Kern* k, FnFiber* fb);
 bool FnFiber_init(FnFiber* fb);
 
 static inline U1* kFn(void(*native)(Kern*)) { return (U1*) native; }
-
-static inline void SllArena_add(Kern* k, SllArena* arena) {
-  Sll_add((Sll**)&k->fb->sllArena, SllArena_asSll(arena));
-}
-
-static inline SllArena* SllArena_pop(Kern* k) {
-  return (SllArena*) Sll_pop((Sll**)&k->fb->sllArena);
-}
 
 #define ARENA_TOP (&k->fb->sllArena->arena)
 
@@ -330,6 +361,7 @@ Ty* Kern_findTy(Kern* k, Slc t);
 void Kern_addTy(Kern* k, Ty* ty);
 
 void Kern_fns(Kern* k);
+void Dat_mod(Kern* k);
 void single(Kern* k, bool asImm);
 void compileSrc(Kern* k);
 
@@ -369,20 +401,6 @@ static inline void srSzI(U1* addr, U1 szI, S v) {
   }
   assert(false);
 }
-
-// ################################
-// # Fngi Roles
-
-// Sp_XrN: Execute Spor Role with N arguments
-#define Sp_Xr0(ROLE, METHOD) \
-  do { WS_ADD((ROLE).d); executeFn(k, (ROLE).METHOD); } while (0)
-
-#define Sp_Xr1(ROLE, METHOD, A0) \
-  do { WS_ADD((ROLE).d); WS_ADD(A0); executeFn(k, (ROLE).METHOD); } while (0)
-
-#define Sp_Xr2(ROLE, METHOD, A0, A1) \
-  do { WS_ADD((ROLE).d); WS_ADD2(A0, A1); executeFn(k, (ROLE).METHOD); } while (0)
-
 
 // #################################
 // # Test Helpers

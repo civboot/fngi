@@ -533,10 +533,7 @@ TEST_FNGI(file_basic, 20)
 END_TEST_FNGI
 
 TEST_FNGI(dat, 20)
-  Kern_fns(k);
-  CStr_ntVar(path, "\x0A", "src/dat.fn");
-  compilePath(k, path);
-
+  Kern_fns(k); Dat_mod(k);
   REPL_START
   COMPILE_EXEC(
     "fn useSlc -> U1 do (\n"
