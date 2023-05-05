@@ -1014,15 +1014,15 @@ TySpec scanTySpec(Kern *k) {
   if(CONSUME("Arr")) {
     ASSERT(not s.arrLen, "Use Arr[? Ty] not ?Arr[Ty]");
     ASSERT(not s.refs, "cannot be reference to array, just use more &");
-    REQUIRE("["); ParsedNumber n = {0};
-    if(CONSUME("?")) n.v = TY_UNSIZED;
+    REQUIRE("["); S n = TY_UNSIZED;
+    if(CONSUME("?")) {}
     else {
-      n = parseU4(k, *Buf_asSlc(&k->g.token)); tokenDrop(k);
-      ASSERT(n.isNum and n.v, "first array element must be a number > 0");
+      single(k, /*asImm=*/true); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
+      n = WS_POP();
     }
     CONSUME(","); s = scanTySpec(k); REQUIRE("]");
     ASSERT(not s.arrLen, "nested arrays not allowed");
-    s.arrLen = n.v;
+    s.arrLen = n;
   } else s.ty = scanTy(k);
 
   if(not s.ty) {
