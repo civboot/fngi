@@ -32,9 +32,12 @@
 
 #define NL eprintf("\n")
 
-Slc SUPER = SLC("super");
+Key SUPER = KEY("super");
 
 /*extern*/ Kern* fngiK = NULL;
+
+// ***********************
+// * 0: Base data structurescnmb   
 
 void N_dbgRs(Kern* k);
 void dbgWs(Kern *k) {
@@ -48,6 +51,33 @@ void dbgWs(Kern *k) {
   eprintf("}");
 }
 
+I4 Ty_cmp(Ty* node, Key* key) {
+  if(key->isTy) {
+    eprintf("??? got isTy key\n");
+    if(isTyKey(node)) {
+      eprintf("??? got node isTyKey\n");
+      eprintf("???? bst.key=%p  key->name=%p\n", node->bst.key, key->name);
+      eprintf("???? cmp=%i\n", S_cmp((S)node->bst.key, (S)key->name));
+      return S_cmp((S)node->bst.key, (S)key->name);
+    }
+    else              return 1;
+  }
+  return Slc_cmp(Slc_frCStr(node->bst.key), *key->name);
+}
+
+I4 Ty_find(Ty** node, Key* key) {
+  return Bst_find((Bst**)node, key, (BstCmp)&Ty_cmp);
+}
+
+Ty* Ty_add(Ty** root, Ty* add) {
+  Slc _key = Slc_frCStr(add->bst.key);
+  Key key = { .name = &_key, .isTy = isTyKey(add) };
+  return (Ty*) Bst_add((Bst**)root, (Bst*)add, &key, (BstCmp)&Ty_cmp);
+}
+
+Slc popSlc(Kern* k) {
+  WS_POP2(S dat, S len); return (Slc) { .dat = (U1*)dat, .len = len };
+}
 
 // ***********************
 // * 1: Initialization
@@ -127,10 +157,14 @@ Slc tokenSlc(Kern* k) {
 }
 
 CStr* tokenCStr(Kern* k) {
-  scan(k);
-  CStr* out = CStr_new(BBA_asArena(k->g.bbaDict), *Buf_asSlc(&k->g.token));
+  CBst* found = CBst_get(k->g.cBst, tokenSlc(k));
+  if(found) { tokenDrop(k); return found->key; }
+  CStr* key = CStr_new(BBA_asArena(k->g.bbaDict), *Buf_asSlc(&k->g.token));
+  CBst* add = BBA_alloc(k->g.bbaDict, sizeof(CBst), RSIZE);
+  ASSERT(key and add, "tokenCStr OOM");
+  *add = (CBst) { .key = key }; CBst_add(&k->g.cBst, add);
   tokenDrop(k);
-  return out;
+  return key;
 }
 
 // Allocate, initialize and add to dict a new Ty from the information in Kern.
@@ -496,13 +530,14 @@ TyDict* tyStruct(Ty* ty) {
   return d;
 }
 
-Ty* TyDict_find(TyDict* dict, Slc s) {
+Ty* TyDict_find(TyDict* dict, Key* s) {
   while(true) {
-    CBst* find = TyDict_bst(dict);
-    I4 i = CBst_find(&find, s);
+    Ty* find = dict->children;
+    I4 i = Ty_find(&find, s);
     if(i or not find) {
-      if(Slc_eq(SUPER, s)) return NULL; // prevent recursion
-      Ty* super = TyDict_find(dict, SUPER);
+      // prevent recursion
+      if(not s->isTy and Slc_eq(*SUPER.name, *s->name)) return NULL;
+      Ty* super = TyDict_find(dict, &SUPER);
       if(not super) return NULL;
       dict = tyDict(tyVar(super)->tyI->ty);
     } else  return Ty_unalias((Ty*) find);
@@ -510,15 +545,71 @@ Ty* TyDict_find(TyDict* dict, Slc s) {
 }
 
 Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
-    scan(k); Ty* ty = TyDict_find(dict, tokenSlc(k));
-    if(not ty) return NULL;
-    tokenDrop(k); return ty;
+  Slc _key = tokenSlc(k); Key key = (Key) { &_key };
+  scan(k); Ty* ty = TyDict_find(dict, &key);
+  if(not ty) return NULL;
+  tokenDrop(k); return ty;
 }
 
 TyVar* TyDict_field(TyDict* d, TyI* field) {
-  TyVar* var = (TyVar*) TyDict_find(d, CStr_asSlc(field->name));
+  Slc _key = CStr_asSlc(field->name); Key key = (Key) { &_key };
+  TyVar* var = (TyVar*) TyDict_find(d, &key);
   assert(var && isTyVar((Ty*)var) && not isVarGlobal(var));
   return var;
+}
+
+// ***********************
+//   * 3.XX: TyI
+
+Slc Slc_frCStrMaybe(CStr* c) { return c ? Slc_frCStr(c) : (Slc){}; }
+
+I4 TyI_cmp(TyI* a, TyI* b) {
+  while(true) {
+    eprintf("??? in TyI_cmp\n");
+    if(a->meta != b->meta) return S_cmp(a->meta, b->meta);
+    if(a->ty != b->ty)     return S_cmp((S)a->ty, (S)b->ty);
+    I4 c = Slc_cmp(Slc_frCStrMaybe(a->name), Slc_frCStrMaybe(b->name));
+    eprintf("??? TyI_cmp slc=%i\n", c);
+    if(c) return c;
+    if(not a->next) return b->next ? -1 : 0;
+    a = a->next; b = b->next;
+  }
+}
+
+I4 TyIBst_find(TyIBst** node, TyI* key) {
+  return Bst_find((Bst**)node, key, (BstCmp)&TyI_cmp);
+}
+
+TyIBst* TyIBst_add(TyIBst** root, TyIBst* add) {
+  return (TyIBst*) Bst_add((Bst**)root, (Bst*)add, &add->tyI, (BstCmp)&TyI_cmp);
+}
+
+// TyI Binary Search Tree (database) design.
+// TyI's are linked-lists. Say you already had a type:
+//        B -> C
+// Now you want a new type:
+//   A -> B -> C
+// We can reuse the "B -> C" in the second type.
+//
+// When we findOrAdd we check for the whole chain (A -> B -> C). If we find it
+// we are done.  If we can't find it we create the first node and recursively
+// check+create sub-chains
+TyI* TyI_findOrAdd(Kern* k, TyI* tyI) {
+  TyIBst* root = k->g.tyIBst;
+  I4 cmp = TyIBst_find(&root, tyI);
+  if(root and not cmp) return &root->tyI;
+  TyIBst* add = (TyIBst*) BBA_alloc(k->g.bbaDict, sizeof(TyIBst), RSIZE);
+  ASSERT(add, "TyI OOM");
+  *add = (TyIBst) { .tyI = *tyI };
+  if(tyI->next) add->tyI.next = TyI_findOrAdd(k, tyI->next);
+  root = k->g.tyIBst; assert(not TyIBst_add(&root, add));
+  return &add->tyI;
+}
+
+void TyI_rootAdd(Kern* k, TyI** root, TyI* tyI) {
+  // note: root will temporarily point to add, and add will be mutated
+  TyI add = *tyI; Sll_add((Sll**)root, TyI_asSll(&add));
+  *root = TyI_findOrAdd(k, *root);
 }
 
 // Get the type size. Returns TY_UNSIZED if size is dynamic.
@@ -535,7 +626,7 @@ S TyI_sz(TyI* tyI) {
   return TyDict_size((TyDict*)tyI->ty);
 }
 
-bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
+bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   if(TyI_refs(r) != TyI_refs(g))           return false;
   if(r->ty == g->ty)                       return true;
   if(!isTyDict(r->ty) || !isTyDict(g->ty)) return false;
@@ -550,7 +641,7 @@ bool TyI_eq(TyI* r, TyI* g) { // r=require g=given
   }
   if(isDictStruct(rd) and isDictStruct(gd)) {
     while(true) {
-      Ty* super = TyDict_find(gd, SUPER);
+      Ty* super = TyDict_find(gd, &SUPER);
       if(not super) return false;
       gd = tyStruct(tyVar(super)->tyI->ty);
       if(rd == gd) return true;
@@ -590,12 +681,6 @@ void  TyI_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
   if(not nodes) return;
   TyI_cloneAdd(bba, root, nodes->next);
   TyI_cloneAddNode(bba, root, nodes);
-}
-
-TyI* TyI_copy(BBA* bba, TyI* nodes) {
-  TyI* root = NULL;
-  TyI_cloneAdd(bba, &root, nodes);
-  return root;
 }
 
 void Kern_typed(Kern *k, bool typed) {
@@ -659,7 +744,7 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
       }
       SET_ERR(errCxt);
     }
-    if(not TyI_eq(require, given)) {
+    if(not TyI_check(require, given)) {
       if(not ERR_EXPECTED) {
         eprintf("!! Given %u Types don't match Require\n", i);
         tyNotMatch(require_, given_);
@@ -735,7 +820,6 @@ U1 toTokenGroup(U1 c) {
   }
   return T_SYMBOL;
 }
-
 
 void skipWhitespace(Kern* k, SpReader f) {
   Ring* r = &SpReader_asBase(k, f)->ring;
@@ -943,19 +1027,22 @@ void opCall(Kern* k, TyFn* fn) {
 // ***********************
 //   * scan / scanTy
 
-Ty* Kern_findTy(Kern* k, Slc t) { // You probably want to use scanTy
+Ty* Kern_findTy(Kern* k, Key* key) { // You probably want to use scanTy
   Ty* ty = NULL;
   DictStk* dicts = &k->g.dictStk;
   for(U2 i = dicts->sp; i < dicts->cap; i++) {
     ty = dicts->dat[i]->children;
-    I4 res = CBst_find((CBst**)&ty, t);
+    I4 res = Ty_find(&ty, key);
     if((0 == res) && (ty != NULL)) return Ty_unalias(ty);
   }
   return NULL;
 }
 
 // You probably want to use scanTy
-Ty* Kern_findToken(Kern* k) { return Kern_findTy(k, *Buf_asSlc(&k->g.token)); }
+Ty* Kern_findToken(Kern* k) {
+  Key key = { Buf_asSlc(&k->g.token) };
+  return Kern_findTy(k, &key);
+}
 
 // Scan, immediately executing comment functions
 void scan(Kern* k) {
@@ -968,13 +1055,12 @@ void scan(Kern* k) {
   }
 }
 
-// CBst* CBst_add(CBst** root, CBst* add);
 void Kern_addTy(Kern* k, Ty* ty) {
   ty->bst.l = NULL; ty->bst.r = NULL;
   DictStk* dicts = &k->g.dictStk;
   ASSERT(dicts->sp < dicts->cap, "No dicts");
   Ty** root = &DictStk_top(dicts)->children;
-  ty = (Ty*)CBst_add((CBst**)root, (CBst*)ty);
+  ty = Ty_add(root, ty);
   if(ty) {
     eprintf("!! Overwritten key: %.*s\n", Dat_fmt(*ty->bst.key));
     SET_ERR(SLC("key was overwritten"));
@@ -1023,14 +1109,13 @@ TySpec scanTySpec(Kern *k) {
 }
 
 typedef struct { TyI* tyI; U2 arrLen; } ScanTyI;
-ScanTyI scanTyI(Kern* k) {
+ScanTyI scanTyI(Kern* k, CStr* name) {
   TySpec s = scanTySpec(k);
-  TyI* tyI = (TyI*) BBA_alloc(k->g.bbaDict, sizeof(TyI), RSIZE);
-  ASSERT(tyI, "scanTyI: OOM");
   U1 meta = (TY_UNSIZED == s.arrLen) ? TYI_UNSIZED : 0;
-  *tyI = (TyI) { .meta = meta | s.refs, .ty = s.ty };
-  return (ScanTyI) { .tyI = tyI, .arrLen = s.arrLen };
+  TyI tyI = (TyI) { .meta = meta | s.refs, .ty = s.ty, .name = name };
+  return (ScanTyI) { .tyI = TyI_findOrAdd(k, &tyI), .arrLen = s.arrLen };
 }
+
 
 // ***********************
 //   * srOffset
@@ -1461,11 +1546,12 @@ void _with(Kern* k, TyDict* d) {
 
 void N_cast(Kern* k) {
   bool asImm = WS_POP(); REQUIRE(":"); TyDb* db = tyDb(k, asImm);
-  ScanTyI s = scanTyI(k); ASSERT(not s.arrLen, "Array not allowed in cast");
+  ScanTyI s = scanTyI(k, NULL); ASSERT(not s.arrLen, "Array not allowed in cast");
   Kern_compFn(k);
   TyI from = *TyDb_top(db); from.next = NULL;
   TyI to   = *s.tyI;        to.next   = NULL;
-  ASSERT(TyI_eq(&from, &to) or TyI_eq(&to, &from), "cast of non-compatible types");
+  ASSERT(TyI_check(&from, &to) or TyI_check(&to, &from),
+         "cast of non-compatible types");
   tyCall(k, db, &from, &to);
   BBA_free(k->g.bbaDict, s.tyI, sizeof(TyI), RSIZE);
 }
@@ -1512,29 +1598,22 @@ void synFnFound(Kern* k, Ty* ty) {
 // Used for both stk and out
 void N_stk(Kern *k) {
   N_notImm(k);
-  Sll** root;
-  if(     IS_FN_STATE(FN_STATE_STK)) root = TyFn_inpRoot(tyFn(k->g.curTy));
-  else if(IS_FN_STATE(FN_STATE_OUT)) root = TyFn_outRoot(tyFn(k->g.curTy));
+  TyI** root;
+  if(     IS_FN_STATE(FN_STATE_STK)) root = &tyFn(k->g.curTy)->inp;
+  else if(IS_FN_STATE(FN_STATE_OUT)) root = &tyFn(k->g.curTy)->out;
   else { SET_ERR(SLC("stk used after local variable inputs or in body")); }
   CONSUME(":");
-  ScanTyI s = scanTyI(k); ASSERT(not s.arrLen, "Stk input cannot be array");
-  Sll_add(root, TyI_asSll(s.tyI));
+  ScanTyI s = scanTyI(k, NULL); ASSERT(not s.arrLen, "Stk input cannot be array");
+  TyI_rootAdd(k, root, s.tyI);
 }
 TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (U1*)N_stk, TYI_VOID, TYI_VOID);
 
-CStr* scanDedupCStr(Kern* k) {
-  Ty* found = scanTy(k);
-  if(found) return found->bst.key;
-  else      return tokenCStr(k);
-}
-
 typedef struct { TyVar* var; S sz; S els; } VarPre;
 VarPre varPre(Kern* k) {
-  CStr* key = scanDedupCStr(k);
+  CStr* key = tokenCStr(k);
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR, key);
-  REQUIRE(":"); ScanTyI s = scanTyI(k);
+  REQUIRE(":"); ScanTyI s = scanTyI(k, key);
   s.tyI->name = key; v->tyI = s.tyI;
-
   S sz = TyI_sz(s.tyI);
   if(s.arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
   return (VarPre) { .var = v, .sz = sz, .els = s.arrLen ? s.arrLen : 1 };
@@ -1552,8 +1631,7 @@ void N_inp(Kern* k) {
          , "inp used after out");
   VarPre pre = varPre(k);
   SET_FN_STATE(FN_STATE_INP);
-  TyI* tyI = TyI_cloneNode(pre.var->tyI, k->g.bbaDict);
-  Sll_add(TyFn_inpRoot(tyFn(k->g.curTy)), TyI_asSll(tyI));
+  TyI_rootAdd(k, &tyFn(k->g.curTy)->inp, pre.var->tyI);
   localImpl(k, &pre);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_VOID);
@@ -1589,7 +1667,7 @@ void N_var(Kern* k) {
 
 void N_alias(Kern* k) {
   N_notImm(k);
-  CStr* key = scanDedupCStr(k);
+  CStr* key = tokenCStr(k);
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR | TY_VAR_ALIAS, key);
   REQUIRE(":"); v->v = (S) scanTy(k);
 }
@@ -1614,7 +1692,8 @@ void fnSignature(Kern* k, TyFn* fn) {
 void fnInputs(Kern* k, TyFn* fn) {
   TyDb* db = tyDb(k, false);
   for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
-    TyVar* v = (TyVar*)Kern_findTy(k, CStr_asSlcMaybe(tyI->name));
+    Slc _key = CStr_asSlcMaybe(tyI->name); Key key = { &_key };
+    TyVar* v = (TyVar*)Kern_findTy(k, &key);
     if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) {
       SrOffset st = (SrOffset) { .op = SRLL, .checkTy = false, .notParse = true };
       srOffset(k, tyI, v->v, &st);
@@ -1866,8 +1945,7 @@ void N_blk(Kern* k) {
 void field(Kern* k, TyDict* st) {
   VarPre pre = varPre(k); TyVar* v = pre.var;
   v->v = align(st->sz, alignment(pre.sz));
-  TyI* tyI = TyI_cloneNode(v->tyI, k->g.bbaDict);
-  Sll_add(TyDict_fieldsRoot(st), TyI_asSll(tyI));
+  TyI_rootAdd(k, &st->fields, v->tyI);
   if(TyI_unsized(pre.var->tyI)) {
     st->sz = v->v + pre.sz;
   } else {
@@ -1892,7 +1970,7 @@ void N_struct(Kern* k) {
     } else {
       field(k, st);
       hasUnsized |= TyI_unsized(st->fields);
-      if(Slc_eq(SUPER, Slc_frCStr(st->fields->name))) {
+      if(Slc_eq(*SUPER.name, Slc_frCStr(st->fields->name))) {
         ASSERT(not st->fields->next, "super must be the first field");
         ASSERT(not TyI_refs(st->fields), "can not be super of reference");
       }
@@ -1946,7 +2024,8 @@ void ampRef(Kern* k, TyI* tyI) {
       while(refs > 1) {
         opOffset(k, b, FTO, SZR, offset, NULL); offset = 0; refs -= 1;
       }
-      TyVar* var = tyVar(TyDict_find(tyDict(var->tyI->ty), tokenSlc(k)));
+      Slc _key = tokenSlc(k); Key key = (Key) { &_key };
+      TyVar* var = tyVar(TyDict_find(tyDict(var->tyI->ty), &key));
       assert(not isVarGlobal(var));
       tyI = var->tyI; offset += var->v;
     } else {
@@ -1987,7 +2066,8 @@ void N_amp(Kern* k) {
   assert(not isVarGlobal(var)); // TODO
   U2 offset = var->v; TyI* tyI = var->tyI;
   while(not TyI_refs(tyI) and CONSUME(".")) {
-    var = (TyVar*) TyDict_find(tyDict(var->tyI->ty), tokenSlc(k));
+    Slc _key = tokenSlc(k); Key key = (Key) { &_key };
+    var = (TyVar*) TyDict_find(tyDict(var->tyI->ty), &key);
     assert(isTyVar((Ty*)var)); // TODO: support function
     offset += var->v; tyI = var->tyI;
   }
@@ -2062,17 +2142,6 @@ void N_ptrAdd(Kern* k) { // ptrAdd(ptr, index, cap)
   compileFn(k, &TyFn_ptrAddRaw, asImm);
   Kern_typed(k, true);
 }
-
-// void skipWhitespace(Kern* k, SpReader f) {
-//   Ring* r = &SpReader_asBase(k, f)->ring;
-//   while(true) {
-//     U1* c = SpReader_get(k, f, 0);
-//     if(c == NULL) return;
-//     if(*c > ' ')  return;
-//     if(*c == '\n') k->g.srcInfo->line += 1;
-//     Ring_incHead(r, 1);
-//   }
-// }
 
 typedef struct { U1 c; bool unknownEsc; } CharNextEsc;
 CharNextEsc charNextEsc(Kern* k, SpReader f) {
@@ -2180,8 +2249,8 @@ void N_compileLit(Kern* k) {
   WS_POP2(U4 v, bool asImm); compileLit(k, v, asImm);
 }
 void N_findTy(Kern* k) {
-  WS_POP2(S dat, S len);
-  WS_ADD((S)Kern_findTy(k, (Slc){.dat = (U1*)dat, .len = len}));
+  Slc _key = popSlc(k); Key key = { &_key };
+  WS_ADD((S)Kern_findTy(k, &key));
 }
 
 // ********
@@ -2410,18 +2479,18 @@ TyFn* _fnOverride(TyFn* fn, void (*cFn)(Kern*)) {
 void Dat_mod(Kern* k) {
   REPL_START
   COMPILE_EXEC("struct SlcU1 [ dat:&U1  len:U2 ]");
-  TyI_SlcU1 = (TyI) { .ty = Kern_findTy(k, SLC("SlcU1")) }; assert(TyI_SlcU1.ty);
+  TyI_SlcU1 = (TyI) { .ty = Kern_findTy(k, &KEY("SlcU1")) }; assert(TyI_SlcU1.ty);
   REPL_END
 
   CStr_ntVar(path, "\x0A", "src/dat.fn"); compilePath(k, path);
 
-  TyDict* tyBBA = tyDict(Kern_findTy(k, SLC("BBA")));
+  TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));
 
   mSpArena_BBA = (MSpArena) {
-    .drop     = FN_OVERRIDE(TyDict_find(tyBBA, SLC("drop")),     &N_BBA_drop),
-    .alloc    = FN_OVERRIDE(TyDict_find(tyBBA, SLC("alloc")),    &N_BBA_alloc),
-    .free     = FN_OVERRIDE(TyDict_find(tyBBA, SLC("free")),     &N_BBA_free),
-    .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, SLC("maxAlloc")), &N_BBA_maxAlloc),
+    .drop     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("drop")),     &N_BBA_drop),
+    .alloc    = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("alloc")),    &N_BBA_alloc),
+    .free     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("free")),     &N_BBA_free),
+    .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("maxAlloc")), &N_BBA_maxAlloc),
   };
 }
 

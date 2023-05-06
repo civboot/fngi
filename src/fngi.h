@@ -112,6 +112,9 @@ U1*       SpReader_get(struct _Kern* k, SpReader r, U2 i);
 typedef struct { CStr* path; U2 line; } FileInfo;
 typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 
+typedef struct { Slc* name; bool isTy; } Key;
+#define KEY(NAME)  (Key){.name = &SLC(NAME), .isTy=false }
+
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
 #define TY_BODY \
@@ -129,6 +132,11 @@ typedef struct _TyI {
   CStr* name;
   Ty*   ty;
 } TyI;
+
+typedef struct _TyIBst {
+   struct _TyIBst* l; struct _TyIBst* r;
+   TyI tyI;
+} TyIBst;
 
 typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 
@@ -157,8 +165,6 @@ typedef struct _TyFn {
     .lSlots = LSLOTS,             \
   };
 
-static inline Sll** TyFn_inpRoot(TyFn* this) { return (Sll**)&this->inp; }
-static inline Sll** TyFn_outRoot(TyFn* this) { return (Sll**)&this->out; }
 static inline Sll*  TyI_asSll(TyI* this)     { return (Sll*)this; }
 
 static inline TyFn litFn(U1* code, U2 meta, U2 lSlots) {
@@ -176,8 +182,6 @@ typedef struct {
   U2 sz;
 } TyDict;
 
-static inline CBst*  TyDict_bst(TyDict* this)     { return (CBst*)   this->children; }
-static inline CBst** TyDict_bstRoot(TyDict* this) { return (CBst**) &this->children; }
 static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
 
 typedef struct _Ownership {
@@ -231,6 +235,7 @@ typedef struct {
   FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
+  CBst* cBst; TyIBst* tyIBst;
   TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
   BBA* bbaDict;
   Blk* blk;
@@ -341,6 +346,10 @@ static inline bool isVarAlias(TyVar* v)  { return TY_VAR_ALIAS  & v->meta; }
 static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }
 static inline U1   TyI_refs(TyI* tyI)    { return TY_REFS & tyI->meta; }
 
+static inline bool isTyKey(Ty* ty) {
+  return isTyDict(ty) and (TY_DICT_TYKEY & ty->meta);
+}
+
 static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");
   return (TyFn*)p;
@@ -357,7 +366,7 @@ static inline TyVar* tyVar(Ty* ty) {
   return (TyVar*) ty;
 }
 
-Ty* Kern_findTy(Kern* k, Slc t);
+Ty* Kern_findTy(Kern* k, Key* key);
 void Kern_addTy(Kern* k, Ty* ty);
 
 void Kern_fns(Kern* k);
@@ -460,7 +469,7 @@ void tyRet(Kern* k, TyDb* db, bool done);
 void tySplit(Kern* k);
 void tyMerge(Kern* k, TyDb* db);
 void TyI_printAll(TyI* tyI);
-Ty* TyDict_find(TyDict* dict, Slc s);
+Ty* TyDict_find(TyDict* dict, Key* s);
 
 
 #define TYI_VOID  NULL

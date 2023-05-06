@@ -43,13 +43,15 @@ const TY_VAR_GLOBAL :U1 = 0x08
 const TY_VAR_CONST  :U1 = 0x04
 const TY_VAR_INIT   :U1 = 0x02
 
-\ TY_DICT meta bits: [11-- -DDD] H=other D=dictType
+\ TY_DICT meta bits: [11-T -DDD] T=tykey D=dictType
+const TY_DICT_TYKEY  :U1 = 0x10
 const TY_DICT_MSK    :U1 = 0x07
 const TY_DICT_NATIVE :U1 = 0x00
 const TY_DICT_MOD    :U1 = 0x01
 const TY_DICT_BITMAP :U1 = 0x02
 const TY_DICT_STRUCT :U1 = 0x03
 const TY_DICT_ENUM   :U1 = 0x04
+const TY_DICT_ROLE   :U1 = 0x05
 
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03

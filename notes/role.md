@@ -10,7 +10,37 @@ and I recently came across
 concern on this. I wanted to get a few of my thoughts down on what a fngi
 interface (called a "role") would look like.
 
+## New thoughts
+
+
+The basic API is:
+```
+\ A resource role with a single method
+role Resource [
+  \ You can always drop a resource
+  meth drop(&Self) do;
+]
+
+implement Resource for UnixFile {
+  \ Explicitly specified for demonstration, not required
+  drop=&UnixFile.drop
+}
+```
+
+1. What type will a role be
+  * `TyDict` with meta of `TY_DICT_ROLE`
+2. How will a struct implement a role?
+  * It could be a key on the struct. Problem with that is namespace overlapping.
+  * It could be a key on the role. This has the same problem.
+  * the key could be the full path -- this is wasteful.
+  * The key could use _either_ a type or a name -- this is what we did.
+
+
+
 ## C layout
+
+> These thoughts were made before I had a clear idea of the interface. It has
+> changed since then, but I've left this here unedited.
 
 Before we talk about fngi, let's discuss C. Let's say you were designing a
 farming game. The farming game has animals, each with a favorite food and

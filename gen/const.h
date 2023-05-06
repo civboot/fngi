@@ -37,12 +37,14 @@
 #define TY_VAR_GLOBAL         0x08
 #define TY_VAR_CONST          0x04
 #define TY_VAR_INIT           0x02
+#define TY_DICT_TYKEY         0x10
 #define TY_DICT_MSK           0x07
 #define TY_DICT_NATIVE        0x00
 #define TY_DICT_MOD           0x01
 #define TY_DICT_BITMAP        0x02
 #define TY_DICT_STRUCT        0x03
 #define TY_DICT_ENUM          0x04
+#define TY_DICT_ROLE          0x05
 #define TY_NATIVE_SIGNED      0x08
 #define TY_REFS               0x03
 #define TYI_UNSIZED           0x80

@@ -73,7 +73,9 @@ TEST_FNGI(compile0, 4)
   BufFile_var(bf, 8, "42 + 7 ret;");
   k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
   U1 codeDat[256]; k->g.code = (Buf){.dat=codeDat, .cap=256};
-  compileSrc(k); XFN(codeDat, 0, 0); TASSERT_WS(49);
+  compileSrc(k);
+  XFN(codeDat, 0, 0);
+  TASSERT_WS(49);
   TASSERT_EMPTY();
 
   COMPILE_EXEC("inc 4");       TASSERT_WS(5);
@@ -86,7 +88,7 @@ TEST_FNGI(compile0, 4)
   TASSERT_EMPTY();
 
   COMPILE("fn answer do 0x42", false);
-  TyFn* answer = tyFn(Kern_findTy(k, SLC("answer")));
+  TyFn* answer = tyFn(Kern_findTy(k, &KEY("answer")));
   executeFn(k, answer);    TASSERT_WS(0x42);
   COMPILE_EXEC("answer;");  TASSERT_WS(0x42);
   TASSERT_EMPTY();
@@ -114,13 +116,13 @@ TEST_FNGI(compile1, 10)
   COMPILE_EXEC("fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
   COMPILE_EXEC("fn maths2 stk:U2 -> U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
-  TyFn* maths2 = tyFn(Kern_findTy(k, SLC("maths2")));
+  TyFn* maths2 = tyFn(Kern_findTy(k, &KEY("maths2")));
   TASSERT_EQ(&Ty_U2, (TyDict*)maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
   TASSERT_EQ(&Ty_U2, (TyDict*)maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
   TASSERT_EQ(NULL, (TyDict*)maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
 
   COMPILE_EXEC("fn maths3 x:U2 -> U2 do (x + 4) maths3(3)");
-  TyFn* maths3 = tyFn(Kern_findTy(k, SLC("maths3")));
+  TyFn* maths3 = tyFn(Kern_findTy(k, &KEY("maths3")));
   TASSERT_EQ(&Ty_U2, (TyDict*)maths3->inp->ty);
   TASSERT_SLC_EQ("x" , CStr_asSlc(maths3->inp->name));
   TASSERT_EQ(&Ty_U2, (TyDict*)maths3->out->ty);  TASSERT_EQ(NULL , maths3->out->name);
@@ -130,7 +132,7 @@ TEST_FNGI(compile1, 10)
 
   COMPILE_EXEC("fn pop2 a:U1 b:U2 c:S -> \\a:S do (a); pop2(0x1234 2 3)");
   TASSERT_WS(0x34);
-  TyFn* pop2 = tyFn(Kern_findTy(k, SLC("pop2")));
+  TyFn* pop2 = tyFn(Kern_findTy(k, &KEY("pop2")));
   TASSERT_SLC_EQ("c" , CStr_asSlc(pop2->inp->name));
   TASSERT_SLC_EQ("b" , CStr_asSlc(pop2->inp->next->name));
   TASSERT_SLC_EQ("a" , CStr_asSlc(pop2->inp->next->next->name));
@@ -171,7 +173,7 @@ TEST_FNGI(tyDb, 4)
   tyCall(k, db, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
 
   // ret[done] causes errors on future operations
-  k->g.curTy = Kern_findTy(k, SLC("+"));
+  k->g.curTy = Kern_findTy(k, &KEY("+"));
   tyCall(k, db, NULL, &TyIs_S);
   tyRet(k, db, true);  TASSERT_EQ(true, TyDb_done(db));
   EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL));
@@ -287,7 +289,7 @@ TEST_FNGI(compileVar, 10)
 
   COMPILE_EXEC("fn idenRef a:&S -> &S do ( a )\n");
   COMPILE_EXEC("fn ftRef   a:&S -> S  do ( @a )\n");
-  TyFn* ftRef = (TyFn*) Kern_findTy(k, SLC("ftRef"));
+  TyFn* ftRef = (TyFn*) Kern_findTy(k, &KEY("ftRef"));
   TASSERT_EQ(1, ftRef->inp->meta);
   TASSERT_EQ(0, ftRef->out->meta);
 
@@ -310,11 +312,11 @@ TEST_FNGI(compileStruct, 10)
       "chTy(0x42)"); TASSERT_WS(0x42);
 
   COMPILE_EXEC("struct Foo [ a: U2; b: U1; c: U4 ]");
-  TyDict* Foo = (TyDict*) Kern_findTy(k, SLC("Foo"));
+  TyDict* Foo = (TyDict*) Kern_findTy(k, &KEY("Foo"));
   assert(Foo);
   TASSERT_EQ(TY_DICT | TY_DICT_STRUCT, Foo->meta);
   TASSERT_EQ(8, Foo->sz);
-  assert(TyDict_find(Foo, SLC("a")));
+  assert(TyDict_find(Foo, &KEY("a")));
 
   COMPILE_EXEC("struct A [ a: S ]");
   COMPILE_EXEC("struct B [ a: A; b: S ]");
@@ -372,7 +374,7 @@ END_TEST_FNGI
 TEST_FNGI(global, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("var a:S = 32");
-  TyVar* a = tyVar(Kern_findTy(k, SLC("a")));
+  TyVar* a = tyVar(Kern_findTy(k, &KEY("a")));
   TASSERT_EQ(0, Stk_len(WS));
   TASSERT_EQ(32, ftSzI((U1*)a->v, SZR));
   COMPILE_EXEC("imm#tAssertEq(32, a)");
@@ -381,7 +383,7 @@ TEST_FNGI(global, 10)
   COMPILE_EXEC("struct Foo [ a: S; b: S; c: S]");
   COMPILE_EXEC("var foo:Foo = Foo(7, 3, 12)");
   TASSERT_EQ(0, Stk_len(WS));
-  TyVar* foo = tyVar(Kern_findTy(k, SLC("foo")));
+  TyVar* foo = tyVar(Kern_findTy(k, &KEY("foo")));
   TASSERT_EQ(7, ftSzI((U1*)foo->v, SZR));
 
   COMPILE_EXEC("tAssertEq(7, foo.a)   tAssertEq(3, foo.b)");
@@ -444,8 +446,8 @@ TEST_FNGI(structSuper, 12)
 
   COMPILE_EXEC("struct _Slc [ dat:&U1  len:U2 ]");
   COMPILE_EXEC("struct _Buf [ super:_Slc  cap:U2 ]");
-  TyDict* s = tyDict(Kern_findTy(k, SLC("_Slc")));
-  TyDict* b = tyDict(Kern_findTy(k, SLC("_Buf")));
+  TyDict* s = tyDict(Kern_findTy(k, &KEY("_Slc")));
+  TyDict* b = tyDict(Kern_findTy(k, &KEY("_Buf")));
   TASSERT_EQ(6, s->sz); TASSERT_EQ(8, b->sz);
 
   // Prove the type-checker allows either a Slc or Buf pointer.
@@ -520,8 +522,23 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
   COMPILE_EXEC("simpleArr 2"); TASSERT_WS(5);
 
   COMPILE_EXEC("fn unknown x:?&S do ( )")
-  TyFn* unknown = tyFn(Kern_findTy(k, SLC("unknown")));
+  TyFn* unknown = tyFn(Kern_findTy(k, &KEY("unknown")));
   assert(TYI_UNSIZED & unknown->inp->meta);
+  REPL_END
+END_TEST_FNGI
+
+TEST_FNGI(role, 20)
+  Kern_fns(k);
+  REPL_START
+  int _fakeTy;
+  TyDict tyKeyDict = {
+    .bst = { .key = (CStr*) &_fakeTy },
+    .meta = TY_DICT | TY_DICT_STRUCT | TY_DICT_TYKEY,
+  };
+  Kern_addTy(k, (Ty*)&tyKeyDict);
+  Key key = { .name = (Slc*)&_fakeTy, .isTy = true };
+  Ty* found = Kern_findTy(k, &key);
+  TASSERT_EQ(&tyKeyDict, (TyDict*)found);
   REPL_END
 END_TEST_FNGI
 
@@ -599,6 +616,7 @@ int main(int argc, char* argv[]) {
   test_method();
   test_ptr();
   test_arr();
+  test_role();
   test_file_basic();
   test_dat();
   eprintf("# Tests complete\n");
