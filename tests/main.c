@@ -1,4 +1,6 @@
 
+#include <assert.h>
+
 #include "fngi.h"
 
 TEST(basic)
@@ -541,7 +543,14 @@ TEST_FNGI(role, 20)
   TyDict* found = (TyDict*)Kern_findTy(k, &key);
   TASSERT_EQ(&tyKeyDict, found);
 
-
+  COMPILE_EXEC(
+    "role testRole [\n"
+    "  absmeth add [a:S b:S -> S]\n"
+    "]");
+  TyDict* testRole = tyDict(Kern_findTy(k, &KEY("testRole")));
+  TyFn* add = tyFn(TyDict_find(testRole, &KEY("add")));
+  TASSERT_SLC_EQ("b", Slc_frCStr(add->inp->name));
+  assert(add->inp->ty == (Ty*) &Ty_S);
   REPL_END
 END_TEST_FNGI
 

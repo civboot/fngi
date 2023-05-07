@@ -330,7 +330,6 @@ static inline bool isTyDict(Ty* ty)   IS_TY(TY_DICT)
 #undef IS_TY
 #define IS_FN(M)   { return (M) & fn->meta; }
 static inline bool isFnNative(TyFn* fn)    IS_FN(TY_FN_NATIVE)
-static inline bool isFnMethod(TyFn* fn)    IS_FN(TY_FN_METHOD)
 #undef IS_FN
 #define IS_FN(M)   { return (TY_FN_TY_MASK & fn->meta) == (M); }
 static inline bool isFnNormal(TyFn* fn)    IS_FN(TY_FN_NORMAL)
@@ -338,11 +337,14 @@ static inline bool isFnImm(TyFn* fn)       IS_FN(TY_FN_IMM)
 static inline bool isFnSyn(TyFn* fn)       IS_FN(TY_FN_SYN)
 static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
+static inline bool isFnMethod(TyFn* fn)    IS_FN(TY_FN_METH)
+static inline bool isFnAbsmeth(TyFn* fn)   IS_FN(TY_FN_ABSMETH)
 #undef IS_FN
 #define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
 static inline bool isDictMod(TyDict* ty)       IS_DICT(TY_DICT_MOD)
 static inline bool isDictStruct(TyDict* ty)    IS_DICT(TY_DICT_STRUCT)
+static inline bool isDictRole(TyDict* ty)      IS_DICT(TY_DICT_ROLE)
 #undef IS_DICT
 static inline bool isVarAlias(TyVar* v)  { return TY_VAR_ALIAS  & v->meta; }
 static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }

@@ -1703,19 +1703,16 @@ void N_fn(Kern* k) {
   N_notImm(k);
   U2 meta = k->g.metaNext;
   // Create TyFn based on NAME
-  scan(k); TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
-  tokenDrop(k);
+  TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
   Ty* prevTy = k->g.curTy; k->g.curTy = (Ty*) fn;
 
-  Buf* code = &k->g.code;  Buf prevCode = Kern_reserveCode(k, FN_ALLOC);
+  DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
+  fnSignature(k, fn);
 
+  Buf* code = &k->g.code;  Buf prevCode = Kern_reserveCode(k, FN_ALLOC);
   const U2 db_startLen = Stk_len(&k->g.tyDb.done);
   TyDb_new(&k->g.tyDb);
   LOCAL_TYDB_BBA(tyDb); TyDb* db = tyDb(k, false);
-
-  DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
-
-  fnSignature(k, fn);
   if(CONSUME(";")) {}
   else {
     REQUIRE("do"); fnInputs(k, fn);
@@ -1748,7 +1745,7 @@ void N_fn(Kern* k) {
 void N_meth(Kern* k) {
   TyDict* mod = k->g.curMod;
   ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod), "'meth' can only be in struct");
-  k->g.metaNext |= TY_FN_METHOD;
+  k->g.metaNext |= TY_FN_METH;
   N_fn(k);
 }
 
@@ -1939,6 +1936,9 @@ void N_blk(Kern* k) {
 // struct Foo [ a: U2; b: &U4 ]
 
 void field(Kern* k, TyDict* st) {
+  TyDict* mod = k->g.curMod;
+  ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod),
+         "'field' can only be in struct");
   VarPre pre = varPre(k); TyVar* v = pre.var;
   v->v = align(st->sz, alignment(pre.sz));
   TyI_rootAdd(k, &st->fields, v->tyI);
@@ -1950,9 +1950,8 @@ void field(Kern* k, TyDict* st) {
   }
 }
 
-void N_struct(Kern* k) {
+void _parseDataTy(Kern* k, TyDict* st) {
   N_notImm(k);
-  TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
   Ty* prevTy = k->g.curTy;        k->g.curTy = (Ty*) st;
   TyDict* prevMod = k->g.curMod;  k->g.curMod = st;
   DictStk_add(&k->g.dictStk, st);
@@ -1976,6 +1975,36 @@ void N_struct(Kern* k) {
   if(hasUnsized) st->sz = TY_UNSIZED;
   k->g.curMod = prevMod; k->g.curTy = prevTy;
 }
+
+void N_struct(Kern* k) {
+  TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
+  _parseDataTy(k, st);
+}
+
+// ***********************
+//   * role
+// role Resource [ meth drop(&Self) do; ]
+
+void N_absmeth(Kern* k) {
+  // TODO: need to use FnSig object instead
+  // TODO: need to check that &Self is the first object
+  TyDict* mod = k->g.curMod;
+  ASSERT(isTyDict((Ty*)mod) && isDictRole(mod), "'absmeth' can only be in role");
+  N_notImm(k);
+  TyFn* fn = (TyFn*) Ty_new(k, TY_FN | TY_FN_ABSMETH, NULL);
+  Ty* prevTy = k->g.curTy; k->g.curTy = (Ty*) fn;
+  DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
+  fnSignature(k, fn);
+  DictStk_pop(&k->g.dictStk);
+  k->g.curTy = prevTy;
+}
+
+void N_role(Kern* k) {
+  TyDict* role = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_ROLE, NULL);
+  _parseDataTy(k, role);
+  // TODO: check that none of the fields have data.
+}
+
 
 // ***********************
 //   * '.', '&', '@'
@@ -2387,6 +2416,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x07", "absmeth"      , TY_FN_SYN       , N_absmeth  , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "fnTy"         , TY_FN_SYN       , N_fnTy     , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
@@ -2395,6 +2425,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x03", "brk"          , TY_FN_SYN       , N_brk      , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
   ADD_FN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "role"         , TY_FN_SYN       , N_role     , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);

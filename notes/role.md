@@ -18,7 +18,12 @@ The basic API is:
 \ A resource role with a single method
 role Resource [
   \ You can always drop a resource
-  meth drop(&Self) do;
+  absmeth drop &Self;
+
+  meth printDrop(this:&Resource) {
+    print("Dropping myself")
+    this.drop()
+  }
 ]
 
 implement Resource for UnixFile {
@@ -29,6 +34,7 @@ implement Resource for UnixFile {
 
 1. What type will a role be
   * `TyDict` with meta of `TY_DICT_ROLE`
+
 2. How will a struct implement a role?
   * It could be a key on the struct. Problem with that is namespace overlapping.
   * It could be a key on the role. This has the same problem.
