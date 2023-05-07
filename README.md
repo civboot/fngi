@@ -82,7 +82,7 @@ drp drp
 
 \ define a function that multiples input by 2
 \ TODO: input types
-pre fn mulTwo stk:S -> S do ( * 2 )
+pre fn mulTwo[stk:S -> S] do ( * 2 )
 mulTwo(4)
 > {        8} : S
 ```

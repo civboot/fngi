@@ -86,7 +86,7 @@ improves readability tremendously.
 Below is an example fngi function to calculate fibronacci recursively.
 
 ```fngi
-fn fib n:U4 -> U4 do (
+fn fib[n:U4 -> U4] do (
   if(n <= 1) do ( ret 1 )
   fib(dec n) + fib(n - 2)
 )
@@ -172,7 +172,7 @@ struct B [
 ]
 
 \ Take as input and construct
-fn createB a:A -> B do (
+fn createB[a:A -> B]do (
   // construct variable
   var b: B = {
     // a = a;          // this is valid
@@ -240,7 +240,7 @@ uint32_t fib(uint32_t n) {
 
 ```fngi
 \ Fngi Syntax
-fn fib n:U4 -> U4 do (
+fn fib[n:U4 -> U4] do (
   if(n <= 1) do ( ret 1 )
   fib(dec n) + fib(n - 2)
 )

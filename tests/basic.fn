@@ -3,7 +3,7 @@ imm#assertWsEmpty;
 
 imm#tAssertEq(1, 1)
 
-fn ret1 -> S do 1
+fn ret1 [ -> S] do 1
 imm#tAssertEq(ret1, 1);
 
 struct A [ a1: S ]
@@ -11,7 +11,7 @@ struct B [ b1: A;  b2: S]
 struct C [ c1: &B; c2: B]
 
 \ Test structs and accessing references
-fn testStructs() do (
+fn testStructs[ ] do (
   var b: B = B(A 5, 7)
   var c: C = { c1 = &b, c2=b }
   tAssertEq(b.b1.a1, 5)

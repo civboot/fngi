@@ -87,7 +87,7 @@ TEST_FNGI(compile0, 4)
   COMPILE_EXEC("7 - (3 + 2)"); TASSERT_WS(2);
   TASSERT_EMPTY();
 
-  COMPILE("fn answer do 0x42", false);
+  COMPILE("fn answer[ ] do 0x42", false);
   TyFn* answer = tyFn(Kern_findTy(k, &KEY("answer")));
   executeFn(k, answer);    TASSERT_WS(0x42);
   COMPILE_EXEC("answer;");  TASSERT_WS(0x42);
@@ -113,15 +113,15 @@ TEST_FNGI(compile1, 10)
   Kern_fns(k);
   k->g.fnState |= C_UNTY;
 
-  COMPILE_EXEC("fn maths do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
+  COMPILE_EXEC("fn maths[ ] do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
-  COMPILE_EXEC("fn maths2 stk:U2 -> U2 do (_ + 10)  maths2(6)"); TASSERT_WS(16);
+  COMPILE_EXEC("fn maths2[stk:U2 -> U2] do (_ + 10)  maths2(6)"); TASSERT_WS(16);
   TyFn* maths2 = tyFn(Kern_findTy(k, &KEY("maths2")));
   TASSERT_EQ(&Ty_U2, (TyDict*)maths2->inp->ty);  TASSERT_EQ(NULL , maths2->inp->name);
   TASSERT_EQ(&Ty_U2, (TyDict*)maths2->out->ty);  TASSERT_EQ(NULL , maths2->out->name);
   TASSERT_EQ(NULL, (TyDict*)maths2->inp->next); TASSERT_EQ(NULL, maths2->out->next);
 
-  COMPILE_EXEC("fn maths3 x:U2 -> U2 do (x + 4) maths3(3)");
+  COMPILE_EXEC("fn maths3[x:U2 -> U2] do (x + 4) maths3(3)");
   TyFn* maths3 = tyFn(Kern_findTy(k, &KEY("maths3")));
   TASSERT_EQ(&Ty_U2, (TyDict*)maths3->inp->ty);
   TASSERT_SLC_EQ("x" , CStr_asSlc(maths3->inp->name));
@@ -130,7 +130,7 @@ TEST_FNGI(compile1, 10)
   TASSERT_EQ(1, maths3->lSlots);
   TASSERT_WS(7);
 
-  COMPILE_EXEC("fn pop2 a:U1 b:U2 c:S -> \\a:S do (a); pop2(0x1234 2 3)");
+  COMPILE_EXEC("fn pop2[a:U1 b:U2 c:S -> \\a:S] do (a); pop2(0x1234 2 3)");
   TASSERT_WS(0x34);
   TyFn* pop2 = tyFn(Kern_findTy(k, &KEY("pop2")));
   TASSERT_SLC_EQ("c" , CStr_asSlc(pop2->inp->name));
@@ -183,12 +183,12 @@ END_TEST_FNGI
 TEST_FNGI(compileTy, 6)
   Kern_fns(k);
   REPL_START
-  COMPILE_EXEC("fn pop2    a:U1 b:U2 c:S -> \\a:U1  do (a)");
-  COMPILE_EXEC("fn pop2_ stk:U1 b:U2 c:S -> \\a:U1  do (_)");
-  COMPILE_EXEC("fn add   stk:S  b:S      -> \\sum:S do (_ + b)");
+  COMPILE_EXEC("fn pop2  [  a:U1 b:U2 c:S -> \\a:U1] do (a)");
+  COMPILE_EXEC("fn pop2_ [stk:U1 b:U2 c:S -> \\a:U1]  do (_)");
+  COMPILE_EXEC("fn add   [stk:S  b:S      -> \\sum:S] do (_ + b)");
   COMPILE_EXEC("add(42, 7)"); TASSERT_WS(49);
 
-  COMPILE_EXEC("fn addUs stk:U1 b:U2 -> \\a:S  do (_ + b)");
+  COMPILE_EXEC("fn addUs[stk:U1 b:U2 -> \\a:S ] do (_ + b)");
   COMPILE_EXEC("addUs(cast:U1(0x12) cast:U2(0x34))"); TASSERT_WS(0x46);
   REPL_END
 END_TEST_FNGI
@@ -217,11 +217,11 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("if(1) do 0x42 else 0x33"); TASSERT_EQ(1, TY_LEN);
   COMPILE_EXEC("tAssertEq 0x42");          TASSERT_EQ(0, TY_LEN);
 
-  COMPILE_EXEC("fn ifRet stk:S -> S do ( if(_) do (0x22 ret;) else 0x33 )")
+  COMPILE_EXEC("fn ifRet[stk:S -> S] do ( if(_) do (0x22 ret;) else 0x33 )")
   COMPILE_EXEC("tAssertEq(0x22, ifRet(1))");
   COMPILE_EXEC("tAssertEq(0x33, ifRet(0))");
 
-  COMPILE_EXEC("fn ifElifRet x:S -> S do ("
+  COMPILE_EXEC("fn ifElifRet[x:S -> S] do ("
                "  if(  x == 0x42) do (x ret;)"
                "  elif(x == 0x11) do (0 ret;)"
                "  else 0x33"
@@ -230,7 +230,7 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("tAssertEq(0,    ifElifRet(0x11))");
   COMPILE_EXEC("tAssertEq(0x33, ifElifRet(7))");
 
-  COMPILE_EXEC("fn ifElifRetMid x:S -> S do ("
+  COMPILE_EXEC("fn ifElifRetMid[x:S -> S] do ("
                "  if  (x == 0x42) do (0x42)"
                "  elif(x == 0x11) do (0 ret;)"
                "  else 0x33"
@@ -239,7 +239,7 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("tAssertEq(0,    ifElifRetMid(0x11))");
   COMPILE_EXEC("tAssertEq(0x33, ifElifRetMid(7))");
 
-  COMPILE_EXEC("fn ifElifStk stk:S -> S do ("
+  COMPILE_EXEC("fn ifElifStk[stk:S -> S] do ("
                "  if  (dup; == 0x42) do (_)"
                "  elif(dup; == 0x11) do (drp; 0 ret;)"
                "  else (drp; 0x33)"
@@ -252,14 +252,14 @@ TEST_FNGI(compileIf, 10)
   #define IF_ALL_RET \
     "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
 
-  COMPILE_EXEC("fn one -> S do (" IF_ALL_RET ")");
+  COMPILE_EXEC("fn one[ -> S] do (" IF_ALL_RET ")");
   COMPILE_EXEC("tAssertEq(1,    one;)");
-  COMPILE_EXEC("fn ifRet1 -> S do ( if(1) do ret 2; ret 4; )");
+  COMPILE_EXEC("fn ifRet1[ -> S] do ( if(1) do ret 2; ret 4; )");
   COMPILE_EXEC("tAssertEq(2, ifRet1,)");
 
   // putting anything after fails, since the if/elif/else block all RET
   // this does panic, but there is some kind of memory error in dropping.
-  // EXPECT_ERR(COMPILE_EXEC("fn bad -> S do (" IF_ALL_RET "4 )"));
+  // EXPECT_ERR(COMPILE_EXEC("fn bad[ -> S do (" IF_ALL_RET "4 )"));
   // TyDb_drop(k); // panic means cleanup wasn't handled
 
   REPL_END
@@ -283,19 +283,19 @@ END_TEST_FNGI
 TEST_FNGI(compileVar, 10)
   Kern_fns(k); REPL_START;
   COMPILE_EXEC(
-      "fn useVar stk:S -> S do (\n"
+      "fn useVar[stk:S -> S] do (\n"
       "  var a: S = (_ + 7);  ret inc(a);\n"
       ") useVar(0x42)"); TASSERT_WS(0x4A);
 
-  COMPILE_EXEC("fn idenRef a:&S -> &S do ( a )\n");
-  COMPILE_EXEC("fn ftRef   a:&S -> S  do ( @a )\n");
+  COMPILE_EXEC("fn idenRef[a:&S -> &S] do ( a )\n");
+  COMPILE_EXEC("fn ftRef  [a:&S -> S ] do ( @a )\n");
   TyFn* ftRef = (TyFn*) Kern_findTy(k, &KEY("ftRef"));
   TASSERT_EQ(1, ftRef->inp->meta);
   TASSERT_EQ(0, ftRef->out->meta);
 
-  COMPILE_EXEC("fn useRef a:S -> S  do ( ftRef(&a) )\n");
+  COMPILE_EXEC("fn useRef[a:S -> S ] do ( ftRef(&a) )\n");
   COMPILE_EXEC("useRef(0x29) tAssertEq(0x29)")
-  COMPILE_EXEC("fn getRefs a:S -> &S &S do ( var b:U4; &a, &b )\n");
+  COMPILE_EXEC("fn getRefs[a:S -> &S &S] do ( var b:U4; &a, &b )\n");
   COMPILE_EXEC("getRefs(2);");
   WS_POP2(S a, S b);
   U4 localBot = RS_topRef(k) - 12; // 12 == size(ret addr) + size(A) + size(B)
@@ -308,7 +308,7 @@ TEST_FNGI(compileStruct, 10)
   Kern_fns(k); REPL_START;
 
   COMPILE_EXEC(
-      "fn chTy stk:S -> U2 do ( ret U2; )"
+      "fn chTy[stk:S -> U2] do ( ret U2; )"
       "chTy(0x42)"); TASSERT_WS(0x42);
 
   COMPILE_EXEC("struct Foo [ a: U2; b: U1; c: U4 ]");
@@ -321,7 +321,7 @@ TEST_FNGI(compileStruct, 10)
   COMPILE_EXEC("struct A [ a: S ]");
   COMPILE_EXEC("struct B [ a: A; b: S ]");
   COMPILE_EXEC(
-    "fn simpleCreate a:S -> B do ("
+    "fn simpleCreate[a:S -> B] do ("
     "  B(A(a), 0x42)"
     "); simpleCreate(0x33)"); TASSERT_WS(0x42); TASSERT_WS(0x33);
 
@@ -330,10 +330,10 @@ TEST_FNGI(compileStruct, 10)
   TASSERT_EQ(0, Stk_len(WS));
 
   COMPILE_EXEC(
-    "fn useField a:A -> S do ( a.a + 7 )"
+    "fn useField[a:A -> S] do ( a.a + 7 )"
     "  tAssertEq(0x18, useField(A 0x11))");
 
-  COMPILE_EXEC("fn getStruct b:B -> B do ( b ); getStruct(B(A 0x4321, 0x321))");
+  COMPILE_EXEC("fn getStruct[b:B -> B] do ( b ); getStruct(B(A 0x4321, 0x321))");
   TASSERT_WS(0x321); TASSERT_WS(0x4321);
   REPL_END
 END_TEST_FNGI
@@ -342,7 +342,7 @@ TEST_FNGI(alias, 10)
   Kern_fns(k); REPL_START;
 
   COMPILE_EXEC("struct A [ a: S ]  alias Aa:A\n"
-    "fn useAlias a:Aa -> A do (\n"
+    "fn useAlias[a:Aa -> A] do (\n"
     "  Aa(a.a)\n"
     "); useAlias(A(0x30))\n"); TASSERT_WS(0x30);
 
@@ -354,14 +354,14 @@ TEST_FNGI(structBrackets, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("struct A [ a1: S, a2: S ]");
   COMPILE_EXEC("struct B [ b1: A, b2: S ]");
-  COMPILE_EXEC("fn buildA -> A do ( var a: A = { a1 = 0x33  a2 = 0x22 } a )")
+  COMPILE_EXEC("fn buildA[ -> A] do ( var a: A = { a1 = 0x33  a2 = 0x22 } a )")
   COMPILE_EXEC("buildA()"); TASSERT_WS(0x22); TASSERT_WS(0x33);
-  COMPILE_EXEC("fn buildB -> B do ( var b: B = {\n"
+  COMPILE_EXEC("fn buildB[ -> B] do ( var b: B = {\n"
                "  b1 = { a1 = 0x35  a2 = 0x25 }\n"
                "  b2 = 0x11\n"
                "} b )")
   COMPILE_EXEC("buildB()"); TASSERT_WS(0x11); TASSERT_WS(0x25); TASSERT_WS(0x35);
-  COMPILE_EXEC("fn buildBwA -> B do ( var b: B = {\n"
+  COMPILE_EXEC("fn buildBwA[ -> B] do ( var b: B = {\n"
                "  b1 = buildA()\n"
                "  b2 = 0x11\n"
                "} b )")
@@ -396,7 +396,7 @@ END_TEST_FNGI
 
 TEST_FNGI(mod, 10)
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("mod foo ( fn one -> S do 1 )");
+  COMPILE_EXEC("mod foo ( fn one[ -> S] do 1 )");
   COMPILE_EXEC("imm#tAssertEq(1, foo.one())");
   COMPILE_EXEC("with:foo ( imm#tAssertEq(1, one()) )");
   REPL_END
@@ -407,8 +407,8 @@ TEST_FNGI(structDeep, 12)
   COMPILE_EXEC("struct A [ a: S ]");
   COMPILE_EXEC("struct B [ a: A; b: S ]");
   COMPILE_EXEC("struct C [a: &A, b: &B]")
-  COMPILE_EXEC("fn cGetA c:&C -> S do ( c.b.a.a );");
-  COMPILE_EXEC("fn useC -> S S do (\n"
+  COMPILE_EXEC("fn cGetA[c:&C -> S] do ( c.b.a.a );");
+  COMPILE_EXEC("fn useC[ -> S S] do (\n"
                "  var a: A = A 1\n"
                "  var b: B = B(A 2, 3)\n"
                "  var c: C = C(&a, &b)\n"
@@ -417,15 +417,15 @@ TEST_FNGI(structDeep, 12)
   COMPILE_EXEC("useC;");
     TASSERT_WS(2); TASSERT_WS(2);
 
-  COMPILE_EXEC("fn assign -> S do (\n"
+  COMPILE_EXEC("fn assign[ -> S] do (\n"
                "  var a: A;\n"
                "  a.a = 0x42\n"
                "  a.a\n"
                ")");
   COMPILE_EXEC("assign()"); TASSERT_WS(0x42);
 
-  COMPILE_EXEC("fn assignRef a:&A do (a.a = 0x44)")
-  COMPILE_EXEC("fn useAssignRef -> S do (var a:A; assignRef(&a); a.a)");
+  COMPILE_EXEC("fn assignRef[a:&A] do (a.a = 0x44)")
+  COMPILE_EXEC("fn useAssignRef[ -> S] do (var a:A; assignRef(&a); a.a)");
   COMPILE_EXEC("useAssignRef()"); TASSERT_WS(0x44);
   REPL_END
 END_TEST_FNGI
@@ -435,13 +435,13 @@ TEST_FNGI(structSuper, 12)
   COMPILE_EXEC("struct A [ a: S ]");
   COMPILE_EXEC("struct B [ super: A; b: S ]");
 
-  COMPILE_EXEC("fn useB b:B -> S S do (\n"
+  COMPILE_EXEC("fn useB[b:B -> S S] do (\n"
                "  b.b, b.a\n"
                ")");
   COMPILE_EXEC("useB(B(A(0x11), 0x12))"); TASSERT_WS(0x11); TASSERT_WS(0x12);
 
-  COMPILE_EXEC("fn thing do ( var a:A = { a = 0x15 } ) ");
-  COMPILE_EXEC("fn newB -> B do ( var b:B = { a = 0x15  b = 0x16 } b)");
+  COMPILE_EXEC("fn thing[ ] do ( var a:A = { a = 0x15 } ) ");
+  COMPILE_EXEC("fn newB[ -> B] do ( var b:B = { a = 0x15  b = 0x16 } b)");
   COMPILE_EXEC("useB(newB;)");            TASSERT_WS(0x15); TASSERT_WS(0x16);
 
   COMPILE_EXEC("struct _Slc [ dat:&U1  len:U2 ]");
@@ -451,10 +451,10 @@ TEST_FNGI(structSuper, 12)
   TASSERT_EQ(6, s->sz); TASSERT_EQ(8, b->sz);
 
   // Prove the type-checker allows either a Slc or Buf pointer.
-  COMPILE_EXEC("fn ignoreSlc s:&_Slc do ()");
-  COMPILE_EXEC("fn ignoreBuf s:&_Buf do ()");
+  COMPILE_EXEC("fn ignoreSlc[s:&_Slc] do ()");
+  COMPILE_EXEC("fn ignoreBuf[s:&_Buf] do ()");
   COMPILE_EXEC(
-      "fn passStuff do (\n"
+      "fn passStuff[ ] do (\n"
       "  var s:_Slc;  var b:_Buf;\n"
       "  ignoreSlc(&s)\n"  // note: ignoreBuf(&s) causes a compiler error
       "  ignoreBuf(cast:&_Buf(&s))\n" // cast allows it (not really valid)
@@ -465,12 +465,12 @@ END_TEST_FNGI
 
 TEST_FNGI(method, 20)
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("struct A [ v:S; meth aDo self: &A, x: S -> S do ( self.v + x ) ]")
-  COMPILE_EXEC("fn callADo x:S a:A -> S do ( a.aDo(x) )");
+  COMPILE_EXEC("struct A [ v:S; meth aDo [self: &A, x: S -> S] do ( self.v + x ) ]")
+  COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
 
-  COMPILE_EXEC("with:A( fn nonMeth x:S -> S do ( 7 + x ) )")
-  COMPILE_EXEC("fn callNonMeth x:S a:A -> S do ( a.nonMeth(x) )");
+  COMPILE_EXEC("with:A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
+  COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( a.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
 
   COMPILE_EXEC("var a:A = A 5");
@@ -486,20 +486,20 @@ END_TEST_FNGI
 TEST_FNGI(ptr, 20) // tests necessary for libraries
   Kern_fns(k); REPL_START
   // Get the value at a pointer
-  COMPILE_EXEC("fn ftPtr a:S -> S do ( @(&a) ) ftPtr(0x42)");
+  COMPILE_EXEC("fn ftPtr[a:S -> S] do ( @(&a) ) ftPtr(0x42)");
   TASSERT_WS(0x42);
 
   // Set the value at a pointer, then get it
-  COMPILE_EXEC("fn srPtr a:S -> S do ( \\set @(&a) = (a + 3); a ) srPtr(3)");
+  COMPILE_EXEC("fn srPtr[a:S -> S] do ( \\set @(&a) = (a + 3); a ) srPtr(3)");
   TASSERT_WS(6);
 
   // Just get pointer and an offset of 1
-  COMPILE_EXEC("fn getPtrs x:S -> &S, &S do (&x, ptrAdd(&x, 1, 10)) getPtrs(5)")
+  COMPILE_EXEC("fn getPtrs[x:S -> &S, &S] do (&x, ptrAdd(&x, 1, 10)) getPtrs(5)")
   WS_POP2(S x, S xPlus1);
   TASSERT_EQ(x + sizeof(S), xPlus1);
 
   // Get a value at the pointer index 1
-  COMPILE_EXEC("fn ftPtr1 a:S b:S -> S do ( @ptrAdd(&a, 1, 2) ) ftPtr1(0xBAD, 0x733) ");
+  COMPILE_EXEC("fn ftPtr1[a:S b:S -> S] do ( @ptrAdd(&a, 1, 2) ) ftPtr1(0xBAD, 0x733) ");
   TASSERT_WS(0x733);
   REPL_END
 END_TEST_FNGI
@@ -508,7 +508,7 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
   Kern_fns(k);
   REPL_START
   COMPILE_EXEC(
-    "fn simpleArr x:S -> S do (\n"
+    "fn simpleArr[x:S -> S] do (\n"
     "  var a: Arr [3 S]\n"
     "  var b: S = 0x42\n"
     "  a = 3; @ptrAdd(&a, 1, 3) = 4; @ptrAdd(&a, 2, 3) = 5;\n"
@@ -521,7 +521,7 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
   COMPILE_EXEC("simpleArr 1"); TASSERT_WS(4);
   COMPILE_EXEC("simpleArr 2"); TASSERT_WS(5);
 
-  COMPILE_EXEC("fn unknown x:?&S do ( )")
+  COMPILE_EXEC("fn unknown[x:?&S] do ( )")
   TyFn* unknown = tyFn(Kern_findTy(k, &KEY("unknown")));
   assert(TYI_UNSIZED & unknown->inp->meta);
   REPL_END
@@ -556,7 +556,7 @@ TEST_FNGI(dat, 20)
   Kern_fns(k); Dat_mod(k);
   REPL_START
   COMPILE_EXEC(
-    "fn useSlc -> U1 do (\n"
+    "fn useSlc[ -> U1] do (\n"
     "  var dat:Arr[12 U1]\n"
     "  dat                  = char:h \n"
     "  @ptrAdd(&dat, 1, 12) = char:i \n"
@@ -569,7 +569,7 @@ TEST_FNGI(dat, 20)
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
   COMPILE_EXEC(
-    "fn getSlc -> SlcU1 do (\n"
+    "fn getSlc[ -> SlcU1] do (\n"
     "  |hello \\| slc|\n"
     ")");
   COMPILE_EXEC("getSlc;"); WS_POP2(S dat, U2 len);

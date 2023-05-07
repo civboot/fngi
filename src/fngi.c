@@ -1665,8 +1665,9 @@ void N_alias(Kern* k) {
 
 void fnSignature(Kern* k, TyFn* fn) {
   SET_FN_STATE(FN_STATE_STK);
+  REQUIRE("[");
   while(true) {
-    if(CONSUME("do")) break;
+    if(CONSUME("]")) break;
     if(CONSUME("->")) SET_FN_STATE(FN_STATE_OUT);
     Ty* ty = Kern_findToken(k);
     ASSERT(not Kern_eof(k), "expected 'do' but reached EOF");
@@ -1714,8 +1715,12 @@ void N_fn(Kern* k) {
 
   DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
 
-  fnSignature(k, fn); fnInputs(k, fn);
-  SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
+  fnSignature(k, fn);
+  if(CONSUME(";")) {}
+  else {
+    REQUIRE("do"); fnInputs(k, fn);
+    SET_FN_STATE(FN_STATE_BODY); Kern_compFn(k); // compile the fn body
+  }
   SET_FN_STATE(FN_STATE_NO);
 
   // Force a RET at the end, whether UNTY or not.
