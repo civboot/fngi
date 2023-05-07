@@ -37,7 +37,6 @@
 #define TY_VAR_GLOBAL         0x08
 #define TY_VAR_CONST          0x04
 #define TY_VAR_INIT           0x02
-#define TY_DICT_TYKEY         0x10
 #define TY_DICT_MSK           0x07
 #define TY_DICT_NATIVE        0x00
 #define TY_DICT_MOD           0x01

@@ -530,15 +530,18 @@ END_TEST_FNGI
 TEST_FNGI(role, 20)
   Kern_fns(k);
   REPL_START
-  int _fakeTy;
+  CStr_ntVar(aaa, "\x03", "aaa");
+  TyI fakeKey = { .name = aaa, .ty = NULL };
   TyDict tyKeyDict = {
-    .bst = { .key = (CStr*) &_fakeTy },
-    .meta = TY_DICT | TY_DICT_STRUCT | TY_DICT_TYKEY,
+    .name = aaa, .tyKey = &fakeKey,
+    .meta = TY_DICT | TY_DICT_STRUCT,
   };
   Kern_addTy(k, (Ty*)&tyKeyDict);
-  Key key = { .name = (Slc*)&_fakeTy, .isTy = true };
-  Ty* found = Kern_findTy(k, &key);
-  TASSERT_EQ(&tyKeyDict, (TyDict*)found);
+  Key key = { .name = SLC("aaa"), .tyI = &fakeKey };
+  TyDict* found = (TyDict*)Kern_findTy(k, &key);
+  TASSERT_EQ(&tyKeyDict, found);
+
+
   REPL_END
 END_TEST_FNGI
 

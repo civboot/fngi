@@ -37,7 +37,7 @@
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
 #define TASSERT_EMPTY()   TASSERT_EQ(0, Stk_len(WS))
 
-#define Ty_fmt(TY)    CStr_fmt((TY)->bst.key)
+#define Ty_fmt(TY)    CStr_fmt((TY)->name)
 
 #define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
@@ -112,13 +112,12 @@ U1*       SpReader_get(struct _Kern* k, SpReader r, U2 i);
 typedef struct { CStr* path; U2 line; } FileInfo;
 typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 
-typedef struct { Slc* name; bool isTy; } Key;
-#define KEY(NAME)  (Key){.name = &SLC(NAME), .isTy=false }
-
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
+struct _TyI;
 #define TY_BODY \
-  CBst         bst;  /* symbol name and dict search. */ \
+  void* l; void* r;       \
+  CStr* name; struct _TyI* tyKey; \
   struct _Ty*  parent;  \
   U2           meta; /* specifies node type */ \
   U2           line; /* src code line of definition. */ \
@@ -138,6 +137,9 @@ typedef struct _TyIBst {
    TyI tyI;
 } TyIBst;
 
+typedef struct { Slc name; TyI* tyI; } Key;
+#define KEY(NAME)  (Key){ .name = SLC(NAME) }
+
 typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 
 typedef struct _TyFn {
@@ -151,7 +153,7 @@ typedef struct _TyFn {
 } TyFn;
 
 #define TyFn_native(CNAME, META, NFN, INP, OUT) {       \
-  .bst.key = (CStr*) ( CNAME ),             \
+  .name = (CStr*) ( CNAME ),                \
   .meta = TY_FN | TY_FN_NATIVE | (META),    \
   .code = NFN, \
   .inp = INP, .out = OUT \
@@ -346,9 +348,10 @@ static inline bool isVarAlias(TyVar* v)  { return TY_VAR_ALIAS  & v->meta; }
 static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }
 static inline U1   TyI_refs(TyI* tyI)    { return TY_REFS & tyI->meta; }
 
-static inline bool isTyKey(Ty* ty) {
-  return isTyDict(ty) and (TY_DICT_TYKEY & ty->meta);
-}
+// FIXME
+// static inline bool isTyKey(Ty* ty) {
+//   return isTyDict(ty) and (TY_DICT_TYKEY & ty->meta);
+// }
 
 static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");
