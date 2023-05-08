@@ -60,6 +60,7 @@ I4 TyI_cmp(TyI* a, TyI* b) {
     I4 c = Slc_cmp(Slc_frCStrMaybe(a->name), Slc_frCStrMaybe(b->name));
     if(c) return c;
     if(not a->next) return b->next ? -1 : 0;
+    if(not b->next) return 1;
     a = a->next; b = b->next;
   }
 }
@@ -68,7 +69,7 @@ I4 Ty_cmp(Ty* node, Key* key) {
   I4 c = Slc_cmp(Slc_frCStrMaybe(node->name), key->name);
   if(c)                        return c;
   if(node->tyKey and key->tyI) return TyI_cmp(node->tyKey, key->tyI);
-  if(node->tyKey)              return 1;
+  if(node->tyKey or  key->tyI) return S_cmp((S)node->tyKey, (S)key->tyI);
   else                         return 0;
 }
 
@@ -179,7 +180,7 @@ CStr* tokenCStr(Kern* k) {
 //
 // It is the caller's job to initialize .v
 // It is also the caller's job to handle TyFn and TyDict values.
-Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
+Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   if(not key) key = tokenCStr(k);
   ASSERT(key, "Ty_new key OOM");
   U1 sz = sizeof(Ty);
@@ -190,13 +191,18 @@ Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
   }
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   memset(ty, 0, sz);
-  ty->name = key,
-  ty->parent = (Ty*) k->g.curMod,
-  ty->meta = meta,
-  ty->line = k->g.tokenLine,
-  ty->file = k->g.srcInfo,
+  eprintf("??? set tyKey=%p\n", tyKey);
+  ty->name  = key; ty->tyKey = tyKey;
+  ty->parent = (Ty*) k->g.curMod;
+  ty->meta = meta;
+  ty->line = k->g.tokenLine;
+  ty->file = k->g.srcInfo;
   Kern_addTy(k, ty);
   return ty;
+}
+
+Ty* Ty_new(Kern* k, U2 meta, CStr* key) {
+  return Ty_newTyKey(k, meta, key, NULL);
 }
 
 // ***********************
@@ -2038,11 +2044,8 @@ void N_blk(Kern* k) {
 //
 // struct Foo [ a: U2; b: &U4 ]
 
-void field(Kern* k, TyDict* st) {
-  TyDict* mod = k->g.curMod;
-  ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod),
-         "'field' can only be in struct");
-  VarPre pre = varPre(k); TyVar* v = pre.var;
+void _field(Kern* k, TyDict* st, VarPre pre) {
+  TyVar* v = pre.var;
   v->v = align(st->sz, alignment(pre.sz));
   TyI_rootAdd(k, &st->fields, v->tyI);
   if(TyI_unsized(pre.var->tyI)) {
@@ -2052,6 +2055,8 @@ void field(Kern* k, TyDict* st) {
     st->sz = v->v + (pre.els * pre.sz);
   }
 }
+
+void field(Kern* k, TyDict* st) { _field(k, st, varPre(k)); }
 
 void _parseDataTy(Kern* k, TyDict* st) {
   N_notImm(k);
@@ -2089,17 +2094,17 @@ void N_struct(Kern* k) {
 // role Resource [ meth drop(&Self) do; ]
 
 void N_absmeth(Kern* k) {
-  // TODO: need to use FnSig object instead
-  // TODO: need to check that &Self is the first object
-  TyDict* mod = k->g.curMod;
-  ASSERT(isTyDict((Ty*)mod) && isDictRole(mod), "'absmeth' can only be in role");
+  TyDict* role = k->g.curMod;
+  ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
   TyFn* fn = (TyFn*) Ty_new(k, TY_FN | TY_FN_ABSMETH, NULL);
-  Ty* prevTy = k->g.curTy; k->g.curTy = (Ty*) fn;
-  DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
-  fnSignature(k, fn);
-  DictStk_pop(&k->g.dictStk);
-  k->g.curTy = prevTy;
+  FnSig* sig = parseFnSig(k);
+  TyI* last = (TyI*) Sll_last(TyI_asSll(sig->io.inp));
+  ASSERT(last and (&Ty_Self == (TyDict*)last->ty), "Self must be the first argument");
+  fn->inp = sig->io.inp; fn->out = sig->io.out;
+  TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR, fn->name, &TyIs_RoleField);
+  v->tyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*) sig, .meta = 1 });
+  _field(k, role, (VarPre){ .var = v, .sz = RSIZE, .els = 1 });
 }
 
 void N_role(Kern* k) {
@@ -2486,9 +2491,13 @@ void Kern_fns(Kern* k) {
   ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_Self,  "\x04", "Self"    ,  0      , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_RoleField, "\x09", "RoleField", 0  , (Ty*)(SZR + 1));
+
 
   TyIs_UNSET  = (TyI) { .ty = (TyBase*)&Ty_UNSET  };
   TyIs_Unsafe = (TyI) { .ty = (TyBase*)&Ty_Unsafe };
+  TyIs_RoleField = (TyI) { .ty = (TyBase*)&Ty_RoleField };
   TyIs_rAny   = (TyI) { .ty = (TyBase*)&Ty_Any, .meta = 1 };
   TyIs_rAnyS  = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAny };
   TyIs_rAnySS = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAnyS };
