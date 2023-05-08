@@ -17,7 +17,7 @@ SZ1 = r.vals.SZ1
 SZ2 = r.vals.SZ2
 SZ4 = r.vals.SZ4
 
-unsized = {'LCL', 'XL', 'JW', 'XLL', 'XRL', 'SLIT'}
+unsized = {'LCL', 'XL', 'XW', 'XLL', 'XRL', 'SLIT'}
 
 def writeCase(f, name, ret=None):
   ret = ret or name

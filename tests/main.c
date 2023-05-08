@@ -340,6 +340,23 @@ TEST_FNGI(compileStruct, 10)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(fnSig, 10)
+  Kern_fns(k); REPL_START;
+
+  COMPILE_EXEC(
+    "fn add1[a:S -> S] do (\n"
+    "  a + 1\n"
+    "); tAssertEq(add1(4), 5)");
+
+   COMPILE_EXEC(
+     "fn useFn [ f:&fnSig[S->S] -> S] do (\n"
+     "  @f(8)\n"
+     ")");
+   COMPILE_EXEC("tAssertEq(9, useFn(&add1))");
+
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(alias, 10)
   Kern_fns(k); REPL_START;
 
@@ -619,6 +636,7 @@ int main(int argc, char* argv[]) {
   test_compileBlk();
   test_compileVar();
   test_compileStruct();
+  test_fnSig();
   test_alias();
   test_structBrackets();
   test_global();

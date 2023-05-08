@@ -116,7 +116,7 @@ const LIT  :Int = 0x4A   \ {} -> {literal}    |Literal (U1, U2 or U4)
 \ Unsized jumps:
 const LCL  :Int = 0x80 \ Grow Local stack by U1 Literal
 const XL   :Int = 0x81 \ Execute U4 Literal (normal execute)
-const JW   :Int = 0x90 \ Jump from Working Stack
+const XW   :Int = 0x90 \ Execute from Working Stack
 const XLL  :Int = 0x91 \ Execute local literal offset
 const XRL  :Int = 0xA0 \ Execute role method local offset
 

@@ -352,8 +352,8 @@ static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 static inline bool isFnMethod(TyFn* fn)    IS_FN(TY_FN_METH)
 static inline bool isFnAbsmeth(TyFn* fn)   IS_FN(TY_FN_ABSMETH)
 #undef IS_FN
-static inline bool isFnSig(TyBase* ty) {
-  return (TY_FN || TY_FN_SIG) == ty->meta; }
+#define FN_SIG (TY_FN || TY_FN_SIG)
+static inline bool isFnSig(TyBase* ty) { return FN_SIG == ty->meta; }
 #define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
 static inline bool isDictMod(TyDict* ty)       IS_DICT(TY_DICT_MOD)

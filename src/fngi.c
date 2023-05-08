@@ -386,6 +386,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
   //     CS.sp -= r;
   //     R0
     case XL:  xImpl(k, (Ty*) popLit(k, 4));    R0
+    case XW:  xImpl(k, (Ty*) WS_POP());        R0
     case XLL: xImpl(k, (Ty*) (RS_topRef(k) + popLit(k, 2)));     R0;
     // The role must be in locals as {&MRole, &Data}
     case XRL: {
@@ -591,7 +592,7 @@ FnSig* FnSig_findOrAdd(Kern* k, InOut io) {
   if(root and not cmp) return root;
   FnSig* add = (FnSig*) BBA_alloc(k->g.bbaDict, sizeof(FnSig), RSIZE);
   ASSERT(add, "FnSig OOM");
-  *add = (FnSig) { .io = io };
+  *add = (FnSig) { .meta = FN_SIG, .io = io };
   root = k->g.fnSigBst; assert(not FnSig_add(&root, add));
   return add;
 }
@@ -653,6 +654,7 @@ bool _TyI_checkAll(TyI* r, TyI* g) {
     if(not g)               return false;
     if(not TyI_check(r, g)) return false;
     r = r->next; g = g->next;
+    if((not r) and (not g)) return true;
   }
 }
 
@@ -661,11 +663,13 @@ bool InOut_check(InOut* r, InOut* g) {
           _TyI_checkAll(r->out, g->out));
 }
 
+// Return 1 if the types check, else 0.
 bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   if(TyI_refs(r) != TyI_refs(g))             return false;
   if(r->ty == g->ty)                         return true;
-  if(isFnSig(r->ty) && isFnSig(r->ty)) {
-    return InOut_check(&((FnSig*)r)->io, &((FnSig*)g)->io);
+  if(isFnSig(r->ty) && isFnSig(g->ty)) {
+    FnSig* rSig = (FnSig*)r->ty; FnSig* gSig = (FnSig*)g->ty;
+    return InOut_check(&rSig->io, &gSig->io);
   }
   if(!isTyDictB(r->ty) || !isTyDictB(g->ty)) return false;
   TyDict* rd = (TyDict*)r->ty; TyDict* gd = (TyDict*)g->ty;
@@ -697,7 +701,7 @@ void TyI_print(TyI* tyI) {
   if(isFnSig(tyI->ty)) {
     FnSig* sig = (FnSig*)tyI->ty;
     eprintf("fnSig["); TyI_printAll(sig->io.inp);
-    eprintf(" -> ");   TyI_printAll(sig->io.out); eprintf("]");
+    eprintf(" ->");   TyI_printAll(sig->io.out); eprintf("]");
   }
   else eprintf("%.*s", Dat_fmt(*((Ty*)tyI->ty)->name));
 }
@@ -741,6 +745,7 @@ void dbgTyIs(Kern* k, TyDb* db) {
 
 void TyDb_print(Kern* k, TyDb* db) { TyI_printAll(TyDb_top(db)); }
 
+// Pop one item from TyDb.
 void TyDb_pop(Kern* k, TyDb* db) {
   Sll** root = TyDb_rootSll(db);
   Slc* err = BBA_free(db->bba, Sll_pop(root), sizeof(TyI), RSIZE);
@@ -790,7 +795,7 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
     }
     if(not TyI_check(require, given)) {
       if(not ERR_EXPECTED) {
-        eprintf("!! Given %u Types don't match Require\n", i);
+        eprintf("!! Given[index=%u] types don't match Require\n", i);
         tyNotMatch(require_, given_);
       }
       SET_ERR(errCxt);
@@ -1119,10 +1124,14 @@ Ty* scanTy(Kern* k) {
 }
 
 TyI* _scanTyI(Kern* k) {
-  scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "Type not found");
+  scan(k); TyBase* ty = (TyBase*) Kern_findToken(k);
+  ASSERT(ty, "Type not found");
   tokenDrop(k);
-  if(isTyFn(ty) && isFnSynty((TyFn*)ty)) return executeFnSynty(k, (TyFn*)ty);
-  return TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)ty });
+  if(isTyFnB(ty)) {
+    if(isFnSynty((TyFn*)ty)) return executeFnSynty(k, (TyFn*)ty);
+    ty = (TyBase*) FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
+  }
+  return TyI_findOrAdd(k, &(TyI){ .ty = ty });
 }
 
 TyI* scanTySpec(Kern *k) {
@@ -1161,14 +1170,13 @@ TyI* scanTySpec(Kern *k) {
     SET_ERR(SLC("Type not found"));
   }
   if(isTyDictB(s.ty)) {}
-  // FIXME: this instead
-  // else if(isTySpec(s.ty)) {
-  //   ASSERT(s.refs > 0, "type spec on fn must be a reference");
-  // }
-  else if(isTyFn((Ty*)s.ty)) {
-    ASSERT(TyI_refs(&s) > 0, "type spec on fn must be a reference");
+  else if(isFnSig(s.ty)) {
+    ASSERT(TyI_refs(&s) > 0, "fn signature must be a reference");
   }
-  else SET_ERR(SLC("type spec must be a Dict or &FnSpec"))
+  else {
+    eprintf("!!! type spec meta=0x%X\n", s.ty->meta);
+    SET_ERR(SLC("type spec must be a Dict or &FnSig"))
+  }
   return TyI_findOrAdd(k, &s);
 }
 
@@ -1360,6 +1368,14 @@ void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
 // ***********************
 //   * compileTy (Var, Dict, Fn)
 
+void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
+  TyVar* global = isVarGlobal(v) ? v : NULL;
+  FtOffset st = (FtOffset) {
+    .op = global ? FTGL : FTLL, .findEqual = true, .asImm = asImm,
+    .global = global, .noAddTy = not addTy };
+  ftOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
+}
+
 void compileVar(Kern* k, TyVar* v, bool asImm) {
   TyVar* global = isVarGlobal(v) ? v : NULL;
   if(asImm) ASSERT(global, "'imm#' used with local variable");
@@ -1368,11 +1384,7 @@ void compileVar(Kern* k, TyVar* v, bool asImm) {
       .op = global ? SRGL : SRLL, .checkTy = true, .asImm = asImm, .global = global
     };
     srOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
-  } else {
-    FtOffset st = (FtOffset) {
-      .op = global ? FTGL : FTLL, .findEqual = true, .asImm = asImm, .global = global};
-    ftOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
-  }
+  } else compileVarFt(k, v, asImm, /*addTy*/true);
 }
 
 // Return the next member through '.', or NULL if there is no '.'
@@ -1429,12 +1441,13 @@ void compileTy(Kern* k, Ty* ty, bool asImm) {
     if(isTyDict(ty)) {
       TyDict* d = (TyDict*) ty;
       if(isDictMod(d)) {
-        ty = nextDot(k, d); ASSERT(ty, "Generics not yet implemented");
+        ty = nextDot(k, d); ASSERT(ty, "Cannot access mod directly.");
         continue;
       }
       return compileDict(k, (TyDict*) ty, asImm);
     }
   } while(0);
+  assert(not isFnSig((TyBase*)ty));
   ASSERT(isTyFn(ty), "Unknown type meta"); TyFn* fn = (TyFn*)ty;
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
@@ -1636,14 +1649,35 @@ void N_fileloc(Kern* k) { // loc that stays for whole file
 // ***********************
 //   * fn and fn signature
 
-// fnTy#IMM to make next function immediate, etc.
-void N_fnTy(Kern* k)   {
-  N_notImm(k); REQUIRE("#");
+// fnMeta:IMM to make next function immediate, etc.
+void N_fnMeta(Kern* k)   {
+  N_notImm(k); REQUIRE(":");
   compImm(k); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
   S meta = WS_POP();
   ASSERT(not (TY_FN_TY_MASK & k->g.metaNext),
-         "fn can only be one main type: imm, syn, inline, comment");
+         "fn can only be one main type: imm, syn, synty, inline, comment");
   k->g.metaNext |= (TY_FN_TY_MASK & meta);
+}
+
+
+FnSig* parseFnSig(Kern* k) {
+  REQUIRE("["); InOut io = {}; bool isInp = true;
+  while(true) {
+    if(CONSUME("]"))  break;
+    if(CONSUME("->")) isInp = false;
+    TyI** root = isInp ? &io.inp : &io.out;
+    TyI_rootAdd(k, root, scanTySpec(k));
+  }
+  return FnSig_findOrAdd(k, io);
+}
+
+
+// synty function
+// Example:
+//    var f:&fnSig[stk:U2, stk:U4 -> S] = &myFn;
+void N_fnSig(Kern* k)   {
+  TyI* tyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)parseFnSig(k) });
+  WS_ADD((S)tyI);
 }
 
 #define SET_FN_STATE(STATE)  k->g.fnState = bitSet(k->g.fnState, STATE, C_FN_STATE)
@@ -2145,13 +2179,22 @@ void ampRef(Kern* k, TyI* tyI) {
 // The last one requires a fetch
 void N_amp(Kern* k) {
   N_notImm(k); TyDb* db = tyDb(k, false);
+  TyDb_print(k, db); eprintf("\n");
   scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "not found");
   if(isTyVar(ty)) { }
   else if (isTyDict(ty)) {
-    Kern_compFn(k);
+    Kern_compFn(k); // compiles "current" token, which is a struct
     assertRefCast(TyDb_top(db));
     TyI to = { .ty = (TyBase*)ty, .meta = 1 };
     TyDb_pop(k, db); tyCall(k, db, NULL, &to);
+    return;
+  } else if (isTyFn(ty)) {
+    TyDb_print(k, db); eprintf("\n");
+    FnSig* sig = FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
+    tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
+    tokenDrop(k);
+    // TODO: not a lit... a global?
+    lit(&k->g.code, (S)ty);
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
@@ -2176,29 +2219,44 @@ void N_amp(Kern* k) {
   op2(b, LR, 0, offset);
 }
 
+bool handleLocalFn(Kern *k) { // return true if handled
+  // Using @localFn requires that we compile the variable
+  // AFTER the arguments. N_at would compile it before arguments.
+  Key key = (Key) { tokenSlc(k) }; Ty* ty = Kern_findTy(k, &key);
+  if(not isTyVar(ty)) { return false; } TyVar* v = (TyVar*)ty;
+  if((1 != TyI_refs(v->tyI)) or not isFnSig(v->tyI->ty))
+    return false;
+  tokenDrop(k); Kern_compFn(k); // compile arguments
+  FnSig* fn = (FnSig*) v->tyI->ty;
+  tyCall(k, tyDb(k, false), fn->io.inp, fn->io.out);
+  compileVarFt(k, v, false, /*addTy*/false);
+  Buf_add(&k->g.code, XW);
+  return true;
+}
+
 void N_at(Kern* k) { // '@', aka dereference
   N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
+  if(handleLocalFn(k)) return;
   Kern_compFn(k);  U1 instr = FT;
   if(CONSUME("="))    instr = SR;
-  TyI* ref = TyDb_top(db); U2 refs = TyI_refs(ref);
+  TyI* tyI = TyDb_top(db); U2 refs = TyI_refs(tyI);
   ASSERT(refs, "invalid '@', the value on the stack is not a reference");
   if(SR == instr) Kern_compFn(k); // compile value to store
   if(refs > 1) Buf_add(&k->g.code, instr | SZR);
   else {
-    ASSERT(isTyDictB(ref->ty), "Cannot ft/sr non-dict type");
-    TyDict* d = (TyDict*) ref->ty;
+    ASSERT(isTyDictB(tyI->ty), "Cannot direct ft/sr non-dict type");
+    TyDict* d = (TyDict*) tyI->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
     if(isDictNative(d)) Buf_add(&k->g.code, instr | (SZ_MASK & (S)d->children));
     else assert(false); // struct not implemented
   }
-
-  TyI inp = (TyI) { .ty = (TyBase*)ref->ty, .meta = ref->meta };
+  TyI inp = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta };
   if(instr == SR) {
     TyI inp2 = *TyDb_top(db); inp2.next = &inp;
     tyCall(k, db, &inp2, NULL);
   } else {
-    TyI out = (TyI) { .ty = (TyBase*)ref->ty, .meta = ref->meta - 1};
+    TyI out = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta - 1};
     tyCall(k, db, &inp, &out);
   }
 }
@@ -2485,7 +2543,8 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
   ADD_FN("\x07", "absmeth"      , TY_FN_SYN       , N_absmeth  , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "fnTy"         , TY_FN_SYN       , N_fnTy     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x06", "fnMeta"       , TY_FN_SYN       , N_fnMeta   , TYI_VOID, TYI_VOID);
+  ADD_FN("\x05", "fnSig"        , TY_FN_SYNTY     , N_fnSig    , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
@@ -2501,7 +2560,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
   ADD_FN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
-  ADD_FN("\x0D", "assertWsEmpty", 0               , N_assertWsEmpty, TYI_VOID, TYI_VOID);
+  ADD_FN("\x0D", "assertWsEmpty", 0           , N_assertWsEmpty, TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "|"            , TY_FN_SYN       , N_pipe     , TYI_VOID, TYI_VOID);
   ADD_FN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);

@@ -66,7 +66,7 @@
 #define LIT                   0x4A
 #define LCL                   0x80
 #define XL                    0x81
-#define JW                    0x90
+#define XW                    0x90
 #define XLL                   0x91
 #define XRL                   0xA0
 #define JL                    0x82
