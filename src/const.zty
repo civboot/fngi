@@ -25,17 +25,19 @@ const TY_VAR        :U1 = 0x40 \ variable (local, global, struct field, etc). Ha
 const TY_FN         :U1 = 0x80 \ function, can be called and has an fnMeta
 const TY_DICT       :U1 = 0xC0 \ a "dictionary" type which has dictMeta.
 
-\ TY_FN meta bits: [01N- -FFF] N=native M=method F=fnTy
+\ TY_FN meta bits: [01N- FFFF] N=native M=method F=fnTy
 const TY_FN_NATIVE  :U1  = 0x20  \ is a native function (i.e. C)
 
-const TY_FN_TY_MASK :U1 = 0x07 \ Function type mask
+const TY_FN_TY_MASK :U1 = 0x0F \ Function type mask
 const TY_FN_NORMAL  :U1 = 0x00 \ Normally compiled, can use 'imm#' to make IMM
 const TY_FN_IMM     :U1 = 0x01 \ Required to be run as IMM (must use 'imm#')
 const TY_FN_SYN     :U1 = 0x02 \ (syntactical) always run imm (knowing asImm)
-const TY_FN_INLINE  :U1 = 0x03 \ Inline function, copies bytes when compiled.
-const TY_FN_COMMENT :U1 = 0x04 \ Comment function. Executed immediately.
-const TY_FN_METH    :U1 = 0x05 \ Struct method
-const TY_FN_ABSMETH :U1 = 0x06 \ Role method to be overriden
+const TY_FN_SYNTY   :U1 = 0x03 \ syntactical type: can implement generics
+const TY_FN_INLINE  :U1 = 0x04 \ Inline function, copies bytes when compiled.
+const TY_FN_COMMENT :U1 = 0x05 \ Comment function. Executed immediately.
+const TY_FN_METH    :U1 = 0x06 \ Struct method
+const TY_FN_ABSMETH :U1 = 0x07 \ Role method to be overriden
+const TY_FN_SIG     :U1 = 0x0F \ Fn signature
 
 \ TY_VAR meta bits: [10A- GCI-] A=alias G=global C=constant I=initialized
 \ G=0 on a struct/enum is a field, G=0 on a fn is a local
@@ -55,6 +57,3 @@ const TY_DICT_ROLE   :U1 = 0x05
 
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
-
-\ TYI meta bits: [U--- --RR] U=unsized R=refs
-const TYI_UNSIZED      :U1 = 0x80

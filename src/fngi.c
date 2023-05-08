@@ -54,8 +54,9 @@ void dbgWs(Kern *k) {
 Slc Slc_frCStrMaybe(CStr* c) { return c ? Slc_frCStr(c) : (Slc){}; }
 I4 TyI_cmp(TyI* a, TyI* b) {
   while(true) {
-    if(a->meta != b->meta) return S_cmp(a->meta, b->meta);
-    if(a->ty != b->ty)     return S_cmp((S)a->ty, (S)b->ty);
+    if(a->meta != b->meta)     return S_cmp(a->meta, b->meta);
+    if(a->arrLen != b->arrLen) return S_cmp(a->arrLen, b->arrLen);
+    if(a->ty != b->ty)         return S_cmp((S)a->ty, (S)b->ty);
     I4 c = Slc_cmp(Slc_frCStrMaybe(a->name), Slc_frCStrMaybe(b->name));
     if(c) return c;
     if(not a->next) return b->next ? -1 : 0;
@@ -481,6 +482,11 @@ void executeFn(Kern* k, TyFn* fn) {
   executeLoop(k);
 }
 
+TyI* executeFnSynty(Kern* k, TyFn* fn) {
+  ASSERT(isFnSynty(fn), "expected synty fn");
+  executeFn(k, fn); return (TyI*) WS_POP();
+}
+
 // ***********************
 // * 3: TyDb, the type database and validator
 // The type database is a stack of TyI Singly Linked Lists.
@@ -544,7 +550,7 @@ Ty* TyDict_find(TyDict* dict, Key* s) {
       if(not s->tyI and Slc_eq(SUPER.name, s->name)) return NULL;
       Ty* super = TyDict_find(dict, &SUPER);
       if(not super) return NULL;
-      dict = tyDict(tyVar(super)->tyI->ty);
+      dict = tyDictB(tyVar(super)->tyI->ty);
     } else  return Ty_unalias((Ty*) find);
   }
 }
@@ -605,22 +611,22 @@ void TyI_rootAdd(Kern* k, TyI** root, TyI* tyI) {
 
 // Get the type size. Returns TY_UNSIZED if size is dynamic.
 bool TyI_unsized(TyI* tyI) {
-  if(TyI_refs(tyI))           return false;
-  if(TYI_UNSIZED & tyI->meta) return true;
-  ASSERT(isTyDict(tyI->ty), "TyI non-ref must be dict");
+  if(TyI_refs(tyI))             return false;
+  if(TY_UNSIZED == tyI->arrLen) return true;
+  ASSERT(isTyDictB(tyI->ty), "TyI non-ref must be dict");
   return TyDict_unsized((TyDict*)tyI->ty);
 }
 
 S TyI_sz(TyI* tyI) {
   if(TyI_refs(tyI)) return RSIZE;
-  ASSERT(isTyDict(tyI->ty), "TyI must have refs or be a dict.");
+  ASSERT(isTyDictB(tyI->ty), "TyI must have refs or be a dict.");
   return TyDict_size((TyDict*)tyI->ty);
 }
 
 bool TyI_check(TyI* r, TyI* g) { // r=require g=given
-  if(TyI_refs(r) != TyI_refs(g))           return false;
-  if(r->ty == g->ty)                       return true;
-  if(!isTyDict(r->ty) || !isTyDict(g->ty)) return false;
+  if(TyI_refs(r) != TyI_refs(g))             return false;
+  if(r->ty == g->ty)                         return true;
+  if(!isTyDictB(r->ty) || !isTyDictB(g->ty)) return false;
   TyDict* rd = (TyDict*)r->ty; TyDict* gd = (TyDict*)g->ty;
   if((&Ty_S == rd) or (&Ty_U4 == rd)) {
     return (  (&Ty_U1 == gd) or (&Ty_U2 == gd)
@@ -634,7 +640,7 @@ bool TyI_check(TyI* r, TyI* g) { // r=require g=given
     while(true) {
       Ty* super = TyDict_find(gd, &SUPER);
       if(not super) return false;
-      gd = tyStruct(tyVar(super)->tyI->ty);
+      gd = tyStruct((Ty*)tyVar(super)->tyI->ty);
       if(rd == gd) return true;
     }
   }
@@ -646,7 +652,8 @@ void TyI_print(TyI* tyI) {
   else          eprintf("_");
   eprintf(":");
   for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
-  eprintf("%.*s", Dat_fmt(*tyI->ty->name));
+  if(isTySig(tyI->ty)) eprintf("[TyFnSig]");
+  else eprintf("%.*s", Dat_fmt(*((Ty*)tyI->ty)->name));
 }
 
 void TyI_printAll(TyI* tyI) {
@@ -1065,46 +1072,63 @@ Ty* scanTy(Kern* k) {
   return ty;
 }
 
-typedef struct { Ty* ty; U1 refs; U2 arrLen; } TySpec;
-TySpec scanTySpec(Kern *k) {
-  TySpec s = {0};
+TyI* _scanTyI(Kern* k) {
+  scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "Type not found");
+  tokenDrop(k);
+  if(isTyFn(ty) && isFnSynty((TyFn*)ty)) return executeFnSynty(k, (TyFn*)ty);
+  return TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)ty });
+}
+
+TyI* scanTySpec(Kern *k) {
+  TyI s = {0};
   while(true) {
     if(CONSUME("?"))      s.arrLen = TY_UNSIZED;
-    else if(CONSUME("&")) s.refs += 1;
+    else if(CONSUME("&")) s.meta += 1;
     else break;
   }
-  ASSERT(s.refs <= TY_REFS, "number of '&' must be <= 3");
+  ASSERT(s.meta <= TY_REFS, "number of '&' must be <= 3");
 
   if(CONSUME("Arr")) {
     ASSERT(not s.arrLen, "Use Arr[? Ty] not ?Arr[Ty]");
-    ASSERT(not s.refs, "cannot be reference to array, just use more &");
+    ASSERT(not TyI_refs(&s), "cannot be reference to array, just use more &");
     REQUIRE("["); S n = TY_UNSIZED;
     if(CONSUME("?")) {}
     else {
       single(k, /*asImm=*/true); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
       n = WS_POP();
     }
-    CONSUME(","); s = scanTySpec(k); REQUIRE("]");
+    CONSUME(","); s = *scanTySpec(k); REQUIRE("]");
     ASSERT(not s.arrLen, "nested arrays not allowed");
     s.arrLen = n;
-  } else s.ty = scanTy(k);
-
+  } else {
+    TyI* scanned = _scanTyI(k);
+    ASSERT(not (scanned->meta   && s.meta),   "type refs double specified");
+    ASSERT(not (scanned->arrLen && s.arrLen), "type array double specified");
+    s = (TyI) {
+      .ty = scanned->ty,
+      .meta   = s.meta   + scanned->meta,
+      .arrLen = s.arrLen + scanned->arrLen,
+    };
+  }
   if(not s.ty) {
     eprintf("!! Type not found: %.*s\n", Dat_fmt(k->g.token));
     SET_ERR(SLC("Type not found"));
   }
-  if(isTyDict(s.ty)) {}
-  else if(isTyFn(s.ty)) ASSERT(s.refs > 0, "type spec on fn must be a reference");
-  else SET_ERR(SLC("type spec must be a Dict or &Fn"))
-  return s;
+  if(isTyDictB(s.ty)) {}
+  // FIXME: this instead
+  // else if(isTySpec(s.ty)) {
+  //   ASSERT(s.refs > 0, "type spec on fn must be a reference");
+  // }
+  else if(isTyFn((Ty*)s.ty)) {
+    ASSERT(TyI_refs(&s) > 0, "type spec on fn must be a reference");
+  }
+  else SET_ERR(SLC("type spec must be a Dict or &FnSpec"))
+  return TyI_findOrAdd(k, &s);
 }
 
-typedef struct { TyI* tyI; U2 arrLen; } ScanTyI;
-ScanTyI scanTyI(Kern* k, CStr* name) {
-  TySpec s = scanTySpec(k);
-  U1 meta = (TY_UNSIZED == s.arrLen) ? TYI_UNSIZED : 0;
-  TyI tyI = (TyI) { .meta = meta | s.refs, .ty = s.ty, .name = name };
-  return (ScanTyI) { .tyI = TyI_findOrAdd(k, &tyI), .arrLen = s.arrLen };
+TyI* scanTyI(Kern* k, CStr* name) {
+  TyI tyI = *scanTySpec(k); tyI.name = name;
+  return TyI_findOrAdd(k, &tyI);
 }
 
 
@@ -1125,14 +1149,14 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st);
 
 void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   if(not st->notParse) {
-    if(CONSUME("{")) return srOffsetStruct(k, tyDict(tyI->ty), offset, st);
+    if(CONSUME("{")) return srOffsetStruct(k, tyDictB(tyI->ty), offset, st);
     Kern_compFn(k);
   }
 
   Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
   if(st->checkTy)   tyCall(k, db, tyI, NULL);
   if(TyI_refs(tyI)) return opOffset(k, b, st->op, SZR, offset, st->global);
-  ASSERT(not isTyFn(tyI->ty), "invalid fn local"); assert(isTyDict(tyI->ty));
+  ASSERT(not isTyFnB(tyI->ty), "invalid fn local"); assert(isTyDictB(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
   ASSERT(not isDictMod(d), "cannot store in mod");
   if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->children, offset, st->global);
@@ -1233,7 +1257,7 @@ void compileMethod(Kern* k, TyDict* d, TyFn* meth, U2 offset, FtOffset* st) {
   Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
   assert(not st->noAddTy); // invariant
   if(isFnMethod(meth)) {
-    TyI self = { .ty = (Ty*)d, .meta = /*refs*/1 };
+    TyI self = { .ty = (TyBase*)d, .meta = /*refs*/1 };
     tyCall(k, db, TYI_VOID, &self);
     opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
   }
@@ -1250,8 +1274,8 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     _tyFtOffsetRefs(k, db, tyI, st);
     return opOffset(k, b, st->op, SZR, offset, st->global);
   }
-  ASSERT(not isTyFn(tyI->ty), "invalid fn local");
-  ASSERT(isTyDict(tyI->ty), "invalid non-dict fetch");
+  ASSERT(not isTyFnB(tyI->ty), "invalid fn local");
+  ASSERT(isTyDictB(tyI->ty), "invalid non-dict fetch");
   TyDict* d = (TyDict*) tyI->ty; ASSERT(not isDictMod(d), "cannot fetch in mod");
   if(st->findEqual && CONSUME("=")) {
     SrOffset srSt = (SrOffset) {
@@ -1322,12 +1346,12 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
   Kern_compFn(k); // compile next token
   if(IS_UNTY) return;
   TyDb* db = tyDb(k, asImm);
-  TyI tyI = (TyI) {.ty = (Ty*) d};
+  TyI tyI = (TyI) {.ty = (TyBase*) d};
   TyI* top = TyDb_top(db);
   if(isDictNative(d)) {
     if(TyI_refs(top)) assertRefCast(top);
     else {
-      ASSERT((isTyDict(top->ty) && isDictNative((TyDict*)top->ty)),
+      ASSERT((isTyDictB(top->ty) && isDictNative((TyDict*)top->ty)),
            "Cannot cast non-native as native.");
     }
     TyDb_pop(k, db); tyCall(k, db, NULL, &tyI);
@@ -1456,7 +1480,7 @@ void N_destruct(Kern* k) {
   TyDict* ty = (TyDict*) top->ty;
   ASSERT(isTyDict((Ty*)ty) && isDictStruct(ty), "destruct non-dict");
   ASSERT(not TyI_refs(top), "cannot destruct reference (yet?)");
-  TyI tyI = (TyI){.ty = (Ty*)ty};
+  TyI tyI = (TyI){.ty = (TyBase*)ty};
   tyCall(k, db, &tyI, ty->fields);
 }
 
@@ -1537,14 +1561,13 @@ void _with(Kern* k, TyDict* d) {
 
 void N_cast(Kern* k) {
   bool asImm = WS_POP(); REQUIRE(":"); TyDb* db = tyDb(k, asImm);
-  ScanTyI s = scanTyI(k, NULL); ASSERT(not s.arrLen, "Array not allowed in cast");
+  TyI* s = scanTyI(k, NULL); ASSERT(not s->arrLen, "Array not allowed in cast");
   Kern_compFn(k);
   TyI from = *TyDb_top(db); from.next = NULL;
-  TyI to   = *s.tyI;        to.next   = NULL;
+  TyI to   = *s;            to.next   = NULL;
   ASSERT(TyI_check(&from, &to) or TyI_check(&to, &from),
          "cast of non-compatible types");
   tyCall(k, db, &from, &to);
-  BBA_free(k->g.bbaDict, s.tyI, sizeof(TyI), RSIZE);
 }
 
 void N_mod(Kern* k) {
@@ -1594,8 +1617,8 @@ void N_stk(Kern *k) {
   else if(IS_FN_STATE(FN_STATE_OUT)) root = &tyFn(k->g.curTy)->out;
   else { SET_ERR(SLC("stk used after local variable inputs or in body")); }
   CONSUME(":");
-  ScanTyI s = scanTyI(k, NULL); ASSERT(not s.arrLen, "Stk input cannot be array");
-  TyI_rootAdd(k, root, s.tyI);
+  TyI* tyI = scanTyI(k, NULL); ASSERT(not tyI->arrLen, "Stk input cannot be array");
+  TyI_rootAdd(k, root, tyI);
 }
 TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (U1*)N_stk, TYI_VOID, TYI_VOID);
 
@@ -1603,11 +1626,11 @@ typedef struct { TyVar* var; S sz; S els; } VarPre;
 VarPre varPre(Kern* k) {
   CStr* key = tokenCStr(k);
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR, key);
-  REQUIRE(":"); ScanTyI s = scanTyI(k, key);
-  s.tyI->name = key; v->tyI = s.tyI;
-  S sz = TyI_sz(s.tyI);
-  if(s.arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
-  return (VarPre) { .var = v, .sz = sz, .els = s.arrLen ? s.arrLen : 1 };
+  REQUIRE(":"); TyI* tyI = scanTyI(k, key);
+  v->tyI = tyI;
+  S sz = TyI_sz(tyI);
+  if(tyI->arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
+  return (VarPre) { .var = v, .sz = sz, .els = tyI->arrLen ? tyI->arrLen : 1 };
 }
 
 void localImpl(Kern* k, VarPre* pre) {
@@ -2017,7 +2040,6 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   ASSERT(refs, "invalid '.', the value on the stack is not a reference");
   TyDict* d = (TyDict*) top->ty; assert(d);
   ASSERT(isTyDict((Ty*)d), "invalid '.', the value on the stack is not a TyDict");
-  ASSERT(not isDictNative(d), "invalid '.' on native type");
   ASSERT(not isDictMod(d), "accessing mod through ref");
 
   Buf* b = &k->g.code;
@@ -2033,7 +2055,7 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
     return;
   }
   // Call the method
-  TyI this = (TyI) { .ty = (Ty*)d, .meta = /*refs*/1 };
+  TyI this = (TyI) { .ty = (TyBase*)d, .meta = /*refs*/1 };
   tyCall(k, db, NULL, &this); // put back on ty stack (from TyDb_pop above)
   compileTy(k, ty, false);
 }
@@ -2050,7 +2072,7 @@ void ampRef(Kern* k, TyI* tyI) {
         opOffset(k, b, FTO, SZR, offset, NULL); offset = 0; refs -= 1;
       }
       Key key = (Key) { tokenSlc(k) };
-      TyVar* var = tyVar(TyDict_find(tyDict(var->tyI->ty), &key));
+      TyVar* var = tyVar(TyDict_find(tyDictB(var->tyI->ty), &key));
       assert(not isVarGlobal(var));
       tyI = var->tyI; offset += var->v;
     } else {
@@ -2082,7 +2104,7 @@ void N_amp(Kern* k) {
   else if (isTyDict(ty)) {
     Kern_compFn(k);
     assertRefCast(TyDb_top(db));
-    TyI to = { .ty = (ty), .meta = 1 };
+    TyI to = { .ty = (TyBase*)ty, .meta = 1 };
     TyDb_pop(k, db); tyCall(k, db, NULL, &to);
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
@@ -2092,7 +2114,7 @@ void N_amp(Kern* k) {
   U2 offset = var->v; TyI* tyI = var->tyI;
   while(not TyI_refs(tyI) and CONSUME(".")) {
     Key key = (Key) { tokenSlc(k) };
-    var = (TyVar*) TyDict_find(tyDict(var->tyI->ty), &key);
+    var = (TyVar*) TyDict_find(tyDictB(var->tyI->ty), &key);
     assert(isTyVar((Ty*)var)); // TODO: support function
     offset += var->v; tyI = var->tyI;
   }
@@ -2117,20 +2139,20 @@ void N_at(Kern* k) { // '@', aka dereference
   ASSERT(refs, "invalid '@', the value on the stack is not a reference");
   if(SR == instr) Kern_compFn(k); // compile value to store
   if(refs > 1) Buf_add(&k->g.code, instr | SZR);
-  else if (not isTyDict(ref->ty)) { SET_ERR(SLC("Cannot ft/sr non-dict type")); }
   else {
+    ASSERT(isTyDictB(ref->ty), "Cannot ft/sr non-dict type");
     TyDict* d = (TyDict*) ref->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
     if(isDictNative(d)) Buf_add(&k->g.code, instr | (SZ_MASK & (S)d->children));
     else assert(false); // struct not implemented
   }
 
-  TyI inp = (TyI) { .ty = (Ty*)ref->ty, .meta = ref->meta };
+  TyI inp = (TyI) { .ty = (TyBase*)ref->ty, .meta = ref->meta };
   if(instr == SR) {
     TyI inp2 = *TyDb_top(db); inp2.next = &inp;
     tyCall(k, db, &inp2, NULL);
   } else {
-    TyI out = (TyI) { .ty = (Ty*)ref->ty, .meta = ref->meta - 1};
+    TyI out = (TyI) { .ty = (TyBase*)ref->ty, .meta = ref->meta - 1};
     tyCall(k, db, &inp, &out);
   }
 }
@@ -2158,8 +2180,8 @@ void N_ptrAdd(Kern* k) { // ptrAdd(ptr, index, cap)
   ASSERT(refs, "ptrAdd requires the ptr to be a reference");
   ASSERT(refs > 1 || not TyI_unsized(ptrTy), "ptrAdd cannot work on unsized types");
   TyI inp[3]; inp[0] = (TyI) {.ty = ptrTy->ty, .meta = ptrTy->meta };
-              inp[1] = (TyI) {.ty = (Ty*)&Ty_S, .next = &inp[0]};
-              inp[2] = (TyI) {.ty = (Ty*)&Ty_S, .next = &inp[1]};
+              inp[1] = (TyI) {.ty = (TyBase*)&Ty_S, .next = &inp[0]};
+              inp[2] = (TyI) {.ty = (TyBase*)&Ty_S, .next = &inp[1]};
   tyCall(k, db, &inp[2], &inp[0]);
   TyI derefPtr = {.ty = ptrTy->ty, .meta = ptrTy->meta - 1};
   lit(&k->g.code, TyI_sz(&derefPtr));
@@ -2361,11 +2383,11 @@ void Kern_fns(Kern* k) {
   ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (Ty*)(SZR + 1));
 
-  TyIs_UNSET  = (TyI) { .ty = (Ty*)&Ty_UNSET  };
-  TyIs_Unsafe = (TyI) { .ty = (Ty*)&Ty_Unsafe };
-  TyIs_rAny   = (TyI) { .ty = (Ty*)&Ty_Any, .meta = 1 };
-  TyIs_rAnyS  = (TyI) { .ty = (Ty*)&Ty_S, .next = &TyIs_rAny };
-  TyIs_rAnySS = (TyI) { .ty = (Ty*)&Ty_S, .next = &TyIs_rAnyS };
+  TyIs_UNSET  = (TyI) { .ty = (TyBase*)&Ty_UNSET  };
+  TyIs_Unsafe = (TyI) { .ty = (TyBase*)&Ty_Unsafe };
+  TyIs_rAny   = (TyI) { .ty = (TyBase*)&Ty_Any, .meta = 1 };
+  TyIs_rAnyS  = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAny };
+  TyIs_rAnySS = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAnyS };
 
   ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , (Ty*)SZ1);
   ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , (Ty*)SZ2);
@@ -2378,22 +2400,22 @@ void Kern_fns(Kern* k) {
   TASSERT_EMPTY();
 
   // Ty: S
-  TyIs_S = (TyI) { .ty = (Ty*)&Ty_S };
+  TyIs_S = (TyI) { .ty = (TyBase*)&Ty_S };
   // Ty: S, s
-  TyIs_SS = (TyI) { .next = &TyIs_S, .ty = (Ty*)&Ty_S };
+  TyIs_SS = (TyI) { .next = &TyIs_S, .ty = (TyBase*)&Ty_S };
   // Ty: S, s, S
-  TyIs_SSS = (TyI) { .next = &TyIs_SS, .ty = (Ty*)&Ty_S };
+  TyIs_SSS = (TyI) { .next = &TyIs_SS, .ty = (TyBase*)&Ty_S };
 
-  TyIs_U1 = (TyI) { .ty = (Ty*)&Ty_U1 };
-  TyIs_U2 = (TyI) { .ty = (Ty*)&Ty_U2 };
-  TyIs_U4 = (TyI) { .ty = (Ty*)&Ty_U4 };
-  TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = (Ty*)&Ty_U4 };
+  TyIs_U1 = (TyI) { .ty = (TyBase*)&Ty_U1 };
+  TyIs_U2 = (TyI) { .ty = (TyBase*)&Ty_U2 };
+  TyIs_U4 = (TyI) { .ty = (TyBase*)&Ty_U4 };
+  TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = (TyBase*)&Ty_U4 };
 
-  TyIs_rU1 = (TyI) { .ty = (Ty*)&Ty_U1, .meta = 1 };
-  TyIs_rU2 = (TyI) { .ty = (Ty*)&Ty_U2, .meta = 1 };
-  TyIs_rU4 = (TyI) { .ty = (Ty*)&Ty_U4, .meta = 1 };
+  TyIs_rU1 = (TyI) { .ty = (TyBase*)&Ty_U1, .meta = 1 };
+  TyIs_rU2 = (TyI) { .ty = (TyBase*)&Ty_U2, .meta = 1 };
+  TyIs_rU4 = (TyI) { .ty = (TyBase*)&Ty_U4, .meta = 1 };
 
-  TyIs_rU1_U4 = (TyI) {.ty = (Ty*)&Ty_U4, .next = &TyIs_rU4};
+  TyIs_rU1_U4 = (TyI) {.ty = (TyBase*)&Ty_U4, .next = &TyIs_rU4};
 
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
   Kern_addTy(k, (Ty*) &TyFn_stk);
@@ -2508,7 +2530,7 @@ TyFn* _fnOverride(TyFn* fn, void (*cFn)(Kern*)) {
 void Dat_mod(Kern* k) {
   REPL_START
   COMPILE_EXEC("struct SlcU1 [ dat:&U1  len:U2 ]");
-  TyI_SlcU1 = (TyI) { .ty = Kern_findTy(k, &KEY("SlcU1")) }; assert(TyI_SlcU1.ty);
+  TyI_SlcU1 = (TyI) { .ty = (TyBase*) Kern_findTy(k, &KEY("SlcU1")) }; assert(TyI_SlcU1.ty);
   REPL_END
 
   CStr_ntVar(path, "\x0A", "src/dat.fn"); compilePath(k, path);

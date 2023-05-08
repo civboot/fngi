@@ -115,21 +115,24 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
 struct _TyI;
-#define TY_BODY \
+#define TY_BASE \
   void* l; void* r;       \
+  U2           meta; /* specifies node type */
+typedef struct { TY_BASE } TyBase;
+
+#define TY_BODY \
+  TY_BASE \
+  U2           line; /* src code line of definition. */ \
   CStr* name; struct _TyI* tyKey; \
   struct _Ty*  parent;  \
-  U2           meta; /* specifies node type */ \
-  U2           line; /* src code line of definition. */ \
-  FileInfo*    file; /* source file */ \
-
-typedef struct _Ty { TY_BODY; S v; } Ty;
+  FileInfo*    file; /* source file */
+typedef struct _Ty { TY_BODY; } Ty;
 
 typedef struct _TyI {
   struct _TyI*   next;
-  U1    meta;
-  CStr* name;
-  Ty*   ty;
+  U2 meta;  U2 arrLen;
+  CStr*          name;
+  TyBase*        ty;
 } TyI;
 
 typedef struct _TyIBst {
@@ -323,10 +326,13 @@ ParsedNumber parseU4(Kern* k, Slc t);
 
 // #################################
 // # Compiler
-#define IS_TY(M)   { return ty && ((M) == (TY_MASK & ty->meta)); }
-static inline bool isTyFn(Ty* ty)     IS_TY(TY_FN)
-static inline bool isTyVar(Ty* ty)    IS_TY(TY_VAR)
-static inline bool isTyDict(Ty* ty)   IS_TY(TY_DICT)
+#define IS_TY(M)   return ty && ((M) == (TY_MASK & ty->meta))
+static inline bool isTyVar(Ty* ty)         { IS_TY(TY_VAR); }
+static inline bool isTyDict(Ty* ty)        { IS_TY(TY_DICT); }
+static inline bool isTyDictB(TyBase* ty)   { IS_TY(TY_DICT); }
+static inline bool isTyFn(Ty* ty) {
+  if((TY_FN || TY_FN_SIG) == ty->meta) return false; else IS_TY(TY_FN); }
+static inline bool isTyFnB(TyBase* ty) { return isTyFn((Ty*)ty); }
 #undef IS_TY
 #define IS_FN(M)   { return (M) & fn->meta; }
 static inline bool isFnNative(TyFn* fn)    IS_FN(TY_FN_NATIVE)
@@ -335,11 +341,14 @@ static inline bool isFnNative(TyFn* fn)    IS_FN(TY_FN_NATIVE)
 static inline bool isFnNormal(TyFn* fn)    IS_FN(TY_FN_NORMAL)
 static inline bool isFnImm(TyFn* fn)       IS_FN(TY_FN_IMM)
 static inline bool isFnSyn(TyFn* fn)       IS_FN(TY_FN_SYN)
+static inline bool isFnSynty(TyFn* fn)     IS_FN(TY_FN_SYNTY)
 static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 static inline bool isFnMethod(TyFn* fn)    IS_FN(TY_FN_METH)
 static inline bool isFnAbsmeth(TyFn* fn)   IS_FN(TY_FN_ABSMETH)
 #undef IS_FN
+static inline bool isTySig(TyBase* ty) {
+  return (TY_FN || TY_FN_SIG) == ty->meta; }
 #define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)
 static inline bool isDictMod(TyDict* ty)       IS_DICT(TY_DICT_MOD)
@@ -349,11 +358,6 @@ static inline bool isDictRole(TyDict* ty)      IS_DICT(TY_DICT_ROLE)
 static inline bool isVarAlias(TyVar* v)  { return TY_VAR_ALIAS  & v->meta; }
 static inline bool isVarGlobal(TyVar* v) { return TY_VAR_GLOBAL & v->meta; }
 static inline U1   TyI_refs(TyI* tyI)    { return TY_REFS & tyI->meta; }
-
-// FIXME
-// static inline bool isTyKey(Ty* ty) {
-//   return isTyDict(ty) and (TY_DICT_TYKEY & ty->meta);
-// }
 
 static inline TyFn* tyFn(void* p) {
   ASSERT(isTyFn((Ty*)p), "invalid TyFn");
@@ -365,6 +369,8 @@ static inline TyDict* tyDict(Ty* ty) {
   ASSERT(not isDictNative((TyDict*)ty), "native dict");
   return (TyDict*) ty;
 }
+
+static inline TyDict* tyDictB(TyBase* ty) { return tyDict((Ty*)ty); }
 
 static inline TyVar* tyVar(Ty* ty) {
   ASSERT(isTyVar(ty), "expected TyVar");

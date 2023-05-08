@@ -525,7 +525,7 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
 
   COMPILE_EXEC("fn unknown[x:?&S] do ( )")
   TyFn* unknown = tyFn(Kern_findTy(k, &KEY("unknown")));
-  assert(TYI_UNSIZED & unknown->inp->meta);
+  assert(TY_UNSIZED == unknown->inp->arrLen);
   REPL_END
 END_TEST_FNGI
 
@@ -550,7 +550,7 @@ TEST_FNGI(role, 20)
   TyDict* testRole = tyDict(Kern_findTy(k, &KEY("testRole")));
   TyFn* add = tyFn(TyDict_find(testRole, &KEY("add")));
   TASSERT_SLC_EQ("b", Slc_frCStr(add->inp->name));
-  assert(add->inp->ty == (Ty*) &Ty_S);
+  assert(add->inp->ty == (TyBase*) &Ty_S);
   REPL_END
 END_TEST_FNGI
 

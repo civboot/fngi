@@ -26,14 +26,16 @@
 #define TY_FN                 0x80
 #define TY_DICT               0xC0
 #define TY_FN_NATIVE          0x20
-#define TY_FN_TY_MASK         0x07
+#define TY_FN_TY_MASK         0x0F
 #define TY_FN_NORMAL          0x00
 #define TY_FN_IMM             0x01
 #define TY_FN_SYN             0x02
-#define TY_FN_INLINE          0x03
-#define TY_FN_COMMENT         0x04
-#define TY_FN_METH            0x05
-#define TY_FN_ABSMETH         0x06
+#define TY_FN_SYNTY           0x03
+#define TY_FN_INLINE          0x04
+#define TY_FN_COMMENT         0x05
+#define TY_FN_METH            0x06
+#define TY_FN_ABSMETH         0x07
+#define TY_FN_SIG             0x0F
 #define TY_VAR_ALIAS          0x20
 #define TY_VAR_GLOBAL         0x08
 #define TY_VAR_CONST          0x04
@@ -47,5 +49,4 @@
 #define TY_DICT_ROLE          0x05
 #define TY_NATIVE_SIGNED      0x08
 #define TY_REFS               0x03
-#define TYI_UNSIZED           0x80
 
