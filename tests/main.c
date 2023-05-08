@@ -561,15 +561,30 @@ TEST_FNGI(role, 20)
   TASSERT_EQ(&tyKeyDict, found);
 
   COMPILE_EXEC(
-    "role testRole [\n"
+    "role Adder [\n"
     "  absmeth add [ &Self \\(b)S -> S ]\n"
     "]");
-  TyDict* testRole = tyDict(Kern_findTy(k, &KEY("testRole")));
-  TyFn* add = tyFn(TyDict_find(testRole, &(Key){
+  TyDict* adder = tyDict(Kern_findTy(k, &KEY("Adder")));
+  TyFn* add = tyFn(TyDict_find(adder, &(Key){
     .name = SLC("add"), .tyI = &TyIs_RoleMeth }));
   TASSERT_EQ(NULL, add->inp->name);
   assert(add->inp->ty == (TyBase*) &Ty_S);
-  tyVar(TyDict_find(testRole, &KEY("add")));
+  tyVar(TyDict_find(adder, &KEY("add")));
+
+  COMPILE_EXEC(
+    "unty fn add [ self:&Self, b:S -> S ] do;\n"
+    "struct A [\n"
+    "  a: S\n"
+    "  meth add [ this:&A, b:S -> S ] do (\n"
+    "    this.a + b\n"
+    "  )\n"
+    "]");
+
+  COMPILE_EXEC(
+    "impl A:Adder {\n"
+    "  add = &add\n"
+    "}");
+
   REPL_END
 END_TEST_FNGI
 

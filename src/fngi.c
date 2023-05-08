@@ -34,6 +34,8 @@
 
 Key SUPER;
 
+TyFn _TyFn_imm;
+
 /*extern*/ Kern* fngiK = NULL;
 
 // ***********************
@@ -481,7 +483,8 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  // eprintf("!!! executeFn %X\n", fn);
+  if(fn->name) eprintf("!!! executeFn %.*s\n", Ty_fmt(fn));
+  else         eprintf("!!! executeFn <unknown>\n");
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
@@ -1205,10 +1208,11 @@ typedef struct {
   TyVar* global;
 } SrOffset;
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st);
-
+void compImm(Kern* k);
 
 void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   if(not st->notParse) {
+    eprintf("??? tyI->ty->meta=%X\n", tyI->ty->meta);
     if(CONSUME("{")) return srOffsetStruct(k, tyDictB(tyI->ty), offset, st);
     Kern_compFn(k);
   }
@@ -1231,6 +1235,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
 
 // Implementation of '{ ... }'
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
+  eprintf("??? srOffsetStruct\n");
   Buf* b = &k->g.code;
   // Clear memory first
   if(st->clear) {
@@ -1243,11 +1248,14 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
     opCall(k, &TyFn_memclr);
   }
   st->clear = false;
+  eprintf("??? srOffsetStruct d=%.*s\n", Ty_fmt(d));
   while(not CONSUME("}")) {
     scan(k); Ty* ty = Kern_findToken(k);
-    if(ty and isTyFn(ty)) {
-      ASSERT(isFnSyn((TyFn*)ty), "non-syn function in {...}");
-      tokenDrop(k); WS_ADD(/*asImm*/false); executeFn(k, (TyFn*)ty);
+    eprintf("??? in srOffsetStruct loop ty=%p\n", ty);
+    if(ty) eprintf("???   ty=%.*s\n", Ty_fmt(ty));
+    if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
+      eprintf("??? Calling with asImm=%u\n", st->asImm);
+      Kern_compFn(k);
       continue;
     }
     ty = TyDict_scanTy(k, d); ASSERT(ty, "field not found");
@@ -1379,17 +1387,21 @@ void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
   FtOffset st = (FtOffset) {
     .op = global ? FTGL : FTLL, .findEqual = true, .asImm = asImm,
     .global = global, .noAddTy = not addTy };
+  START_IMM(asImm);
   ftOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
+  END_IMM;
 }
 
 void compileVar(Kern* k, TyVar* v, bool asImm) {
   TyVar* global = isVarGlobal(v) ? v : NULL;
   if(asImm) ASSERT(global, "'imm#' used with local variable");
   if(CONSUME("=")) {
+    START_IMM(asImm);
     SrOffset st = (SrOffset) {
       .op = global ? SRGL : SRLL, .checkTy = true, .asImm = asImm, .global = global
     };
     srOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
+    END_IMM;
   } else compileVarFt(k, v, asImm, /*addTy*/true);
 }
 
@@ -1558,9 +1570,7 @@ void _N_imm(Kern* k) { if(Kern_eof(k)) return;  single(k, true); }
 
 // Compile a token (and all sub-tokens) with asImm=true
 void compImm(Kern* k) {
-  TyFn* cfn = k->g.compFn; k->g.compFn = &_TyFn_imm;
-  executeFn(k, &_TyFn_imm);
-  k->g.compFn = cfn;
+  START_IMM(true); executeFn(k, &_TyFn_imm); END_IMM;
 }
 
 void N_imm(Kern*k) {
@@ -1736,24 +1746,32 @@ void N_inp(Kern* k) {
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_VOID);
 
+void _globalInit(Kern* k, TyVar* v) {
+  memset((void*)v->v, 0, TyI_sz(v->tyI));
+  SrOffset st = (SrOffset) {
+    .op = SRGL, .checkTy = true, .asImm = true, .global = v,
+  };
+  START_IMM(true); srOffset(k, v->tyI, /*offset*/ 0, &st); END_IMM;
+  v->meta |= TY_VAR_INIT;
+}
+
 void _varGlobal(Kern* k, VarPre* pre) {
   TyVar* v = pre->var;
   v->meta |= TY_VAR_GLOBAL;
   v->v = (S) BBA_alloc(&k->bbaCode, pre->els * pre->sz, /*align*/pre->sz);
   ASSERT(v->v, "Global OOM");
   if(CONSUME("=")) {
-    compImm(k);
-    SrOffset st = (SrOffset) {.op = SRGL, .checkTy = true, .asImm = true, .global = v};
-    srOffset(k, v->tyI, /*offset*/0, &st);
-    v->meta |= TY_VAR_INIT;
+    _globalInit(k, v);
   }
 }
 
 void _varLocal(Kern* k, VarPre* pre) {
   localImpl(k, pre);
   if(CONSUME("=")) {
+    eprintf("??? var local=\n");
     SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
     srOffset(k, pre->var->tyI, /*offset=*/pre->var->v, &st);
+    eprintf("??? var local= done\n");
   }
 }
 
@@ -2118,9 +2136,22 @@ void N_impl(Kern* k) {
   TyDict* st = (TyDict*) scanTy(k);
   ASSERT(st and isTyDict((Ty*)st), "Can only implement for TyDict");
   ASSERT(isDictStruct(st)        , "Can only implement for struct");
-  TyDict* role = (TyDict*) scanTy(k);
+  REQUIRE(":"); TyDict* role = (TyDict*) scanTy(k);
+  eprintf("??? role=%p\n", role);
   ASSERT(role and isTyDict((Ty*)role) and isDictRole(role),
          "must be impl Type:Role");
+
+  // Also create a variable for storing the method pointers
+  TyI* roleTyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)role });
+  eprintf("??? role->meta=%X\n", role->meta);
+  eprintf("??? roleTyI->ty->meta=%X\n", roleTyI->ty->meta);
+
+  TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR | TY_VAR_GLOBAL, role->name, roleTyI);
+  VarPre pre = { .var = v, .sz = TyI_sz(roleTyI), .els = 1 };
+  v->v = (S) BBA_alloc(&k->bbaCode, pre.sz, /*align*/RSIZE);
+  ASSERT(v->v, "Role impl OOM");
+  v->tyI = roleTyI;
+  _globalInit(k, v);
 }
 
 
@@ -2193,8 +2224,8 @@ void ampRef(Kern* k, TyI* tyI) {
 //
 // The last one requires a fetch
 void N_amp(Kern* k) {
-  N_notImm(k); TyDb* db = tyDb(k, false);
-  TyDb_print(k, db); eprintf("\n");
+  eprintf("??? N_amp start\n");
+  bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "not found");
   if(isTyVar(ty)) { }
   else if (isTyDict(ty)) {
@@ -2204,17 +2235,21 @@ void N_amp(Kern* k) {
     TyDb_pop(k, db); tyCall(k, db, NULL, &to);
     return;
   } else if (isTyFn(ty)) {
-    TyDb_print(k, db); eprintf("\n");
+    eprintf("??? pushing &%.*s\n", Ty_fmt(ty));
     FnSig* sig = FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
     tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
+    eprintf("??? here\n");
     tokenDrop(k);
     // TODO: not a lit... a global?
-    lit(&k->g.code, (S)ty);
+    if(asImm) WS_ADD((S)ty);
+    else      lit(&k->g.code, (S)ty);
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
-  assert(not isVarGlobal(var)); // TODO
+  assert(not isVarGlobal(var));
+  if(isVarGlobal(var)) assert(false); // TODO
+  else ASSERT(not asImm, "local referenced imm");
   U2 offset = var->v; TyI* tyI = var->tyI;
   while(not TyI_refs(tyI) and CONSUME(".")) {
     Key key = (Key) { tokenSlc(k) };
@@ -2230,7 +2265,7 @@ void N_amp(Kern* k) {
   }
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
-  tyCall(k, tyDb(k, false), NULL, &out);
+  tyCall(k, db, NULL, &out);
   op2(b, LR, 0, offset);
 }
 
@@ -2250,6 +2285,7 @@ bool handleLocalFn(Kern *k) { // return true if handled
 }
 
 void N_at(Kern* k) { // '@', aka dereference
+  eprintf("??? N_at start\n");
   N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   if(handleLocalFn(k)) return;
@@ -2572,6 +2608,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
   ADD_FN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "role"         , TY_FN_SYN       , N_role     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x04", "impl"         , TY_FN_SYN       , N_impl     , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
   ADD_FN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);

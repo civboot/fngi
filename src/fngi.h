@@ -158,6 +158,12 @@ typedef struct _TyFn {
   U1 lSlots;
 } TyFn;
 
+extern TyFn _TyFn_imm;
+#define START_IMM(AS_IMM) \
+    TyFn* cfn = k->g.compFn; if(AS_IMM) k->g.compFn = &_TyFn_imm
+
+#define END_IMM   k->g.compFn = cfn
+
 static inline InOut* TyFn_asInOut(TyFn* fn) { return (InOut*) &fn->inp; }
 
 #define TyFn_native(CNAME, META, NFN, INP, OUT) {       \
@@ -168,8 +174,10 @@ static inline InOut* TyFn_asInOut(TyFn* fn) { return (InOut*) &fn->inp; }
 }
 
 #define TyFn_static(NAME, META, LSLOTS, DAT) \
+  CStr_ntVar(LINED(name), "\x08", "<static>"); \
   static TyFn NAME;               \
   NAME = (TyFn) {                 \
+    .name = LINED(name),        \
     .meta = TY_FN | META,       \
     .code = DAT,                   \
     .lSlots = LSLOTS,             \
