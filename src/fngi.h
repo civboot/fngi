@@ -145,6 +145,9 @@ typedef struct { Slc name; TyI* tyI; } Key;
 
 typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 
+typedef struct { TyI* inp; TyI* out;   } InOut;
+typedef struct { TY_BASE; InOut io;    } FnSig;
+
 typedef struct _TyFn {
   TY_BODY
   Ty* locals;
@@ -154,6 +157,8 @@ typedef struct _TyFn {
   U2 len; // size of spor binary
   U1 lSlots;
 } TyFn;
+
+static inline InOut* TyFn_asInOut(TyFn* fn) { return (InOut*) &fn->inp; }
 
 #define TyFn_native(CNAME, META, NFN, INP, OUT) {       \
   .name = (CStr*) ( CNAME ),                \
@@ -240,7 +245,7 @@ typedef struct {
   FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
-  CBst* cBst; TyIBst* tyIBst;
+  CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
   TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
   BBA* bbaDict;
   Blk* blk;
@@ -347,7 +352,7 @@ static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
 static inline bool isFnMethod(TyFn* fn)    IS_FN(TY_FN_METH)
 static inline bool isFnAbsmeth(TyFn* fn)   IS_FN(TY_FN_ABSMETH)
 #undef IS_FN
-static inline bool isTySig(TyBase* ty) {
+static inline bool isFnSig(TyBase* ty) {
   return (TY_FN || TY_FN_SIG) == ty->meta; }
 #define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)

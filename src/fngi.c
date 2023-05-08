@@ -572,6 +572,29 @@ TyVar* TyDict_field(TyDict* d, TyI* field) {
 // ***********************
 //   * 3.XX: TyI
 
+I4 InOut_cmp(InOut* a, InOut* b) {
+  I4 c = TyI_cmp(a->inp, b->inp); if(c) return c;
+  return TyI_cmp(a->out, b->out);
+}
+
+I4 FnSig_find(FnSig** node, InOut* key) {
+  return Bst_find((Bst**)node, key, (BstCmp)&InOut_cmp);
+}
+
+FnSig* FnSig_add(FnSig** root, FnSig* add) {
+  return (FnSig*) Bst_add((Bst**)root, (Bst*)add, &add->io, (BstCmp)&InOut_cmp);
+}
+
+FnSig* FnSig_findOrAdd(Kern* k, InOut io) {
+  FnSig* root = k->g.fnSigBst;
+  I4 cmp = FnSig_find(&root, &io);
+  if(root and not cmp) return root;
+  FnSig* add = (FnSig*) BBA_alloc(k->g.bbaDict, sizeof(FnSig), RSIZE);
+  ASSERT(add, "FnSig OOM");
+  *add = (FnSig) { .io = io };
+  root = k->g.fnSigBst; assert(not FnSig_add(&root, add));
+  return add;
+}
 
 I4 TyIBst_find(TyIBst** node, TyI* key) {
   return Bst_find((Bst**)node, key, (BstCmp)&TyI_cmp);
@@ -609,7 +632,7 @@ void TyI_rootAdd(Kern* k, TyI** root, TyI* tyI) {
   *root = TyI_findOrAdd(k, *root);
 }
 
-// Get the type size. Returns TY_UNSIZED if size is dynamic.
+// Return whether the type is unsized
 bool TyI_unsized(TyI* tyI) {
   if(TyI_refs(tyI))             return false;
   if(TY_UNSIZED == tyI->arrLen) return true;
@@ -623,9 +646,27 @@ S TyI_sz(TyI* tyI) {
   return TyDict_size((TyDict*)tyI->ty);
 }
 
+bool TyI_check(TyI* r, TyI* g);
+bool _TyI_checkAll(TyI* r, TyI* g) {
+  while(true) {
+    if(not r)               return not g;
+    if(not g)               return false;
+    if(not TyI_check(r, g)) return false;
+    r = r->next; g = g->next;
+  }
+}
+
+bool InOut_check(InOut* r, InOut* g) {
+  return (_TyI_checkAll(r->inp, g->inp) &&
+          _TyI_checkAll(r->out, g->out));
+}
+
 bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   if(TyI_refs(r) != TyI_refs(g))             return false;
   if(r->ty == g->ty)                         return true;
+  if(isFnSig(r->ty) && isFnSig(r->ty)) {
+    return InOut_check(&((FnSig*)r)->io, &((FnSig*)g)->io);
+  }
   if(!isTyDictB(r->ty) || !isTyDictB(g->ty)) return false;
   TyDict* rd = (TyDict*)r->ty; TyDict* gd = (TyDict*)g->ty;
   if((&Ty_S == rd) or (&Ty_U4 == rd)) {
@@ -647,12 +688,17 @@ bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   return false;
 }
 
+void TyI_printAll(TyI* tyI);
 void TyI_print(TyI* tyI) {
   if(tyI->name) eprintf("%.*s", Dat_fmt(*tyI->name));
   else          eprintf("_");
   eprintf(":");
   for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
-  if(isTySig(tyI->ty)) eprintf("[TyFnSig]");
+  if(isFnSig(tyI->ty)) {
+    FnSig* sig = (FnSig*)tyI->ty;
+    eprintf("fnSig["); TyI_printAll(sig->io.inp);
+    eprintf(" -> ");   TyI_printAll(sig->io.out); eprintf("]");
+  }
   else eprintf("%.*s", Dat_fmt(*((Ty*)tyI->ty)->name));
 }
 
