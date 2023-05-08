@@ -495,10 +495,10 @@ Ty* TyDict_find(TyDict* dict, Key* s);
   PRE TyDict  Ty_Any;      \
   PRE TyDict  Ty_Unsafe;   \
   PRE TyDict  Ty_Self;     \
-  PRE TyDict  Ty_RoleField;\
+  PRE TyDict  Ty_RoleMeth;\
   PRE TyI TyIs_UNSET;  \
   PRE TyI TyIs_Unsafe; \
-  PRE TyI TyIs_RoleField;\
+  PRE TyI TyIs_RoleMeth;\
   PRE TyI TyIs_rAny;   \
   PRE TyI TyIs_rAnyS;  \
   PRE TyI TyIs_rAnySS; \

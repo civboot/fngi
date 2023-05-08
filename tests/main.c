@@ -565,9 +565,11 @@ TEST_FNGI(role, 20)
     "  absmeth add [ &Self \\(b)S -> S ]\n"
     "]");
   TyDict* testRole = tyDict(Kern_findTy(k, &KEY("testRole")));
-  TyFn* add = tyFn(TyDict_find(testRole, &KEY("add")));
+  TyFn* add = tyFn(TyDict_find(testRole, &(Key){
+    .name = SLC("add"), .tyI = &TyIs_RoleMeth }));
   TASSERT_EQ(NULL, add->inp->name);
   assert(add->inp->ty == (TyBase*) &Ty_S);
+  tyVar(TyDict_find(testRole, &KEY("add")));
   REPL_END
 END_TEST_FNGI
 

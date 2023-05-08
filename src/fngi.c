@@ -2097,12 +2097,12 @@ void N_absmeth(Kern* k) {
   TyDict* role = k->g.curMod;
   ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
-  TyFn* fn = (TyFn*) Ty_new(k, TY_FN | TY_FN_ABSMETH, NULL);
+  TyFn* fn = (TyFn*) Ty_newTyKey(k, TY_FN | TY_FN_ABSMETH, NULL, &TyIs_RoleMeth);
   FnSig* sig = parseFnSig(k);
   TyI* last = (TyI*) Sll_last(TyI_asSll(sig->io.inp));
   ASSERT(last and (&Ty_Self == (TyDict*)last->ty), "Self must be the first argument");
   fn->inp = sig->io.inp; fn->out = sig->io.out;
-  TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR, fn->name, &TyIs_RoleField);
+  TyVar* v = (TyVar*) Ty_new(k, TY_VAR, fn->name);
   v->tyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*) sig, .meta = 1 });
   _field(k, role, (VarPre){ .var = v, .sz = RSIZE, .els = 1 });
 }
@@ -2111,6 +2111,16 @@ void N_role(Kern* k) {
   TyDict* role = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_ROLE, NULL);
   _parseDataTy(k, role);
   // TODO: check that none of the fields have data.
+}
+
+// impl Struct:Role { add = &Struct.add }
+void N_impl(Kern* k) {
+  TyDict* st = (TyDict*) scanTy(k);
+  ASSERT(st and isTyDict((Ty*)st), "Can only implement for TyDict");
+  ASSERT(isDictStruct(st)        , "Can only implement for struct");
+  TyDict* role = (TyDict*) scanTy(k);
+  ASSERT(role and isTyDict((Ty*)role) and isDictRole(role),
+         "must be impl Type:Role");
 }
 
 
@@ -2492,12 +2502,12 @@ void Kern_fns(Kern* k) {
   ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Self,  "\x04", "Self"    ,  0      , (Ty*)(SZR + 1));
-  ADD_TY_NATIVE(Ty_RoleField, "\x09", "RoleField", 0  , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_RoleMeth, "\x08", "RoleMeth", 0  , (Ty*)(SZR + 1));
 
 
   TyIs_UNSET  = (TyI) { .ty = (TyBase*)&Ty_UNSET  };
   TyIs_Unsafe = (TyI) { .ty = (TyBase*)&Ty_Unsafe };
-  TyIs_RoleField = (TyI) { .ty = (TyBase*)&Ty_RoleField };
+  TyIs_RoleMeth = (TyI) { .ty = (TyBase*)&Ty_RoleMeth };
   TyIs_rAny   = (TyI) { .ty = (TyBase*)&Ty_Any, .meta = 1 };
   TyIs_rAnyS  = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAny };
   TyIs_rAnySS = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAnyS };
