@@ -1,4 +1,4 @@
-//
+
 // Table of Contents:
 //
 // ***********************
@@ -572,11 +572,15 @@ Ty* TyDict_find(TyDict* dict, Key* s) {
   }
 }
 
-Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
-  Key key = (Key) { tokenSlc(k) };
+Ty* TyDict_scanTyKey(Kern* k, TyDict* dict, TyI* tyKey) {
+  Key key = (Key) { .name = tokenSlc(k), .tyI = tyKey };
   Ty* ty = TyDict_find(dict, &key);
   if(not ty) return NULL;
   tokenDrop(k); return ty;
+}
+
+Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
+  return TyDict_scanTyKey(k, dict, NULL);
 }
 
 TyVar* TyDict_field(TyDict* d, TyI* field) {
@@ -1249,6 +1253,14 @@ TyI* scanTyI(Kern* k, CStr* name) {
 //   * srOffset
 // Handles not only storing offset, but also parsing '{' syntax.
 
+bool opCreatesRef(U1 op) {
+  switch(op) {
+    case LR: return true;
+    case GR: return true;
+    default: return false;
+  }
+}
+
 typedef struct {
   U1 op;
   bool checkTy;
@@ -1274,10 +1286,20 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   TyDict* d = (TyDict*) tyI->ty;
   ASSERT(not isDictMod(d), "cannot store in mod");
   if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->children, offset, st->global);
-  assert(isDictStruct(d));
   SrOffset recSt = *st; // Note: we CANNOT modify 'st', since (unlike ftOffset)
                         // it may be re-used in next field.
   recSt.checkTy = false; recSt.clear = false; recSt.notParse = true;
+  if(isDictRole(d)) {
+    if(opCreatesRef(st->op)) {
+      srOffset(k, &TyIs_S, offset, &recSt);
+    } else {
+      assert(RSIZE == ROLE_DATA_OFFSET); // ensure data is "top" of stack
+      srOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, &recSt);
+      srOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, &recSt);
+    }
+    return;
+  }
+  assert(isDictStruct(d));
   for(TyI* field = d->fields; field; field = field->next) {
     srOffset(k, field, offset + TyDict_field(d, field)->v, &recSt);
   }
@@ -1351,6 +1373,16 @@ U1 ftOpToRef(U1 ftOp) {
 
 void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st);
 
+bool opIsConcrete(U1 op) {
+  switch(op) {
+    case FTLL: return true;
+    case SRLL: return true;
+    case FTGL: return true;
+    case SRGL: return true;
+    default:   return false;
+  }
+}
+
 // Handle type operations of refs.
 // In both cases (FTO and FTLL) we just put the tyI on the stack
 // For FTO, the dot compiler already reduced the number of references.
@@ -1378,7 +1410,7 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
     tyCall(k, db, TYI_VOID, &self);
     opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
   } else if (isFnAbsmeth(meth)) {
-    ASSERT(st->op == FTGL || st->op == FTLL, "absmeth not allowed on reference");
+    ASSERT(opIsConcrete(st->op), "absmeth not allowed on reference");
     tyCall(k, db, TYI_VOID, &TyIs_rSelf);
     if(TyI_refs(vTyI)) {
            opOffset(k, b, st->op, /*szI*/0, offset, st->global); // &Role
@@ -1390,6 +1422,7 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
            opOffset(k, b,     FTO,   RSIZE, offset + ROLE_METH_OFFSET, NULL);
     } else opOffset(k, b, st->op, /*szI*/0, offset + ROLE_METH_OFFSET, st->global);
     opOffset(k, b, FTO, /*szI*/0, /*offset*/(S)meth->code, NULL); // get actual method
+    tyCall(k, db, meth->inp, meth->out);
     if(st->asImm) executeFn(k, (TyFn*)WS_POP());
     else          Buf_add(&k->g.code, XW);
     return;
@@ -1422,7 +1455,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     if(addTy) tyCall(k, db, NULL, tyI);
     return opOffset(k, b, st->op, (S)d->children, offset, st->global);
   }
-  ASSERT(isDictStruct(d), "unknown dict type");
+  ASSERT(isDictStruct(d) || isDictRole(d), "unknown dict type");
   if(CONSUME(".")) {
     Ty* f = TyDict_scanTy(k, d);
     ASSERT(f, "member not found");
@@ -1434,7 +1467,12 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   }
   if(addTy) tyCall(k, db, NULL, tyI);
   st->noAddTy = true;
-  ftOffsetStruct(k, d, d->fields, offset, st);
+  if(isDictRole(d)) {
+    assert(RSIZE == ROLE_DATA_OFFSET); // ensure data is "top" of stack
+    ftOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, st);
+    ftOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, st);
+  }
+  else ftOffsetStruct(k, d, d->fields, offset, st);
 }
 
 void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
@@ -1496,6 +1534,22 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
            "Cannot cast non-native as native.");
     }
     TyDb_pop(k, db); tyCall(k, db, NULL, &tyI);
+  } else if (isDictRole(d)) {
+    TyDb_pop(k, db); // Currently &Self is on the stack
+    ASSERT(1 == TyI_refs(top), "role: only single refs");
+    ASSERT(isTyDict((Ty*)top->ty), "role: only dicts");
+    TyI roleTyI = { .ty = (TyBase*)d };
+    TyVar* impl = (TyVar*) TyDict_find((TyDict*)top->ty, &(Key){
+      .name = Slc_frCStr(d->name), .tyI = &roleTyI });
+    ASSERT(impl, "role not implemented for type");
+    assert(isTyVar((Ty*)impl) && isVarGlobal(impl));
+    Buf* b = &k->g.code;
+    // add the &Methods. TODO: not lit? Global?
+    eprintf("??? role lit=%X  deref=%X\n", impl->v, *(S*)impl->v);
+    assert(not asImm); lit(b, impl->v);
+    assert(RSIZE == ROLE_DATA_OFFSET); // ensure data is "top" of stack
+    Buf_add(b, SWP);
+    tyCall(k, db, NULL, &tyI);
   } else {
     assert(isDictStruct(d));
     tyCall(k, db, d->fields, &tyI);
@@ -1785,9 +1839,9 @@ TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (U1*)N_stk, TYI_VOID, TYI_V
 
 typedef struct { TyVar* var; S sz; S els; } VarPre;
 VarPre varPre(Kern* k) {
-  CStr* key = tokenCStr(k);
-  TyVar* v = (TyVar*) Ty_new(k, TY_VAR, key);
-  REQUIRE(":"); TyI* tyI = scanTyI(k, key);
+  CStr* name = tokenCStr(k);
+  TyVar* v = (TyVar*) Ty_new(k, TY_VAR, name);
+  REQUIRE(":"); TyI* tyI = scanTyI(k, name);
   v->tyI = tyI;
   S sz = TyI_sz(tyI);
   if(tyI->arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
@@ -2169,7 +2223,9 @@ void _field(Kern* k, TyDict* st, VarPre pre) {
   }
 }
 
-void field(Kern* k, TyDict* st) { _field(k, st, varPre(k)); }
+void field(Kern* k, TyDict* st) {
+  _field(k, st, varPre(k));
+}
 
 void _parseDataTy(Kern* k, TyDict* st) {
   N_notImm(k);
@@ -2218,11 +2274,11 @@ void N_absmeth(Kern* k) {
   TyDict* role = DictStk_topMaybe(&k->g.modStk);
   ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
-  TyFn* fn = (TyFn*) Ty_newTyKey(k, TY_FN | TY_FN_ABSMETH, NULL, &TyIs_RoleMeth);
+  TyFn* fn = (TyFn*) Ty_new(k, TY_FN | TY_FN_ABSMETH, NULL);
   fn->code = (U1*)align(role->sz, RSIZE); // offset in Role method struct
   FnSig* sig = parseFnSig(k); checkSelfIo(&sig->io, true);
   fn->inp = sig->io.inp; fn->out = sig->io.out;
-  TyVar* v = (TyVar*) Ty_new(k, TY_VAR, fn->name);
+  TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR, fn->name, &TyIs_RoleField);
   v->tyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*) sig, .meta = 1 });
   _field(k, role, (VarPre){ .var = v, .sz = RSIZE, .els = 1 });
 }
@@ -2245,23 +2301,27 @@ void N_impl(Kern* k) {
   ASSERT(role and isTyDict((Ty*)role) and isDictRole(role),
          "must be impl Type:Role");
 
-  // Also create a variable for storing the method pointers
+  // Create a variable for storing the methods
   TyI* roleTyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)role });
   eprintf("??? role->meta=%X\n", role->meta);
   eprintf("??? roleTyI->ty->meta=%X\n", roleTyI->ty->meta);
 
+  DictStk_add(&k->g.dictStk, st);
   TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR | TY_VAR_GLOBAL, role->name, roleTyI);
+  DictStk_pop(&k->g.dictStk);
   VarPre pre = { .var = v, .sz = TyI_sz(roleTyI), .els = 1 };
   v->v = (S) BBA_alloc(&k->bbaCode, pre.sz, /*align*/RSIZE);
   ASSERT(v->v, "Role impl OOM");
   v->tyI = roleTyI;
+  S* storeLoc = (S*)v->v;
 
   REQUIRE("{"); while(not CONSUME("}")) {
-    TyVar* field = tyVar(TyDict_scanTy(k, role));
+    TyVar* field = tyVar(TyDict_scanTyKey(k, role, &TyIs_RoleField));
     FnSig* sig = (FnSig*) field->tyI->ty; assert(isFnSig((TyBase*)sig));
     REQUIRE("="); START_IMM(true); Kern_compFn(k); END_IMM;
     sig = FnSig_replaceSelf(k, sig, st);
     tyCall(k, tyDb(k, true), &(TyI){.ty = (TyBase*)sig, .meta = 1}, NULL);
+    storeLoc[field->v / RSIZE] = WS_POP();
   }
 }
 
@@ -2372,7 +2432,6 @@ void N_amp(Kern* k) {
   eprintf(""" amp: is var\n");
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
-  assert(not isVarGlobal(var));
   if(isVarGlobal(var)) assert(false); // TODO
   else ASSERT(not asImm, "local referenced imm");
   U2 offset = var->v; TyI* tyI = var->tyI;
@@ -2663,13 +2722,13 @@ void Kern_fns(Kern* k) {
   ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (Ty*)(SZR + 1));
   ADD_TY_NATIVE(Ty_Self,  "\x04", "Self"    ,  0      , (Ty*)(SZR + 1));
-  ADD_TY_NATIVE(Ty_RoleMeth, "\x08", "RoleMeth", 0  , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_RoleField, "\x09", "RoleField", 0  , (Ty*)(SZR + 1));
 
 
   TyIs_UNSET  = (TyI) { .ty = (TyBase*)&Ty_UNSET  };
   TyIs_Unsafe = (TyI) { .ty = (TyBase*)&Ty_Unsafe };
   TyIs_rSelf  = (TyI) { .ty = (TyBase*)&Ty_Self, .meta = 1 };
-  TyIs_RoleMeth = (TyI) { .ty = (TyBase*)&Ty_RoleMeth };
+  TyIs_RoleField = (TyI) { .ty = (TyBase*)&Ty_RoleMeth };
   TyIs_rAny   = (TyI) { .ty = (TyBase*)&Ty_Any, .meta = 1 };
   TyIs_rAnyS  = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAny };
   TyIs_rAnySS = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAnyS };

@@ -572,12 +572,12 @@ TEST_FNGI(role, 20)
     "role Adder [\n"
     "  absmeth add [ &Self \\(b)S -> S ]\n"
     "]");
-  TyDict* adder = tyDict(Kern_findTy(k, &KEY("Adder")));
-  TyFn* add = tyFn(TyDict_find(adder, &(Key){
-    .name = SLC("add"), .tyI = &TyIs_RoleMeth }));
+  TyDict* Adder = tyDict(Kern_findTy(k, &KEY("Adder")));
+  TyFn* add = tyFn(TyDict_find(Adder, &KEY("add")));
   TASSERT_EQ(NULL, add->inp->name);
   assert(add->inp->ty == (TyBase*) &Ty_S);
-  TyVar* addV = tyVar(TyDict_find(adder, &KEY("add")));
+  TyVar* addV = tyVar(TyDict_find(Adder, &(Key){
+    .name = SLC("add"), .tyI = &TyIs_RoleField }));
   assert(isFnSig(addV->tyI->ty));
   FnSig* sig = (FnSig*)addV->tyI->ty;
   eprintf("??? INP="); TyI_printAll(sig->io.inp); eprintf("\n");
@@ -591,12 +591,38 @@ TEST_FNGI(role, 20)
     "    self.a + b\n"
     "  )\n"
     "]");
+  TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
+  TyFn* A_add = tyFn(TyDict_find(A, &KEY("add")));
+
+  COMPILE_EXEC("var myA: A = A(5)\n tAssertEq(8, myA.add(3))\n")
+
+  eprintf("??? A.add=%p\n", A_add);
+  COMPILE_EXEC("impl A:Adder { add = &A.add }");
+
+  // Test that it's actually implemented
+  TyVar* A_Adder = tyVar(TyDict_find(A, &(Key) {
+    .name = SLC("Adder"), .tyI = &(TyI) { .ty = (TyBase*)Adder, } }));
+  assert(A_Adder);
+  TASSERT_EQ(A_add, *(S*)A_Adder->v);
 
   COMPILE_EXEC(
-    "var myA: A = A(5)\n tAssertEq(8, myA.add(3))\n")
-
-
-  COMPILE_EXEC("impl A:Adder { add = &A.add }");
+    "fn useAdder[a: Adder -> S] do (\n"
+     "  a.add(5)\n"
+    ")");
+  COMPILE_EXEC(
+    "fn createUseAdder[a: A -> S] do (\n"
+    "  useAdder(Adder(&a))"
+    ")");
+  eprintf("??? A.add=%p\n", A_add);
+  // This doesn't quite work.
+  // Something is wrong with the way that
+  // roles go on the stack.
+  //
+  // I don't think I can finish roles quite yet, I'm going to have to take
+  // a look when I have taken a bit of a break. I'm SOO close...
+  // COMPILE_EXEC("A 3");
+  // COMPILE_EXEC("createUseAdder;");
+  // TASSERT_WS(8);
 
   REPL_END
 END_TEST_FNGI
