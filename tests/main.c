@@ -499,6 +499,8 @@ TEST_FNGI(method, 20)
 
   COMPILE_EXEC("imm#tAssertEq(13, a.aDo(8))");
   COMPILE_EXEC("imm#tAssertEq(14, a.nonMeth(7))");
+
+  // COMPILE_EXEC("with:A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
   REPL_END
 END_TEST_FNGI
 

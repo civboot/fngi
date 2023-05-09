@@ -114,7 +114,7 @@ typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
 
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
-struct _TyI;
+struct _TyI; struct _TyDict;
 #define TY_BASE \
   void* l; void* r;       \
   U2           meta; /* specifies node type */
@@ -124,7 +124,7 @@ typedef struct { TY_BASE } TyBase;
   TY_BASE \
   U2           line; /* src code line of definition. */ \
   CStr* name; struct _TyI* tyKey; \
-  struct _Ty*  parent;  \
+  struct _TyDict*  parent;  \
   FileInfo*    file; /* source file */
 typedef struct _Ty { TY_BODY; } Ty;
 
@@ -193,7 +193,7 @@ static inline TyFn litFn(U1* code, U2 meta, U2 lSlots) {
   };
 }
 
-typedef struct {
+typedef struct _TyDict {
   TY_BODY;
   Ty* children;
   TyI* fields;
@@ -242,12 +242,11 @@ typedef struct {
   U2 fnLocals; // locals size
   U1 fnState;
   U1 logLvlSys;  U1 logLvlUsr;
-  TyDict* curMod; // current parent module (mod, struct, etc)
   Ty* curTy;      // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
   TyDict rootDict;
-  TyDict* dictBuf[DICT_DEPTH];
-  DictStk dictStk;    // Type is: &&Ty (double ref to dictionary)
+  TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];
+  DictStk dictStk;             DictStk modStk;
   SpReader src;
   // Reader src;
   FileInfo* srcInfo;
@@ -357,10 +356,10 @@ static inline bool isFnSyn(TyFn* fn)       IS_FN(TY_FN_SYN)
 static inline bool isFnSynty(TyFn* fn)     IS_FN(TY_FN_SYNTY)
 static inline bool isFnInline(TyFn* fn)    IS_FN(TY_FN_INLINE)
 static inline bool isFnComment(TyFn* fn)   IS_FN(TY_FN_COMMENT)
-static inline bool isFnMethod(TyFn* fn)    IS_FN(TY_FN_METH)
+static inline bool isFnMeth(TyFn* fn)      IS_FN(TY_FN_METH)
 static inline bool isFnAbsmeth(TyFn* fn)   IS_FN(TY_FN_ABSMETH)
 #undef IS_FN
-#define FN_SIG (TY_FN || TY_FN_SIG)
+#define FN_SIG (TY_FN | TY_FN_SIG)
 static inline bool isFnSig(TyBase* ty) { return FN_SIG == ty->meta; }
 #define IS_DICT(M)   { return (M) == (TY_DICT_MSK & ty->meta); }
 static inline bool isDictNative(TyDict* ty)    IS_DICT(TY_DICT_NATIVE)

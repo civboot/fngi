@@ -105,6 +105,11 @@ TyDict* DictStk_top(DictStk* stk) {
   return stk->dat[stk->sp];
 }
 
+TyDict* DictStk_topMaybe(DictStk* stk) {
+  if(stk->sp == stk->cap) return NULL;
+  return DictStk_top(stk);
+}
+
 void DictStk_add(DictStk* stk, TyDict* r) {
   ASSERT(stk->sp, "DictStk overflow");
   stk->dat[-- stk->sp] = r;
@@ -148,6 +153,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .g = {
       .compFn = &TyFn_baseCompFn,
       .dictStk = (DictStk) { .dat = k->g.dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
+      .modStk  = (DictStk) { .dat = k->g.modBuf,  .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
       .bbaDict = &k->bbaDict,
       .bbaTyImm = (BBA) { &civ.ba },
@@ -195,7 +201,7 @@ Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   memset(ty, 0, sz);
   eprintf("??? set tyKey=%p\n", tyKey);
   ty->name  = key; ty->tyKey = tyKey;
-  ty->parent = (Ty*) k->g.curMod;
+  ty->parent = DictStk_topMaybe(&k->g.modStk);
   ty->meta = meta;
   ty->line = k->g.tokenLine;
   ty->file = k->g.srcInfo;
@@ -740,6 +746,22 @@ void  TyI_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
   TyI_cloneAddNode(bba, root, nodes);
 }
 
+void _TyI_cloneNewSelf(BBA* bba, TyI** root, TyI* nodes, TyDict* self) {
+  assert(self); if(not nodes) return;
+  _TyI_cloneNewSelf(bba, root, nodes->next, self);
+  if((TyBase*)&Ty_Self == nodes->ty) {
+    assert(TyI_refs(nodes));
+    TyI add = *nodes; add.ty = (TyBase*)self;
+    TyI_cloneAddNode(bba, root, &add);
+  } else TyI_cloneAddNode(bba, root, nodes);
+}
+
+TyI*  TyI_cloneNewSelf(BBA* bba, TyI* nodes, TyDict* self) {
+  if(not nodes) return NULL;
+  TyI* root = NULL; _TyI_cloneNewSelf(bba, &root, nodes, self);
+  return root;
+}
+
 void Kern_typed(Kern *k, bool typed) {
   if(typed) k->g.fnState &= ~C_UNTY;
   else      k->g.fnState |= C_UNTY;
@@ -754,7 +776,7 @@ void dbgTyIs(Kern* k, TyDb* db) {
 
 void TyDb_print(Kern* k, TyDb* db) { TyI_printAll(TyDb_top(db)); }
 
-// Pop one item from TyDb.
+// Pop one TyI from the top ty stack.
 void TyDb_pop(Kern* k, TyDb* db) {
   Sll** root = TyDb_rootSll(db);
   Slc* err = BBA_free(db->bba, Sll_pop(root), sizeof(TyI), RSIZE);
@@ -830,6 +852,15 @@ void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
   tyCheck(inp, *root, false, err);
   TyDb_free(k, db, inp);
   TyI_cloneAdd(db->bba, root, out);
+}
+
+void tyCallSelf(Kern* k, TyDb* db, TyI* inp, TyI* out, TyDict* self) {
+  if(not self) return tyCall(k, db, inp, out);
+  inp = TyI_cloneNewSelf(&k->bbaDict, inp, self);
+  out = TyI_cloneNewSelf(&k->bbaDict, out, self);
+  tyCall(k, db, inp, out);
+  assert(not Sll_free(TyI_asSll(out), sizeof(TyI), BBA_asArena(&k->bbaDict)));
+  assert(not Sll_free(TyI_asSll(inp), sizeof(TyI), BBA_asArena(&k->bbaDict)));
 }
 
 // Check function return type and possibly mark as done.
@@ -1312,8 +1343,8 @@ void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
   tyCall(k, db, NULL, tyI);
 }
 
-void compileFn(Kern* k, TyFn* fn, bool asImm) {
-  tyCall(k, tyDb(k, asImm), fn->inp, fn->out);
+void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
+  tyCallSelf(k, tyDb(k, asImm), fn->inp, fn->out, self);
   if(asImm) return executeFn(k, fn);
   Buf* b = &k->g.code;
   if(isFnInline(fn)) return Buf_extend(b, (Slc){fn->code, .len=fn->len});
@@ -1324,13 +1355,13 @@ void compileFn(Kern* k, TyFn* fn, bool asImm) {
 void compileMethod(Kern* k, TyDict* d, TyFn* meth, U2 offset, FtOffset* st) {
   Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
   assert(not st->noAddTy); // invariant
-  if(isFnMethod(meth)) {
+  if(isFnMeth(meth)) {
     TyI self = { .ty = (TyBase*)d, .meta = /*refs*/1 };
     tyCall(k, db, TYI_VOID, &self);
     opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
   }
   Kern_compFn(k);
-  compileFn(k, meth, st->asImm);
+  compileFn(k, meth, d, st->asImm);
 }
 
 // Fetch an offset using st->op operation.
@@ -1470,7 +1501,7 @@ void compileTy(Kern* k, Ty* ty, bool asImm) {
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
   if(isFnImm(fn)) { ASSERT(asImm, "fn must be called with 'imm#'"); }
-  compileFn(k, fn, asImm);
+  compileFn(k, fn, /*self*/NULL, asImm);
 }
 
 // ***********************
@@ -1628,10 +1659,10 @@ TyDict* _withGet(Kern *k) {
 void _with(Kern* k, TyDict* d) {
   assert(not isDictNative(d));
   DictStk_add(&k->g.dictStk, d);
-  TyDict* prevMod = k->g.curMod;  k->g.curMod = d;
+  DictStk_add(&k->g.modStk, d);
   Kern_compFn(k);
   DictStk_pop(&k->g.dictStk);
-  k->g.curMod = prevMod;
+  DictStk_pop(&k->g.modStk);
 }
 
 void N_cast(Kern* k) {
@@ -1735,6 +1766,36 @@ void localImpl(Kern* k, VarPre* pre) {
   k->g.fnLocals = pre->var->v + (pre->els * pre->sz);
 }
 
+static inline bool isSelf(TyI* tyI) { return (TyBase*)&Ty_Self == tyI->ty; }
+
+void checkSelf(TyI* arg, bool expectFirst) {
+  ASSERT(arg or not expectFirst, "Self must be the first argument");
+  for(; arg; arg=arg->next) {
+    if(expectFirst and not arg->next) {
+      ASSERT(isSelf(arg) and (1 == TyI_refs(arg)),
+         "&Self must be the first argument");
+    }
+    else if(isSelf(arg)) ASSERT(TyI_refs(arg), "Self must be a reference");
+  }
+}
+
+TyDict* currentSelf(Kern* k) {
+  DictStk* m = &k->g.modStk;
+  for(U2 i = m->sp; i < m->cap; i++) {
+    if(isTyDict((Ty*)m->dat[i])) return m->dat[i];
+  }
+  return NULL;
+}
+
+TyI* replaceSelf(Kern* k, TyI* tyI, TyDict* self) {
+  checkSelf(tyI, false);
+  if(isSelf(tyI)) {
+    TyI n = *tyI; n.ty = (TyBase*) self;
+    return TyI_findOrAdd(k, &n);
+  }
+  return tyI;
+}
+
 void N_inp(Kern* k) {
   N_notImm(k);
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
@@ -1742,6 +1803,7 @@ void N_inp(Kern* k) {
   VarPre pre = varPre(k);
   SET_FN_STATE(FN_STATE_INP);
   TyI_rootAdd(k, &tyFn(k->g.curTy)->inp, pre.var->tyI);
+  // pre.var->tyI = replaceSelf(k, pre.var->tyI, currentSelf(k));
   localImpl(k, &pre);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_VOID);
@@ -1823,11 +1885,7 @@ void fnInputs(Kern* k, TyFn* fn) {
   }
 }
 
-// fn NAME do (... code ...)
-// future:
-// fn ... types ... do ( ... code ... )
-void N_fn(Kern* k) {
-  N_notImm(k);
+TyFn* parseFn(Kern* k) {
   U2 meta = k->g.metaNext;
   // Create TyFn based on NAME
   TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
@@ -1866,15 +1924,13 @@ void N_fn(Kern* k) {
   END_LOCAL_TYDB_BBA(tyDb);
   DictStk_pop(&k->g.dictStk);
   k->g.curTy = prevTy;
+  return fn;
 }
 
-
-void N_meth(Kern* k) {
-  TyDict* mod = k->g.curMod;
-  ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod), "'meth' can only be in struct");
-  k->g.metaNext |= TY_FN_METH;
-  N_fn(k);
-}
+// fn NAME do (... code ...)
+// future:
+// fn ... types ... do ( ... code ... )
+void N_fn(Kern* k) { N_notImm(k); parseFn(k); }
 
 // ***********************
 //   * if/elif/else
@@ -2062,6 +2118,11 @@ void N_blk(Kern* k) {
 //
 // struct Foo [ a: U2; b: &U4 ]
 
+
+void checkSelfIo(InOut* io, bool expectFirst) {
+  checkSelf(io->inp, expectFirst); checkSelf(io->out, false);
+}
+
 void _field(Kern* k, TyDict* st, VarPre pre) {
   TyVar* v = pre.var;
   v->v = align(st->sz, alignment(pre.sz));
@@ -2079,8 +2140,7 @@ void field(Kern* k, TyDict* st) { _field(k, st, varPre(k)); }
 void _parseDataTy(Kern* k, TyDict* st) {
   N_notImm(k);
   Ty* prevTy = k->g.curTy;        k->g.curTy = (Ty*) st;
-  TyDict* prevMod = k->g.curMod;  k->g.curMod = st;
-  DictStk_add(&k->g.dictStk, st);
+  DictStk_add(&k->g.dictStk, st); DictStk_add(&k->g.modStk, st);
   REQUIRE("["); bool hasUnsized = false;
   while(not CONSUME("]")) {
     Ty* ty = Kern_findToken(k);
@@ -2097,9 +2157,9 @@ void _parseDataTy(Kern* k, TyDict* st) {
       }
     }
   }
-  DictStk_pop(&k->g.dictStk);
+  DictStk_pop(&k->g.dictStk); DictStk_pop(&k->g.modStk);
   if(hasUnsized) st->sz = TY_UNSIZED;
-  k->g.curMod = prevMod; k->g.curTy = prevTy;
+  k->g.curTy = prevTy;
 }
 
 void N_struct(Kern* k) {
@@ -2107,18 +2167,25 @@ void N_struct(Kern* k) {
   _parseDataTy(k, st);
 }
 
+void N_meth(Kern* k) {
+  N_notImm(k);
+  TyDict* mod = DictStk_topMaybe(&k->g.modStk);
+  ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod), "'meth' can only be in struct");
+  k->g.metaNext |= TY_FN_METH;
+  TyFn* meth = parseFn(k);
+  checkSelfIo(TyFn_asInOut(meth), false); // FIXME: require self
+}
+
 // ***********************
 //   * role
 // role Resource [ meth drop(&Self) do; ]
 
 void N_absmeth(Kern* k) {
-  TyDict* role = k->g.curMod;
+  TyDict* role = DictStk_topMaybe(&k->g.modStk);
   ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
   TyFn* fn = (TyFn*) Ty_newTyKey(k, TY_FN | TY_FN_ABSMETH, NULL, &TyIs_RoleMeth);
-  FnSig* sig = parseFnSig(k);
-  TyI* last = (TyI*) Sll_last(TyI_asSll(sig->io.inp));
-  ASSERT(last and (&Ty_Self == (TyDict*)last->ty), "Self must be the first argument");
+  FnSig* sig = parseFnSig(k); checkSelfIo(&sig->io, true);
   fn->inp = sig->io.inp; fn->out = sig->io.out;
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR, fn->name);
   v->tyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*) sig, .meta = 1 });
@@ -2128,7 +2195,9 @@ void N_absmeth(Kern* k) {
 void N_role(Kern* k) {
   TyDict* role = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_ROLE, NULL);
   _parseDataTy(k, role);
-  // TODO: check that none of the fields have data.
+  for(TyI* field = role->fields; field; field = field->next) {
+    ASSERT(isFnSig(field->ty), "Only absmeth data fields allowed for role.");
+  }
 }
 
 // impl Struct:Role { add = &Struct.add }
@@ -2341,7 +2410,7 @@ void N_ptrAdd(Kern* k) { // ptrAdd(ptr, index, cap)
   TyI derefPtr = {.ty = ptrTy->ty, .meta = ptrTy->meta - 1};
   lit(&k->g.code, TyI_sz(&derefPtr));
   Kern_typed(k, false);
-  compileFn(k, &TyFn_ptrAddRaw, asImm);
+  compileFn(k, &TyFn_ptrAddRaw, NULL, asImm);
   Kern_typed(k, true);
 }
 
