@@ -505,6 +505,7 @@ Ty* TyDict_find(TyDict* dict, Key* s);
   PRE TyDict  Ty_RoleMeth;\
   PRE TyI TyIs_UNSET;  \
   PRE TyI TyIs_Unsafe; \
+  PRE TyI TyIs_rSelf; \
   PRE TyI TyIs_RoleMeth;\
   PRE TyI TyIs_rAny;   \
   PRE TyI TyIs_rAnyS;  \

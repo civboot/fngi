@@ -494,6 +494,7 @@ void executeFn(Kern* k, TyFn* fn) {
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
+  ASSERT(not isFnAbsmeth(fn), "attempted execution of absmeth");
   cfb->ep = fn->code;
   executeLoop(k);
 }
@@ -573,7 +574,7 @@ Ty* TyDict_find(TyDict* dict, Key* s) {
 
 Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
   Key key = (Key) { tokenSlc(k) };
-  scan(k); Ty* ty = TyDict_find(dict, &key);
+  Ty* ty = TyDict_find(dict, &key);
   if(not ty) return NULL;
   tokenDrop(k); return ty;
 }
@@ -716,9 +717,12 @@ void TyI_print(TyI* tyI) {
   if(isFnSig(tyI->ty)) {
     FnSig* sig = (FnSig*)tyI->ty;
     eprintf("fnSig["); TyI_printAll(sig->io.inp);
-    eprintf(" ->");   TyI_printAll(sig->io.out); eprintf("]");
+    eprintf(" ->");    TyI_printAll(sig->io.out); eprintf("]");
+  } else {
+    CStr* name = ((Ty*)tyI->ty)->name;
+    if(not name) eprintf("<nullname>");
+    else         eprintf("%.*s", Dat_fmt(*name));
   }
-  else eprintf("%.*s", Dat_fmt(*((Ty*)tyI->ty)->name));
 }
 
 void TyI_printAll(TyI* tyI) {
@@ -854,13 +858,28 @@ void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
   TyI_cloneAdd(db->bba, root, out);
 }
 
+void InOut_replaceSelf(Kern* k, InOut* io, TyDict* self) {
+  io->inp = TyI_cloneNewSelf(&k->bbaCode, io->inp, self);
+  io->out = TyI_cloneNewSelf(&k->bbaCode, io->out, self);
+}
+
+void InOut_free(Kern* k, InOut* io) {
+  assert(not Sll_free(TyI_asSll(io->out), sizeof(TyI), BBA_asArena(&k->bbaCode)));
+  assert(not Sll_free(TyI_asSll(io->inp), sizeof(TyI), BBA_asArena(&k->bbaCode)));
+}
+
+FnSig* FnSig_replaceSelf(Kern* k, FnSig* sig, TyDict* self) {
+  InOut io = sig->io;            InOut_replaceSelf(k, &io, self);
+  sig = FnSig_findOrAdd(k, io);  InOut_free(k, &io);
+  return sig;
+}
+
 void tyCallSelf(Kern* k, TyDb* db, TyI* inp, TyI* out, TyDict* self) {
   if(not self) return tyCall(k, db, inp, out);
-  inp = TyI_cloneNewSelf(&k->bbaDict, inp, self);
-  out = TyI_cloneNewSelf(&k->bbaDict, out, self);
-  tyCall(k, db, inp, out);
-  assert(not Sll_free(TyI_asSll(out), sizeof(TyI), BBA_asArena(&k->bbaDict)));
-  assert(not Sll_free(TyI_asSll(inp), sizeof(TyI), BBA_asArena(&k->bbaDict)));
+  InOut io = { .inp = inp, .out = out };
+  InOut_replaceSelf(k, &io, self);
+  tyCall(k, db, io.inp, io.out);
+  InOut_free(k, &io);
 }
 
 // Check function return type and possibly mark as done.
@@ -1327,8 +1346,7 @@ U1 ftOpToRef(U1 ftOp) {
   switch(ftOp) {
     case FTLL: return LR;
     case FTGL: return GR;
-  }
-  assert(false);
+  } assert(false);
 }
 
 void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st);
@@ -1352,13 +1370,29 @@ void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
 }
 
 // Just pushes &self onto the stack and calls the method.
-void compileMethod(Kern* k, TyDict* d, TyFn* meth, U2 offset, FtOffset* st) {
+void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffset* st) {
   Buf* b = st->asImm ? NULL : &k->g.code; TyDb* db = tyDb(k, st->asImm);
   assert(not st->noAddTy); // invariant
   if(isFnMeth(meth)) {
     TyI self = { .ty = (TyBase*)d, .meta = /*refs*/1 };
     tyCall(k, db, TYI_VOID, &self);
     opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
+  } else if (isFnAbsmeth(meth)) {
+    ASSERT(st->op == FTGL || st->op == FTLL, "absmeth not allowed on reference");
+    tyCall(k, db, TYI_VOID, &TyIs_rSelf);
+    if(TyI_refs(vTyI)) {
+           opOffset(k, b, st->op, /*szI*/0, offset, st->global); // &Role
+           opOffset(k, b,    FTO,    RSIZE, offset + ROLE_DATA_OFFSET, NULL);
+    } else opOffset(k, b, st->op, /*szI*/0, offset + ROLE_DATA_OFFSET, st->global);
+    Kern_compFn(k);
+    if(TyI_refs(vTyI)) {
+           opOffset(k, b, st->op, /*szI*/0, offset, st->global); // &Role
+           opOffset(k, b,     FTO,   RSIZE, offset + ROLE_METH_OFFSET, NULL);
+    } else opOffset(k, b, st->op, /*szI*/0, offset + ROLE_METH_OFFSET, st->global);
+    opOffset(k, b, FTO, /*szI*/0, /*offset*/(S)meth->code, NULL); // get actual method
+    if(st->asImm) executeFn(k, (TyFn*)WS_POP());
+    else          Buf_add(&k->g.code, XW);
+    return;
   }
   Kern_compFn(k);
   compileFn(k, meth, d, st->asImm);
@@ -1396,7 +1430,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
       TyVar* field = (TyVar*)f;
       assert(not isVarGlobal(field));
       return ftOffset(k, field->tyI, offset + field->v, st);
-    } else return compileMethod(k, d, tyFn(f), offset, st);
+    } else return compileMethod(k, tyI, d, tyFn(f), offset, st);
   }
   if(addTy) tyCall(k, db, NULL, tyI);
   st->noAddTy = true;
@@ -1803,7 +1837,7 @@ void N_inp(Kern* k) {
   VarPre pre = varPre(k);
   SET_FN_STATE(FN_STATE_INP);
   TyI_rootAdd(k, &tyFn(k->g.curTy)->inp, pre.var->tyI);
-  // pre.var->tyI = replaceSelf(k, pre.var->tyI, currentSelf(k));
+  pre.var->tyI = replaceSelf(k, pre.var->tyI, currentSelf(k));
   localImpl(k, &pre);
 }
 TyFn TyFn_inp = TyFn_native("\x03" "inp", TY_FN_SYN, (U1*)N_inp, TYI_VOID, TYI_VOID);
@@ -2185,6 +2219,7 @@ void N_absmeth(Kern* k) {
   ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
   TyFn* fn = (TyFn*) Ty_newTyKey(k, TY_FN | TY_FN_ABSMETH, NULL, &TyIs_RoleMeth);
+  fn->code = (U1*)align(role->sz, RSIZE); // offset in Role method struct
   FnSig* sig = parseFnSig(k); checkSelfIo(&sig->io, true);
   fn->inp = sig->io.inp; fn->out = sig->io.out;
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR, fn->name);
@@ -2220,7 +2255,14 @@ void N_impl(Kern* k) {
   v->v = (S) BBA_alloc(&k->bbaCode, pre.sz, /*align*/RSIZE);
   ASSERT(v->v, "Role impl OOM");
   v->tyI = roleTyI;
-  _globalInit(k, v);
+
+  REQUIRE("{"); while(not CONSUME("}")) {
+    TyVar* field = tyVar(TyDict_scanTy(k, role));
+    FnSig* sig = (FnSig*) field->tyI->ty; assert(isFnSig((TyBase*)sig));
+    REQUIRE("="); START_IMM(true); Kern_compFn(k); END_IMM;
+    sig = FnSig_replaceSelf(k, sig, st);
+    tyCall(k, tyDb(k, true), &(TyI){.ty = (TyBase*)sig, .meta = 1}, NULL);
+  }
 }
 
 
@@ -2293,19 +2335,32 @@ void ampRef(Kern* k, TyI* tyI) {
 //
 // The last one requires a fetch
 void N_amp(Kern* k) {
-  eprintf("??? N_amp start\n");
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
+  eprintf("??? N_amp start asImm=%u\n", asImm);
   scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "not found");
-  if(isTyVar(ty)) { }
-  else if (isTyDict(ty)) {
-    Kern_compFn(k); // compiles "current" token, which is a struct
-    assertRefCast(TyDb_top(db));
-    TyI to = { .ty = (TyBase*)ty, .meta = 1 };
-    TyDb_pop(k, db); tyCall(k, db, NULL, &to);
-    return;
-  } else if (isTyFn(ty)) {
+  TyDict* d = NULL;
+  if (isTyDict(ty)) {
+    eprintf("??? N_amp isTyDict\n");
+    d = (TyDict*)ty; tokenDrop(k);
+    while(CONSUME(".")) {
+      eprintf("??? N_amp got . in dict=%p\n", d);
+      ty = TyDict_scanTy(k, d); ASSERT(ty, "expected struct member");
+      eprintf("??? amp dict mem ty=%p\n", ty);
+      if(isTyDict(ty)) d = (TyDict*)ty;
+      else             break;
+    }
+    if(isTyVar(ty)) ASSERT(isVarGlobal((TyVar*)ty), "direct Struct field reference");
+    else if(isTyFn(ty)) {}
+    else ASSERT(false, "invalid struct sub-type");
+  }
+  if(isTyVar(ty)) {}
+  else if (isTyFn(ty)) {
     eprintf("??? pushing &%.*s\n", Ty_fmt(ty));
     FnSig* sig = FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
+    if(d) {
+      InOut io = sig->io;            InOut_replaceSelf(k, &io, d);
+      sig = FnSig_findOrAdd(k, io);  InOut_free(k, &io);
+    }
     tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
     eprintf("??? here\n");
     tokenDrop(k);
@@ -2314,6 +2369,7 @@ void N_amp(Kern* k) {
     else      lit(&k->g.code, (S)ty);
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
+  eprintf(""" amp: is var\n");
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
   assert(not isVarGlobal(var));
@@ -2612,6 +2668,7 @@ void Kern_fns(Kern* k) {
 
   TyIs_UNSET  = (TyI) { .ty = (TyBase*)&Ty_UNSET  };
   TyIs_Unsafe = (TyI) { .ty = (TyBase*)&Ty_Unsafe };
+  TyIs_rSelf  = (TyI) { .ty = (TyBase*)&Ty_Self, .meta = 1 };
   TyIs_RoleMeth = (TyI) { .ty = (TyBase*)&Ty_RoleMeth };
   TyIs_rAny   = (TyI) { .ty = (TyBase*)&Ty_Any, .meta = 1 };
   TyIs_rAnyS  = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAny };

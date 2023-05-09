@@ -500,7 +500,13 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("imm#tAssertEq(13, a.aDo(8))");
   COMPILE_EXEC("imm#tAssertEq(14, a.nonMeth(7))");
 
-  // COMPILE_EXEC("with:A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
+  COMPILE_EXEC("with:A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
+  COMPILE_EXEC("imm#tAssertEq(13, a.aDoSelf(8))");
+
+  TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
+  TyFn* aDo = tyFn(TyDict_find(A, &KEY("aDo")));
+  eprintf("??? A=%p  aDo=%p\n", A, aDo);
+  COMPILE_EXEC("&A.aDo"); TASSERT_WS((S)aDo);
   REPL_END
 END_TEST_FNGI
 
@@ -571,21 +577,26 @@ TEST_FNGI(role, 20)
     .name = SLC("add"), .tyI = &TyIs_RoleMeth }));
   TASSERT_EQ(NULL, add->inp->name);
   assert(add->inp->ty == (TyBase*) &Ty_S);
-  tyVar(TyDict_find(adder, &KEY("add")));
+  TyVar* addV = tyVar(TyDict_find(adder, &KEY("add")));
+  assert(isFnSig(addV->tyI->ty));
+  FnSig* sig = (FnSig*)addV->tyI->ty;
+  eprintf("??? INP="); TyI_printAll(sig->io.inp); eprintf("\n");
+  eprintf("??? OUT="); TyI_printAll(sig->io.out); eprintf("\n");
 
   COMPILE_EXEC(
-    "unty fn add [ self:&Self, b:S -> S ] do;\n"
+    // "unty fn add [ self:&Self, b:S -> S ] do;\n"
     "struct A [\n"
     "  a: S\n"
-    "  meth add [ this:&A, b:S -> S ] do (\n"
-    "    this.a + b\n"
+    "  meth add [ self:&Self, b:S -> S ] do (\n"
+    "    self.a + b\n"
     "  )\n"
     "]");
 
   COMPILE_EXEC(
-    "impl A:Adder {\n"
-    "  add = &add\n"
-    "}");
+    "var myA: A = A(5)\n tAssertEq(8, myA.add(3))\n")
+
+
+  COMPILE_EXEC("impl A:Adder { add = &A.add }");
 
   REPL_END
 END_TEST_FNGI
