@@ -3,13 +3,17 @@
 
 #include "fngi.h"
 
-void disassemble(U1* c, U2 len) {
-  eprintf("## Disassemble %p [len=%u]\n", c, len);
+void disassemble(void* fn, U2 len) {
+  U1* c = fn; eprintf("## Disassemble %p [len=%u]\n", c, len);
   for(U2 i = 0; i < len; i++) {
     U1 instr = c[i]; Slc name = instrName(instr);
     eprintf("%.2X [%.*s]\n", instr, Dat_fmt(name));
   }
 }
+#define DISASSEMBLE(FN) \
+  TyFn* LINED(fn) = tyFn(Kern_findTy(k, &KEY(FN))); \
+  eprintf("DISASSEMBLED %.*s [len=%u]:\n", Ty_fmt(LINED(fn)), LINED(fn)->len); \
+  disassemble(LINED(fn)->code, LINED(fn)->len);
 
 TEST(basic)
   TASSERT_EQ(7,    cToU1('7'));
@@ -181,8 +185,8 @@ TEST_FNGI(tyDb, 4)
   // ret[done] causes errors on future operations
   k->g.curTy = Kern_findTy(k, &KEY("+"));
   tyCall(k, db, NULL, &TyIs_S);
-  tyRet(k, db, true);  TASSERT_EQ(true, TyDb_done(db));
-  EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL), "Code after guaranteed 'ret'");
+  tyRet(k, db, RET_DONE);  TASSERT_EQ(RET_DONE, TyDb_done(db));
+  FNGI_EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL), "Code after guaranteed 'ret'");
   END_LOCAL_TYDB_BBA(tyDb);
 END_TEST_FNGI
 
@@ -203,6 +207,7 @@ END_TEST_FNGI
 TEST_FNGI(compileIf, 10)
   Kern_fns(k);
   REPL_START
+
   k->g.fnState |= C_UNTY;
 
   COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
@@ -254,22 +259,22 @@ TEST_FNGI(compileIf, 10)
   COMPILE_EXEC("tAssertEq(0,    ifElifStk(0x11))");
   COMPILE_EXEC("tAssertEq(0x33, ifElifStk(7))");
 
-
   #define IF_ALL_RET \
     "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
 
+  eprintf("??? FAILURE\n");
   COMPILE_EXEC("fn one[ -> S] do (" IF_ALL_RET ")");
   COMPILE_EXEC("tAssertEq(1,    one;)");
   COMPILE_EXEC("fn ifRet1[ -> S] do ( if(1) do ret 2; ret 4; )");
   COMPILE_EXEC("tAssertEq(2, ifRet1,)");
 
-  // putting anything after fails, since the if/elif/else block all RET
-  // this does panic, but there is some kind of memory error in dropping.
-  // EXPECT_ERR(COMPILE_EXEC("fn bad[ -> S do (" IF_ALL_RET "4 )"));
-  // TyDb_drop(k); // panic means cleanup wasn't handled
+  TASSERT_EQ(1, Stk_len(&k->g.tyDb.tyIs));
+  SET_SRC("fn bad[ -> S] do (" IF_ALL_RET "4 )");
+  FNGI_EXPECT_ERR(compileRepl(k, true), "Code after guaranteed 'ret'");
+  TyDb_drop(k, tyDb(k, false)); // panic means cleanup wasn't handled
+  TASSERT_EQ(1, Stk_len(&k->g.tyDb.tyIs));
 
   REPL_END
-  TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
 END_TEST_FNGI
 
 TEST_FNGI(compileBlk, 10)
@@ -278,10 +283,17 @@ TEST_FNGI(compileBlk, 10)
   TASSERT_EQ(0, k->g.fnState & C_UNTY);
 
   COMPILE_EXEC(
-      "S(0) blk(\n"
-      "  if(dup, >= 5) do (drp; brk 0x15)\n"
-      "  inc; cont;\n"
-      ")"); TASSERT_WS(0x15);
+    "fn loop[ -> S] do (\n"
+    "  S 0 -> blk(\n"
+    "    if(dup, >= 5) do (drp; break 0x15)\n"
+    "    inc; cont;\n"
+    "  ) )");
+  COMPILE_EXEC("loop()");           TASSERT_WS(0x15);
+  COMPILE_EXEC("S(0) blk( drp; )"); TASSERT_EMPTY();
+
+  SET_SRC("S(0) blk( drp; cont; )");
+  FNGI_EXPECT_ERR(compileRepl(k, true), "cont not identical");
+
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
 END_TEST_FNGI

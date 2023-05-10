@@ -137,9 +137,44 @@ void TyDb_init(TyDb* db) {
   db->done = Stk_init(db->doneDat, TYDB_DEPTH);
 }
 
+void TyDb_setDone(TyDb* db, HowDone done) {
+  assert(done != 1);
+  eprintf("??? TyDb_setDone(%u)\n", done);
+  S* cur = Stk_topRef(&db->done);
+  ASSERT(not *cur, "done set multiple times");
+  *cur = done;
+}
+
+void TyDb_clearDone(TyDb* db) { *Stk_topRef(&db->done) = NOT_DONE; }
+
 void DictStk_reset(Kern* k) {
   k->g.dictStk.sp = k->g.dictStk.cap;
   DictStk_add(&k->g.dictStk, &k->g.rootDict);
+}
+
+void Kern_errCleanup(Kern* k) {
+  k->g.metaNext = 0; k->g.cstate = 0;
+  k->g.fnLocals = 0; k->g.fnState = 0;
+  k->g.curTy = NULL;
+  k->g.compFn = &TyFn_baseCompFn;
+  DictStk_reset(k);  k->g.modStk.sp = k->g.modStk.cap;
+
+  k->g.code.len = 0;
+
+  k->g.bbaDict = &k->bbaDict;
+  // if(k->g.tyDb.bba) BBA_drop(k->g.tyDb.bba);
+  // BBA_drop(&k->g.bbaTyImm);
+  // TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
+  Stk_clear(&k->fb->ws); Stk_clear(&k->fb->rs);
+  k->g.code.len = 0;
+
+  // // Drop all but the last
+  SllSpArena** root = &k->fb->sllArena;
+  while(*root and (*root)->next) {
+    SllSpArena* drop = (SllSpArena*)Sll_pop((Sll**)root);
+    Sp_Xr0(drop->arena,drop);
+  }
+  assert(*root);
 }
 
 void Kern_init(Kern* k, FnFiber* fb) {
@@ -163,31 +198,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
   k->g.tyDbImm.bba = &k->g.bbaTyImm;
   DictStk_reset(k);
-}
-
-void Kern_errCleanup(Kern* k) {
-  k->metaNext = 0; k->cstate = 0;
-  k->fnLocals = 0; k->fnState = 0;
-  k->curTy = NULL;
-  k->compFn = &TyFn_baseCompFn;
-  DictStk_reset(k);  k->g.modStk.sp = k->g.modStk.cap;
-
-  tokenDrop(k);
-  k->g.code.len = 0;
-
-  k->bbaDict = &k->bbaDict;
-  TyDb_init(&k->tyDb); TyDb_init(&k->tyDbImm);
-  BBA_drop(&k->g.bbaTyImm);
-  while(WS_LEN) WS_POP();
-  k->code = 0;
-
-  // Drop all but the last
-  SllSpArena** root = &k->fb->sllArena;
-  while(*root and (*root)->next) {
-    SllSpArena* drop = (SllSpArena*)Sll_pop((Sll**)root);
-    Sp_Xr0(drop->arena,drop);
-  }
-  assert(*root);
+  Kern_errCleanup(k);
 }
 
 bool Kern_eof(Kern* k) { return BaseFile_eof(SpReader_asBase(k, k->g.src)); }
@@ -306,8 +317,8 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  // Slc name = instrName(instr);
-  // eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
+  Slc name = instrName(instr);
+  eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -809,13 +820,14 @@ void dbgTyIs(Kern* k, TyDb* db) {
 
 void TyDb_print(Kern* k, TyDb* db) { TyI_printAll(TyDb_top(db)); }
 
-// Pop one TyI from the top ty stack.
+// Pop one TyI from the top level.
 void TyDb_pop(Kern* k, TyDb* db) {
   Sll** root = TyDb_rootSll(db);
   Slc* err = BBA_free(db->bba, Sll_pop(root), sizeof(TyI), RSIZE);
   if(err) SET_ERR(*err);
 }
 
+// Free all nodes in the top level
 void TyDb_free(Kern* k, TyDb* db, TyI* stream) {
   while(stream) {
     stream = stream->next;
@@ -823,6 +835,7 @@ void TyDb_free(Kern* k, TyDb* db, TyI* stream) {
   }
 }
 
+// Drop one type level
 void TyDb_drop(Kern* k, TyDb* db) {
   TyDb_free(k, db, TyDb_top(db));
   Stk_pop(&db->tyIs);
@@ -912,7 +925,7 @@ void tyCallSelf(Kern* k, TyDb* db, TyI* inp, TyI* out, TyDict* self) {
 }
 
 // Check function return type and possibly mark as done.
-void tyRet(Kern* k, TyDb* db, bool done) {
+void tyRet(Kern* k, TyDb* db, HowDone done) {
   if(IS_UNTY) return;
   ASSERT(not TyDb_done(db), "Code after guaranteed 'ret'");
   tyCheck(tyFn(k->g.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
@@ -1665,7 +1678,7 @@ void N_unty(Kern* k) {
   k->g.fnState &= ~C_UNTY;
 }
 
-void _N_ret(Kern* k) { tyRet(k, tyDb(k, false), true); Buf_add(&k->g.code, RET); }
+void _N_ret(Kern* k) { tyRet(k, tyDb(k, false), RET_DONE); Buf_add(&k->g.code, RET); }
 void N_ret(Kern* k)  { N_notImm(k); Kern_compFn(k); _N_ret(k); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 void N_assertWsEmpty(Kern* k) {
@@ -2012,7 +2025,8 @@ TyFn* parseFn(Kern* k) {
   SET_FN_STATE(FN_STATE_NO);
 
   // Force a RET at the end, whether UNTY or not.
-  if( (not IS_UNTY and not TyDb_done(db))
+  eprintf("??? done=%u\n", TyDb_done(db));
+  if( (not IS_UNTY and (RET_DONE != TyDb_done(db)))
       or  (IS_UNTY and (RET != code->dat[code->len-1]))) _N_ret(k);
 
   // Free unused area of buffers
@@ -2052,7 +2066,7 @@ void N_fn(Kern* k) { N_notImm(k); parseFn(k); }
 // possible states:
 //
 //   hadFull=true: there was a "full" if/elif/else branch that did not have a RET,
-//   aka a branch happend and control continued.
+//   aka a branch happend but control continued.
 //      TyDb -> stateToUse -> fullIfState -> outer
 //
 //   hadFull=false: there have been no "full" if/elif/else branches, all had RET
@@ -2062,7 +2076,11 @@ void N_fn(Kern* k) { N_notImm(k); parseFn(k); }
 // When hadFull, any block is immediately merged with fullIfState since they
 // have to match. Otherwise, any block that does not have RET sets hadFull=true.
 
-typedef struct { bool hadFull; bool hadElse; } IfState;
+typedef struct {
+  bool hadFull;
+  HowDone done;
+  HowDone hadElse; /*rename elseDone*/
+} IfState;
 
 U2 _if(Buf* b) { // flow control only (no type checking)
   Buf_add(b, SZ2 | JLZ); Buf_addBE2(b, 0);
@@ -2084,22 +2102,30 @@ U2 _else(Buf* b, U2 iIf) { // flow control only
     if(not IS_UNTY) { eprintf(__VA_ARGS__); dbgTyIs(k); NL; }
 
 IfState tyIf(Kern* k, IfState is) {
-  TyDb* db = tyDb(k, false);
   if(IS_UNTY) return is;
+  TyDb* db = tyDb(k, false); HowDone done = TyDb_done(db);
   if(is.hadFull) {
+    eprintf("??? hadFull     is.done=%u\n", done);
+    is.done = is.done ? S_min(is.done, done) : done;
+    eprintf("??? hadFull     is.done:%u\n", is.done);
     tyMerge(k, db);    // check stateToUse==fullIfState
     tyClone(k, db, 1); // clone outer state
   } else if (TyDb_done(db)) {
+    eprintf("??? not hadFull is.done=%u\n", done);
+    is.done = is.done ? S_min(is.done, done) : done;
+    eprintf("??? not hadFull is.done:%u\n", is.done);
     tyMerge(k, db);    // drop stateToUse
-    tyClone(k, db, 0); // clone outer state
+    tyClone(k, db, 0); // clone outer statet
   } else {
     tyClone(k, db, 1); // stateToUse becomes fullIfState. Clone outer as stateToUse
     is.hadFull = true;
   }
+  eprintf("??? tyIf end done=%u\n", done);
   return is;
 }
 
 IfState _N_if(Kern* k, IfState is) {
+  eprintf("??? _N_if\n");
   TyDb* db = tyDb(k, false);
   Buf* b = &k->g.code;
   U2 i = _if(b);
@@ -2107,11 +2133,13 @@ IfState _N_if(Kern* k, IfState is) {
   is = tyIf(k, is);
 
   if(CONSUME("elif")) {
+    eprintf("??? elif\n");
     i = _else(b, i);
     Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
     ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in elif test");
-    is = _N_if(k, is);
+    is = _N_if(k, is); // look for next elif or else
   } else if(CONSUME("else")) {
+    eprintf("??? else\n");
     i = _else(b, i);
     Kern_compFn(k); // else body
     is = tyIf(k, is);
@@ -2122,14 +2150,20 @@ IfState _N_if(Kern* k, IfState is) {
 }
 
 void tyIfEnd(Kern* k, IfState is) {
+  eprintf("??? tyIfEnd\n");
   if(IS_UNTY) return;
   TyDb* db = tyDb(k, false);
-  TyDb_drop(k, db); // stateToUse
-  if(is.hadFull)       TyDb_nip(k, db);
-  else if (is.hadElse) TyDb_setDone(db, true);
+  eprintf("??? stateToUse done:%u is.done:%u is.hadFull:%u\n", TyDb_done(db), is.done, is.hadFull);
+  TyDb_drop(k, db); // drop "stateToUse"
+  eprintf("??? next       done=%u\n", TyDb_done(db));
+  eprintf("??? hadElse done: %u\n", is.hadElse);
+  if(is.hadFull)       TyDb_nip(k, db); // drop "outer", TyDb -> fullIfState
+  else if (is.hadElse and is.done) TyDb_setDone(db, is.done);
+  eprintf("??? end        done=%u\n", TyDb_done(db));
 }
 
 void N_if(Kern* k) {
+  eprintf("??? if\n");
   N_notImm(k); TyDb* db = tyDb(k, false);
   Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
   ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in if test");
@@ -2168,7 +2202,7 @@ void tyCont(Kern* k, TyDb* db) {
   ASSERT(not TyDb_done(db), "Cont after guaranteed 'ret'");
   tyCheck(blk->startTyI, TyDb_top(db), /*sameLen*/true,
           SLC("Type error: cont not identical as block start."));
-  TyDb_setDone(db, /*done*/true);
+  TyDb_setDone(db, BLK_DONE);
 }
 
 void N_cont(Kern* k) {
@@ -2189,16 +2223,16 @@ void tyBreak(Kern* k, TyDb* db) {
   } else {
     TyI_cloneAdd(k->g.bbaDict, &k->g.blk->endTyI, TyDb_top(db));
   }
-  TyDb_setDone(db, /*done*/true);
+  TyDb_setDone(db, BLK_DONE);
 }
 
-void N_brk(Kern* k) {
+void N_break(Kern* k) {
   N_notImm(k); Kern_compFn(k);
   tyBreak(k, tyDb(k, false));
   Buf* b = &k->g.code;
 
   Buf_add(b, SZ2 | JL); // unconditional jump to end of block
-  Sll* br = BBA_alloc(k->g.bbaDict, sizeof(Sll), RSIZE); ASSERT(br, "brk OOM");
+  Sll* br = BBA_alloc(k->g.bbaDict, sizeof(Sll), RSIZE); ASSERT(br, "break OOM");
   Sll_add(&k->g.blk->breaks, br);  br->dat = b->len;
   Buf_addBE2(b, 0);
 }
@@ -2214,6 +2248,7 @@ void N_blk(Kern* k) {
 
   Kern_compFn(k); // compile code block
   if(not TyDb_done(db)) tyBreak(k, db); // implicit break checks blk type
+  if(TyDb_done(db) < RET_DONE) TyDb_clearDone(db);
   for(Sll* br = blk->breaks; br; br = br->next) {
     srBE2(b->dat + br->dat, b->len - br->dat);
   }
@@ -2797,7 +2832,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "brk"          , TY_FN_SYN       , N_brk      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x05", "break"        , TY_FN_SYN       , N_break    , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
   ADD_FN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "role"         , TY_FN_SYN       , N_role     , TYI_VOID, TYI_VOID);

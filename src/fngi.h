@@ -223,6 +223,7 @@ typedef struct _Ownership {
 typedef struct { void* ref; TyDict* ty; Ownership* ownership; } OwnedValue;
 
 #define TYDB_DEPTH 16
+typedef enum { NOT_DONE, UMMM_DONE, BLK_DONE, RET_DONE } HowDone;
 typedef struct {
   BBA* bba;
   Stk tyIs; // stack of TyI, aka blocks
@@ -449,14 +450,14 @@ static inline void srSzI(U1* addr, U1 szI, S v) {
 // #################################
 // # Test Helpers
 
-#define _COMPILE_VARS(CODE) \
+#define SET_SRC(CODE) \
   BufFile_var(LINED(bf), 64, CODE); \
   k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &LINED(bf) };
 
 #define COMPILE_NAMED(NAME, CODE, withRet) \
-  _COMPILE_VARS(CODE); U1* NAME = compileRepl(k, withRet)
+  SET_SRC(CODE); U1* NAME = compileRepl(k, withRet)
 #define COMPILE(CODE, withRet) \
-  _COMPILE_VARS(CODE); compileRepl(k, withRet)
+  SET_SRC(CODE); compileRepl(k, withRet)
 #define COMPILE_EXEC(CODE)    \
   COMPILE_NAMED(LINED(code), CODE, true); executeInstrs(k, LINED(code));
 
@@ -479,8 +480,8 @@ static inline TyI** TyDb_root(TyDb* db) { return (TyI**) Stk_topRef(&db->tyIs); 
 static inline Sll** TyDb_rootSll(TyDb* db) { return (Sll**) Stk_topRef(&db->tyIs); }
 
 // Get/set whether current snapshot is done (guaranteed ret)
-static inline bool TyDb_done(TyDb* db) { return Stk_top(&db->done); }
-static inline void TyDb_setDone(TyDb* db, bool done) { *Stk_topRef(&db->done) = done; }
+static inline HowDone TyDb_done(TyDb* db) { return Stk_top(&db->done); }
+void TyDb_setDone(TyDb* db, HowDone done);
 
 // Free from the current snapshot.
 //
@@ -500,7 +501,7 @@ static inline void TyDb_new(TyDb* db) {
 static inline TyDb* tyDb(Kern* k, bool asImm) { return asImm ? &k->g.tyDbImm : &k->g.tyDb; }
 void tyCheck(TyI* require, TyI* given, bool sameLen, Slc errCxt);
 void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out);
-void tyRet(Kern* k, TyDb* db, bool done);
+void tyRet(Kern* k, TyDb* db, HowDone done);
 void tySplit(Kern* k);
 void tyMerge(Kern* k, TyDb* db);
 void TyI_printAll(TyI* tyI);
