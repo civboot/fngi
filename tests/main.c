@@ -271,7 +271,6 @@ TEST_FNGI(compileIf, 10)
   TASSERT_EQ(1, Stk_len(&k->g.tyDb.tyIs));
   SET_SRC("fn bad[ -> S] do (" IF_ALL_RET "4 )");
   FNGI_EXPECT_ERR(compileRepl(k, true), "Code after guaranteed 'ret'");
-  TyDb_drop(k, tyDb(k, false)); // panic means cleanup wasn't handled
   TASSERT_EQ(1, Stk_len(&k->g.tyDb.tyIs));
 
   REPL_END
@@ -280,20 +279,18 @@ END_TEST_FNGI
 TEST_FNGI(compileBlk, 10)
   Kern_fns(k);
   REPL_START
-  TASSERT_EQ(0, k->g.fnState & C_UNTY);
+  COMPILE_EXEC("S(0) blk( drp; )"); TASSERT_EMPTY();
+
+  SET_SRC("S(0) blk( drp; cont; )");
+  FNGI_EXPECT_ERR(compileRepl(k, true), "cont not identical");
 
   COMPILE_EXEC(
     "fn loop[ -> S] do (\n"
     "  S 0 -> blk(\n"
     "    if(dup, >= 5) do (drp; break 0x15)\n"
     "    inc; cont;\n"
-    "  ) )");
-  COMPILE_EXEC("loop()");           TASSERT_WS(0x15);
-  COMPILE_EXEC("S(0) blk( drp; )"); TASSERT_EMPTY();
-
-  SET_SRC("S(0) blk( drp; cont; )");
-  FNGI_EXPECT_ERR(compileRepl(k, true), "cont not identical");
-
+    "  )\n"
+    ") loop()"); TASSERT_WS(0x15);
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
 END_TEST_FNGI
@@ -305,6 +302,8 @@ TEST_FNGI(compileVar, 10)
       "  var a: S = (_ + 7);  ret inc(a);\n"
       ") useVar(0x42)"); TASSERT_WS(0x4A);
 
+  TASSERT_EMPTY();
+
   COMPILE_EXEC("fn idenRef[a:&S -> &S] do ( a )\n");
   COMPILE_EXEC("fn ftRef  [a:&S -> S ] do ( @a )\n");
   TyFn* ftRef = (TyFn*) Kern_findTy(k, &KEY("ftRef"));
@@ -312,7 +311,8 @@ TEST_FNGI(compileVar, 10)
   TASSERT_EQ(0, ftRef->out->meta);
 
   COMPILE_EXEC("fn useRef[a:S -> S ] do ( ftRef(&a) )\n");
-  COMPILE_EXEC("useRef(0x29) tAssertEq(0x29)")
+  COMPILE_EXEC("useRef(0x29)");
+  COMPILE_EXEC("tAssertEq(0x29)");
   COMPILE_EXEC("fn getRefs[a:S -> &S &S] do ( var b:U4; &a, &b )\n");
   COMPILE_EXEC("getRefs(2);");
   WS_POP2(S a, S b);

@@ -223,7 +223,7 @@ typedef struct _Ownership {
 typedef struct { void* ref; TyDict* ty; Ownership* ownership; } OwnedValue;
 
 #define TYDB_DEPTH 16
-typedef enum { NOT_DONE, UMMM_DONE, BLK_DONE, RET_DONE } HowDone;
+typedef enum { NOT_DONE, BLK_DONE, RET_DONE } HowDone;
 typedef struct {
   BBA* bba;
   Stk tyIs; // stack of TyI, aka blocks
@@ -250,26 +250,24 @@ typedef struct _SllSpArena
 static inline Sll* SllSpArena_asSll(SllSpArena* this) { return (Sll*)this; }
 
 typedef struct {
-  U2 glen; U2 gcap; // global data used and cap
   U2 metaNext; // meta of next fn
   U2 cstate;
   U2 fnLocals; // locals size
   U1 fnState;
   U1 logLvlSys;  U1 logLvlUsr;
-  Ty* curTy;      // current type (fn, struct) being compiled
+  Ty*   curTy;      // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
+  Blk*  blk;
   TyDict rootDict;
   TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];
   DictStk dictStk;             DictStk modStk;
   SpReader src;
-  // Reader src;
   FileInfo* srcInfo;
   Buf token; U1 tokenDat[64]; U2 tokenLine;
   Buf code;
   CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
   TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
   BBA* bbaDict;
-  Blk* blk;
 } Globals;
 
 typedef struct {

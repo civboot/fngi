@@ -138,8 +138,6 @@ void TyDb_init(TyDb* db) {
 }
 
 void TyDb_setDone(TyDb* db, HowDone done) {
-  assert(done != 1);
-  eprintf("??? TyDb_setDone(%u)\n", done);
   S* cur = Stk_topRef(&db->done);
   ASSERT(not *cur, "done set multiple times");
   *cur = done;
@@ -158,14 +156,19 @@ void Kern_errCleanup(Kern* k) {
   k->g.curTy = NULL;
   k->g.compFn = &TyFn_baseCompFn;
   DictStk_reset(k);  k->g.modStk.sp = k->g.modStk.cap;
-
+  k->g.blk = NULL;
   k->g.code.len = 0;
 
   k->g.bbaDict = &k->bbaDict;
-  // if(k->g.tyDb.bba) BBA_drop(k->g.tyDb.bba);
   // BBA_drop(&k->g.bbaTyImm);
-  // TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
+  // TyDb_init(&k->g.tyDbImm);
+  if(k->g.tyDb.bba) {
+    // BBA_drop(k->g.tyDb.bba);
+    TyDb_init(&k->g.tyDb); TyDb_new(&k->g.tyDb);
+  }
+  k->fb->ep = NULL;
   Stk_clear(&k->fb->ws); Stk_clear(&k->fb->rs);
+  Stk_clear(&k->fb->info);
   k->g.code.len = 0;
 
   // // Drop all but the last
@@ -198,7 +201,6 @@ void Kern_init(Kern* k, FnFiber* fb) {
   TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
   k->g.tyDbImm.bba = &k->g.bbaTyImm;
   DictStk_reset(k);
-  Kern_errCleanup(k);
 }
 
 bool Kern_eof(Kern* k) { return BaseFile_eof(SpReader_asBase(k, k->g.src)); }
@@ -524,8 +526,8 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  // if(fn->name) eprintf("!!! executeFn %.*s\n", Ty_fmt(fn));
-  // else         eprintf("!!! executeFn <unknown>\n");
+  if(fn->name) eprintf("!!! executeFn %.*s\n", Ty_fmt(fn));
+  else         eprintf("!!! executeFn <unknown>\n");
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
@@ -1035,7 +1037,7 @@ bool tokenConsume(Kern* k, Slc s) {
 
 #define PEEK(T)     tokenPeek(k, SLC(T))
 #define CONSUME(T)  tokenConsume(k, SLC(T))
-#define REQUIRE(T)  ASSERT(CONSUME(T), "Expected: '" T "'")
+#define REQUIRE(T)  ASSERT(CONSUME(T), "Expected '" T "'")
 
 // ********
 //   * 4.c: Number Scanner
@@ -2025,7 +2027,6 @@ TyFn* parseFn(Kern* k) {
   SET_FN_STATE(FN_STATE_NO);
 
   // Force a RET at the end, whether UNTY or not.
-  eprintf("??? done=%u\n", TyDb_done(db));
   if( (not IS_UNTY and (RET_DONE != TyDb_done(db)))
       or  (IS_UNTY and (RET != code->dat[code->len-1]))) _N_ret(k);
 
@@ -2105,27 +2106,21 @@ IfState tyIf(Kern* k, IfState is) {
   if(IS_UNTY) return is;
   TyDb* db = tyDb(k, false); HowDone done = TyDb_done(db);
   if(is.hadFull) {
-    eprintf("??? hadFull     is.done=%u\n", done);
     is.done = is.done ? S_min(is.done, done) : done;
-    eprintf("??? hadFull     is.done:%u\n", is.done);
     tyMerge(k, db);    // check stateToUse==fullIfState
     tyClone(k, db, 1); // clone outer state
   } else if (TyDb_done(db)) {
-    eprintf("??? not hadFull is.done=%u\n", done);
     is.done = is.done ? S_min(is.done, done) : done;
-    eprintf("??? not hadFull is.done:%u\n", is.done);
     tyMerge(k, db);    // drop stateToUse
     tyClone(k, db, 0); // clone outer statet
   } else {
     tyClone(k, db, 1); // stateToUse becomes fullIfState. Clone outer as stateToUse
     is.hadFull = true;
   }
-  eprintf("??? tyIf end done=%u\n", done);
   return is;
 }
 
 IfState _N_if(Kern* k, IfState is) {
-  eprintf("??? _N_if\n");
   TyDb* db = tyDb(k, false);
   Buf* b = &k->g.code;
   U2 i = _if(b);
@@ -2133,13 +2128,11 @@ IfState _N_if(Kern* k, IfState is) {
   is = tyIf(k, is);
 
   if(CONSUME("elif")) {
-    eprintf("??? elif\n");
     i = _else(b, i);
     Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
     ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in elif test");
     is = _N_if(k, is); // look for next elif or else
   } else if(CONSUME("else")) {
-    eprintf("??? else\n");
     i = _else(b, i);
     Kern_compFn(k); // else body
     is = tyIf(k, is);
@@ -2150,20 +2143,14 @@ IfState _N_if(Kern* k, IfState is) {
 }
 
 void tyIfEnd(Kern* k, IfState is) {
-  eprintf("??? tyIfEnd\n");
   if(IS_UNTY) return;
   TyDb* db = tyDb(k, false);
-  eprintf("??? stateToUse done:%u is.done:%u is.hadFull:%u\n", TyDb_done(db), is.done, is.hadFull);
   TyDb_drop(k, db); // drop "stateToUse"
-  eprintf("??? next       done=%u\n", TyDb_done(db));
-  eprintf("??? hadElse done: %u\n", is.hadElse);
   if(is.hadFull)       TyDb_nip(k, db); // drop "outer", TyDb -> fullIfState
   else if (is.hadElse and is.done) TyDb_setDone(db, is.done);
-  eprintf("??? end        done=%u\n", TyDb_done(db));
 }
 
 void N_if(Kern* k) {
-  eprintf("??? if\n");
   N_notImm(k); TyDb* db = tyDb(k, false);
   Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
   ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in if test");
