@@ -408,12 +408,12 @@ END_TEST_FNGI
 
 TEST_FNGI(global, 10)
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("var a:S = 32");
-  TyVar* a = tyVar(Kern_findTy(k, &KEY("a")));
+  COMPILE_EXEC("var myA:S = 32");
+  TyVar* a = tyVar(Kern_findTy(k, &KEY("myA")));
   TASSERT_EQ(0, Stk_len(WS));
   TASSERT_EQ(32, ftSzI((U1*)a->v, SZR));
-  COMPILE_EXEC("imm#tAssertEq(32, a)");
-  COMPILE_EXEC("tAssertEq(32, a)");
+  COMPILE_EXEC("imm#tAssertEq(32, myA)");
+  COMPILE_EXEC("tAssertEq(32, myA)");
 
   COMPILE_EXEC("struct Foo [ a: S; b: S; c: S]");
   COMPILE_EXEC("var foo:Foo = Foo(7, 3, 12)");
@@ -422,6 +422,7 @@ TEST_FNGI(global, 10)
   TASSERT_EQ(7, ftSzI((U1*)foo->v, SZR));
 
   COMPILE_EXEC("tAssertEq(7, foo.a)   tAssertEq(3, foo.b)");
+  COMPILE_EXEC("@ &foo.a"); TASSERT_WS(7);
   COMPILE_EXEC("imm#tAssertEq(7, foo.a)");
   COMPILE_EXEC("foo.a = 0x444 tAssertEq(0x444, foo.a)");
   COMPILE_EXEC("imm#( tAssertEq(0x444, foo.a); tAssertEq(3, foo.b) )");

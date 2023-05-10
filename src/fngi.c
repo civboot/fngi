@@ -336,7 +336,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case OWR : WS_ADD((S) ((OwnedValue*)popLit(k, 4))->ref);  R0
     case LR: WS_ADD(RS_topRef(k) + popLit(k, 2)); R0
     case GR: {
-      TyVar* g = (TyVar*) popLit(k, 4);
+      TyVar* g = tyVar((Ty*)popLit(k, 4));
       WS_ADD(g->v + popLit(k, 2));
       return 0;
     }
@@ -2463,25 +2463,29 @@ void N_amp(Kern* k) {
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
-  if(isVarGlobal(var)) assert(false); // TODO
+  TyVar* global = NULL; S offset = var->v;
+  if(isVarGlobal(var)) {
+    global = var; offset = 0;
+  }
   else ASSERT(not asImm, "local referenced imm");
-  U2 offset = var->v; TyI* tyI = var->tyI;
+  TyI* tyI = var->tyI;
   while(not TyI_refs(tyI) and CONSUME(".")) {
-    Key key = (Key) { tokenSlc(k) };
-    var = (TyVar*) TyDict_find(tyDictB(var->tyI->ty), &key);
+    var = (TyVar*) TyDict_scanTy(k, tyDictB(var->tyI->ty));
+    ASSERT(var, "field not found");
     assert(isTyVar((Ty*)var)); // TODO: support function
     offset += var->v; tyI = var->tyI;
   }
-  Buf* b = &k->g.code;
+  Buf* b = asImm ? NULL : &k->g.code;
   if(PEEK(".")) {
-    assert(TyI_refs(tyI));
-    op2(b, FTLL, SZR, offset);
-    return ampRef(k, tyI);
+    assert(false); // implemented but never tested
+    // assert(TyI_refs(tyI));
+    // op2(b, FTLL, SZR, offset);
+    // return ampRef(k, tyI);
   }
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
   tyCall(k, db, NULL, &out);
-  op2(b, LR, 0, offset);
+  opCompile(b, global ? GR : LR, 0, offset, global);
 }
 
 bool handleLocalFn(Kern *k) { // return true if handled
@@ -2506,7 +2510,10 @@ void N_at(Kern* k) { // '@', aka dereference
   Kern_compFn(k);  U1 instr = FT;
   if(CONSUME("="))    instr = SR;
   TyI* tyI = TyDb_top(db); U2 refs = TyI_refs(tyI);
-  ASSERT(refs, "invalid '@', the value on the stack is not a reference");
+  if(not refs) {
+    eprintf("!!! Stack: "); TyDb_print(k, db); NL;
+    SET_ERR(SLC("invalid '@', the value on the stack is not a reference"));
+  }
   if(SR == instr) Kern_compFn(k); // compile value to store
   if(refs > 1) Buf_add(&k->g.code, instr | SZR);
   else {
