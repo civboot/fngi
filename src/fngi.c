@@ -199,7 +199,6 @@ Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   }
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   memset(ty, 0, sz);
-  eprintf("??? set tyKey=%p\n", tyKey);
   ty->name  = key; ty->tyKey = tyKey;
   ty->parent = DictStk_topMaybe(&k->g.modStk);
   ty->meta = meta;
@@ -282,8 +281,8 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  Slc name = instrName(instr);
-  eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
+  // Slc name = instrName(instr);
+  // eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -489,8 +488,8 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  if(fn->name) eprintf("!!! executeFn %.*s\n", Ty_fmt(fn));
-  else         eprintf("!!! executeFn <unknown>\n");
+  // if(fn->name) eprintf("!!! executeFn %.*s\n", Ty_fmt(fn));
+  // else         eprintf("!!! executeFn <unknown>\n");
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
@@ -541,6 +540,7 @@ bool TyDict_unsized(TyDict* ty) {
 S TyDict_size(TyDict* ty) {
   ASSERT(not isDictMod(ty), "attempted size of TY_DICT_MOD");
   if(isDictNative(ty)) return szIToSz((S)ty->children);
+  if(isDictRole(ty))   return 2 * RSIZE; // { &Data, &Methods }
   return ty->sz;
 }
 
@@ -1274,7 +1274,6 @@ void compImm(Kern* k);
 
 void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   if(not st->notParse) {
-    eprintf("??? tyI->ty->meta=%X\n", tyI->ty->meta);
     if(CONSUME("{")) return srOffsetStruct(k, tyDictB(tyI->ty), offset, st);
     Kern_compFn(k);
   }
@@ -1291,11 +1290,13 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   recSt.checkTy = false; recSt.clear = false; recSt.notParse = true;
   if(isDictRole(d)) {
     if(opCreatesRef(st->op)) {
-      srOffset(k, &TyIs_S, offset, &recSt);
+      assert(false);
+      // srOffset(k, &TyIs_S, offset, &recSt);
     } else {
-      assert(RSIZE == ROLE_DATA_OFFSET); // ensure data is "top" of stack
-      srOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, &recSt);
+      assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
+      assert(not recSt.global); // TODO: This should be fine, just checking
       srOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, &recSt);
+      srOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, &recSt);
     }
     return;
   }
@@ -1307,7 +1308,6 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
 
 // Implementation of '{ ... }'
 void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
-  eprintf("??? srOffsetStruct\n");
   Buf* b = &k->g.code;
   // Clear memory first
   if(st->clear) {
@@ -1320,13 +1320,9 @@ void srOffsetStruct(Kern* k, TyDict* d, U2 offset, SrOffset* st) {
     opCall(k, &TyFn_memclr);
   }
   st->clear = false;
-  eprintf("??? srOffsetStruct d=%.*s\n", Ty_fmt(d));
   while(not CONSUME("}")) {
     scan(k); Ty* ty = Kern_findToken(k);
-    eprintf("??? in srOffsetStruct loop ty=%p\n", ty);
-    if(ty) eprintf("???   ty=%.*s\n", Ty_fmt(ty));
     if(ty and isTyFn(ty) and isFnSyn((TyFn*)ty)) {
-      eprintf("??? Calling with asImm=%u\n", st->asImm);
       Kern_compFn(k);
       continue;
     }
@@ -1412,16 +1408,18 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
   } else if (isFnAbsmeth(meth)) {
     ASSERT(opIsConcrete(st->op), "absmeth not allowed on reference");
     tyCall(k, db, TYI_VOID, &TyIs_rSelf);
+    // Get &Data first
     if(TyI_refs(vTyI)) {
-           opOffset(k, b, st->op, /*szI*/0, offset, st->global); // &Role
-           opOffset(k, b,    FTO,    RSIZE, offset + ROLE_DATA_OFFSET, NULL);
-    } else opOffset(k, b, st->op, /*szI*/0, offset + ROLE_DATA_OFFSET, st->global);
+           opOffset(k, b, st->op, SZR, offset, st->global); // &Role
+           opOffset(k, b,    FTO, SZR, offset + ROLE_DATA_OFFSET, NULL);
+    } else opOffset(k, b, st->op, SZR, offset + ROLE_DATA_OFFSET, st->global);
     Kern_compFn(k);
+    // Get &Methods and ft the offset, then call it
     if(TyI_refs(vTyI)) {
-           opOffset(k, b, st->op, /*szI*/0, offset, st->global); // &Role
-           opOffset(k, b,     FTO,   RSIZE, offset + ROLE_METH_OFFSET, NULL);
-    } else opOffset(k, b, st->op, /*szI*/0, offset + ROLE_METH_OFFSET, st->global);
-    opOffset(k, b, FTO, /*szI*/0, /*offset*/(S)meth->code, NULL); // get actual method
+           opOffset(k, b, st->op,  SZR, offset, st->global); // &Role
+           opOffset(k, b,     FTO, SZR, offset + ROLE_METH_OFFSET, NULL);
+    } else opOffset(k, b, st->op,  SZR, offset + ROLE_METH_OFFSET, st->global);
+    opOffset(k, b, FTO, SZR, /*offset*/(S)meth->code, NULL); // get actual method
     tyCall(k, db, meth->inp, meth->out);
     if(st->asImm) executeFn(k, (TyFn*)WS_POP());
     else          Buf_add(&k->g.code, XW);
@@ -1468,9 +1466,9 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   if(addTy) tyCall(k, db, NULL, tyI);
   st->noAddTy = true;
   if(isDictRole(d)) {
-    assert(RSIZE == ROLE_DATA_OFFSET); // ensure data is "top" of stack
-    ftOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, st);
+    assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
     ftOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, st);
+    ftOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, st);
   }
   else ftOffsetStruct(k, d, d->fields, offset, st);
 }
@@ -1538,17 +1536,14 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
     TyDb_pop(k, db); // Currently &Self is on the stack
     ASSERT(1 == TyI_refs(top), "role: only single refs");
     ASSERT(isTyDict((Ty*)top->ty), "role: only dicts");
-    TyI roleTyI = { .ty = (TyBase*)d };
     TyVar* impl = (TyVar*) TyDict_find((TyDict*)top->ty, &(Key){
-      .name = Slc_frCStr(d->name), .tyI = &roleTyI });
+      .name = Slc_frCStr(d->name), .tyI = &tyI });
     ASSERT(impl, "role not implemented for type");
     assert(isTyVar((Ty*)impl) && isVarGlobal(impl));
     Buf* b = &k->g.code;
-    // add the &Methods. TODO: not lit? Global?
-    eprintf("??? role lit=%X  deref=%X\n", impl->v, *(S*)impl->v);
-    assert(not asImm); lit(b, impl->v);
-    assert(RSIZE == ROLE_DATA_OFFSET); // ensure data is "top" of stack
-    Buf_add(b, SWP);
+    assert(not asImm);
+    assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
+    lit(b, impl->v);
     tyCall(k, db, NULL, &tyI);
   } else {
     assert(isDictStruct(d));
@@ -1571,7 +1566,7 @@ void checkName(Kern* k, bool check) {
 }
 
 void compileTy(Kern* k, Ty* ty, bool asImm) {
-  eprintf("!!! compileTy: %.*s\n", Ty_fmt(ty));
+  // eprintf("!!! compileTy: %.*s\n", Ty_fmt(ty));
   checkName(k, ty);
   do {
     if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
@@ -1596,7 +1591,7 @@ void compileTy(Kern* k, Ty* ty, bool asImm) {
 //   * single: compile a single token + compileSrc
 void single(Kern* k, bool asImm) {
   scan(k); Slc t = *Buf_asSlc(&k->g.token);
-  eprintf("!!! single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
+  // eprintf("!!! single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
   if(not t.len) return;
   ParsedNumber n = parseU4(k, t);
   if(n.isNum) {
@@ -1918,10 +1913,8 @@ void _varGlobal(Kern* k, VarPre* pre) {
 void _varLocal(Kern* k, VarPre* pre) {
   localImpl(k, pre);
   if(CONSUME("=")) {
-    eprintf("??? var local=\n");
     SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
     srOffset(k, pre->var->tyI, /*offset=*/pre->var->v, &st);
-    eprintf("??? var local= done\n");
   }
 }
 
@@ -2293,18 +2286,16 @@ void N_role(Kern* k) {
 
 // impl Struct:Role { add = &Struct.add }
 void N_impl(Kern* k) {
+  N_notImm(k);
   TyDict* st = (TyDict*) scanTy(k);
   ASSERT(st and isTyDict((Ty*)st), "Can only implement for TyDict");
   ASSERT(isDictStruct(st)        , "Can only implement for struct");
   REQUIRE(":"); TyDict* role = (TyDict*) scanTy(k);
-  eprintf("??? role=%p\n", role);
   ASSERT(role and isTyDict((Ty*)role) and isDictRole(role),
          "must be impl Type:Role");
 
   // Create a variable for storing the methods
   TyI* roleTyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)role });
-  eprintf("??? role->meta=%X\n", role->meta);
-  eprintf("??? roleTyI->ty->meta=%X\n", roleTyI->ty->meta);
 
   DictStk_add(&k->g.dictStk, st);
   TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR | TY_VAR_GLOBAL, role->name, roleTyI);
@@ -2396,16 +2387,12 @@ void ampRef(Kern* k, TyI* tyI) {
 // The last one requires a fetch
 void N_amp(Kern* k) {
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
-  eprintf("??? N_amp start asImm=%u\n", asImm);
   scan(k); Ty* ty = Kern_findToken(k); ASSERT(ty, "not found");
   TyDict* d = NULL;
   if (isTyDict(ty)) {
-    eprintf("??? N_amp isTyDict\n");
     d = (TyDict*)ty; tokenDrop(k);
     while(CONSUME(".")) {
-      eprintf("??? N_amp got . in dict=%p\n", d);
       ty = TyDict_scanTy(k, d); ASSERT(ty, "expected struct member");
-      eprintf("??? amp dict mem ty=%p\n", ty);
       if(isTyDict(ty)) d = (TyDict*)ty;
       else             break;
     }
@@ -2415,21 +2402,18 @@ void N_amp(Kern* k) {
   }
   if(isTyVar(ty)) {}
   else if (isTyFn(ty)) {
-    eprintf("??? pushing &%.*s\n", Ty_fmt(ty));
     FnSig* sig = FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
     if(d) {
       InOut io = sig->io;            InOut_replaceSelf(k, &io, d);
       sig = FnSig_findOrAdd(k, io);  InOut_free(k, &io);
     }
     tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
-    eprintf("??? here\n");
     tokenDrop(k);
     // TODO: not a lit... a global?
     if(asImm) WS_ADD((S)ty);
     else      lit(&k->g.code, (S)ty);
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
-  eprintf(""" amp: is var\n");
   tokenDrop(k);
   TyVar* var = (TyVar*) ty;
   if(isVarGlobal(var)) assert(false); // TODO
@@ -2469,7 +2453,6 @@ bool handleLocalFn(Kern *k) { // return true if handled
 }
 
 void N_at(Kern* k) { // '@', aka dereference
-  eprintf("??? N_at start\n");
   N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   if(handleLocalFn(k)) return;

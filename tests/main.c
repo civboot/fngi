@@ -3,20 +3,24 @@
 
 #include "fngi.h"
 
+void disassemble(U1* c, U2 len) {
+  eprintf("## Disassemble %p [len=%u]\n", c, len);
+  for(U2 i = 0; i < len; i++) {
+    U1 instr = c[i]; Slc name = instrName(instr);
+    eprintf("%.2X [%.*s]\n", instr, Dat_fmt(name));
+  }
+}
+
 TEST(basic)
   TASSERT_EQ(7,    cToU1('7'));
   TASSERT_EQ(0xB,  cToU1('b'));
   TASSERT_EQ(0xB,  cToU1('B'));
   TASSERT_EQ(0xFF, cToU1('-'));
-
 END_TEST
 
 TEST_FNGI(init, 10)
-  eprintf("??? here cfb=%p\n", cfb);
   TASSERT_EQ(WS_DEPTH, WS->cap);
-  eprintf("??? here 2\n");
   TASSERT_EQ(WS->sp,   WS->cap);
-
   WS_ADD(4); TASSERT_WS(4);
 END_TEST_FNGI
 
@@ -505,7 +509,6 @@ TEST_FNGI(method, 20)
 
   TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
   TyFn* aDo = tyFn(TyDict_find(A, &KEY("aDo")));
-  eprintf("??? A=%p  aDo=%p\n", A, aDo);
   COMPILE_EXEC("&A.aDo"); TASSERT_WS((S)aDo);
   REPL_END
 END_TEST_FNGI
@@ -557,6 +560,7 @@ END_TEST_FNGI
 TEST_FNGI(role, 20)
   Kern_fns(k);
   REPL_START
+
   CStr_ntVar(aaa, "\x03", "aaa");
   TyI fakeKey = { .name = aaa, .ty = NULL };
   TyDict tyKeyDict = {
@@ -579,9 +583,6 @@ TEST_FNGI(role, 20)
   TyVar* addV = tyVar(TyDict_find(Adder, &(Key){
     .name = SLC("add"), .tyI = &TyIs_RoleField }));
   assert(isFnSig(addV->tyI->ty));
-  FnSig* sig = (FnSig*)addV->tyI->ty;
-  eprintf("??? INP="); TyI_printAll(sig->io.inp); eprintf("\n");
-  eprintf("??? OUT="); TyI_printAll(sig->io.out); eprintf("\n");
 
   COMPILE_EXEC(
     // "unty fn add [ self:&Self, b:S -> S ] do;\n"
@@ -595,35 +596,33 @@ TEST_FNGI(role, 20)
   TyFn* A_add = tyFn(TyDict_find(A, &KEY("add")));
 
   COMPILE_EXEC("var myA: A = A(5)\n tAssertEq(8, myA.add(3))\n")
-
-  eprintf("??? A.add=%p\n", A_add);
   COMPILE_EXEC("impl A:Adder { add = &A.add }");
 
   // Test that it's actually implemented
   TyVar* A_Adder = tyVar(TyDict_find(A, &(Key) {
     .name = SLC("Adder"), .tyI = &(TyI) { .ty = (TyBase*)Adder, } }));
-  assert(A_Adder);
-  TASSERT_EQ(A_add, *(S*)A_Adder->v);
+  assert(A_Adder); TASSERT_EQ((S)A_add, *(S*)A_Adder->v);
 
   COMPILE_EXEC(
     "fn useAdder[a: Adder -> S] do (\n"
      "  a.add(5)\n"
     ")");
+
+  COMPILE_EXEC(
+    "fn getAdder[a: A -> Adder] do (\n"
+    "  Adder(&a)"
+    ")");
+  COMPILE_EXEC("getAdder(A 5)"); TASSERT_WS(A_Adder->v); WS_POP();
+
+  // Check that
+  COMPILE_EXEC("fn getGotAdder[a: Adder -> Adder] do (a)");
+  COMPILE_EXEC("getGotAdder(getAdder(A 5))"); TASSERT_WS(A_Adder->v); WS_POP();
+
   COMPILE_EXEC(
     "fn createUseAdder[a: A -> S] do (\n"
     "  useAdder(Adder(&a))"
     ")");
-  eprintf("??? A.add=%p\n", A_add);
-  // This doesn't quite work.
-  // Something is wrong with the way that
-  // roles go on the stack.
-  //
-  // I don't think I can finish roles quite yet, I'm going to have to take
-  // a look when I have taken a bit of a break. I'm SOO close...
-  // COMPILE_EXEC("A 3");
-  // COMPILE_EXEC("createUseAdder;");
-  // TASSERT_WS(8);
-
+  COMPILE_EXEC("createUseAdder(A 3)"); TASSERT_WS(8);
   REPL_END
 END_TEST_FNGI
 

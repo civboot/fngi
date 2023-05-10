@@ -35,7 +35,11 @@
 #define INFO_POP(V)       Stk_pop(&cfb->info)
 
 #define TASSERT_WS(E)     TASSERT_STK(E, WS)
-#define TASSERT_EMPTY()   TASSERT_EQ(0, Stk_len(WS))
+#define TASSERT_EMPTY()   do { \
+  if(Stk_len(WS)) { \
+    eprintf("!!! Not empty: "); dbgWs(k); eprintf("\n"); \
+    TASSERT_EQ(0, Stk_len(WS)) \
+  } } while(0)
 
 #define Ty_fmt(TY)    CStr_fmt((TY)->name)
 
@@ -49,7 +53,7 @@
     Kern _k = {0}; Kern* k = &_k; fngiK = k;  \
     Kern_init(k, &fnFb); _k.isTest = true;
 
-#define END_TEST_FNGI   END_TEST_UNIX
+#define END_TEST_FNGI   TASSERT_EMPTY(); END_TEST_UNIX
 
 // ################################
 // # From gen/name.c
@@ -420,12 +424,10 @@ static inline S ftSzI(U1* addr, U1 szI) {
     case SZ4: out = *(U4*)addr; break;
     default: assert(false);
   }
-  eprintf("??? ftSzI from %X: %X\n", addr, out);
   return out;
 }
 
 static inline void srSzI(U1* addr, U1 szI, S v) {
-  eprintf("??? srSzI addr=%X szI=%X v=%X\n", addr, szI, v);
   switch(szI) {
     case SZ1: *(U1*)addr = v; return;
     case SZ2: *(U2*)addr = v; return;
