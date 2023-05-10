@@ -41,6 +41,15 @@
     TASSERT_EQ(0, Stk_len(WS)) \
   } } while(0)
 
+
+
+#define FNGI_EXPECT_ERR(CODE, MSG)             \
+  civ.fb->state |= Fiber_EXPECT_ERR;      \
+  HANDLE_ERR(                             \
+    { CODE;                               \
+      eprintf("!!! expected error never happend\n"); assert(false); } \
+    , { handleExpectedErr(SLC(MSG)); Kern_errCleanup(k); })
+
 #define Ty_fmt(TY)    CStr_fmt((TY)->name)
 
 #define TEST_FNGI(NAME, numBlocks)            \
@@ -283,6 +292,7 @@ typedef struct _Kern {
 } Kern;
 
 extern Kern* fngiK;
+void Kern_errCleanup(Kern*);
 
 
 // ################################

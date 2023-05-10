@@ -165,6 +165,31 @@ void Kern_init(Kern* k, FnFiber* fb) {
   DictStk_reset(k);
 }
 
+void Kern_errCleanup(Kern* k) {
+  k->metaNext = 0; k->cstate = 0;
+  k->fnLocals = 0; k->fnState = 0;
+  k->curTy = NULL;
+  k->compFn = &TyFn_baseCompFn;
+  DictStk_reset(k);  k->g.modStk.sp = k->g.modStk.cap;
+
+  tokenDrop(k);
+  k->g.code.len = 0;
+
+  k->bbaDict = &k->bbaDict;
+  TyDb_init(&k->tyDb); TyDb_init(&k->tyDbImm);
+  BBA_drop(&k->g.bbaTyImm);
+  while(WS_LEN) WS_POP();
+  k->code = 0;
+
+  // Drop all but the last
+  SllSpArena** root = &k->fb->sllArena;
+  while(*root and (*root)->next) {
+    SllSpArena* drop = (SllSpArena*)Sll_pop((Sll**)root);
+    Sp_Xr0(drop->arena,drop);
+  }
+  assert(*root);
+}
+
 bool Kern_eof(Kern* k) { return BaseFile_eof(SpReader_asBase(k, k->g.src)); }
 
 Slc tokenSlc(Kern* k) {

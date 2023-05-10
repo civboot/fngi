@@ -165,8 +165,8 @@ TEST_FNGI(tyDb, 4)
   TY_CHECK(&TyIs_S, &TyIs_S,  true);
   TY_CHECK(&TyIs_S, &TyIs_SS, false);
 
-  EXPECT_ERR(TY_CHECK(&TyIs_S, &TyIs_SS, true));
-  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_rU1_U4, true));
+  EXPECT_ERR(TY_CHECK(&TyIs_S, &TyIs_SS, true), "test");
+  EXPECT_ERR(TY_CHECK(&TyIs_U4x2, &TyIs_rU1_U4, true), "test");
 
   TyDb* db = &k->g.tyDb;
 
@@ -182,7 +182,7 @@ TEST_FNGI(tyDb, 4)
   k->g.curTy = Kern_findTy(k, &KEY("+"));
   tyCall(k, db, NULL, &TyIs_S);
   tyRet(k, db, true);  TASSERT_EQ(true, TyDb_done(db));
-  EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL));
+  EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL), "Code after guaranteed 'ret'");
   END_LOCAL_TYDB_BBA(tyDb);
 END_TEST_FNGI
 
