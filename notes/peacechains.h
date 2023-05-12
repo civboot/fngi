@@ -24,6 +24,10 @@ typedef struct {
   struct Piece* prev;
 } Piece;
 
+// Casting is safe since they have identical memory layout in their prefix. This
+// means that methods implemented for SllSlc also work for Piece.
+static inline SllSlc* Piece_toSllSlc(Piece* p) { return (SllSlc*)p; }
+
 // When doing search the node and the offset of (i.e.) the start of a match are
 // returned.
 // This is done in-case modifications need to be made on the ref node after
