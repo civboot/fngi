@@ -32,3 +32,17 @@ fn testStructs[ ] do (
 imm#testStructs;
 
 imm#assertWsEmpty;
+
+\ Test globals
+var x:S = 7
+imm#tAssertEq(7, x)
+
+var b: B = B(A 9, 2)
+var c: C = { c1 = &b, c2=b }
+
+imm#(
+  tAssertEq(b.b1.a1, 9)
+  tAssertEq(b.b2, 2)
+  tAssertEq(c.c1.b1.a1, 9)
+  tAssertEq(c.c2.b1.a1, 9)
+)

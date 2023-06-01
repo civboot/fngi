@@ -51,6 +51,7 @@
     , { handleExpectedErr(SLC(MSG)); Kern_errCleanup(k); })
 
 #define Ty_fmt(TY)    CStr_fmt((TY)->name)
+#define Instr_fmt(I)  Dat_fmt(instrName(I))
 
 #define TEST_FNGI(NAME, numBlocks)            \
   TEST_UNIX(NAME, numBlocks)                  \
@@ -263,7 +264,7 @@ typedef struct {
   DictStk dictStk;             DictStk modStk;
   SpReader src;
   FileInfo* srcInfo;
-  Buf token; U1 tokenDat[64]; U2 tokenLine;
+  Buf token; U1 tokenDat[64];
   Buf code;
   CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
   TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;

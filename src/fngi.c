@@ -240,7 +240,7 @@ Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   ty->name  = key; ty->tyKey = tyKey;
   ty->parent = DictStk_topMaybe(&k->g.modStk);
   ty->meta = meta;
-  ty->line = k->g.tokenLine;
+  ty->line = k->g.srcInfo->line;
   ty->file = k->g.srcInfo;
   Kern_addTy(k, ty);
   return ty;
@@ -319,8 +319,7 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  Slc name = instrName(instr);
-  eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Dat_fmt(name)); dbgWs(k); NL;
+  eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Instr_fmt(instr)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -958,6 +957,23 @@ void tyMerge(Kern* k, TyDb* db) {
 // ********
 //   * 4.b: Token scanner
 
+// Inc head, keeping track of newlines/etc
+void SrcRing_incHead(Kern* k, Ring* r, U2 inc) {
+  FileInfo* f = k->g.srcInfo;
+  Slc s = Ring_1st(r); U2 i; U2 len = S_min(inc, s.len);
+  for(i = 0; i < len; i++) {
+    eprintf("srcInc: 0x%X '%c'\n", s.dat[i], s.dat[i]);
+    if(s.dat[i] == '\n') f->line += 1;
+  }
+  s = Ring_2nd(r); len = inc - i;
+  assert(len <= s.len);
+  for(i = 0; i < len; i++) {
+    eprintf("srcInc: 0x%X '%c'\n", s.dat[i], s.dat[i]);
+    if(s.dat[i] == '\n') f->line += 1;
+  }
+  Ring_incHead(r, inc);
+}
+
 U1 toTokenGroup(U1 c) {
   if(c <= ' ')             return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
@@ -979,8 +995,7 @@ void skipWhitespace(Kern* k, SpReader f) {
     U1* c = SpReader_get(k, f, 0);
     if(c == NULL) return;
     if(*c > ' ')  return;
-    if(*c == '\n') k->g.srcInfo->line += 1;
-    Ring_incHead(r, 1);
+    SrcRing_incHead(k, r, 1);
   }
 }
 
@@ -1018,7 +1033,7 @@ void scanLine(Kern* k) {
 
 void tokenDrop(Kern* k) {
   Buf* b = &k->g.token;
-  Ring_incHead(&SpReader_asBase(k, k->g.src)->ring, b->len);
+  SrcRing_incHead(k, &SpReader_asBase(k, k->g.src)->ring, b->len);
   Buf_clear(b);
 }
 
@@ -1142,6 +1157,7 @@ void opCompile(Buf* b, U1 op, U1 szI, U2 offset, TyVar* global) {
     op42(b, op, szI, (S)global, offset);
   } else if (GR   == op) {
     assert(global);
+    eprintf("??? here b=%p\n", b);
     op42(b, GR, 0, (S)global, offset);
   }
   else assert(false);
@@ -1424,7 +1440,7 @@ bool opIsConcrete(U1 op) {
 // For FTO, the dot compiler already reduced the number of references.
 void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
   if(st->noAddTy) return;
-  if(st->op == FTLL) return tyCall(k, db, NULL, tyI);
+  if(st->op == FTLL || st->op == FTGL) return tyCall(k, db, NULL, tyI);
   assert(st->op == FTO); assert(not tyI->next);
   tyCall(k, db, NULL, tyI);
 }
@@ -2368,7 +2384,7 @@ void N_impl(Kern* k) {
 //   * '.', '&', '@'
 
 void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
-  N_notImm(k); TyDb* db = tyDb(k, false);
+  bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
   TyI* top = TyDb_top(db);
   U2 refs = TyI_refs(top);
@@ -2384,15 +2400,16 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "member not found");
   if(isTyVar(ty)) {
     TyVar* var = (TyVar*) ty;
-    ASSERT(not isVarGlobal(var), "invalid '.', accessing constant through ref");
-    FtOffset st = (FtOffset) {.op = FTO, .findEqual = true};
+    // Note: "global" field is not a member.
+    ASSERT(not isVarGlobal(var), "invalid '.', accessing global through ref");
+    FtOffset st = (FtOffset) {.op = FTO, .findEqual = true, .asImm = asImm};
     ftOffset(k, var->tyI, var->v, &st);
     return;
   }
   // Call the method
   TyI this = (TyI) { .ty = (TyBase*)d, .meta = /*refs*/1 };
   tyCall(k, db, NULL, &this); // put back on ty stack (from TyDb_pop above)
-  compileTy(k, ty, false);
+  compileTy(k, ty, asImm);
 }
 
 // & on a nested reference type (i.e. a struct field)
@@ -2462,18 +2479,21 @@ void N_amp(Kern* k) {
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
+  eprintf("??? isTyVar\n");
   TyVar* var = (TyVar*) ty;
   TyVar* global = NULL; S offset = var->v;
   if(isVarGlobal(var)) {
     global = var; offset = 0;
   }
   else ASSERT(not asImm, "local referenced imm");
+  eprintf("??? global=%p  offset=%u\n", global, offset);
   TyI* tyI = var->tyI;
   while(not TyI_refs(tyI) and CONSUME(".")) {
     var = (TyVar*) TyDict_scanTy(k, tyDictB(var->tyI->ty));
     ASSERT(var, "field not found");
     assert(isTyVar((Ty*)var)); // TODO: support function
     offset += var->v; tyI = var->tyI;
+    eprintf("???   offset=%u\n", offset);
   }
   Buf* b = asImm ? NULL : &k->g.code;
   if(PEEK(".")) {
@@ -2485,7 +2505,11 @@ void N_amp(Kern* k) {
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
   tyCall(k, db, NULL, &out);
-  opCompile(b, global ? GR : LR, 0, offset, global);
+  eprintf("??? compiling offset=%u, global=%p\n");
+  if(asImm) {
+    assert(global); WS_ADD(global->v + offset); // note: reference
+  }
+  else opCompile(b, global ? GR : LR, /*szI*/0, offset, global);
 }
 
 bool handleLocalFn(Kern *k) { // return true if handled
@@ -2571,19 +2595,19 @@ CharNextEsc charNextEsc(Kern* k, SpReader f) {
   Ring* r = &SpReader_asBase(k, f)->ring;
   U1* c = SpReader_get(k, f, 0);
   ASSERT(c, "expected character, got EOF");
-  Ring_incHead(r, 1);
+  SrcRing_incHead(k, r, 1);
   if('\\' != *c) return (CharNextEsc) { .c = *c };
 
   c = SpReader_get(k, f, 0);
   ASSERT(c, "expected character after '\\', got EOF");
-  Ring_incHead(r, 1);
+  SrcRing_incHead(k, r, 1);
   if('t' == *c)      return (CharNextEsc) { .c = '\t' };
   if('n' == *c)      return (CharNextEsc) { .c = '\n' };
   if(' ' == *c)      return (CharNextEsc) { .c = ' '  };
   if('x' == *c) {
     c = SpReader_get(k, f, 1); ASSERT(c, "expected two characters after '\\'");
     U1 hex = (Ring_get(r, 0) << 8) | Ring_get(r, 1);
-    Ring_incHead(r, 2);
+    SrcRing_incHead(k, r, 2);
     return (CharNextEsc) { .c = hex };
   }
   return (CharNextEsc) { .c = *c, .unknownEsc = true };
@@ -2935,7 +2959,7 @@ void Dat_mod(Kern* k) {
 void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
   eprintf("!!! fngi return stack:\n");
   N_dbgRs(k);
-  eprintf("!!! Code: token=\"%.*s\" line=%u\n", Dat_fmt(k->g.token), k->g.tokenLine);
+  eprintf("!!! Code: token=\"%.*s\" line=%u\n", Dat_fmt(k->g.token), k->g.srcInfo->line + 1);
   if(sig || k->isTest) {
     Trace_handleSig(sig, ctx);
   }
