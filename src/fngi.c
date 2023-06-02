@@ -339,6 +339,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
       WS_ADD(g->v + popLit(k, 2));
       return 0;
     }
+    case XR: WS_ADD((S) tyFn((Ty*)popLit(k, 4))); R0
 
     case INC : WS_ADD(WS_POP() + 1); R0
     case INC2: WS_ADD(WS_POP() + 2); R0
@@ -456,7 +457,7 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
 
     case SZ1 + JTBL: assert(false);
     case SZ2 + JTBL: assert(false);
-    case SZ4 + JTBL: assert(false); // TODO: not impl
+    case SZ4 + JTBL: assert(false);
 
     case SZ1 + SLIC: slcImpl(k, 1); R0;
     case SZ2 + SLIC: slcImpl(k, 2); R0;
@@ -1124,19 +1125,13 @@ void Buf_addSz(Buf* b, S v, U1 sz) {
 
 // sized operation with 1 byte literal (i.e. FTLL, SRLL, etc)
 void op1(Buf* b, U1 op, U1 sz, S v) {
-  Buf_add(b, op | (SZ_MASK & sz));
-  Buf_add(b, v);
-}
-
+  Buf_add(b, op | (SZ_MASK & sz)); Buf_add(b, v); }
 void op2(Buf* b, U1 op, U1 szI, S v) {
-  Buf_add(b, op | (SZ_MASK & szI));
-  Buf_addBE2(b, v);
-}
-
+  Buf_add(b, op | (SZ_MASK & szI)); Buf_addBE2(b, v); }
+void op4(Buf* b, U1 op, U1 szI, S v4) {
+  Buf_add(b, op | (SZ_MASK & szI)); Buf_addBE4(b, v4); }
 void op42(Buf* b, U1 op, U1 szI, S v4, S v2) {
-  Buf_add(b, op | (SZ_MASK & szI));
-  Buf_addBE4(b, v4); Buf_addBE2(b, v2);
-}
+  Buf_add(b, op | (SZ_MASK & szI)); Buf_addBE4(b, v4); Buf_addBE2(b, v2); }
 
 // Compile an operation offset
 void opCompile(Buf* b, U1 op, U1 szI, U2 offset, TyVar* global) {
@@ -1345,7 +1340,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
       // srOffset(k, &TyIs_S, offset, &recSt);
     } else {
       assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
-      assert(not recSt.global); // TODO: This should be fine, just checking
+      assert(not recSt.global); // TODO: not yet tested
       srOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, &recSt);
       srOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, &recSt);
     }
@@ -2509,9 +2504,8 @@ void N_amp(Kern* k) {
     }
     tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
     tokenDrop(k);
-    // TODO: not a lit... a global?
     if(asImm) WS_ADD((S)ty);
-    else      lit(&k->g.code, (S)ty);
+    else      op4(&k->g.code, XR, /*szI*/0, (S)ty);
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);

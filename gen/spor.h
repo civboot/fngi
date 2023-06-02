@@ -20,7 +20,7 @@
 #define OWR                   0x0B
 #define LR                    0x0C
 #define GR                    0x0D
-#define IEND                  0x0F
+#define XR                    0x0F
 #define INC                   0x10
 #define INC2                  0x11
 #define INC4                  0x12

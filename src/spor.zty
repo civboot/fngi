@@ -48,7 +48,7 @@ const RG   :Int = 0x0A \ {-> v} Register  (U1 literal)
 const OWR  :Int = 0x0B \ {-> &OwnedValue} owned reference
 const LR   :Int = 0x0C \ {-> &local}  local reference  (U2 literal)
 const GR   :Int = 0x0D \ {-> &global} global reference (U4+U2 literals)
-const IEND :Int = 0x0F \ not actual instr, used in tests.
+const XR   :Int = 0x0F \ {-> &fn} function reference   (U4 literal)
 
 \ # [1.b] Operations: One Inp -> One Out
 const INC  :Int = 0x10 \ {l+1}  increment 1

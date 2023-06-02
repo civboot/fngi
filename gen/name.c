@@ -21,7 +21,7 @@ Slc instrName(U1 instr) {
     case OWR             : return Slc_ntLit("OWR");
     case LR              : return Slc_ntLit("LR");
     case GR              : return Slc_ntLit("GR");
-    case IEND            : return Slc_ntLit("IEND");
+    case XR              : return Slc_ntLit("XR");
     case INC             : return Slc_ntLit("INC");
     case INC2            : return Slc_ntLit("INC2");
     case INC4            : return Slc_ntLit("INC4");
