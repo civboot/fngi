@@ -631,30 +631,6 @@ TyVar* TyDict_field(TyDict* d, TyI* field) {
 // ***********************
 //   * 3.XX: TyI
 
-I4 InOut_cmp(InOut* a, InOut* b) {
-  I4 c = TyI_cmp(a->inp, b->inp); if(c) return c;
-  return TyI_cmp(a->out, b->out);
-}
-
-I4 FnSig_find(FnSig** node, InOut* key) {
-  return Bst_find((Bst**)node, key, (BstCmp)&InOut_cmp);
-}
-
-FnSig* FnSig_add(FnSig** root, FnSig* add) {
-  return (FnSig*) Bst_add((Bst**)root, (Bst*)add, &add->io, (BstCmp)&InOut_cmp);
-}
-
-FnSig* FnSig_findOrAdd(Kern* k, InOut io) {
-  FnSig* root = k->g.fnSigBst;
-  I4 cmp = FnSig_find(&root, &io);
-  if(root and not cmp) return root;
-  FnSig* add = (FnSig*) BBA_alloc(k->g.bbaDict, sizeof(FnSig), RSIZE);
-  ASSERT(add, "FnSig OOM");
-  *add = (FnSig) { .meta = FN_SIG, .io = io };
-  root = k->g.fnSigBst; assert(not FnSig_add(&root, add));
-  return add;
-}
-
 I4 TyIBst_find(TyIBst** node, TyI* key) {
   return Bst_find((Bst**)node, key, (BstCmp)&TyI_cmp);
 }
@@ -674,6 +650,7 @@ TyIBst* TyIBst_add(TyIBst** root, TyIBst* add) {
 // we are done.  If we can't find it we create the first node and recursively
 // check+create sub-chains
 TyI* TyI_findOrAdd(Kern* k, TyI* tyI) {
+  if(not tyI) return NULL;
   TyIBst* root = k->g.tyIBst;
   I4 cmp = TyIBst_find(&root, tyI);
   if(root and not cmp) return &root->tyI;
@@ -689,6 +666,33 @@ void TyI_rootAdd(Kern* k, TyI** root, TyI* tyI) {
   // note: root will temporarily point to add, and add will be mutated
   TyI add = *tyI; Sll_add((Sll**)root, TyI_asSll(&add));
   *root = TyI_findOrAdd(k, *root);
+}
+
+
+I4 InOut_cmp(InOut* a, InOut* b) {
+  I4 c = TyI_cmp(a->inp, b->inp); if(c) return c;
+  return TyI_cmp(a->out, b->out);
+}
+
+I4 FnSig_find(FnSig** node, InOut* key) {
+  return Bst_find((Bst**)node, key, (BstCmp)&InOut_cmp);
+}
+
+FnSig* FnSig_add(FnSig** root, FnSig* add) {
+  return (FnSig*) Bst_add((Bst**)root, (Bst*)add, &add->io, (BstCmp)&InOut_cmp);
+}
+
+FnSig* FnSig_findOrAdd(Kern* k, InOut io) {
+  io.inp = TyI_findOrAdd(k, io.inp);
+  io.out = TyI_findOrAdd(k, io.out);
+  FnSig* root = k->g.fnSigBst;
+  I4 cmp = FnSig_find(&root, &io);
+  if(root and not cmp) return root;
+  FnSig* add = (FnSig*) BBA_alloc(k->g.bbaDict, sizeof(FnSig), RSIZE);
+  ASSERT(add, "FnSig OOM");
+  *add = (FnSig) { .meta = FN_SIG, .io = io };
+  root = k->g.fnSigBst; assert(not FnSig_add(&root, add));
+  return add;
 }
 
 // Return whether the type is unsized
@@ -729,6 +733,9 @@ bool TyI_check(TyI* r, TyI* g) { // r=require g=given
     FnSig* rSig = (FnSig*)r->ty; FnSig* gSig = (FnSig*)g->ty;
     return InOut_check(&rSig->io, &gSig->io);
   }
+  if(TyI_refs(r) and (r->ty == (TyBase*)&Ty_Any or g->ty == (TyBase*)&Ty_Any))
+    return true;
+
   if(!isTyDictB(r->ty) || !isTyDictB(g->ty)) return false;
   TyDict* rd = (TyDict*)r->ty; TyDict* gd = (TyDict*)g->ty;
   if((&Ty_S == rd) or (&Ty_U4 == rd)) {
@@ -750,7 +757,13 @@ bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   return false;
 }
 
+
 void TyI_printAll(TyI* tyI);
+void InOut_print(InOut* io) {
+  TyI_printAll(io->inp); eprintf(" ->");  TyI_printAll(io->out);
+}
+
+int fnDepth = 0;
 void TyI_print(TyI* tyI) {
   if(tyI->name) eprintf("%.*s", Dat_fmt(*tyI->name));
   else          eprintf("_");
@@ -758,8 +771,13 @@ void TyI_print(TyI* tyI) {
   for(U1 refs = TyI_refs(tyI), i = 0; i < refs; i++) eprintf("&");
   if(isFnSig(tyI->ty)) {
     FnSig* sig = (FnSig*)tyI->ty;
-    eprintf("fnSig["); TyI_printAll(sig->io.inp);
-    eprintf(" ->");    TyI_printAll(sig->io.out); eprintf("]");
+    if(fnDepth < 3) {
+      fnDepth += 1;
+      eprintf("fnSig["); InOut_print(&sig->io); eprintf("]");
+      fnDepth -= 1;
+    } else {
+      eprintf("fnSig[ ... disallowed ...]");
+    }
   } else {
     CStr* name = ((Ty*)tyI->ty)->name;
     if(not name) eprintf("<nullname>");
@@ -774,8 +792,11 @@ void TyI_printAll(TyI* tyI) {
 }
 
 TyI* TyI_cloneNode(TyI* node, BBA* bba) {
+  eprintf("??? cloneNode: "); TyI_print(node); NL;
   TyI* cloned = BBA_alloc(bba, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
   *cloned = *node; cloned->next = NULL;
+  eprintf("??? cloneNode (end): "); TyI_print(node); NL;
+  eprintf("??? cloned (end): "); TyI_print(cloned); NL;
   return cloned;
 }
 
@@ -787,9 +808,12 @@ void TyI_cloneAddNode(BBA* bba, TyI** root, TyI* node) {
 // The result will be in the same order.
 // This is done so that freeing is done from top to bottom.
 void  TyI_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
+  eprintf("??? cloneAdd %p\n", nodes);
   if(not nodes) return;
   TyI_cloneAdd(bba, root, nodes->next);
+  eprintf("??? adding node %p ", nodes); TyI_print(nodes); NL;
   TyI_cloneAddNode(bba, root, nodes);
+  eprintf("??? after clone: "); TyI_print(nodes); NL;
 }
 
 void _TyI_cloneNewSelf(BBA* bba, TyI** root, TyI* nodes, TyDict* self) {
@@ -856,8 +880,8 @@ void TyDb_nip(Kern* k, TyDb* db) {
 }
 
 void tyNotMatch(TyI* require, TyI* given) {
-      eprintf("!!   Given  :"); TyI_printAll(given);
-    eprintf("\n!!   Require:"); TyI_printAll(require); eprintf("\n");
+    eprintf("!!   Given  :"); TyI_printAll(given);
+  eprintf("\n!!   Require:"); TyI_printAll(require); eprintf("\n");
 }
 
 // Check two type stacks.
@@ -868,7 +892,7 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
     if(not given) {
       if(not ERR_EXPECTED) {
         eprintf("!! Type stack underflow:\n");
-        tyNotMatch(require_, given_);
+        // tyNotMatch(require_, given_); FIXME
       }
       SET_ERR(errCxt);
     }
@@ -890,6 +914,7 @@ void tyCheck(TyI* require_, TyI* given_, bool sameLen, Slc errCxt) {
 }
 
 void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
+  // FIXME: the problem is in here somewhere
   Slc err;
   if(db == &k->g.tyDbImm)    err = SLC("Type error at imm");
   else if (db == &k->g.tyDb) err = SLC("Type error at fn compilation");
@@ -899,7 +924,10 @@ void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
   TyI** root = TyDb_root(db);
   tyCheck(inp, *root, false, err);
   TyDb_free(k, db, inp);
+  eprintf("??? tyCall inp: "); TyI_printAll(inp); NL;
+  eprintf("??? tyCall out: "); TyI_printAll(out); NL;
   TyI_cloneAdd(db->bba, root, out);
+  eprintf("??? tyCall out (end): "); TyI_printAll(out); NL;
 }
 
 void InOut_replaceSelf(Kern* k, InOut* io, TyDict* self) {
@@ -1848,6 +1876,7 @@ void N_fnMeta(Kern* k)   {
 FnSig* parseFnSig(Kern* k) {
   REQUIRE("["); InOut io = {}; bool isInp = true;
   while(true) {
+    if(CONSUME(","))  continue;
     if(CONSUME("]"))  break;
     if(CONSUME("->")) isInp = false;
     TyI** root = isInp ? &io.inp : &io.out;
@@ -2404,7 +2433,10 @@ void N_impl(Kern* k) {
     TyVar* field = tyVar(TyDict_scanTyKey(k, role, &TyIs_RoleField));
     FnSig* sig = (FnSig*) field->tyI->ty; assert(isFnSig((TyBase*)sig));
     REQUIRE("="); START_IMM(true); Kern_compFn(k); END_IMM;
+    eprintf("??? TyDb after equal: "); TyDb_print(k, tyDb(k, true)); NL;
     sig = FnSig_replaceSelf(k, sig, st);
+    eprintf("??? impl sig: "); InOut_print(&sig->io); NL;
+    eprintf("??? TyDb end: "); TyDb_print(k, tyDb(k, true)); NL;
     tyCall(k, tyDb(k, true), &(TyI){.ty = (TyBase*)sig, .meta = 1}, NULL);
     storeLoc[field->v / RSIZE] = WS_POP();
   }
@@ -2501,12 +2533,18 @@ void N_amp(Kern* k) {
   }
   if(isTyVar(ty)) {}
   else if (isTyFn(ty)) {
+    eprintf("??? & function: %.*s: ", Ty_fmt(ty)); InOut_print(TyFn_asInOut((TyFn*)ty)); NL;
     FnSig* sig = FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
+    eprintf("??? found sig: "); InOut_print(&sig->io); NL;
     if(d) {
       InOut io = sig->io;            InOut_replaceSelf(k, &io, d);
+      eprintf("??? after replace self: "); InOut_print(&io); NL;
       sig = FnSig_findOrAdd(k, io);  InOut_free(k, &io);
     }
+    eprintf("??? sig after replace self: "); InOut_print(&sig->io); NL;
+    eprintf("??? TyDb &before: "); TyDb_print(k, db); NL;
     tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
+    eprintf("??? TyDb &after call: "); TyDb_print(k, db); NL;
     tokenDrop(k);
     if(asImm) WS_ADD((S)ty);
     else      op4(&k->g.code, XR, /*szI*/0, (S)ty);
@@ -2542,7 +2580,7 @@ void N_amp(Kern* k) {
   else opCompile(b, global ? GR : LR, /*szI*/0, offset, global);
 }
 
-bool handleLocalFn(Kern *k, bool asImm) { // return true if handled
+bool _atHandleLocalFn(Kern *k, bool asImm) { // return true if handled
   // Using @localFn requires that we compile the variable
   // AFTER the arguments. N_at would compile it before arguments.
   Key key = (Key) { tokenSlc(k) }; Ty* ty = Kern_findTy(k, &key);
@@ -2560,7 +2598,7 @@ bool handleLocalFn(Kern *k, bool asImm) { // return true if handled
 
 void N_at(Kern* k) { // '@', aka dereference
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
-  bool asImm = WS_POP(); if(handleLocalFn(k, asImm)) return;
+  bool asImm = WS_POP(); if(_atHandleLocalFn(k, asImm)) return;
   TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.code;
   Kern_compFn(k);  U1 op = FTO;
   if(CONSUME("="))    op = SRO;
