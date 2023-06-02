@@ -525,8 +525,8 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  if(fn->name) eprintf("!!! executeFn %.*s\n", Ty_fmt(fn));
-  else         eprintf("!!! executeFn <unknown>\n");
+  if(fn->name) eprintf("!!! executeFn %.*s meta=%X\n", Ty_fmt(fn), fn->meta);
+  else         eprintf("!!! executeFn <unknown> meta=%X\n", fn->meta);
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
@@ -962,13 +962,11 @@ void SrcRing_incHead(Kern* k, Ring* r, U2 inc) {
   FileInfo* f = k->g.srcInfo;
   Slc s = Ring_1st(r); U2 i; U2 len = S_min(inc, s.len);
   for(i = 0; i < len; i++) {
-    eprintf("srcInc: 0x%X '%c'\n", s.dat[i], s.dat[i]);
     if(s.dat[i] == '\n') f->line += 1;
   }
   s = Ring_2nd(r); len = inc - i;
   assert(len <= s.len);
   for(i = 0; i < len; i++) {
-    eprintf("srcInc: 0x%X '%c'\n", s.dat[i], s.dat[i]);
     if(s.dat[i] == '\n') f->line += 1;
   }
   Ring_incHead(r, inc);
@@ -1108,9 +1106,7 @@ void compileLit(Kern* k, S v, bool asImm) {
        else if (v <= 0xFFFF) tyI = &TyIs_U2;
        else                  tyI = &TyIs_S;
   tyCall(k, tyDb(k, asImm), NULL, tyI);
-  if(asImm) {
-    return WS_ADD(v);
-  }
+  if(asImm) return WS_ADD(v);
   lit(&k->g.code, v);
 }
 
@@ -1741,11 +1737,18 @@ void _N_imm(Kern* k) { if(Kern_eof(k)) return;  single(k, true); }
 
 // Compile a token (and all sub-tokens) with asImm=true
 void compImm(Kern* k) {
-  START_IMM(true); executeFn(k, &_TyFn_imm); END_IMM;
+  START_IMM(true); Kern_compFn(k); END_IMM;
 }
 
-void N_imm(Kern*k) {
+void N_imm(Kern* k) {
   N_notImm(k); REQUIRE("#"); compImm(k);
+}
+
+// Compute and compile a literal, i.e. lit(myConst + 7)
+void N_lit(Kern* k) {
+  N_notImm(k); REQUIRE("#"); compImm(k);
+  tyCall(k, tyDb(k, true), &TyIs_S, NULL);
+  compileLit(k, WS_POP(), /*asImm*/false);
 }
 
 void N_paren(Kern* k) {
@@ -2790,8 +2793,11 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
   ADD_ANY_VAR(VAR, TyDict, NAMELEN, NAME, TY_DICT | TY_DICT_NATIVE | META, children, VAL)
 
 #define ADD_FN(NAMELEN, NAME, META, CODE, INP, OUT) \
-  ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | TY_FN_NATIVE | (META), code, (U1*)CODE); \
+  ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | (META), code, (U1*)CODE); \
   LINED(ty).inp = INP; LINED(ty).out = OUT;
+
+#define ADD_FNN(NAMELEN, NAME, META, CODE, INP, OUT) \
+  ADD_FN(NAMELEN, NAME, TY_FN_NATIVE | (META), CODE, INP, OUT)
 
 #define ADD_INLINE_FN(NAMELEN, NAME, META, INP, OUT, ...)     \
   assert(sizeof((U1[]){__VA_ARGS__}) < 0xFF);                 \
@@ -2852,47 +2858,48 @@ void Kern_fns(Kern* k) {
   Kern_addTy(k, (Ty*) &TyFn_inp);
   Kern_addTy(k, (Ty*) &TyFn_memclr);
 
-  ADD_FN("\x01", "\\"           , TY_FN_COMMENT   , N_fslash   , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", "_"            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", ";"            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", ","            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x02", "->"           , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x06", "notImm"       , TY_FN_SYN       , N_notImm   , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "unty"         , TY_FN_SYN       , N_unty     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "ret"          , TY_FN_SYN       , N_ret      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "imm"          , TY_FN_SYN       , N_imm      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", "("            , TY_FN_SYN       , N_paren    , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "cast"         , TY_FN_SYN       , N_cast     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "use"          , TY_FN_SYN       , N_use      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
-  ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x07", "absmeth"      , TY_FN_SYN       , N_absmeth  , TYI_VOID, TYI_VOID);
-  ADD_FN("\x06", "fnMeta"       , TY_FN_SYN       , N_fnMeta   , TYI_VOID, TYI_VOID);
-  ADD_FN("\x05", "fnSig"        , TY_FN_SYNTY     , N_fnSig    , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x06", "global"       , TY_FN_SYN       , N_global   , TYI_VOID, TYI_VOID);
-  ADD_FN("\x05", "const"        , TY_FN_SYN       , N_const    , TYI_VOID, TYI_VOID);
-  ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
-  ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x05", "break"        , TY_FN_SYN       , N_break    , TYI_VOID, TYI_VOID);
-  ADD_FN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "role"         , TY_FN_SYN       , N_role     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "impl"         , TY_FN_SYN       , N_impl     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
-  ADD_FN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
-  ADD_FN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
-  ADD_FN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
-  ADD_FN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
-  ADD_FN("\x0D", "assertWsEmpty", 0           , N_assertWsEmpty, TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x01", "|"            , TY_FN_SYN       , N_pipe     , TYI_VOID, TYI_VOID);
-  ADD_FN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "\\"           , TY_FN_COMMENT   , N_fslash   , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "_"            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", ";"            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", ","            , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x02", "->"           , TY_FN_SYN       , N_noop     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x06", "notImm"       , TY_FN_SYN       , N_notImm   , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "unty"         , TY_FN_SYN       , N_unty     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "ret"          , TY_FN_SYN       , N_ret      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "imm"          , TY_FN_SYN       , N_imm      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "lit"          , TY_FN_SYN       , N_lit      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "("            , TY_FN_SYN       , N_paren    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "cast"         , TY_FN_SYN       , N_cast     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "use"          , TY_FN_SYN       , N_use      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "absmeth"      , TY_FN_SYN       , N_absmeth  , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x06", "fnMeta"       , TY_FN_SYN       , N_fnMeta   , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x05", "fnSig"        , TY_FN_SYNTY     , N_fnSig    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x06", "global"       , TY_FN_SYN       , N_global   , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x05", "const"        , TY_FN_SYN       , N_const    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x05", "break"        , TY_FN_SYN       , N_break    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "role"         , TY_FN_SYN       , N_role     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "impl"         , TY_FN_SYN       , N_impl     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
+  ADD_FNN("\x0D", "assertWsEmpty", 0           , N_assertWsEmpty, TYI_VOID, TYI_VOID);
+  ADD_FNN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "|"            , TY_FN_SYN       , N_pipe     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
 
   // Stack operators. These are **not** PRE since they directly modify the stack.
   ADD_INLINE_FN("\x03", "swp"  , 0       , &TyIs_SS, &TyIs_SS,   SWP   );
@@ -2943,10 +2950,10 @@ void Kern_fns(Kern* k) {
   static TyDict comp; // these are all inside comp
   ADD_ANY_VAR(comp, TyDict, "\x04", "comp", TY_DICT | TY_DICT_MOD, children, /*v=*/0);
   DictStk_add(&k->g.dictStk, &comp);
-  ADD_FN("\x06", "single"     , 0   , N_single     , &TyIs_S, TYI_VOID);
-  ADD_FN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
-  ADD_FN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
-  ADD_FN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
+  ADD_FNN("\x06", "single"     , 0   , N_single     , &TyIs_S, TYI_VOID);
+  ADD_FNN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
+  ADD_FNN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
+  ADD_FNN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
   DictStk_pop(&k->g.dictStk);
 
   // assert(&comp.v == (S)DictStk_pop(&k->g.dictStk).root);

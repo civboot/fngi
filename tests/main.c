@@ -645,6 +645,14 @@ TEST_FNGI(role, 20)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(misc, 20)
+  Kern_fns(k); REPL_START
+  COMPILE_EXEC("imm#tAssertEq(5, 1 + 4)");
+  COMPILE_EXEC("fn useLit[a: S -> S] do ( a + lit#(4 + 12) )");
+  COMPILE_EXEC("tAssertEq(0x15, useLit(5))");
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(file_basic, 20)
   Kern_fns(k);
   N_assertWsEmpty(k);
@@ -721,6 +729,7 @@ int main(int argc, char* argv[]) {
   test_ptr();
   test_arr();
   test_role();
+  test_misc();
   test_file_basic();
   test_dat();
   eprintf("# Tests complete\n");
