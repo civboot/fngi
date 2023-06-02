@@ -427,6 +427,12 @@ TEST_FNGI(global, 10)
   COMPILE_EXEC("foo.a = 0x444 tAssertEq(0x444, foo.a)");
   COMPILE_EXEC("imm#( tAssertEq(0x444, foo.a); tAssertEq(3, foo.b) )");
   COMPILE_EXEC("assertWsEmpty;");
+
+  COMPILE_EXEC("const c1:S = 12");
+  COMPILE_EXEC("tAssertEq(12, c1)");
+
+  COMPILE_EXEC("const cFoo:Foo = foo;");
+  COMPILE_EXEC("tAssertEq(0x444, cFoo.a); tAssertEq(3, foo.b)");
   REPL_END
 END_TEST_FNGI
 

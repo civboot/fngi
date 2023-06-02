@@ -623,7 +623,7 @@ Ty* TyDict_scanTy(Kern* k, TyDict* dict) {
 TyVar* TyDict_field(TyDict* d, TyI* field) {
   Key key = (Key) { CStr_asSlc(field->name) };
   TyVar* var = (TyVar*) TyDict_find(d, &key);
-  assert(var && isTyVar((Ty*)var) && not isVarGlobal(var));
+  assert(var && isTyVar((Ty*)var) && isVarLocal(var));
   return var;
 }
 
@@ -1514,7 +1514,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     ASSERT(f, "member not found");
     if(isTyVar(f)) {
       TyVar* field = (TyVar*)f;
-      assert(not isVarGlobal(field));
+      assert(isVarLocal(field));
       return ftOffset(k, field->tyI, offset + field->v, st);
     } else return compileMethod(k, tyI, d, tyFn(f), offset, st);
   }
@@ -1528,6 +1528,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   else ftOffsetStruct(k, d, d->fields, offset, st);
 }
 
+// fetch fields in "reverse" order (but the SLL is last -> first)
 void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
   if(not field) return;
   ftOffsetStruct(k, d, field->next, offset, st);
@@ -1539,9 +1540,9 @@ void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
 //   * compileTy (Var, Dict, Fn)
 
 void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
-  TyVar* global = isVarGlobal(v) ? v : NULL;
+  TyVar* global = (isVarConst(v) || isVarGlobal(v)) ? v : NULL;
   FtOffset st = (FtOffset) {
-    .op = global ? FTGL : FTLL, .findEqual = true, .asImm = asImm,
+    .op = global ? FTGL : FTLL, .findEqual = not isVarConst(v), .asImm = asImm,
     .global = global, .noAddTy = not addTy };
   START_IMM(asImm);
   ftOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
@@ -1550,8 +1551,9 @@ void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
 
 void compileVar(Kern* k, TyVar* v, bool asImm) {
   TyVar* global = isVarGlobal(v) ? v : NULL;
-  if(asImm) ASSERT(global, "'imm#' used with local variable");
+  if(asImm) ASSERT(not isVarLocal(v), "'imm#' used with local variable");
   if(CONSUME("=")) {
+    ASSERT(not isVarConst(v), "cannot set const variable");
     START_IMM(asImm);
     SrOffset st = (SrOffset) {
       .op = global ? SRGL : SRLL, .checkTy = true, .asImm = asImm, .global = global
@@ -1970,15 +1972,19 @@ void N_var(Kern* k) {
   _varLocal(k, &pre);
 }
 
-void N_global(Kern* k) {
+
+void _global(Kern* k, U1 meta, bool reqSet) {
   N_notImm(k); VarPre pre = varPre(k);
-  TyVar* v = pre.var; v->meta |= TY_VAR_GLOBAL;
+  TyVar* v = pre.var; v->meta |= meta;
   v->v = (S) BBA_alloc(&k->bbaCode, pre.els * pre.sz, /*align*/pre.sz);
   ASSERT(v->v, "Global OOM");
   if(CONSUME("=")) {
     _globalInit(k, v);
-  }
+  } else ASSERT(not reqSet, "expected '='");
 }
+
+void N_global(Kern* k) { _global(k, TY_VAR_GLOBAL, false); }
+void N_const(Kern* k)  { _global(k, TY_VAR_CONST, true); }
 
 void N_alias(Kern* k) {
   N_notImm(k);
@@ -2010,7 +2016,7 @@ void fnInputs(Kern* k, TyFn* fn) {
   for(TyI* tyI = fn->inp; tyI; tyI = tyI->next) {
     Key key = { CStr_asSlcMaybe(tyI->name) };
     TyVar* v = (TyVar*)Kern_findTy(k, &key);
-    if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) {
+    if(v and isTyVar((Ty*)v) and isVarLocal(v)) {
       SrOffset st = (SrOffset) { .op = SRLL, .checkTy = false, .notParse = true };
       srOffset(k, tyI, v->v, &st);
     } else if(/*isStk and*/ not IS_UNTY) {
@@ -2424,7 +2430,7 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   if(isTyVar(ty)) {
     TyVar* var = (TyVar*) ty;
     // Note: "global" field is not a member.
-    ASSERT(not isVarGlobal(var), "invalid '.', accessing global through ref");
+    ASSERT(isVarLocal(var), "invalid '.', accessing non-field through ref");
     FtOffset st = (FtOffset) {.op = FTO, .findEqual = true, .asImm = asImm};
     ftOffset(k, var->tyI, var->v, &st);
     return;
@@ -2448,7 +2454,7 @@ void ampRef(Kern* k, TyI* tyI) {
       }
       Key key = (Key) { tokenSlc(k) };
       TyVar* var = tyVar(TyDict_find(tyDictB(var->tyI->ty), &key));
-      assert(not isVarGlobal(var));
+      assert(isVarLocal(var));
       tyI = var->tyI; offset += var->v;
     } else {
       ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
@@ -2483,7 +2489,7 @@ void N_amp(Kern* k) {
       if(isTyDict(ty)) d = (TyDict*)ty;
       else             break;
     }
-    if(isTyVar(ty)) ASSERT(isVarGlobal((TyVar*)ty), "direct Struct field reference");
+    if(isTyVar(ty)) ASSERT(isVarGlobal((TyVar*)ty), "direct struct field reference");
     else if(isTyFn(ty)) {}
     else ASSERT(false, "invalid struct sub-type");
   }
@@ -2502,7 +2508,7 @@ void N_amp(Kern* k) {
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
-  TyVar* var = (TyVar*) ty;
+  TyVar* var = (TyVar*) ty; ASSERT(not isVarConst(var), "cannot reference a const");
   TyVar* global = NULL; S offset = var->v;
   if(isVarGlobal(var)) {
     global = var; offset = 0;
@@ -2867,6 +2873,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x05", "fnSig"        , TY_FN_SYNTY     , N_fnSig    , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
   ADD_FN("\x06", "global"       , TY_FN_SYN       , N_global   , TYI_VOID, TYI_VOID);
+  ADD_FN("\x05", "const"        , TY_FN_SYN       , N_const    , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
