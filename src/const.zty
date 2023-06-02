@@ -39,12 +39,13 @@ const TY_FN_METH    :U1 = 0x06 \ Struct method
 const TY_FN_ABSMETH :U1 = 0x07 \ Role method to be overriden
 const TY_FN_SIG     :U1 = 0x0F \ Fn signature
 
-\ TY_VAR meta bits: [10A- GCI-] A=alias G=global C=constant I=initialized
+\ TY_VAR meta bits: [10TT ----] A=alias G=global C=constant
 \ G=0 on a struct/enum is a field, G=0 on a fn is a local
-const TY_VAR_ALIAS  :U1 = 0x20
-const TY_VAR_GLOBAL :U1 = 0x08
-const TY_VAR_CONST  :U1 = 0x04
-const TY_VAR_INIT   :U1 = 0x02
+const TY_VAR_MSK    :U1 = 0x30
+const TY_VAR_LOCAL  :U1 = 0x00
+const TY_VAR_GLOBAL :U1 = 0x10
+const TY_VAR_CONST  :U1 = 0x20
+const TY_VAR_ALIAS  :U1 = 0x30
 
 \ TY_DICT meta bits: [11-- -DDD] D=dictType
 const TY_DICT_MSK    :U1 = 0x07

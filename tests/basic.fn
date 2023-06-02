@@ -34,11 +34,11 @@ imm#testStructs;
 imm#assertWsEmpty;
 
 \ Test globals
-var x:S = 7
+global x:S = 7
 imm#tAssertEq(7, x)
 
-var b: B = B(A 9, 2)
-var c: C = { c1 = &b, c2=b }
+global b: B = B(A 9, 2)
+global c: C = { c1 = &b, c2=b }
 
 imm#(
   tAssertEq(b.b1.a1, 9)

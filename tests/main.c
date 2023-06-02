@@ -408,7 +408,7 @@ END_TEST_FNGI
 
 TEST_FNGI(global, 10)
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("var myA:S = 32");
+  COMPILE_EXEC("global myA:S = 32");
   TyVar* a = tyVar(Kern_findTy(k, &KEY("myA")));
   TASSERT_EQ(0, Stk_len(WS));
   TASSERT_EQ(32, ftSzI((U1*)a->v, SZR));
@@ -416,7 +416,7 @@ TEST_FNGI(global, 10)
   COMPILE_EXEC("tAssertEq(32, myA)");
 
   COMPILE_EXEC("struct Foo [ a: S; b: S; c: S]");
-  COMPILE_EXEC("var foo:Foo = Foo(7, 3, 12)");
+  COMPILE_EXEC("global foo:Foo = Foo(7, 3, 12)");
   TASSERT_EQ(0, Stk_len(WS));
   TyVar* foo = tyVar(Kern_findTy(k, &KEY("foo")));
   TASSERT_EQ(7, ftSzI((U1*)foo->v, SZR));
@@ -509,7 +509,7 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( a.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
 
-  COMPILE_EXEC("var a:A = A 5");
+  COMPILE_EXEC("global a:A = A 5");
   COMPILE_EXEC("tAssertEq(5, a.v)");
   COMPILE_EXEC("tAssertEq(13, a.aDo(8))");
   COMPILE_EXEC("tAssertEq(14, a.nonMeth(7))");
@@ -608,7 +608,7 @@ TEST_FNGI(role, 20)
   TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
   TyFn* A_add = tyFn(TyDict_find(A, &KEY("add")));
 
-  COMPILE_EXEC("var myA: A = A(5)\n tAssertEq(8, myA.add(3))\n")
+  COMPILE_EXEC("global myA: A = A(5)\n tAssertEq(8, myA.add(3))\n")
   COMPILE_EXEC("impl A:Adder { add = &A.add }");
 
   // Test that it's actually implemented

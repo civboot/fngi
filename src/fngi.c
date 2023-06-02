@@ -1892,6 +1892,7 @@ VarPre varPre(Kern* k) {
   CStr* name = tokenCStr(k);
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR, name);
   REQUIRE(":"); TyI* tyI = scanTyI(k, name);
+  ASSERT(not TyI_unsized(tyI), "Var must have a known size");
   v->tyI = tyI;
   S sz = TyI_sz(tyI);
   if(tyI->arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
@@ -1900,6 +1901,7 @@ VarPre varPre(Kern* k) {
 
 void localImpl(Kern* k, VarPre* pre) {
   // calculate var offset and update fnLocals offset.
+  pre->var->meta |= TY_VAR_LOCAL;
   pre->var->v = align(k->g.fnLocals, alignment(pre->sz));
   k->g.fnLocals = pre->var->v + (pre->els * pre->sz);
 }
@@ -1952,17 +1954,6 @@ void _globalInit(Kern* k, TyVar* v) {
     .op = SRGL, .checkTy = true, .asImm = true, .global = v,
   };
   START_IMM(true); srOffset(k, v->tyI, /*offset*/ 0, &st); END_IMM;
-  v->meta |= TY_VAR_INIT;
-}
-
-void _varGlobal(Kern* k, VarPre* pre) {
-  TyVar* v = pre->var;
-  v->meta |= TY_VAR_GLOBAL;
-  v->v = (S) BBA_alloc(&k->bbaCode, pre->els * pre->sz, /*align*/pre->sz);
-  ASSERT(v->v, "Global OOM");
-  if(CONSUME("=")) {
-    _globalInit(k, v);
-  }
 }
 
 void _varLocal(Kern* k, VarPre* pre) {
@@ -1974,11 +1965,19 @@ void _varLocal(Kern* k, VarPre* pre) {
 }
 
 void N_var(Kern* k) {
-  N_notImm(k);
+  N_notImm(k); ASSERT(not IS_FN_STATE(FN_STATE_NO), "var must be within a function");
   VarPre pre = varPre(k);
-  ASSERT(not TyI_unsized(pre.var->tyI), "Var must have a known size");
-  if(IS_FN_STATE(FN_STATE_NO))  _varGlobal(k, &pre);
-  else                          _varLocal(k, &pre);
+  _varLocal(k, &pre);
+}
+
+void N_global(Kern* k) {
+  N_notImm(k); VarPre pre = varPre(k);
+  TyVar* v = pre.var; v->meta |= TY_VAR_GLOBAL;
+  v->v = (S) BBA_alloc(&k->bbaCode, pre.els * pre.sz, /*align*/pre.sz);
+  ASSERT(v->v, "Global OOM");
+  if(CONSUME("=")) {
+    _globalInit(k, v);
+  }
 }
 
 void N_alias(Kern* k) {
@@ -2014,8 +2013,7 @@ void fnInputs(Kern* k, TyFn* fn) {
     if(v and isTyVar((Ty*)v) and not isVarGlobal(v)) {
       SrOffset st = (SrOffset) { .op = SRLL, .checkTy = false, .notParse = true };
       srOffset(k, tyI, v->v, &st);
-    }
-    else if(/*isStk and*/ not IS_UNTY) {
+    } else if(/*isStk and*/ not IS_UNTY) {
       TyI_cloneAddNode(db->bba, TyDb_root(db), tyI);
     }
   }
@@ -2359,7 +2357,7 @@ void N_absmeth(Kern* k) {
   fn->code = (U1*)align(role->sz, RSIZE); // offset in Role method struct
   FnSig* sig = parseFnSig(k); checkSelfIo(&sig->io, true);
   fn->inp = sig->io.inp; fn->out = sig->io.out;
-  TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR, fn->name, &TyIs_RoleField);
+  TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR | TY_VAR_LOCAL, fn->name, &TyIs_RoleField);
   v->tyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*) sig, .meta = 1 });
   _field(k, role, (VarPre){ .var = v, .sz = RSIZE, .els = 1 });
 }
@@ -2868,6 +2866,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x06", "fnMeta"       , TY_FN_SYN       , N_fnMeta   , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "fnSig"        , TY_FN_SYNTY     , N_fnSig    , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "var"          , TY_FN_SYN       , N_var      , TYI_VOID, TYI_VOID);
+  ADD_FN("\x06", "global"       , TY_FN_SYN       , N_global   , TYI_VOID, TYI_VOID);
   ADD_FN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
