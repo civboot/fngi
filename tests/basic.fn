@@ -46,3 +46,5 @@ imm#(
   tAssertEq(c.c1.b1.a1, 9)
   tAssertEq(c.c2.b1.a1, 9)
 )
+
+imm#tAssertEq(2, if(0) do 1 else 2)

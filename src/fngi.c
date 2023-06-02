@@ -1157,7 +1157,6 @@ void opCompile(Buf* b, U1 op, U1 szI, U2 offset, TyVar* global) {
     op42(b, op, szI, (S)global, offset);
   } else if (GR   == op) {
     assert(global);
-    eprintf("??? here b=%p\n", b);
     op42(b, GR, 0, (S)global, offset);
   }
   else assert(false);
@@ -2166,8 +2165,34 @@ void tyIfEnd(Kern* k, IfState is) {
   else if (is.hadElse and is.done) TyDb_setDone(db, is.done);
 }
 
+// imm#if implementation.
+//
+// We evaluate conditional tokens. If false, we treat the `do` token as a
+// comment. Once a conditional has been found, all other tokens are treated as
+// comments.
+void _ifImm(Kern* k) {
+  TyDb* db = tyDb(k, true); bool wasElse = false; bool branched = false;
+  while(true) {
+    if(branched) {
+      if(not wasElse) { _N_fslash(k);   REQUIRE("do"); }
+      _N_fslash(k);
+    } else if (wasElse) Kern_compFn(k);
+    else {
+      Kern_compFn(k); REQUIRE("do"); tyCall(k, db, &TyIs_S, NULL);
+      if(WS_POP()) { Kern_compFn(k); branched = true; }
+      else           _N_fslash(k);
+    }
+    if(wasElse) break;
+    else if(CONSUME("elif")) {}
+    else if(CONSUME("else")) wasElse = true;
+    else break;
+  }
+}
+
+
 void N_if(Kern* k) {
-  N_notImm(k); TyDb* db = tyDb(k, false);
+  if(WS_POP()) return _ifImm(k);
+  TyDb* db = tyDb(k, false);
   Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
   ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in if test");
   tyClone(k, db, 0);
@@ -2479,21 +2504,18 @@ void N_amp(Kern* k) {
     return;
   } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
   tokenDrop(k);
-  eprintf("??? isTyVar\n");
   TyVar* var = (TyVar*) ty;
   TyVar* global = NULL; S offset = var->v;
   if(isVarGlobal(var)) {
     global = var; offset = 0;
   }
   else ASSERT(not asImm, "local referenced imm");
-  eprintf("??? global=%p  offset=%u\n", global, offset);
   TyI* tyI = var->tyI;
   while(not TyI_refs(tyI) and CONSUME(".")) {
     var = (TyVar*) TyDict_scanTy(k, tyDictB(var->tyI->ty));
     ASSERT(var, "field not found");
     assert(isTyVar((Ty*)var)); // TODO: support function
     offset += var->v; tyI = var->tyI;
-    eprintf("???   offset=%u\n", offset);
   }
   Buf* b = asImm ? NULL : &k->g.code;
   if(PEEK(".")) {
@@ -2505,7 +2527,6 @@ void N_amp(Kern* k) {
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
   tyCall(k, db, NULL, &out);
-  eprintf("??? compiling offset=%u, global=%p\n");
   if(asImm) {
     assert(global); WS_ADD(global->v + offset); // note: reference
   }
