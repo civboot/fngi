@@ -32,7 +32,7 @@
 
 #define NL eprintf("\n")
 
-Key SUPER;
+Key PARENT;
 
 TyFn _TyFn_imm;
 
@@ -601,10 +601,10 @@ Ty* TyDict_find(TyDict* dict, Key* s) {
     I4 i = Ty_find(&find, s);
     if(i or not find) {
       // prevent recursion
-      if(not s->tyI and Slc_eq(SUPER.name, s->name)) return NULL;
-      Ty* super = TyDict_find(dict, &SUPER);
-      if(not super) return NULL;
-      dict = tyDictB(tyVar(super)->tyI->ty);
+      if(not s->tyI and Slc_eq(PARENT.name, s->name)) return NULL;
+      Ty* parent = TyDict_find(dict, &PARENT);
+      if(not parent) return NULL;
+      dict = tyDictB(tyVar(parent)->tyI->ty);
     } else  return Ty_unalias((Ty*) find);
   }
 }
@@ -740,9 +740,9 @@ bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   }
   if(isDictStruct(rd) and isDictStruct(gd)) {
     while(true) {
-      Ty* super = TyDict_find(gd, &SUPER);
-      if(not super) return false;
-      gd = tyStruct((Ty*)tyVar(super)->tyI->ty);
+      Ty* parent = TyDict_find(gd, &PARENT);
+      if(not parent) return false;
+      gd = tyStruct((Ty*)tyVar(parent)->tyI->ty);
       if(rd == gd) return true;
     }
   }
@@ -2329,9 +2329,9 @@ void _parseDataTy(Kern* k, TyDict* st) {
     } else {
       field(k, st);
       hasUnsized |= TyI_unsized(st->fields);
-      if(Slc_eq(SUPER.name, Slc_frCStr(st->fields->name))) {
-        ASSERT(not st->fields->next, "super must be the first field");
-        ASSERT(not TyI_refs(st->fields), "can not be super of reference");
+      if(Slc_eq(PARENT.name, Slc_frCStr(st->fields->name))) {
+        ASSERT(not st->fields->next, "parent must be the first field");
+        ASSERT(not TyI_refs(st->fields), "can not be parent of reference");
       }
     }
   }
@@ -2347,11 +2347,15 @@ void N_struct(Kern* k) {
 
 void N_meth(Kern* k) {
   N_notImm(k);
-  TyDict* mod = DictStk_topMaybe(&k->g.modStk);
-  ASSERT(isTyDict((Ty*)mod) && isDictStruct(mod), "'meth' can only be in struct");
+  TyDict* st = DictStk_topMaybe(&k->g.modStk);
+  ASSERT(isTyDict((Ty*)st) && isDictStruct(st), "'meth' can only be in struct");
   k->g.metaNext |= TY_FN_METH;
   TyFn* meth = parseFn(k);
-  checkSelfIo(TyFn_asInOut(meth), false); // FIXME: require self
+  checkSelfIo(TyFn_asInOut(meth), true);
+  Ty* parent = TyDict_find(st, &PARENT); if(parent) {
+    ASSERT(not TyDict_find(tyDict(parent), &TY_KEY(meth)),
+           "method already defined in a parent");
+  }
 }
 
 // ***********************
@@ -2807,7 +2811,7 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
 
 
 void Kern_fns(Kern* k) {
-  SUPER = (Key) { .name = SLC("super") };
+  PARENT = (Key) { .name = SLC("parent") };
 
   // Native data types
   ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , (Ty*)(SZR + 1));
@@ -2975,9 +2979,7 @@ void Dat_mod(Kern* k) {
   REPL_END
 
   CStr_ntVar(path, "\x0A", "src/dat.fn"); compilePath(k, path);
-
   TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));
-
   mSpArena_BBA = (MSpArena) {
     .drop     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("drop")),     &N_BBA_drop),
     .alloc    = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("alloc")),    &N_BBA_alloc),

@@ -156,6 +156,7 @@ typedef struct _TyIBst {
 
 typedef struct { Slc name; TyI* tyI; } Key;
 #define KEY(NAME)  (Key){ .name = SLC(NAME) }
+#define TY_KEY(TY) (Key){ .name = Slc_frCStr((TY)->name), .tyI = (TY)->tyKey }
 
 typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
 

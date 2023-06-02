@@ -475,7 +475,7 @@ END_TEST_FNGI
 TEST_FNGI(structSuper, 12)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("struct A [ a: S ]");
-  COMPILE_EXEC("struct B [ super: A; b: S ]");
+  COMPILE_EXEC("struct B [ parent: A; b: S ]");
 
   COMPILE_EXEC("fn useB[b:B -> S S] do (\n"
                "  b.b, b.a\n"
@@ -487,7 +487,7 @@ TEST_FNGI(structSuper, 12)
   COMPILE_EXEC("useB(newB;)");            TASSERT_WS(0x15); TASSERT_WS(0x16);
 
   COMPILE_EXEC("struct _Slc [ dat:&U1  len:U2 ]");
-  COMPILE_EXEC("struct _Buf [ super:_Slc  cap:U2 ]");
+  COMPILE_EXEC("struct _Buf [ parent:_Slc  cap:U2 ]");
   TyDict* s = tyDict(Kern_findTy(k, &KEY("_Slc")));
   TyDict* b = tyDict(Kern_findTy(k, &KEY("_Buf")));
   TASSERT_EQ(6, s->sz); TASSERT_EQ(8, b->sz);
@@ -507,7 +507,7 @@ END_TEST_FNGI
 
 TEST_FNGI(method, 20)
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("struct A [ v:S; meth aDo [self: &A, x: S -> S] do ( self.v + x ) ]")
+  COMPILE_EXEC("struct A [ v:S; meth aDo [self: &Self, x: S -> S] do ( self.v + x ) ]")
   COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
 
