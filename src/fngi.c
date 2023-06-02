@@ -1780,7 +1780,7 @@ void _fnMetaNext(Kern* k, U2 meta) {
   k->g.metaNext |= meta;
 }
 
-TyDict* _withGet(Kern *k) {
+TyDict* _useGet(Kern *k) {
   TyDict* next = (TyDict*) scanTy(k);
   ASSERT(next, "name not found");
   TyDict* d;
@@ -1794,7 +1794,7 @@ TyDict* _withGet(Kern *k) {
 }
 
 
-void _with(Kern* k, TyDict* d) {
+void _use(Kern* k, TyDict* d) {
   assert(not isDictNative(d));
   DictStk_add(&k->g.dictStk, d);
   DictStk_add(&k->g.modStk, d);
@@ -1817,17 +1817,17 @@ void N_cast(Kern* k) {
 void N_mod(Kern* k) {
   N_notImm(k);
   TyDict* d = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_MOD, NULL);
-  _with(k, d);
+  _use(k, d);
 }
 
-void N_with(Kern* k) {
+void N_use(Kern* k) {
   N_notImm(k); REQUIRE(":");
-  _with(k, _withGet(k));
+  _use(k, _useGet(k));
 }
 
 void N_fileloc(Kern* k) { // loc that stays for whole file
   N_notImm(k); REQUIRE(":");
-  TyDict* d = _withGet(k);
+  TyDict* d = _useGet(k);
   DictStk_add(&k->g.dictStk, d);
 }
 
@@ -2860,7 +2860,7 @@ void Kern_fns(Kern* k) {
   ADD_FN("\x01", "("            , TY_FN_SYN       , N_paren    , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "cast"         , TY_FN_SYN       , N_cast     , TYI_VOID, TYI_VOID);
   ADD_FN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
-  ADD_FN("\x04", "with"         , TY_FN_SYN       , N_with     , TYI_VOID, TYI_VOID);
+  ADD_FN("\x03", "use"          , TY_FN_SYN       , N_use      , TYI_VOID, TYI_VOID);
   ADD_FN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
   ADD_FN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
   ADD_FN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);

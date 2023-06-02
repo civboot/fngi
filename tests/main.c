@@ -434,7 +434,7 @@ TEST_FNGI(mod, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("mod foo ( fn one[ -> S] do 1 )");
   COMPILE_EXEC("imm#tAssertEq(1, foo.one())");
-  COMPILE_EXEC("with:foo ( imm#tAssertEq(1, one()) )");
+  COMPILE_EXEC("use:foo ( imm#tAssertEq(1, one()) )");
   REPL_END
 END_TEST_FNGI
 
@@ -505,7 +505,7 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
 
-  COMPILE_EXEC("with:A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
+  COMPILE_EXEC("use:A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
   COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( a.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
 
@@ -517,7 +517,7 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("imm#tAssertEq(13, a.aDo(8))");
   COMPILE_EXEC("imm#tAssertEq(14, a.nonMeth(7))");
 
-  COMPILE_EXEC("with:A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
+  COMPILE_EXEC("use:A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
   COMPILE_EXEC("imm#tAssertEq(13, a.aDoSelf(8))");
 
   TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
