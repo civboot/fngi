@@ -41,10 +41,11 @@ global b: B = B(A 9, 2)
 global c: C = { c1 = &b, c2=b }
 
 imm#(
-  tAssertEq(b.b1.a1, 9)
-  tAssertEq(b.b2, 2)
-  tAssertEq(c.c1.b1.a1, 9)
-  tAssertEq(c.c2.b1.a1, 9)
+  tAssertEq(9, b.b1.a1)
+  tAssertEq(9, @ &b.b1.a1)
+  tAssertEq(2, b.b2)
+  tAssertEq(9, c.c1.b1.a1)
+  tAssertEq(9, c.c2.b1.a1)
 )
 
 imm#tAssertEq(2, if(0) do 1 else 2)

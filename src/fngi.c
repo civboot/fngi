@@ -2419,7 +2419,9 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
   TyI* top = TyDb_top(db);
   U2 refs = TyI_refs(top);
-  ASSERT(refs, "invalid '.', the value on the stack is not a reference");
+  if(not refs) {
+    SET_ERR(SLC("invalid '.', the value on the stack is not a reference"));
+  }
   TyDict* d = (TyDict*) top->ty; assert(d);
   ASSERT(isTyDict((Ty*)d), "invalid '.', the value on the stack is not a TyDict");
   ASSERT(not isDictMod(d), "accessing mod through ref");
@@ -2444,26 +2446,28 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
 }
 
 // & on a nested reference type (i.e. a struct field)
-void ampRef(Kern* k, TyI* tyI) {
+void ampRef(Kern* k, TyI* tyI, bool asImm) {
   ASSERT(PEEK("."), "invalid &, non-variable/struct");
-  Buf* b = &k->g.code;
+  TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.code;
   U2 offset = 0; U2 refs = TyI_refs(tyI);
-  TyDb* db = tyDb(k, false);
+  TyDb_pop(k, db);
   while(true) {
     if(CONSUME(".")) {
       while(refs > 1) {
         opOffset(k, b, FTO, SZR, offset, NULL); offset = 0; refs -= 1;
       }
-      Key key = (Key) { tokenSlc(k) };
-      TyVar* var = tyVar(TyDict_find(tyDictB(var->tyI->ty), &key));
+      TyVar* var = tyVar(TyDict_scanTy(k, tyDictB(tyI->ty)));
       assert(isVarLocal(var));
       tyI = var->tyI; offset += var->v;
     } else {
       ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
-      if(offset) { lit(b, offset); Buf_add(b, ADD); }
-      TyDb_drop(k, db);
+      if(offset) {
+        if(asImm) WS_ADD(WS_POP() + offset);
+        else      { lit(b, offset); Buf_add(b, ADD); }
+      }
       TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
-      return tyCall(k, db, NULL, &out);
+      tyCall(k, db, NULL, &out);
+      return;
     }
   }
 }
@@ -2486,14 +2490,14 @@ void N_amp(Kern* k) {
   TyDict* d = NULL;
   if (isTyDict(ty)) {
     d = (TyDict*)ty; tokenDrop(k);
-    while(CONSUME(".")) {
+    while(CONSUME(".")) { // follow sub.members
       ty = TyDict_scanTy(k, d); ASSERT(ty, "expected struct member");
       if(isTyDict(ty)) d = (TyDict*)ty;
       else             break;
     }
     if(isTyVar(ty)) ASSERT(isVarGlobal((TyVar*)ty), "direct struct field reference");
     else if(isTyFn(ty)) {}
-    else ASSERT(false, "invalid struct sub-type");
+    else ASSERT(false, "invalid dict sub-type");
   }
   if(isTyVar(ty)) {}
   else if (isTyFn(ty)) {
@@ -2507,7 +2511,7 @@ void N_amp(Kern* k) {
     if(asImm) WS_ADD((S)ty);
     else      op4(&k->g.code, XR, /*szI*/0, (S)ty);
     return;
-  } else SET_ERR(SLC("'&' can only get ref of variable or typecast"));
+  } else SET_ERR(SLC("'&' can only get ref of variable or function"));
   tokenDrop(k);
   TyVar* var = (TyVar*) ty; ASSERT(not isVarConst(var), "cannot reference a const");
   TyVar* global = NULL; S offset = var->v;
@@ -2516,18 +2520,18 @@ void N_amp(Kern* k) {
   }
   else ASSERT(not asImm, "local referenced imm");
   TyI* tyI = var->tyI;
-  while(not TyI_refs(tyI) and CONSUME(".")) {
+  while(not TyI_refs(tyI) and CONSUME(".")) { // follow non-reference sub.fields
     var = (TyVar*) TyDict_scanTy(k, tyDictB(var->tyI->ty));
     ASSERT(var, "field not found");
-    assert(isTyVar((Ty*)var)); // TODO: support function
+    ASSERT(isTyVar((Ty*)var) and isVarLocal(var),
+           "Can only get references to variable fields.");
     offset += var->v; tyI = var->tyI;
   }
   Buf* b = asImm ? NULL : &k->g.code;
-  if(PEEK(".")) {
-    assert(false); // implemented but never tested
-    // assert(TyI_refs(tyI));
-    // op2(b, FTLL, SZR, offset);
-    // return ampRef(k, tyI);
+  if(PEEK(".")) { // field of reference
+    assert(TyI_refs(tyI)); tyCall(k, db, NULL, tyI);
+    op2(b, FTLL, SZR, offset);
+    return ampRef(k, tyI, asImm);
   }
   ASSERT(TyI_refs(tyI) + 1 <= TY_REFS, "refs too large");
   TyI out = (TyI) { .ty = tyI->ty, .meta = tyI->meta + 1 };
@@ -2538,13 +2542,14 @@ void N_amp(Kern* k) {
   else opCompile(b, global ? GR : LR, /*szI*/0, offset, global);
 }
 
-bool handleLocalFn(Kern *k) { // return true if handled
+bool handleLocalFn(Kern *k, bool asImm) { // return true if handled
   // Using @localFn requires that we compile the variable
   // AFTER the arguments. N_at would compile it before arguments.
   Key key = (Key) { tokenSlc(k) }; Ty* ty = Kern_findTy(k, &key);
   if(not isTyVar(ty)) { return false; } TyVar* v = (TyVar*)ty;
   if((1 != TyI_refs(v->tyI)) or not isFnSig(v->tyI->ty))
     return false;
+  assert(not asImm); // TODO
   tokenDrop(k); Kern_compFn(k); // compile arguments
   FnSig* fn = (FnSig*) v->tyI->ty;
   tyCall(k, tyDb(k, false), fn->io.inp, fn->io.out);
@@ -2554,27 +2559,26 @@ bool handleLocalFn(Kern *k) { // return true if handled
 }
 
 void N_at(Kern* k) { // '@', aka dereference
-  N_notImm(k); TyDb* db = tyDb(k, false);
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
-  if(handleLocalFn(k)) return;
-  Kern_compFn(k);  U1 instr = FT;
-  if(CONSUME("="))    instr = SR;
+  bool asImm = WS_POP(); if(handleLocalFn(k, asImm)) return;
+  TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.code;
+  Kern_compFn(k);  U1 op = FTO;
+  if(CONSUME("="))    op = SRO;
   TyI* tyI = TyDb_top(db); U2 refs = TyI_refs(tyI);
   if(not refs) {
-    eprintf("!!! Stack: "); TyDb_print(k, db); NL;
     SET_ERR(SLC("invalid '@', the value on the stack is not a reference"));
   }
-  if(SR == instr) Kern_compFn(k); // compile value to store
-  if(refs > 1) Buf_add(&k->g.code, instr | SZR);
+  if(SRO == op) Kern_compFn(k); // compile value to store
+  if(refs > 1) opOffset(k, b, op, SZR, /*offset*/0, NULL);
   else {
     ASSERT(isTyDictB(tyI->ty), "Cannot direct ft/sr non-dict type");
     TyDict* d = (TyDict*) tyI->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
-    if(isDictNative(d)) Buf_add(&k->g.code, instr | (SZ_MASK & (S)d->children));
+    if(isDictNative(d)) opOffset(k, b, op, /*szI*/(S)d->children, /*offset*/0, NULL);
     else assert(false); // struct not implemented
   }
   TyI inp = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta };
-  if(instr == SR) {
+  if(op == SRO) {
     TyI inp2 = *TyDb_top(db); inp2.next = &inp;
     tyCall(k, db, &inp2, NULL);
   } else {

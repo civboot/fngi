@@ -447,13 +447,15 @@ END_TEST_FNGI
 TEST_FNGI(structDeep, 12)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("struct A [ a: S ]");
-  COMPILE_EXEC("struct B [ a: A; b: S ]");
+  COMPILE_EXEC("struct B [ a: A; b: S; rA: &A ]");
   COMPILE_EXEC("struct C [a: &A, b: &B]")
   COMPILE_EXEC("fn cGetA[c:&C -> S] do ( c.b.a.a );");
   COMPILE_EXEC("fn useC[ -> S S] do (\n"
                "  var a: A = A 1\n"
-               "  var b: B = B(A 2, 3)\n"
+               "  var b: B = B(A 2, 3, &a)\n"
                "  var c: C = C(&a, &b)\n"
+               "  tAssertEq(b.rA.a, 1)\n"
+               "  tAssertEq(@(&b.rA.a), 1)\n"
                "  c.b.a.a, cGetA(&c)\n"
                ")");
   COMPILE_EXEC("useC;");
