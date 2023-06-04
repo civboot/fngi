@@ -132,9 +132,9 @@ TyFn TyFn_baseCompFn = {
   .code = (U1*)baseCompFn,
 };
 
-void TyDb_init(TyDb* db) {
-  db->tyIs = Stk_init(db->tyIsDat, TYDB_DEPTH);
-  db->done = Stk_init(db->doneDat, TYDB_DEPTH);
+void TyDb_init(TyDb* db, TyDbDat* dat) {
+  db->tyIs = Stk_init(dat->tyIsDat, TYDB_DEPTH);
+  db->done = Stk_init(dat->doneDat, TYDB_DEPTH);
 }
 
 void TyDb_setDone(TyDb* db, HowDone done) {
@@ -164,7 +164,7 @@ void Kern_errCleanup(Kern* k) {
   // TyDb_init(&k->g.tyDbImm);
   if(k->g.tyDb.bba) {
     // BBA_drop(k->g.tyDb.bba);
-    TyDb_init(&k->g.tyDb); TyDb_new(&k->g.tyDb);
+    TyDb_init(&k->g.tyDb, &k->tyDbDat); TyDb_new(&k->g.tyDb);
   }
   k->fb->ep = NULL;
   Stk_clear(&k->fb->ws); Stk_clear(&k->fb->rs);
@@ -190,15 +190,15 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .fb = fb,
     .g = {
       .compFn = &TyFn_baseCompFn,
-      .dictStk = (DictStk) { .dat = k->g.dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
-      .modStk  = (DictStk) { .dat = k->g.modBuf,  .sp = DICT_DEPTH, .cap = DICT_DEPTH },
-      .token = (Buf){.dat = k->g.tokenDat, .cap = 64},
+      .dictStk = (DictStk) { .dat = k->dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
+      .modStk  = (DictStk) { .dat = k->modBuf,  .sp = DICT_DEPTH, .cap = DICT_DEPTH },
+      .token = (Buf){.dat = k->tokenDat, .cap = 64},
       .bbaDict = &k->bbaDict,
       .bbaTyImm = (BBA) { &civ.ba },
     },
   };
   fb->sllArena = &k->sllArena;
-  TyDb_init(&k->g.tyDb); TyDb_init(&k->g.tyDbImm);
+  TyDb_init(&k->g.tyDb, &k->tyDbDat); TyDb_init(&k->g.tyDbImm, &k->tyDbImmDat);
   k->g.tyDbImm.bba = &k->g.bbaTyImm;
   DictStk_reset(k);
 }
@@ -238,7 +238,7 @@ Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   memset(ty, 0, sz);
   ty->name  = key; ty->tyKey = tyKey;
-  ty->parent = DictStk_topMaybe(&k->g.modStk);
+  ty->container = DictStk_topMaybe(&k->g.modStk);
   ty->meta = meta;
   ty->line = k->g.srcInfo->line;
   ty->file = k->g.srcInfo;
@@ -1909,11 +1909,11 @@ void N_stk(Kern *k) {
 TyFn TyFn_stk = TyFn_native("\x03" "stk", TY_FN_SYN, (U1*)N_stk, TYI_VOID, TYI_VOID);
 
 typedef struct { TyVar* var; S sz; S els; } VarPre;
-VarPre varPre(Kern* k) {
+VarPre varPre(Kern* k, bool sized) {
   CStr* name = tokenCStr(k);
   TyVar* v = (TyVar*) Ty_new(k, TY_VAR, name);
   REQUIRE(":"); TyI* tyI = scanTyI(k, name);
-  ASSERT(not TyI_unsized(tyI), "Var must have a known size");
+  if(sized) ASSERT(not TyI_unsized(tyI), "Var must have a known size");
   v->tyI = tyI;
   S sz = TyI_sz(tyI);
   if(tyI->arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
@@ -1961,7 +1961,7 @@ void N_inp(Kern* k) {
   N_notImm(k);
   ASSERT(IS_FN_STATE(FN_STATE_STK) or IS_FN_STATE(FN_STATE_INP)
          , "inp used after out");
-  VarPre pre = varPre(k);
+  VarPre pre = varPre(k, true);
   SET_FN_STATE(FN_STATE_INP);
   TyI_rootAdd(k, &tyFn(k->g.curTy)->inp, pre.var->tyI);
   pre.var->tyI = replaceSelf(k, pre.var->tyI, currentSelf(k));
@@ -1987,13 +1987,13 @@ void _varLocal(Kern* k, VarPre* pre) {
 
 void N_var(Kern* k) {
   N_notImm(k); ASSERT(not IS_FN_STATE(FN_STATE_NO), "var must be within a function");
-  VarPre pre = varPre(k);
+  VarPre pre = varPre(k, true);
   _varLocal(k, &pre);
 }
 
 
 void _global(Kern* k, U1 meta, bool reqSet) {
-  N_notImm(k); VarPre pre = varPre(k);
+  N_notImm(k); VarPre pre = varPre(k, true);
   TyVar* v = pre.var; v->meta |= meta;
   v->v = (S) BBA_alloc(&k->bbaCode, pre.els * pre.sz, /*align*/pre.sz);
   ASSERT(v->v, "Global OOM");
@@ -2328,7 +2328,7 @@ void _field(Kern* k, TyDict* st, VarPre pre) {
 }
 
 void field(Kern* k, TyDict* st) {
-  _field(k, st, varPre(k));
+  _field(k, st, varPre(k, false));
 }
 
 void _parseDataTy(Kern* k, TyDict* st) {

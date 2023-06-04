@@ -2,7 +2,7 @@
 #define __FNGI_H
 
 #include "civ_unix.h"
-#include "const.h" // from gen/
+#include "comp.h"  // from gen/
 #include "spor.h"  // from gen/
 
 #define FNGI_VERSION "0.1.0"
@@ -123,8 +123,7 @@ U1*       SpReader_get(struct _Kern* k, SpReader r, U2 i);
 // ################################
 // # Types
 
-typedef struct { CStr* path; U2 line; } FileInfo;
-typedef struct { U1 inpLen; U1 outLen; U1 _packedTyI[]; } TyDat;
+typedef struct { CStr* path; U4 line; } FileInfo;
 
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
@@ -138,7 +137,7 @@ typedef struct { TY_BASE } TyBase;
   TY_BASE \
   U2           line; /* src code line of definition. */ \
   CStr* name; struct _TyI* tyKey; \
-  struct _TyDict*  parent;  \
+  struct _TyDict*  container;  \
   FileInfo*    file; /* source file */
 typedef struct _Ty { TY_BODY; } Ty;
 
@@ -167,8 +166,7 @@ typedef struct _TyFn {
   TY_BODY
   Ty* locals;
   U1* code;
-  TyI* inp;
-  TyI* out;
+  TyI* inp; TyI* out;
   U2 len; // size of spor binary
   U1 lSlots;
 } TyFn;
@@ -224,15 +222,15 @@ typedef struct _Ownership {
 } Ownership;
 typedef struct { void* ref; TyDict* ty; Ownership* ownership; } OwnedValue;
 
-#define TYDB_DEPTH 16
 typedef enum { NOT_DONE, BLK_DONE, RET_DONE } HowDone;
 typedef struct {
   BBA* bba;
   Stk tyIs; // stack of TyI, aka blocks
   Stk done; // indication of whether block is ret/cont/break/etc
-  S   tyIsDat[TYDB_DEPTH];
-  S   doneDat[TYDB_DEPTH];
 } TyDb;
+
+#define TYDB_DEPTH 16
+typedef struct { S tyIsDat[TYDB_DEPTH]; S doneDat[TYDB_DEPTH]; } TyDbDat;
 
 // Flow Block (loop/while/etc)
 typedef struct _Blk {
@@ -254,18 +252,17 @@ static inline Sll* SllSpArena_asSll(SllSpArena* this) { return (Sll*)this; }
 typedef struct {
   BBA* bbaDict;
   SpReader src; FileInfo* srcInfo;
-  Buf token; U1 tokenDat[64];
+  Buf token;
   Buf code;
   U2 metaNext; // meta of next fn
   U2 cstate;
   U2 fnLocals; // locals size
   U1 fnState;
   U1 logLvlSys;  U1 logLvlUsr;
-  Ty*   curTy;      // current type (fn, struct) being compiled
+  Ty*   curTy;    // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
   Blk*  blk;
   TyDict rootDict;
-  TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];
   DictStk dictStk;             DictStk modStk;
   CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
   TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
@@ -286,6 +283,9 @@ typedef struct _Kern {
   BBA bbaDict;
   BBA bbaRepl;
   BBA bbaSllArena;
+  U1 tokenDat[64];
+  TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];
+  TyDbDat tyDbDat; TyDbDat tyDbImmDat;
   SllSpArena sllArena;
   Globals g;     // kernel globals
   FnFiber* fb;   // current fiber.

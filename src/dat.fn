@@ -1,5 +1,13 @@
 \ Core types operating directly on data
 
+struct CStr [ len:U2  dat:Arr[ ? U1] ]
+\ struct Ring [ dat:&U1;  head:U2; tail:U2 _cap:U2 ]
+
+\ struct BaseFile [
+\   ring: Ring \ buffer for reading or writing data
+\   code: U2   \ status or error (File_*)
+\ ]
+
 \ Note: declared by native
 \ struct SlcU1 [ dat:&U1  len:U2 ]
 struct Block  [ dat:Arr[4092 U1]; bot:U2; top:U2 ]
@@ -12,6 +20,10 @@ role Arena [
   absmeth free [&Self, &Any, S\sz, U2\alignment -> &SlcU1 ]
   absmeth alloc[&Self,       S\sz, U2\alignment -> &Any]
   absmeth maxAlloc[&Self -> S]
+]
+
+role Reader [
+  absmeth read [&Self]
 ]
 
 \ Note: method implementations are native (see fngi.c)

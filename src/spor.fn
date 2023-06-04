@@ -1,4 +1,5 @@
 \ Spor Constants
+\ Note: etc/gen.py converts this into gen/spor.h
 \
 \ # Table of Contents
 \ Search for these headings to find information

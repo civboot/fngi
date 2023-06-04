@@ -575,6 +575,8 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
   COMPILE_EXEC("fn unknown[x:?&S] do ( )")
   TyFn* unknown = tyFn(Kern_findTy(k, &KEY("unknown")));
   assert(TY_UNSIZED == unknown->inp->arrLen);
+
+  COMPILE_EXEC("struct UnsizedThing [ len:U2  dat:Arr[ ? U1] ]");
   REPL_END
 END_TEST_FNGI
 

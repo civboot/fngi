@@ -1,4 +1,6 @@
 \ Compiler constants
+\ Note: etc/gen.py converts this into gen/comp.h
+\ TODO: Stk, CStr, Sll
 
 fileUse comp;
 
@@ -23,7 +25,8 @@ const FN_STATE_OUT  :U4 = 0x0004 \ can declare outputs
 
 const TY_UNSIZED    :U2 = 0xFFFF \ the "arrLen" of an unsized type
 
-\ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
+\ ***********
+\ * Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
 const TY_MASK       :U1 = 0xC0 \ upper two bits determine type
 const TY_VAR        :U1 = 0x40 \ variable (local, global, struct field, etc). Has varMeta
 const TY_FN         :U1 = 0x80 \ function, can be called and has an fnMeta
@@ -62,3 +65,62 @@ const TY_DICT_ROLE   :U1 = 0x05
 
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
+
+struct FileInfo [ path: &CStr;  line: U2 ]
+
+struct TyBase   [
+  parent: Bst
+  meta: U2
+]
+
+struct TyI [
+  parent: Sll
+  meta: U2  arrLen: U2
+  name: &CStr
+  ty: &TyBase
+]
+struct TyIBst [ parent: Bst;  tyI: tyI ]
+struct Key    [ name: Slc;  tyI: &TyI ]
+
+struct TyDict;
+struct Ty [
+  parent: TyBase;
+  line: U2
+  name: &CStr;  tyKey: &TyI
+  container: &TyDict
+  file: FileInfo
+]
+
+struct TyVar [ parent: Ty;  v: S;  tyI: &TyI ]
+struct Inout [ inp: &TyI;  out: &TyI ]
+struct FnSig [ parent: TyBase;  io: InOut ]
+
+struct TyFn [
+  parent: Ty
+  locals: &Ty
+  code: &U1
+  inp: &TyI; out: &TyI
+  len: U2
+  lSlots: U1
+]
+
+struct TyDict [
+  parent: Ty
+  children: &Ty
+  fields: &TyI
+  sz: U2
+]
+
+struct TyDb [
+  bba: &BBA
+  tyIs: Stk\(&TyI)
+  done: Stk
+]
+
+struct Globals [
+  bbaDict: &BBA
+  src: Reader;  srcInfo: &FileInfo
+  Buf token;
+]
+
+global g: &Globals;
