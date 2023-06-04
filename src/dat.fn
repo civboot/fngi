@@ -29,10 +29,19 @@ impl BBA:Arena {
   maxAlloc = &BBA.maxAlloc
 }
 
-
 use:SlcU1 (
   meth get[self:&Self i:S -> U1] do (
     @ptrAdd(self.dat, i, self.len)
   )
 )
 
+\ This must be kept in-sync with the C code
+use:comp struct Globals [
+  bbaDict: &BBA
+  \ ... TODO
+]
+
+\ Note: value is set in native (see fngi.c)
+use:comp(
+  global g: &Globals;
+)

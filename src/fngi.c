@@ -651,6 +651,7 @@ TyIBst* TyIBst_add(TyIBst** root, TyIBst* add) {
 // check+create sub-chains
 TyI* TyI_findOrAdd(Kern* k, TyI* tyI) {
   if(not tyI) return NULL;
+  ASSERT(tyI->ty, "ty=NULL in TyI");
   TyIBst* root = k->g.tyIBst;
   I4 cmp = TyIBst_find(&root, tyI);
   if(root and not cmp) return &root->tyI;
@@ -792,11 +793,8 @@ void TyI_printAll(TyI* tyI) {
 }
 
 TyI* TyI_cloneNode(TyI* node, BBA* bba) {
-  eprintf("??? cloneNode: "); TyI_print(node); NL;
   TyI* cloned = BBA_alloc(bba, sizeof(TyI), RSIZE); ASSERT(cloned, "tyClone OOM");
   *cloned = *node; cloned->next = NULL;
-  eprintf("??? cloneNode (end): "); TyI_print(node); NL;
-  eprintf("??? cloned (end): "); TyI_print(cloned); NL;
   return cloned;
 }
 
@@ -808,12 +806,9 @@ void TyI_cloneAddNode(BBA* bba, TyI** root, TyI* node) {
 // The result will be in the same order.
 // This is done so that freeing is done from top to bottom.
 void  TyI_cloneAdd(BBA* bba, TyI** root, TyI* nodes) {
-  eprintf("??? cloneAdd %p\n", nodes);
   if(not nodes) return;
   TyI_cloneAdd(bba, root, nodes->next);
-  eprintf("??? adding node %p ", nodes); TyI_print(nodes); NL;
   TyI_cloneAddNode(bba, root, nodes);
-  eprintf("??? after clone: "); TyI_print(nodes); NL;
 }
 
 void _TyI_cloneNewSelf(BBA* bba, TyI** root, TyI* nodes, TyDict* self) {
@@ -924,10 +919,7 @@ void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
   TyI** root = TyDb_root(db);
   tyCheck(inp, *root, false, err);
   TyDb_free(k, db, inp);
-  eprintf("??? tyCall inp: "); TyI_printAll(inp); NL;
-  eprintf("??? tyCall out: "); TyI_printAll(out); NL;
   TyI_cloneAdd(db->bba, root, out);
-  eprintf("??? tyCall out (end): "); TyI_printAll(out); NL;
 }
 
 void InOut_replaceSelf(Kern* k, InOut* io, TyDict* self) {
@@ -1853,7 +1845,7 @@ void N_use(Kern* k) {
   _use(k, _useGet(k));
 }
 
-void N_fileloc(Kern* k) { // loc that stays for whole file
+void N_fileUse(Kern* k) { // loc that stays for whole file
   N_notImm(k); REQUIRE(":");
   TyDict* d = _useGet(k);
   DictStk_add(&k->g.dictStk, d);
@@ -2433,10 +2425,7 @@ void N_impl(Kern* k) {
     TyVar* field = tyVar(TyDict_scanTyKey(k, role, &TyIs_RoleField));
     FnSig* sig = (FnSig*) field->tyI->ty; assert(isFnSig((TyBase*)sig));
     REQUIRE("="); START_IMM(true); Kern_compFn(k); END_IMM;
-    eprintf("??? TyDb after equal: "); TyDb_print(k, tyDb(k, true)); NL;
     sig = FnSig_replaceSelf(k, sig, st);
-    eprintf("??? impl sig: "); InOut_print(&sig->io); NL;
-    eprintf("??? TyDb end: "); TyDb_print(k, tyDb(k, true)); NL;
     tyCall(k, tyDb(k, true), &(TyI){.ty = (TyBase*)sig, .meta = 1}, NULL);
     storeLoc[field->v / RSIZE] = WS_POP();
   }
@@ -2533,18 +2522,12 @@ void N_amp(Kern* k) {
   }
   if(isTyVar(ty)) {}
   else if (isTyFn(ty)) {
-    eprintf("??? & function: %.*s: ", Ty_fmt(ty)); InOut_print(TyFn_asInOut((TyFn*)ty)); NL;
     FnSig* sig = FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
-    eprintf("??? found sig: "); InOut_print(&sig->io); NL;
     if(d) {
       InOut io = sig->io;            InOut_replaceSelf(k, &io, d);
-      eprintf("??? after replace self: "); InOut_print(&io); NL;
       sig = FnSig_findOrAdd(k, io);  InOut_free(k, &io);
     }
-    eprintf("??? sig after replace self: "); InOut_print(&sig->io); NL;
-    eprintf("??? TyDb &before: "); TyDb_print(k, db); NL;
     tyCall(k, db, NULL, &(TyI){.ty = (TyBase*)sig, .meta = 1 });
-    eprintf("??? TyDb &after call: "); TyDb_print(k, db); NL;
     tokenDrop(k);
     if(asImm) WS_ADD((S)ty);
     else      op4(&k->g.code, XR, /*szI*/0, (S)ty);
@@ -2912,7 +2895,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x04", "cast"         , TY_FN_SYN       , N_cast     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x03", "use"          , TY_FN_SYN       , N_use      , TYI_VOID, TYI_VOID);
-  ADD_FNN("\x07", "fileloc"      , TY_FN_SYN       , N_fileloc  , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "fileUse"      , TY_FN_SYN       , N_fileUse  , TYI_VOID, TYI_VOID);
   ADD_FNN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
   ADD_FNN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x07", "absmeth"      , TY_FN_SYN       , N_absmeth  , TYI_VOID, TYI_VOID);
@@ -2994,6 +2977,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
   ADD_FNN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
   ADD_FNN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
+
   DictStk_pop(&k->g.dictStk);
 
   // assert(&comp.v == (S)DictStk_pop(&k->g.dictStk).root);
@@ -3022,6 +3006,8 @@ void Dat_mod(Kern* k) {
     .free     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("free")),     &N_BBA_free),
     .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("maxAlloc")), &N_BBA_maxAlloc),
   };
+  TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
+  tyVar(TyDict_find(comp, &KEY("g")))->v = (S)&k->g.bbaDict;
 }
 
 

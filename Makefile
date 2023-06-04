@@ -14,7 +14,5 @@ test: build
 
 build:
 	mkdir -p bin/
-	../zoa/zoa_export.py src/const.zty gen/const
-	../zoa/zoa_export.py src/spor.zty  gen/spor
 	python3 etc/gen.py
 	$(CC) $(FLAGS) -Wall $(DISABLE_WARNINGS) $(LIBS) $(FNGI_SRC) $(TEST_SRC) -o $(OUT)

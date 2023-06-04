@@ -252,6 +252,10 @@ typedef struct _SllSpArena
 static inline Sll* SllSpArena_asSll(SllSpArena* this) { return (Sll*)this; }
 
 typedef struct {
+  BBA* bbaDict;
+  SpReader src; FileInfo* srcInfo;
+  Buf token; U1 tokenDat[64];
+  Buf code;
   U2 metaNext; // meta of next fn
   U2 cstate;
   U2 fnLocals; // locals size
@@ -263,13 +267,8 @@ typedef struct {
   TyDict rootDict;
   TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];
   DictStk dictStk;             DictStk modStk;
-  SpReader src;
-  FileInfo* srcInfo;
-  Buf token; U1 tokenDat[64];
-  Buf code;
   CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
   TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
-  BBA* bbaDict;
 } Globals;
 
 typedef struct {

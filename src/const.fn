@@ -1,6 +1,11 @@
+\ Compiler constants
+
+fileUse comp;
+
 \ Auto-generates bin/const.h
 const CSZ_CATCH : U2 = 0xFF
 
+\ Token types
 const T_NUM     : U2 = 0x0
 const T_HEX     : U2 = 0x1
 const T_ALPHA   : U2 = 0x2
@@ -9,7 +14,6 @@ const T_SYMBOL  : U2 = 0x4
 const T_WHITE   : U2 = 0x5
 
 const C_UNTY        :U4 = 0x0008 \ G_cstate: do not perform type checking.
-
 const C_FN_STATE    :U4 = 0x0007 \ G_cstate: mask of current FN position
 const FN_STATE_NO   :U4 = 0x0000 \ not compiling a fn
 const FN_STATE_BODY :U4 = 0x0001 \ compiling FN body
@@ -17,7 +21,7 @@ const FN_STATE_STK  :U4 = 0x0002 \ can declare stk inputs
 const FN_STATE_INP  :U4 = 0x0003 \ can declare inp inputs
 const FN_STATE_OUT  :U4 = 0x0004 \ can declare outputs
 
-const TY_UNSIZED    :U2 = 0xFFFF
+const TY_UNSIZED    :U2 = 0xFFFF \ the "arrLen" of an unsized type
 
 \ * [3.a] Dict Ty Bits (meta byte): [TTXX XXXX] T=TY_MASK
 const TY_MASK       :U1 = 0xC0 \ upper two bits determine type

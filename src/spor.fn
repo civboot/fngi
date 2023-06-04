@@ -1,0 +1,127 @@
+\ Spor Constants
+\
+\ # Table of Contents
+\ Search for these headings to find information
+\
+\ [1] Instructions: contains definition of spore assembly instructions and
+\    documentation.
+\    [1.a] Operations: Special
+\    [1.b] Operations: One Inp -> One Out
+\    [1.c] Operations: Two Inp -> One Out
+\    [1.d] Sizes: SZ1, SZ2, SZ4, SZR
+\    [1.e] Mem: fetch, store, locals, globals
+\    [1.f] Jmp: jumping, execution, tables
+\    [1.g] Small Literal [0x40 - 0x80)
+\ [2] Registers and Device Operations (RGFT, RGSR, DVFT, DVSR)
+\ [3] Constants
+\    [3.a] Dict Ty Bits
+\    [3.b] Zoab
+\    [3.c] Log Levels
+\    [3.d] Errors
+\ [4] Globals
+\
+\ **********
+\ * [1] Instructions: these are constants that can be used directly by: % ^
+\ Spor uses 8 bit instructions with the following bit layout (S=size bit):
+\   [00-40] 00-- ----: operation
+\   [40-7F] 01SS ----: mem
+\   [80-BF] 10SS ----: jmp
+\   [C0-FF] 11-- ----: small literal value [0x00 - 0x3F]
+
+mod spor; fileUse spor;
+
+\ # [1.b] Operations: Special
+const NOP  :U1 = 0x00 \ {}  no operation
+const RETZ :U1 = 0x01 \ {l} return if zero
+const RET  :U1 = 0x02 \ {}  return
+const YLD  :U1 = 0x03 \ {} yield control to another fiber
+const SWP  :U1 = 0x04 \ {l r -> r l}    swap
+const DRP  :U1 = 0x05 \ {l   -> }       drop
+const OVR  :U1 = 0x06 \ {l r -> l r l}  over
+const DUP  :U1 = 0x07 \ {l   -> l l}    duplicate
+const DUPN :U1 = 0x08 \ {l   -> l l==0} DUP then NOT
+const DV   :U1 = 0x09 \ Device Operation (U1 literal)
+const RG   :U1 = 0x0A \ {-> v} Register  (U1 literal)
+const OWR  :U1 = 0x0B \ {-> &OwnedValue} owned reference
+const LR   :U1 = 0x0C \ {-> &local}  local reference  (U2 literal)
+const GR   :U1 = 0x0D \ {-> &global} global reference (U4+U2 literals)
+const XR   :U1 = 0x0F \ {-> &fn} function reference   (U4 literal)
+
+\ # [1.b] Operations: One Inp -> One Out
+const INC  :U1 = 0x10 \ {l+1}  increment 1
+const INC2 :U1 = 0x11 \ {l+2}  increment 2
+const INC4 :U1 = 0x12 \ {l+4}  increment 4
+const DEC  :U1 = 0x13 \ {l-4}  decrement 1
+const INV  :U1 = 0x14 \ {~l}   Bitwise Inversion
+const NEG  :U1 = 0x15 \ {-l}   Negate (2's compliment)
+const NOT  :U1 = 0x16 \ {l==0} Logical NOT
+const CI1  :U1 = 0x17 \ {ISz}  Convert I1 to ISz
+const CI2  :U1 = 0x18 \ {ISz}  Convert I2 to ISz
+\ future: leading 0's, trailing 0's, count of 1's
+\ Some single-arg extension commands might be:
+\ (7) floating point abs, negative, ceil, floor, trunc, nearest, and sqrt
+\ (1) i -> f conversion
+\ (1) f -> i conversion
+
+\ # [1.c] Operations: Two Inp -> One Out
+const ADD  :U1 = 0x20  \ {l +  r } add
+const SUB  :U1 = 0x21  \ {l -  r } subtract
+const MOD  :U1 = 0x22  \ {l %  r } integer modulo (remainder)
+const SHL  :U1 = 0x23  \ {l << r } bit shift left
+const SHR  :U1 = 0x24  \ {l >> r } bit shift right
+const MSK  :U1 = 0x25  \ {l &  r } bitwise and
+const JN   :U1 = 0x26  \ {l |  r } bitwise or
+const XOR  :U1 = 0x27  \ {l ^  r } bitwise xor
+const AND  :U1 = 0x28  \ {l && r } logical and
+const OR   :U1 = 0x29  \ {l || r } logical or
+const EQ   :U1 = 0x2A  \ {l == r } equal
+const NEQ  :U1 = 0x2B  \ {l != r } not equal
+const GE_U :U1 = 0x2C  \ {l >= r } unsigned greater than or equal
+const LT_U :U1 = 0x2D  \ {l <  r } unsigned less than
+const GE_S :U1 = 0x2E  \ {l >= r } signed greater than or equal
+const LT_S :U1 = 0x2F  \ {l <  r } signed less than
+const MUL  :U1 = 0x30  \ {l *  r } multiplication
+const DIV_U:U1 = 0x31  \ {l / r  } unsigned division
+const DIV_S:U1 = 0x32  \ {l / r  } signed division
+\ Double-arg extension commands might be:
+\ floating point: add,sub,mul,div,ge,lt
+
+\ # [1.a] Sizes: --SS ----
+const SZ_MASK :U1 = 0x30 \ size bit mask (for instr and meta)
+const SZ1     :U1 = 0x00
+const SZ2     :U1 = 0x10
+const SZ4     :U1 = 0x20
+
+\ # [1.d] Mem
+const FT   :U1 = 0x40   \ {addr} -> {value}  |FeTch value from addr
+const FTBE :U1 = 0x41   \ {addr} -> {value}  |FeTch value from addr (big endian)
+const FTO  :U1 = 0x42   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
+const FTLL :U1 = 0x43   \ {} -> {local}      |FeTch Literal Local
+const FTGL :U1 = 0x44   \ {} -> {local}      |FeTch Global Literal
+const SR   :U1 = 0x45   \ {addr value} -> {} |Store value at addr
+const SRBE :U1 = 0x46   \ {addr value} -> {} |Store value at addr (big endian)
+const SRO  :U1 = 0x47   \ {addr value} -> {} |Store value at addr + U1 literal offset
+const SRGL :U1 = 0x48   \ {addr value} -> {} |Store Global Literal
+const SRLL :U1 = 0x49   \ {value} -> {}      |StoRe Literal Local
+const LIT  :U1 = 0x4A   \ {} -> {literal}    |Literal (U1, U2 or U4)
+
+\ # [1.e] Jmp
+\
+\ Jumps can be to either a literal (L) or to an item on the working stack (W).
+\ LCL is put here because it's related to functions.
+
+\ Unsized jumps:
+const LCL  :U1 = 0x80 \ Grow Local stack by U1 Literal
+const XL   :U1 = 0x81 \ Execute U4 Literal (normal execute)
+const XW   :U1 = 0x90 \ Execute from Working Stack
+const XLL  :U1 = 0x91 \ Execute local literal offset
+const XRL  :U1 = 0xA0 \ Execute role method local offset
+
+\ Sized jumps:
+const JL   :U1 = 0x82 \ Jmp to Literal
+const JLZ  :U1 = 0x83 \ Jmp to Literal if 0 (popping WS)
+const JTBL :U1 = 0x84 \ Jump to Table index using size=Literal
+const SLIC :U1 = 0x85 \ Inline Slc, jmp sz and push {ref, len}
+
+\ # [1.f] Small Literal [0xC0 - 0xFF]
+const SLIT :U1 = 0xC0
