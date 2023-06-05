@@ -703,10 +703,15 @@ bool TyI_unsized(TyI* tyI) {
   return TyDict_unsized((TyDict*)tyI->ty);
 }
 
-S TyI_sz(TyI* tyI) {
+S TyI_szBasic(TyI* tyI) {
   if(TyI_refs(tyI)) return RSIZE;
   ASSERT(isTyDictB(tyI->ty), "TyI must have refs or be a dict.");
   return TyDict_size((TyDict*)tyI->ty);
+}
+
+S TyI_sz(TyI* tyI) {
+  if(TY_UNSIZED == tyI->arrLen) return TY_UNSIZED;
+  return TyI_szBasic(tyI) * (tyI->arrLen ? tyI->arrLen : 1);
 }
 
 bool TyI_check(TyI* r, TyI* g);
@@ -1914,7 +1919,7 @@ VarPre varPre(Kern* k, bool sized) {
   REQUIRE(":"); TyI* tyI = scanTyI(k, name);
   if(sized) ASSERT(not TyI_unsized(tyI), "Var must have a known size");
   v->tyI = tyI;
-  S sz = TyI_sz(tyI);
+  S sz = TyI_szBasic(tyI); ASSERT(TY_UNSIZED != sz, "Cannot have unsized field or var");
   if(tyI->arrLen > 1) sz = align(sz, alignment(sz)); // align sz for arrays
   return (VarPre) { .var = v, .sz = sz, .els = tyI->arrLen ? tyI->arrLen : 1 };
 }
@@ -2316,15 +2321,28 @@ void checkSelfIo(InOut* io, bool expectFirst) {
 }
 
 void _field(Kern* k, TyDict* st, VarPre pre) {
-  TyVar* v = pre.var;
+  TyVar* v = pre.var; TyBase* vTy = v->tyI->ty;
+  if((vTy == (TyBase*)st) || (vTy == (TyBase*)&Ty_Self)) {
+    ASSERT(TyI_refs(v->tyI), "field to Self must be a reference");
+  }
   v->v = align(st->sz, alignment(pre.sz));
   TyI_rootAdd(k, &st->fields, v->tyI);
   if(TyI_unsized(pre.var->tyI)) {
-    st->sz = v->v + pre.sz;
+    st->sz = v->v + pre.sz; // The sized part of the struct is preserved
   } else {
     assert(TY_UNSIZED != pre.els);
     st->sz = v->v + (pre.els * pre.sz);
   }
+}
+
+S Struct_computeSz(Kern* k, TyI* fields, S sz) {
+  if(not fields or (TY_UNSIZED == sz)) return sz;
+  sz = Struct_computeSz(k, fields->next, sz);
+  if(TyI_unsized(fields)) return TY_UNSIZED;
+  S fieldSz = TyI_sz(fields);
+  sz = align(sz, alignment(fieldSz)) + fieldSz;
+  eprintf("??? sz=%u\n", sz);
+  return sz;
 }
 
 void field(Kern* k, TyDict* st) {
@@ -2353,6 +2371,7 @@ void _parseDataTy(Kern* k, TyDict* st) {
   }
   DictStk_pop(&k->g.dictStk); DictStk_pop(&k->g.modStk);
   if(hasUnsized) st->sz = TY_UNSIZED;
+  assert(Struct_computeSz(k, st->fields, 0) == st->sz);
   k->g.curTy = prevTy;
 }
 
