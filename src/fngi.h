@@ -279,9 +279,8 @@ typedef struct {
 typedef struct _Kern {
   U4 _null;
   bool isTest;
-  BBA bbaCode;
-  BBA bbaDict;
-  BBA bbaRepl;
+  BBA bbaCode; BBA bbaDict;
+  BBA bbaRepl; BBA bbaTmp;
   BBA bbaSllArena;
   U1 tokenDat[64];
   TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];

@@ -182,9 +182,8 @@ void Kern_errCleanup(Kern* k) {
 
 void Kern_init(Kern* k, FnFiber* fb) {
   *k = (Kern) {
-    .bbaCode = (BBA) { &civ.ba },
-    .bbaDict = (BBA) { &civ.ba },
-    .bbaRepl = (BBA) { &civ.ba },
+    .bbaCode = (BBA) { &civ.ba },  .bbaDict = (BBA) { &civ.ba },
+    .bbaRepl = (BBA) { &civ.ba },  .bbaTmp = (BBA) { &civ.ba },
     .bbaSllArena  = (BBA) { &civ.ba },
     .sllArena = (SllSpArena) { .arena = BBA_asSpArena(&k->bbaSllArena) },
     .fb = fb,
@@ -866,11 +865,11 @@ void TyDb_drop(Kern* k, TyDb* db) {
 // Drop the item below the top of stack while still preserving proper drop order.
 // Note: This uses bbaDict to temporarily store the top value.
 void TyDb_nip(Kern* k, TyDb* db) {
-  TyI* top = NULL; TyI_cloneAdd(k->g.bbaDict, &top, TyDb_top(db));
+  TyI* top = NULL; TyI_cloneAdd(&k->bbaTmp, &top, TyDb_top(db));
   TyDb_drop(k, db); TyDb_drop(k, db); // drop both top and second
   TyDb_new(db); // re-add top
   TyI_cloneAdd(db->bba, TyDb_root(db), top);
-  assert(not Sll_free((Sll*)top, sizeof(TyI), BBA_asArena(k->g.bbaDict)));
+  assert(not Sll_free((Sll*)top, sizeof(TyI), BBA_asArena(&k->bbaTmp)));
   assert(not TyDb_done(db));
 }
 
@@ -923,13 +922,13 @@ void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out) {
 }
 
 void InOut_replaceSelf(Kern* k, InOut* io, TyDict* self) {
-  io->inp = TyI_cloneNewSelf(&k->bbaCode, io->inp, self);
-  io->out = TyI_cloneNewSelf(&k->bbaCode, io->out, self);
+  io->inp = TyI_cloneNewSelf(&k->bbaTmp, io->inp, self);
+  io->out = TyI_cloneNewSelf(&k->bbaTmp, io->out, self);
 }
 
 void InOut_free(Kern* k, InOut* io) {
-  assert(not Sll_free(TyI_asSll(io->out), sizeof(TyI), BBA_asArena(&k->bbaCode)));
-  assert(not Sll_free(TyI_asSll(io->inp), sizeof(TyI), BBA_asArena(&k->bbaCode)));
+  assert(not Sll_free(TyI_asSll(io->out), sizeof(TyI), BBA_asArena(&k->bbaTmp)));
+  assert(not Sll_free(TyI_asSll(io->inp), sizeof(TyI), BBA_asArena(&k->bbaTmp)));
 }
 
 FnSig* FnSig_replaceSelf(Kern* k, FnSig* sig, TyDict* self) {
@@ -1720,6 +1719,8 @@ void N_assertWsEmpty(Kern* k) {
 void N_dbgRs(Kern* k) {
   Stk* info = &cfb->info;
   Stk* rs = RS;
+  eprintf("!!! INFO sp=%u cap=%u\n", info->sp, info->cap);
+  eprintf("!!! RS   sp=%u cap=%u\n", rs->sp, rs->cap);
   U2 r = rs->sp;
   U1* ep = cfb->ep;
   for(U2 i = info->sp; i < info->cap; i++) {
@@ -2272,6 +2273,7 @@ void tyBreak(Kern* k, TyDb* db) {
     tyCheck(blk->endTyI, TyDb_top(db), /*sameLen*/true,
             SLC("Type error: breaks not identical type."));
   } else {
+    // Note: this is permanantly on bbaDict (part of Blk)
     TyI_cloneAdd(k->g.bbaDict, &k->g.blk->endTyI, TyDb_top(db));
   }
   TyDb_setDone(db, BLK_DONE);
@@ -2411,16 +2413,13 @@ void N_impl(Kern* k) {
 
   // Create a variable for storing the methods
   TyI* roleTyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)role });
-
   DictStk_add(&k->g.dictStk, st);
   TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR | TY_VAR_GLOBAL, role->name, roleTyI);
   DictStk_pop(&k->g.dictStk);
-  VarPre pre = { .var = v, .sz = TyI_sz(roleTyI), .els = 1 };
-  v->v = (S) BBA_alloc(&k->bbaCode, pre.sz, /*align*/RSIZE);
-  ASSERT(v->v, "Role impl OOM");
-  v->tyI = roleTyI;
-  S* storeLoc = (S*)v->v;
-
+  VarPre pre = { .var = v, .sz = role->sz, .els = 1 };
+  S* storeLoc = BBA_alloc(&k->bbaCode, pre.sz, /*align*/RSIZE);
+  ASSERT(storeLoc, "Role impl OOM");
+  v->v = (S)storeLoc;  v->tyI = roleTyI;
   REQUIRE("{"); while(not CONSUME("}")) {
     TyVar* field = tyVar(TyDict_scanTyKey(k, role, &TyIs_RoleField));
     FnSig* sig = (FnSig*) field->tyI->ty; assert(isFnSig((TyBase*)sig));
@@ -2987,9 +2986,9 @@ void Kern_fns(Kern* k) {
 
 #define FN_OVERRIDE(TY_FN, C_FN) _fnOverride(tyFn(TY_FN), C_FN)
 TyFn* _fnOverride(TyFn* fn, void (*cFn)(Kern*)) {
-    fn->meta |= TY_FN_NATIVE;
-    fn->code = (U1*) cFn;
-    return fn;
+  fn->meta |= TY_FN_NATIVE;
+  fn->code = (U1*) cFn;
+  return fn;
 }
 
 void Dat_mod(Kern* k) {
@@ -3000,14 +2999,16 @@ void Dat_mod(Kern* k) {
 
   CStr_ntVar(path, "\x0A", "src/dat.fn"); compilePath(k, path);
   TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));
+
   mSpArena_BBA = (MSpArena) {
     .drop     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("drop")),     &N_BBA_drop),
     .alloc    = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("alloc")),    &N_BBA_alloc),
     .free     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("free")),     &N_BBA_free),
     .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("maxAlloc")), &N_BBA_maxAlloc),
   };
-  TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
-  tyVar(TyDict_find(comp, &KEY("g")))->v = (S)&k->g.bbaDict;
+
+  // TODO: set global pointer
+  // TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
 }
 
 
