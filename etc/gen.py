@@ -26,6 +26,8 @@ class Const:
   name: str; ty: str; value: str
 
   def isNative(self):
+    try: lit(self.value)
+    except ValueError: return False
     return self.ty in NATIVE_TYS
 
 @dataclasses.dataclass

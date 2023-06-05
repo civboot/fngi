@@ -664,8 +664,8 @@ TEST_FNGI(file_basic, 20)
   compilePath(k, path);
 END_TEST_FNGI
 
-TEST_FNGI(dat, 20)
-  Kern_fns(k); Dat_mod(k);
+TEST_FNGI(core, 20)
+  Kern_fns(k); Core_mod(k);
   REPL_START
   COMPILE_EXEC(
     "fn useSlc[ -> U1] do (\n"
@@ -673,7 +673,7 @@ TEST_FNGI(dat, 20)
     "  dat                  = char:h \n"
     "  @ptrAdd(&dat, 1, 12) = char:i \n"
     "  @ptrAdd(&dat, 2, 12) = char:p \n"
-    "  var s: SlcU1 = SlcU1(&dat, U2(12))\n"
+    "  var s: Slc = Slc(&dat, U2(12))\n"
     "  tAssertEq(char:h, s.get(0))\n"
     "  tAssertEq(char:i, s.get(1))\n"
     "  s.get(2)\n"
@@ -681,7 +681,7 @@ TEST_FNGI(dat, 20)
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
   COMPILE_EXEC(
-    "fn getSlc[ -> SlcU1] do (\n"
+    "fn getSlc[ -> Slc] do (\n"
     "  |hello \\| slc|\n"
     ")");
   COMPILE_EXEC("getSlc;"); WS_POP2(S dat, U2 len);
@@ -736,7 +736,7 @@ int main(int argc, char* argv[]) {
   test_role();
   test_misc();
   test_file_basic();
-  test_dat();
+  test_core();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

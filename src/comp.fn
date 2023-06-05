@@ -2,7 +2,7 @@
 \ Note: etc/gen.py converts this into gen/comp.h
 \ TODO: Stk, CStr, Sll
 
-fileUse comp;
+fileUse:comp
 
 \ Auto-generates bin/const.h
 const CSZ_CATCH : U2 = 0xFF
@@ -79,48 +79,49 @@ struct TyI [
   name: &CStr
   ty: &TyBase
 ]
-struct TyIBst [ parent: Bst;  tyI: tyI ]
+struct TyIBst [ parent: Bst;  tyI: TyI ]
 struct Key    [ name: Slc;  tyI: &TyI ]
 
-struct TyDict;
-struct Ty [
-  parent: TyBase;
-  line: U2
-  name: &CStr;  tyKey: &TyI
-  container: &TyDict
-  file: FileInfo
-]
-
-struct TyVar [ parent: Ty;  v: S;  tyI: &TyI ]
-struct Inout [ inp: &TyI;  out: &TyI ]
-struct FnSig [ parent: TyBase;  io: InOut ]
-
-struct TyFn [
-  parent: Ty
-  locals: &Ty
-  code: &U1
-  inp: &TyI; out: &TyI
-  len: U2
-  lSlots: U1
-]
-
-struct TyDict [
-  parent: Ty
-  children: &Ty
-  fields: &TyI
-  sz: U2
-]
-
-struct TyDb [
-  bba: &BBA
-  tyIs: Stk\(&TyI)
-  done: Stk
-]
-
-struct Globals [
-  bbaDict: &BBA
-  src: Reader;  srcInfo: &FileInfo
-  Buf token;
-]
-
-global g: &Globals;
+\ FIXME: requires pre-declaration of dicts
+\ struct TyDict;
+\ struct Ty [
+\   parent: TyBase;
+\   line: U2
+\   name: &CStr;  tyKey: &TyI
+\   container: &TyDict
+\   file: FileInfo
+\ ]
+\ 
+\ struct TyVar [ parent: Ty;  v: S;  tyI: &TyI ]
+\ struct Inout [ inp: &TyI;  out: &TyI ]
+\ struct FnSig [ parent: TyBase;  io: InOut ]
+\ 
+\ struct TyFn [
+\   parent: Ty
+\   locals: &Ty
+\   code: &U1
+\   inp: &TyI; out: &TyI
+\   len: U2
+\   lSlots: U1
+\ ]
+\ 
+\ struct TyDict [
+\   parent: Ty
+\   children: &Ty
+\   fields: &TyI
+\   sz: U2
+\ ]
+\ 
+\ struct TyDb [
+\   bba: &BBA
+\   tyIs: Stk\(&TyI)
+\   done: Stk
+\ ]
+\ 
+\ struct Globals [
+\   bbaDict: &BBA
+\   src: Reader;  srcInfo: &FileInfo
+\   Buf token;
+\ ]
+\ 
+\ global g: &Globals;

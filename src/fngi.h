@@ -410,7 +410,7 @@ Ty* Kern_findTy(Kern* k, Key* key);
 void Kern_addTy(Kern* k, Ty* ty);
 
 void Kern_fns(Kern* k);
-void Dat_mod(Kern* k);
+void Core_mod(Kern* k);
 void single(Kern* k, bool asImm);
 void compileSrc(Kern* k);
 

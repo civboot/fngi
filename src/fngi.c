@@ -1106,6 +1106,12 @@ ParsedNumber parseU4(Kern* k, Slc t) {
 
 static inline void Kern_compFn(Kern* k) { executeFn(k, k->g.compFn); }
 
+// Compile a token (and all sub-tokens) with asImm=true
+void compImm(Kern* k) {
+  START_IMM(true); Kern_compFn(k); END_IMM;
+}
+
+
 void N_memclr(Kern* k) { // mem:&U1, len:U4
   U4 len = WS_POP(); memset((void*)WS_POP(), 0, len);
 }
@@ -1274,12 +1280,9 @@ TyI* scanTySpec(Kern *k) {
   if(CONSUME("Arr")) {
     ASSERT(not s.arrLen, "Use Arr[? Ty] not ?Arr[Ty]");
     ASSERT(not TyI_refs(&s), "cannot be reference to array, just use more &");
-    REQUIRE("["); S n = TY_UNSIZED;
-    if(CONSUME("?")) {}
-    else {
-      single(k, /*asImm=*/true); tyCall(k, tyDb(k, true), &TyIs_S, NULL);
-      n = WS_POP();
-    }
+    S n; REQUIRE("[");
+    if(CONSUME("?")) n = TY_UNSIZED;
+    else { compImm(k); tyCall(k, tyDb(k, true), &TyIs_S, NULL); n = WS_POP(); }
     CONSUME(","); s = *scanTySpec(k); REQUIRE("]");
     ASSERT(not s.arrLen, "nested arrays not allowed");
     s.arrLen = n;
@@ -1750,11 +1753,6 @@ void N_destruct(Kern* k) {
 void _N_imm(Kern* k);
 TyFn _TyFn_imm = TyFn_native("\x04" "_imm", TY_FN_SYN, (U1*)_N_imm, TYI_VOID, TYI_VOID);
 void _N_imm(Kern* k) { if(Kern_eof(k)) return;  single(k, true); }
-
-// Compile a token (and all sub-tokens) with asImm=true
-void compImm(Kern* k) {
-  START_IMM(true); Kern_compFn(k); END_IMM;
-}
 
 void N_imm(Kern* k) {
   N_notImm(k); REQUIRE("#"); compImm(k);
@@ -2684,7 +2682,7 @@ Slc* SpBuf_freeEnd(Kern* k, Buf* b, SpArena a) {
 }
 
 #define STRING_MAX 512
-Slc parseSlcU1(Kern* k) {
+Slc parseSlc(Kern* k) {
   Buf b = SpBuf_new(k, *ARENA_TOP, STRING_MAX);
   bool ignoringWhite = true;
   CharNextEsc c;
@@ -2707,10 +2705,10 @@ Slc parseSlcU1(Kern* k) {
   return *Buf_asSlc(&b);
 }
 
-TyI TyI_SlcU1;
-void N_pipe(Kern* k) { // SlcU1 literal, aka |this is a string|
+TyI TyI_Slc;
+void N_pipe(Kern* k) { // Slc literal, aka |this is a string|
   bool asImm = WS_POP();
-  Slc s = parseSlcU1(k);
+  Slc s = parseSlc(k);
   if(asImm) { WS_ADD2((S)s.dat, s.len); }
   else      {
     Sp_Xr2(*ARENA_TOP,alloc, sizeof(OwnedValue), RSIZE);
@@ -2724,7 +2722,7 @@ void N_pipe(Kern* k) { // SlcU1 literal, aka |this is a string|
     Buf* b = &k->g.code; Buf_add(b, OWR); Buf_addBE4(b, (S)owned);
     lit(&k->g.code, s.len);
   }
-  tyCall(k, tyDb(k, asImm), NULL, &TyI_SlcU1);
+  tyCall(k, tyDb(k, asImm), NULL, &TyI_Slc);
 }
 
 // ***********************
@@ -2991,13 +2989,15 @@ TyFn* _fnOverride(TyFn* fn, void (*cFn)(Kern*)) {
   return fn;
 }
 
-void Dat_mod(Kern* k) {
+// Load core modues: dat, comp
+void Core_mod(Kern* k) {
   REPL_START
-  COMPILE_EXEC("struct SlcU1 [ dat:&U1  len:U2 ]");
-  TyI_SlcU1 = (TyI) { .ty = (TyBase*) Kern_findTy(k, &KEY("SlcU1")) }; assert(TyI_SlcU1.ty);
+  // Slc is needed for |string| syntax.
+  COMPILE_EXEC("struct Slc [ dat:&U1  len:U2 ]");
+  TyI_Slc = (TyI) { .ty = (TyBase*) Kern_findTy(k, &KEY("Slc")) }; assert(TyI_Slc.ty);
   REPL_END
 
-  CStr_ntVar(path, "\x0A", "src/dat.fn"); compilePath(k, path);
+  CStr_ntVar(datPath, "\x0A", "src/dat.fn"); compilePath(k, datPath);
   TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));
 
   mSpArena_BBA = (MSpArena) {
@@ -3007,6 +3007,7 @@ void Dat_mod(Kern* k) {
     .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("maxAlloc")), &N_BBA_maxAlloc),
   };
 
+  CStr_ntVar(compPath, "\x0B", "src/comp.fn"); compilePath(k, compPath);
   // TODO: set global pointer
   // TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
 }
