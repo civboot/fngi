@@ -85,11 +85,11 @@ struct Key    [ name: Slc;  tyI: &TyI ]
 struct TyDict declared
 
 struct Ty [
-  parent:TyBase; \ 10
-  line:U2        \ 12
+  parent:TyBase;
+  line:U2        \ src code line definition
   name:&CStr;  tyKey:&TyI
-  container:&TyDict \ 24
-  file:&FileInfo \ 28
+  container:&TyDict
+  file:&FileInfo
 ]
 
 struct TyDict [
@@ -124,7 +124,7 @@ struct Blk [
   parent:Sll
   start:S
   breaks:&SllS \ store breaks (to update at end of block)
-  startTyI:&TyI  endTyI:&Ty  \ types at start+end(incl break) of block
+  startTyI:&TyI  endTyI:&TyI  \ types at start+end(incl break) of block
 ]
 
 struct GlobalsCode [

@@ -74,7 +74,7 @@ U1* szName(U1 szI);
 // ################################
 // # Fngi Roles
 struct _Kern;
-struct _TyFn;
+// struct _TyFn;
 
 // Sp_XrN: Execute Spor Role with N arguments
 #define Sp_Xr0(ROLE, METHOD) \
@@ -94,13 +94,6 @@ struct _TyFn;
   while (0)
 
 // Spore version of Arena
-typedef struct {
-  struct _TyFn*  drop;     // this:&This -> ()
-  struct _TyFn*  alloc;    // this:&This sz:S alignment:U2 -> Ref
-  struct _TyFn*  free;     // this:&This dat:Ref sz:S alignment:U2 -> ()
-  struct _TyFn*  maxAlloc; // this:&This -> S
-} MSpArena;
-typedef struct { MSpArena* m; void* d; } SpArena;
 
 extern MSpArena mSpArena_BBA;
 
@@ -109,12 +102,6 @@ static inline SpArena BBA_asSpArena(BBA* bba) {
 }
 
 // Spore version of Reader
-typedef struct {
-  struct _TyFn*  read;   // this:&This -> ()
-  struct _TyFn*  asBase; // this:&This -> &BaseFile
-} MSpReader;
-typedef struct { MSpReader* m; void* d; } SpReader;
-
 extern MSpReader mSpReader_UFile;
 extern MSpReader mSpReader_BufFile;
 BaseFile* SpReader_asBase(struct _Kern* k, SpReader r);
@@ -123,53 +110,12 @@ U1*       SpReader_get(struct _Kern* k, SpReader r, U2 i);
 // ################################
 // # Types
 
-typedef struct { CStr* path; U4 line; } FileInfo;
 
 // A Ty can be a const, function, variable or dict depending on meta. See
 // TY_MASK in const.zty.
-struct _TyI; struct _TyDict;
-#define TY_BASE \
-  void* l; void* r;       \
-  U2           meta; /* specifies node type */
-typedef struct { TY_BASE } TyBase;
 
-#define TY_BODY \
-  TY_BASE \
-  U2           line; /* src code line of definition. */ \
-  CStr* name; struct _TyI* tyKey; \
-  struct _TyDict*  container;  \
-  FileInfo*    file; /* source file */
-typedef struct _Ty { TY_BODY; } Ty;
-
-typedef struct _TyI {
-  struct _TyI*   next;
-  U2 meta;  U2 arrLen;
-  CStr*          name;
-  TyBase*        ty;
-} TyI;
-
-typedef struct _TyIBst {
-   struct _TyIBst* l; struct _TyIBst* r;
-   TyI tyI;
-} TyIBst;
-
-typedef struct { Slc name; TyI* tyI; } Key;
 #define KEY(NAME)  (Key){ .name = SLC(NAME) }
 #define TY_KEY(TY) (Key){ .name = Slc_frCStr((TY)->name), .tyI = (TY)->tyKey }
-
-typedef struct { TY_BODY; S v; TyI* tyI; } TyVar;
-
-typedef struct { TyI* inp; TyI* out;   } InOut;
-typedef struct { TY_BASE; InOut io;    } FnSig;
-
-typedef struct _TyFn {
-  TY_BODY
-  Ty* locals;
-  U1* code;
-  TyI* inp; TyI* out;
-  U2 len; // size of spor binary
-  U1 lSlots;
-} TyFn;
 
 extern TyFn _TyFn_imm;
 #define START_IMM(AS_IMM) \
@@ -206,13 +152,6 @@ static inline TyFn litFn(U1* code, U2 meta, U2 lSlots) {
   };
 }
 
-typedef struct _TyDict {
-  TY_BODY;
-  Ty* children;
-  TyI* fields;
-  U2 sz;
-} TyDict;
-
 static inline Sll** TyDict_fieldsRoot(TyDict* ty) { return (Sll**) &ty->fields; }
 
 typedef struct _Ownership {
@@ -223,53 +162,17 @@ typedef struct _Ownership {
 typedef struct { void* ref; TyDict* ty; Ownership* ownership; } OwnedValue;
 
 typedef enum { NOT_DONE, BLK_DONE, RET_DONE } HowDone;
-typedef struct {
-  BBA* bba;
-  Stk tyIs; // stack of TyI, aka blocks
-  Stk done; // indication of whether block is ret/cont/break/etc
-} TyDb;
 
 #define TYDB_DEPTH 16
 typedef struct { S tyIsDat[TYDB_DEPTH]; S doneDat[TYDB_DEPTH]; } TyDbDat;
 
 // Flow Block (loop/while/etc)
-typedef struct _Blk {
-  struct _Blk* next;
-  S start;
-  Sll* breaks;  // store breaks to update at end
-  TyI* startTyI; // The type at start of block
-  TyI* endTyI;   // The type at end of block (including break)
-} Blk;
 static inline Sll*  Blk_asSll(Blk* this)     { return (Sll*)this; }
-
-typedef struct { TyDict** dat;   U2 sp;   U2 cap;           } DictStk;
 
 typedef struct _SllSpArena
 { struct _SllSpArena* next;  SpArena arena; } SllSpArena;
 
 static inline Sll* SllSpArena_asSll(SllSpArena* this) { return (Sll*)this; }
-
-typedef struct {
-  SpReader src; FileInfo* srcInfo;
-  Buf token;
-  Buf code;
-  U2 metaNext; // meta of next fn
-  U2 cstate;
-  U2 fnLocals; // locals size
-  U1 fnState;
-  Blk*  blk_;
-  Ty*   curTy;    // current type (fn, struct) being compiled
-  TyFn* compFn;   // current function that does compilation
-} GlobalsCode;
-
-typedef struct {
-  GlobalsCode c;
-  BBA* bbaDict;
-  TyDict rootDict;
-  DictStk dictStk;            DictStk modStk;
-  CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
-  TyDb tyDb;  TyDb tyDbImm;   BBA bbaTyImm;
-} Globals;
 
 typedef struct {
   Fiber fb;
