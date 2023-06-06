@@ -85,11 +85,11 @@ struct Key    [ name: Slc;  tyI: &TyI ]
 struct TyDict declared
 
 struct Ty [
-  parent:TyBase;
-  line:U2
+  parent:TyBase; \ 10
+  line:U2        \ 12
   name:&CStr;  tyKey:&TyI
-  container:&TyDict
-  file:FileInfo
+  container:&TyDict \ 24
+  file:&FileInfo \ 28
 ]
 
 struct TyDict [
@@ -98,6 +98,8 @@ struct TyDict [
   fields:&TyI
   sz:U2
 ]
+
+struct DictStk [ dat:&&TyDict  sp:U2  cap:U2 ]
 
 struct TyVar [ parent:Ty;  v:S;  tyI:&TyI ]
 struct InOut [ inp:&TyI;       out:&TyI ]
@@ -125,24 +127,27 @@ struct Blk [
   startTyI:&TyI  endTyI:&Ty  \ types at start+end(incl break) of block
 ]
 
-struct CodeGlobals [
-]
-
-
-struct Globals [
+struct GlobalsCode [
   src:Reader  srcInfo:&FileInfo
   token:Buf
   code:Buf
-  bbaDict:&BBA
   metaNext:U2 \ meta of next fn
   cstate:U2;
   fnLocals:U2 \ locals size
   fnState:U1
-  logLvlSys:U1  logLvlUsr:U1
+  blk_:&Blk
   curTy:&Ty     \ current type (fn, struct) being compiled
   compFn:&TyFn  \ current function that does compilation
-  blk_:&Blk
-  rootDict:TyDict
 ]
 
-\ global g: &Globals;
+
+struct Globals [
+  c:GlobalsCode
+  bbaDict:&BBA
+  rootDict:TyDict
+  dictStk:DictStk  modStk:DictStk
+  cBst:&CBst  tyIBst:&TyIBst  fnSigBst:&FnSig
+  tyDb:TyDb   tyDbImm:TyDb    bbaTyImm:BBA
+]
+
+global g:&Globals = NULL\(initialized by native code)

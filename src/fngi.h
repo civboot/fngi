@@ -173,9 +173,9 @@ typedef struct _TyFn {
 
 extern TyFn _TyFn_imm;
 #define START_IMM(AS_IMM) \
-    TyFn* cfn = k->g.compFn; if(AS_IMM) k->g.compFn = &_TyFn_imm
+    TyFn* cfn = k->g.c.compFn; if(AS_IMM) k->g.c.compFn = &_TyFn_imm
 
-#define END_IMM   k->g.compFn = cfn
+#define END_IMM   k->g.c.compFn = cfn
 
 static inline InOut* TyFn_asInOut(TyFn* fn) { return (InOut*) &fn->inp; }
 
@@ -250,7 +250,6 @@ typedef struct _SllSpArena
 static inline Sll* SllSpArena_asSll(SllSpArena* this) { return (Sll*)this; }
 
 typedef struct {
-  BBA* bbaDict;
   SpReader src; FileInfo* srcInfo;
   Buf token;
   Buf code;
@@ -258,14 +257,18 @@ typedef struct {
   U2 cstate;
   U2 fnLocals; // locals size
   U1 fnState;
-  U1 logLvlSys;  U1 logLvlUsr;
+  Blk*  blk_;
   Ty*   curTy;    // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
-  Blk*  blk_;
+} GlobalsCode;
+
+typedef struct {
+  GlobalsCode c;
+  BBA* bbaDict;
   TyDict rootDict;
-  DictStk dictStk;             DictStk modStk;
+  DictStk dictStk;            DictStk modStk;
   CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;
-  TyDb tyDb; TyDb tyDbImm; BBA bbaTyImm;
+  TyDb tyDb;  TyDb tyDbImm;   BBA bbaTyImm;
 } Globals;
 
 typedef struct {
@@ -338,8 +341,8 @@ void executeFn(Kern* k, TyFn* fn);
 
 // #################################
 // # Scan
-// scan fills g.token with a token. If one already exists it is a noop.
-// scan does NOT affect g.src's ring buffer, except to increment tail with
+// scan fills g.c.token with a token. If one already exists it is a noop.
+// scan does NOT affect g.c.src's ring buffer, except to increment tail with
 // characters.
 // When the token is used, tokenDrop should be called. This will update
 // src's ring buffer as well so the next token can be scanned.
@@ -454,7 +457,7 @@ static inline void srSzI(U1* addr, U1 szI, S v) {
 
 #define SET_SRC(CODE) \
   BufFile_var(LINED(bf), 64, CODE); \
-  k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &LINED(bf) };
+  k->g.c.src = (SpReader) {.m = &mSpReader_BufFile, .d = &LINED(bf) };
 
 #define COMPILE_NAMED(NAME, CODE, withRet) \
   SET_SRC(CODE); U1* NAME = compileRepl(k, withRet)
@@ -508,6 +511,7 @@ void tySplit(Kern* k);
 void tyMerge(Kern* k, TyDb* db);
 void TyI_printAll(TyI* tyI);
 Ty* TyDict_find(TyDict* dict, Key* s);
+S TyDict_sz(TyDict* ty);
 
 
 #define TYI_VOID  NULL

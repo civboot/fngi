@@ -59,12 +59,12 @@ END_TEST_FNGI
 
 #define TASSERT_TOKEN(T) \
   tokenDrop(k); scan(k); \
-  TASSERT_SLC_EQ(T, *Buf_asSlc(&k->g.token));
+  TASSERT_SLC_EQ(T, *Buf_asSlc(&k->g.c.token));
 
 TEST_FNGI(scan, 1)
-  U1 dat[32]; k->g.token = (Buf){.dat = dat, .cap = 32};
+  U1 dat[32]; k->g.c.token = (Buf){.dat = dat, .cap = 32};
   BufFile_var(bf, 8, "  this-has(*) eight tokens");
-  k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
+  k->g.c.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
 
   TASSERT_TOKEN("this");  TASSERT_TOKEN("-"); TASSERT_TOKEN("has");
   TASSERT_TOKEN("(");     TASSERT_TOKEN("*"); TASSERT_TOKEN(")");
@@ -75,14 +75,14 @@ Slc testCxt = SLC("test");
 #define TY_CHECK(REQ, GIV, SAMELEN) tyCheck(REQ, GIV, SAMELEN, testCxt)
 
 TEST_FNGI(compile0, 4)
-  k->g.fnState |= C_UNTY;
+  k->g.c.fnState |= C_UNTY;
   Kern_fns(k);
   TASSERT_EMPTY();
 
   // Very explicit memory layout
   BufFile_var(bf, 8, "42 + 7 ret;");
-  k->g.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
-  U1 codeDat[256]; k->g.code = (Buf){.dat=codeDat, .cap=256};
+  k->g.c.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
+  U1 codeDat[256]; k->g.c.code = (Buf){.dat=codeDat, .cap=256};
   compileSrc(k);
   XFN(codeDat, 0, 0);
   TASSERT_WS(49);
@@ -112,7 +112,7 @@ TEST_FNGI(compile0, 4)
 END_TEST_FNGI
 
 TEST_FNGI(inlineFns, 4)
-  k->g.fnState |= C_UNTY;
+  k->g.c.fnState |= C_UNTY;
   Kern_fns(k);
   COMPILE_EXEC("swp(1, 4)");    TASSERT_WS(1); TASSERT_WS(4);
 
@@ -121,7 +121,7 @@ END_TEST_FNGI
 
 TEST_FNGI(compile1, 10)
   Kern_fns(k);
-  k->g.fnState |= C_UNTY;
+  k->g.c.fnState |= C_UNTY;
 
   COMPILE_EXEC("fn maths[ ] do (_ + 7 + (3 * 5))  maths(4)"); TASSERT_WS(26);
   COMPILE_EXEC("1 \\comment \\(3 + 4) + 7"); TASSERT_WS(8)
@@ -183,7 +183,7 @@ TEST_FNGI(tyDb, 4)
   tyCall(k, db, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
 
   // ret[done] causes errors on future operations
-  k->g.curTy = Kern_findTy(k, &KEY("+"));
+  k->g.c.curTy = Kern_findTy(k, &KEY("+"));
   tyCall(k, db, NULL, &TyIs_S);
   tyRet(k, db, RET_DONE);  TASSERT_EQ(RET_DONE, TyDb_done(db));
   FNGI_EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL), "Code after guaranteed 'ret'");
@@ -208,7 +208,7 @@ TEST_FNGI(compileIf, 10)
   Kern_fns(k);
   REPL_START
 
-  k->g.fnState |= C_UNTY;
+  k->g.c.fnState |= C_UNTY;
 
   COMPILE_EXEC("if(1) do ;");                              TASSERT_EQ(0, Stk_len(WS));
   COMPILE_EXEC("if(1) do 0x42 else 0x33");                 TASSERT_WS(0x42);
@@ -219,7 +219,7 @@ TEST_FNGI(compileIf, 10)
   TASSERT_EQ(0, Stk_len(WS));
   TASSERT_EQ(0, TY_LEN);
 
-  k->g.fnState = (~C_UNTY) & k->g.fnState;
+  k->g.c.fnState = (~C_UNTY) & k->g.c.fnState;
   TASSERT_EQ(0, TY_LEN); TASSERT_EQ(0, Stk_len(WS));
 
   COMPILE_EXEC("if(1) do ;");
@@ -664,6 +664,9 @@ TEST_FNGI(file_basic, 20)
   compilePath(k, path);
 END_TEST_FNGI
 
+#define TYDICT_SZ(MOD, NAME) \
+   TyDict_sz(tyDict(TyDict_find(MOD, &KEY(NAME))))
+
 TEST_FNGI(core, 20)
   Kern_fns(k); Core_mod(k);
   REPL_START
@@ -687,6 +690,12 @@ TEST_FNGI(core, 20)
   COMPILE_EXEC("getSlc;"); WS_POP2(S dat, U2 len);
   Slc result = (Slc) {(U1*)dat, len};
   TASSERT_SLC_EQ("hello | slc", result);
+
+  TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
+  TASSERT_EQ(sizeof(TyBase) - 2, TYDICT_SZ(comp, "TyBase"));
+  TASSERT_EQ(sizeof(Ty), TYDICT_SZ(comp, "Ty"));
+  TASSERT_EQ(sizeof(TyDict) - 2, TYDICT_SZ(comp, "TyDict"));
+  TASSERT_EQ(sizeof(Globals), TYDICT_SZ(comp, "Globals"));
 
   REPL_END
 END_TEST_FNGI
