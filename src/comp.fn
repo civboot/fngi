@@ -66,62 +66,83 @@ const TY_DICT_ROLE   :U1 = 0x05
 const TY_NATIVE_SIGNED :U1 = 0x08
 const TY_REFS          :U1 = 0x03
 
-struct FileInfo [ path: &CStr;  line: U2 ]
+struct FileInfo [ path:&CStr;  line:U2 ]
 
 struct TyBase   [
-  parent: Bst
-  meta: U2
+  parent:Bst
+  meta:U2
 ]
 
 struct TyI [
-  parent: Sll
-  meta: U2  arrLen: U2
-  name: &CStr
-  ty: &TyBase
+  parent:Sll
+  meta:U2  arrLen:U2
+  name:&CStr
+  ty:&TyBase
 ]
 struct TyIBst [ parent: Bst;  tyI: TyI ]
 struct Key    [ name: Slc;  tyI: &TyI ]
 
-\ FIXME: requires pre-declaration of dicts
-\ struct TyDict;
-\ struct Ty [
-\   parent: TyBase;
-\   line: U2
-\   name: &CStr;  tyKey: &TyI
-\   container: &TyDict
-\   file: FileInfo
-\ ]
-\ 
-\ struct TyVar [ parent: Ty;  v: S;  tyI: &TyI ]
-\ struct Inout [ inp: &TyI;  out: &TyI ]
-\ struct FnSig [ parent: TyBase;  io: InOut ]
-\ 
-\ struct TyFn [
-\   parent: Ty
-\   locals: &Ty
-\   code: &U1
-\   inp: &TyI; out: &TyI
-\   len: U2
-\   lSlots: U1
-\ ]
-\ 
-\ struct TyDict [
-\   parent: Ty
-\   children: &Ty
-\   fields: &TyI
-\   sz: U2
-\ ]
-\ 
-\ struct TyDb [
-\   bba: &BBA
-\   tyIs: Stk\(&TyI)
-\   done: Stk
-\ ]
-\ 
-\ struct Globals [
-\   bbaDict: &BBA
-\   src: Reader;  srcInfo: &FileInfo
-\   Buf token;
-\ ]
-\ 
+struct TyDict declared
+
+struct Ty [
+  parent:TyBase;
+  line:U2
+  name:&CStr;  tyKey:&TyI
+  container:&TyDict
+  file:FileInfo
+]
+
+struct TyDict [
+  parent:Ty
+  children:&Ty
+  fields:&TyI
+  sz:U2
+]
+
+struct TyVar [ parent:Ty;  v:S;  tyI:&TyI ]
+struct InOut [ inp:&TyI;       out:&TyI ]
+struct FnSig [ parent:TyBase;  io:InOut ]
+
+struct TyFn [
+  parent:Ty
+  locals:&Ty
+  code:&U1
+  inp:&TyI; out:&TyI
+  len:U2
+  lSlots:U1
+]
+
+struct TyDb [
+  bba:&BBA
+  tyIs:Stk\(&TyI)
+  done:Stk
+]
+
+struct Blk [
+  parent:Sll
+  start:S
+  breaks:&SllS \ store breaks (to update at end of block)
+  startTyI:&TyI  endTyI:&Ty  \ types at start+end(incl break) of block
+]
+
+struct CodeGlobals [
+]
+
+
+struct Globals [
+  src:Reader  srcInfo:&FileInfo
+  token:Buf
+  code:Buf
+  bbaDict:&BBA
+  metaNext:U2 \ meta of next fn
+  cstate:U2;
+  fnLocals:U2 \ locals size
+  fnState:U1
+  logLvlSys:U1  logLvlUsr:U1
+  curTy:&Ty     \ current type (fn, struct) being compiled
+  compFn:&TyFn  \ current function that does compilation
+  blk_:&Blk
+  rootDict:TyDict
+]
+
 \ global g: &Globals;

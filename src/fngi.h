@@ -261,7 +261,7 @@ typedef struct {
   U1 logLvlSys;  U1 logLvlUsr;
   Ty*   curTy;    // current type (fn, struct) being compiled
   TyFn* compFn;   // current function that does compilation
-  Blk*  blk;
+  Blk*  blk_;
   TyDict rootDict;
   DictStk dictStk;             DictStk modStk;
   CBst* cBst; TyIBst* tyIBst; FnSig* fnSigBst;

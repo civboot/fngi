@@ -156,7 +156,7 @@ void Kern_errCleanup(Kern* k) {
   k->g.curTy = NULL;
   k->g.compFn = &TyFn_baseCompFn;
   DictStk_reset(k);  k->g.modStk.sp = k->g.modStk.cap;
-  k->g.blk = NULL;
+  k->g.blk_ = NULL;
   k->g.code.len = 0;
 
   k->g.bbaDict = &k->bbaDict;
@@ -2249,11 +2249,11 @@ void N_if(Kern* k) {
 // Any data is allocated from bbaDict, which is the local dictionary who's
 // lifetime is only the function definition.
 
-static inline Sll** Blk_root(Kern* k) { return (Sll**) &k->g.blk; }
+static inline Sll** Blk_root(Kern* k) { return (Sll**) &k->g.blk_; }
 
 void tyCont(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
-  Blk* blk = k->g.blk;
+  Blk* blk = k->g.blk_;
   ASSERT(not TyDb_done(db), "Cont after guaranteed 'ret'");
   tyCheck(blk->startTyI, TyDb_top(db), /*sameLen*/true,
           SLC("Type error: cont not identical as block start."));
@@ -2265,19 +2265,19 @@ void N_cont(Kern* k) {
   tyCont(k, tyDb(k, false));
   Buf* b = &k->g.code;
   Buf_add(b, SZ2 | JL);
-  Buf_addBE2(b, k->g.blk->start - b->len);
+  Buf_addBE2(b, k->g.blk_->start - b->len);
 }
 
 void tyBreak(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
-  Blk* blk = k->g.blk;
+  Blk* blk = k->g.blk_;
   ASSERT(not TyDb_done(db), "Break after guaranteed 'ret'");
   if(blk->endTyI) {
     tyCheck(blk->endTyI, TyDb_top(db), /*sameLen*/true,
             SLC("Type error: breaks not identical type."));
   } else {
     // Note: this is permanantly on bbaDict (part of Blk)
-    TyI_cloneAdd(k->g.bbaDict, &k->g.blk->endTyI, TyDb_top(db));
+    TyI_cloneAdd(k->g.bbaDict, &k->g.blk_->endTyI, TyDb_top(db));
   }
   TyDb_setDone(db, BLK_DONE);
 }
@@ -2289,7 +2289,7 @@ void N_break(Kern* k) {
 
   Buf_add(b, SZ2 | JL); // unconditional jump to end of block
   Sll* br = BBA_alloc(k->g.bbaDict, sizeof(Sll), RSIZE); ASSERT(br, "break OOM");
-  Sll_add(&k->g.blk->breaks, br);  br->dat = b->len;
+  Sll_add(&k->g.blk_->breaks, br);  br->dat = b->len;
   Buf_addBE2(b, 0);
 }
 
@@ -2350,7 +2350,6 @@ void field(Kern* k, TyDict* st) {
 }
 
 void _parseDataTy(Kern* k, TyDict* st) {
-  N_notImm(k);
   Ty* prevTy = k->g.curTy;        k->g.curTy = (Ty*) st;
   DictStk_add(&k->g.dictStk, st); DictStk_add(&k->g.modStk, st);
   REQUIRE("["); bool hasUnsized = false;
@@ -2376,7 +2375,20 @@ void _parseDataTy(Kern* k, TyDict* st) {
 }
 
 void N_struct(Kern* k) {
-  TyDict* st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
+  N_notImm(k);
+  TyDict* st = (TyDict*) scanTy(k);
+  eprintf("??? st=%p\n", st);
+  if(st) {
+    ASSERT(isTyDict((Ty*)st) and isDictStruct(st),
+           "token already exists and is not a struct.");
+    ASSERT(not st->fields, "struct already declared with fields");
+    ASSERT(TY_UNSIZED == st->sz, "struct already declared with no fields");
+    st->sz = 0;
+  } else {
+    st = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_STRUCT, NULL);
+    eprintf("??? st=%p\n", st);
+    if(CONSUME("declared")) { st->sz = TY_UNSIZED; return; }
+  }
   _parseDataTy(k, st);
 }
 
@@ -2411,6 +2423,7 @@ void N_absmeth(Kern* k) {
 }
 
 void N_role(Kern* k) {
+  N_notImm(k);
   TyDict* role = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_ROLE, NULL);
   _parseDataTy(k, role);
   for(TyI* field = role->fields; field; field = field->next) {
@@ -2894,7 +2907,7 @@ void Kern_fns(Kern* k) {
 
   Kern_addTy(k, (Ty*) &TyFn_baseCompFn);
   Kern_addTy(k, (Ty*) &TyFn_stk);
-  Kern_addTy(k, (Ty*) &TyFn_inp);
+  // Kern_addTy(k, (Ty*) &TyFn_inp);
   Kern_addTy(k, (Ty*) &TyFn_memclr);
 
   ADD_FNN("\x01", "\\"           , TY_FN_COMMENT   , N_fslash   , TYI_VOID, TYI_VOID);
