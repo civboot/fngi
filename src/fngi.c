@@ -948,6 +948,7 @@ FnSig* FnSig_replaceSelf(Kern* k, FnSig* sig, TyDict* self) {
 }
 
 void tyCallSelf(Kern* k, TyDb* db, TyI* inp, TyI* out, TyDict* self) {
+  eprintf("??? tyCallSelf self=%p inp=", self); TyI_printAll(inp); eprintf(" out="); TyI_printAll(out); NL;
   if(not self) return tyCall(k, db, inp, out);
   InOut io = { .inp = inp, .out = out };
   InOut_replaceSelf(k, &io, self);
@@ -1472,6 +1473,7 @@ void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
 }
 
 void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
+  eprintf("??? compileFn %.*s self=%p\n", Ty_fmt(fn), self);
   tyCallSelf(k, tyDb(k, asImm), fn->inp, fn->out, self);
   if(asImm) return executeFn(k, fn);
   Buf* b = &k->g.c.code;
@@ -1508,6 +1510,7 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
     return;
   }
   Kern_compFn(k);
+  eprintf("??? compileMethod end d=%p\n", d);
   compileFn(k, meth, d, st->asImm);
 }
 
@@ -1546,7 +1549,10 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
       TyVar* field = (TyVar*)f;
       assert(isVarLocal(field));
       return ftOffset(k, field->tyI, offset + field->v, st);
-    } else return compileMethod(k, tyI, d, tyFn(f), offset, st);
+    } else {
+      eprintf("??? compiling method d=%p\n", d);
+      return compileMethod(k, tyI, d, tyFn(f), offset, st);
+    }
   }
   if(addTy) tyCall(k, db, NULL, tyI);
   st->noAddTy = true;
@@ -1666,8 +1672,7 @@ void checkName(Kern* k, bool check) {
   }
 }
 
-void compileTy(Kern* k, Ty* ty, bool asImm) {
-  eprintf("!!! compileTy: %.*s\n", Ty_fmt(ty));
+void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
   eprintf("??? compileTy asImm=%u ", asImm); dbgTyDb(k);
   checkName(k, ty);
   do {
@@ -1686,7 +1691,7 @@ void compileTy(Kern* k, Ty* ty, bool asImm) {
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
   if(isFnImm(fn)) { ASSERT(asImm, "fn must be called with 'imm#'"); }
-  compileFn(k, fn, /*self*/NULL, asImm);
+  compileFn(k, fn, self, asImm);
 }
 
 // ***********************
@@ -1701,7 +1706,7 @@ void single(Kern* k, bool asImm) {
     return compileLit(k, n.v, asImm);
   }
   Ty* ty = scanTy(k);
-  compileTy(k, ty, asImm);
+  compileTy(k, ty, /*self*/NULL, asImm);
 }
 
 void compileSrc(Kern* k) {
@@ -1743,6 +1748,7 @@ void N_unty(Kern* k) {
 
 void _N_ret(Kern* k) { tyRet(k, tyDb(k, false), RET_DONE); Buf_add(&k->g.c.code, RET); }
 void N_ret(Kern* k)  { N_notImm(k); Kern_compFn(k); _N_ret(k); }
+void N_tAssert(Kern* k) { ASSERT(WS_POP(), "Expected true"); }
 void N_tAssertEq(Kern* k) { WS_POP2(U4 l, U4 r); TASSERT_EQ(l, r); }
 void N_assertWsEmpty(Kern* k) {
   if(not Stk_len(WS)) return;
@@ -2520,7 +2526,8 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   // Call the method
   TyI this = (TyI) { .ty = (TyBase*)d, .meta = /*refs*/1 };
   tyCall(k, db, NULL, &this); // put back on ty stack (from TyDb_pop above)
-  compileTy(k, ty, asImm);
+  eprintf("??? N_dot before compileTy: "); dbgTyDb(k);
+  compileTy(k, ty, d, asImm);
 }
 
 // & on a nested reference type (i.e. a struct field)
@@ -2798,7 +2805,7 @@ void N_setFnTy(Kern* k) {
 
 void N_single(Kern* k) { single(k, WS_POP()); }
 void N_compileTy(Kern* k) {
-  WS_POP2(S ty, bool asImm); compileTy(k, (Ty*)ty, asImm);
+  WS_POP2(S ty, bool asImm); compileTy(k, (Ty*)ty, /*self*/NULL, asImm);
 }
 void N_compileLit(Kern* k) {
   WS_POP2(U4 v, bool asImm); compileLit(k, v, asImm);
@@ -2975,6 +2982,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
   ADD_FNN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
   ADD_FNN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "tAssert"      , 0               , N_tAssert  , &TyIs_S,  TYI_VOID);
   ADD_FNN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
   ADD_FNN("\x0D", "assertWsEmpty", 0           , N_assertWsEmpty, TYI_VOID, TYI_VOID);
   ADD_FNN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);

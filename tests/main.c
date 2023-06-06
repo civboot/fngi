@@ -706,7 +706,7 @@ TEST_FNGI(bba, 20)
 
   COMPILE_EXEC(
     "fn useBBA[ stopBba:&BBA -> &Any &Any] do (\n"
-    "  var a: &Any; a = stopBba.alloc(10, 4)  tAssert(a)\n"
+    "  var a: &Any; a = ( stopBba.alloc(10, 4) ) tAssertt(S a)\n"
     "  var b: &Any; \\ b = bba.alloc(12, 4);  tAssert(b)\n"
     // "  tAssert(not bba.free(b, 12, 4))\n"
     // "  tAssert(not bba.free(a, 10, 4))\n"
