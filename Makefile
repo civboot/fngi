@@ -16,3 +16,7 @@ build:
 	mkdir -p bin/
 	python3 etc/gen.py
 	$(CC) $(FLAGS) -Wall $(DISABLE_WARNINGS) $(LIBS) $(FNGI_SRC) $(TEST_SRC) -o $(OUT)
+
+dbg: build
+	gdb -q ./$(OUT) $(ARGS)
+

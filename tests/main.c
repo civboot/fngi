@@ -700,6 +700,23 @@ TEST_FNGI(core, 20)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(bba, 20)
+  Kern_fns(k); Core_mod(k);
+  REPL_START
+
+  COMPILE_EXEC(
+    "fn useBBA[ stopBba:&BBA -> &Any &Any] do (\n"
+    "  var a: &Any; a = stopBba.alloc(10, 4)  tAssert(a)\n"
+    "  var b: &Any; \\ b = bba.alloc(12, 4);  tAssert(b)\n"
+    // "  tAssert(not bba.free(b, 12, 4))\n"
+    // "  tAssert(not bba.free(a, 10, 4))\n"
+    "  (a, b)\n"
+    ")");
+
+
+  REPL_END
+END_TEST_FNGI
+
 TEST_FNGI(repl, 20)
   Kern_fns(k);
   simpleRepl(k);
@@ -746,6 +763,7 @@ int main(int argc, char* argv[]) {
   test_misc();
   test_file_basic();
   test_core();
+  test_bba();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();

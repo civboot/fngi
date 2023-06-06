@@ -36,6 +36,8 @@ Key PARENT;
 
 TyFn _TyFn_imm;
 
+void dbgTyDb();
+
 /*extern*/ Kern* fngiK = NULL;
 
 // ***********************
@@ -529,6 +531,7 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 void executeFn(Kern* k, TyFn* fn) {
   if(fn->name) eprintf("!!! executeFn %.*s meta=%X\n", Ty_fmt(fn), fn->meta);
   else         eprintf("!!! executeFn <unknown> meta=%X\n", fn->meta);
+  eprintf("???    "); dbgTyDb(k);
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
@@ -840,12 +843,12 @@ void Kern_typed(Kern *k, bool typed) {
 
 #define IS_UNTY  (C_UNTY & k->g.c.fnState)
 
-void dbgTyIs(Kern* k, TyDb* db) {
-  if(IS_UNTY) return;
-  eprintf("["); TyI_printAll(TyDb_top(db)); eprintf(" ]");
+void TyDb_print(Kern* k, TyDb* db) {
+  U2 l = Stk_len(&db->tyIs);
+  eprintf("(TyDb len=%u)[", l);
+  if(l) TyI_printAll(TyDb_top(db));
+  eprintf("]");
 }
-
-void TyDb_print(Kern* k, TyDb* db) { TyI_printAll(TyDb_top(db)); }
 
 // Pop one TyI from the top level.
 void TyDb_pop(Kern* k, TyDb* db) {
@@ -1455,13 +1458,17 @@ bool opIsConcrete(U1 op) {
 }
 
 // Handle type operations of refs.
-// In both cases (FTO and FTLL) we just put the tyI on the stack
-// For FTO, the dot compiler already reduced the number of references.
 void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
+  eprintf("??? ftOffsetRefs op==FTLL: %u\n", st->op==FTLL);
+  assert(not tyI->next);
   if(st->noAddTy) return;
-  if(st->op == FTLL || st->op == FTGL) return tyCall(k, db, NULL, tyI);
-  assert(st->op == FTO); assert(not tyI->next);
+  assert(st->op == FTLL || st->op == FTGL || st->op == FTO);
+  eprintf("??? tyFtOffsetRefs=%p\n", tyI);
+  // In both cases (FTO and FTLL) we just put the tyI on the stack
+  // For FTO, the dot compiler already reduced the number of references.
+  eprintf("??? ftOffsetRef before: "); dbgTyDb(k);
   tyCall(k, db, NULL, tyI);
+  eprintf("??? ftOffsetRef after: "); dbgTyDb(k);
 }
 
 void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
@@ -1509,9 +1516,12 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
 void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   bool addTy = not st->noAddTy;
   Buf* b = st->asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, st->asImm);
+  eprintf("??? ftOffset asImm=%u ", st->asImm); dbgTyDb(k);
   if(TyI_refs(tyI)) {
     _tyFtOffsetRefs(k, db, tyI, st);
-    return opOffset(k, b, st->op, SZR, offset, st->global);
+    opOffset(k, b, st->op, SZR, offset, st->global);
+    if(PEEK(".")) Kern_compFn(k);
+    return;
   }
   ASSERT(not isTyFnB(tyI->ty), "invalid fn local");
   ASSERT(isTyDictB(tyI->ty), "invalid non-dict fetch");
@@ -1560,6 +1570,7 @@ void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
 //   * compileTy (Var, Dict, Fn)
 
 void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
+  eprintf("??? compileVarFt\n");
   TyVar* global = (isVarConst(v) || isVarGlobal(v)) ? v : NULL;
   FtOffset st = (FtOffset) {
     .op = global ? FTGL : FTLL, .findEqual = not isVarConst(v), .asImm = asImm,
@@ -1569,10 +1580,15 @@ void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
   END_IMM;
 }
 
+int count = 0;
 void compileVar(Kern* k, TyVar* v, bool asImm) {
+  count += 1;
+  eprintf("??? compileVar count=%u: %.*s\n", count, Ty_fmt(v));
   TyVar* global = isVarGlobal(v) ? v : NULL;
+  eprintf("??? cvar top\n");
   if(asImm) ASSERT(not isVarLocal(v), "'imm#' used with local variable");
   if(CONSUME("=")) {
+    eprintf("??? compileVar '='\n");
     ASSERT(not isVarConst(v), "cannot set const variable");
     START_IMM(asImm);
     SrOffset st = (SrOffset) {
@@ -1580,7 +1596,15 @@ void compileVar(Kern* k, TyVar* v, bool asImm) {
     };
     srOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
     END_IMM;
-  } else compileVarFt(k, v, asImm, /*addTy*/true);
+  } else {
+    eprintf("??? compileVar not '='\n");
+    compileVarFt(k, v, asImm, /*addTy*/true);
+  }
+  if(not CStr_cmpSlc(v->name, SLC("stopBba"))) {
+    eprintf("??? in stopBba\n");
+  }
+  eprintf("??? compileVar end count=%u: ", count); dbgTyDb(k);
+  count -= 1;
 }
 
 // Return the next member through '.', or NULL if there is no '.'
@@ -1643,7 +1667,8 @@ void checkName(Kern* k, bool check) {
 }
 
 void compileTy(Kern* k, Ty* ty, bool asImm) {
-  // eprintf("!!! compileTy: %.*s\n", Ty_fmt(ty));
+  eprintf("!!! compileTy: %.*s\n", Ty_fmt(ty));
+  eprintf("??? compileTy asImm=%u ", asImm); dbgTyDb(k);
   checkName(k, ty);
   do {
     if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
@@ -1676,7 +1701,6 @@ void single(Kern* k, bool asImm) {
     return compileLit(k, n.v, asImm);
   }
   Ty* ty = scanTy(k);
-  checkName(k, ty);
   compileTy(k, ty, asImm);
 }
 
@@ -2469,7 +2493,9 @@ void N_impl(Kern* k) {
 void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
+  eprintf("??? dot asImm=%u ", asImm); dbgTyDb(k);
   TyI* top = TyDb_top(db);
+  eprintf("??? dot TyI: %p", top); TyI_printAll(top); NL;
   U2 refs = TyI_refs(top);
   if(not refs) {
     SET_ERR(SLC("invalid '.', the value on the stack is not a reference"));
@@ -3136,4 +3162,12 @@ void simpleRepl(Kern* k) {
   }
   civ.fb->errJmp = prev_errJmp;
   REPL_END
+}
+
+void dbgTyDb(Kern* k) {
+  if(IS_UNTY) {
+    eprintf("??? TyDb[UNTY]\n");
+    return;
+  }
+  TyDb_print(k, tyDb(k, false)); NL;
 }
