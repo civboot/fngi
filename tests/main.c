@@ -700,19 +700,42 @@ TEST_FNGI(core, 20)
   REPL_END
 END_TEST_FNGI
 
+#define USE_ARENA_FNGI \
+    "  var a: &Any; a = arena.alloc(10, 4); tAssert(S a)\n" \
+    "  var b: &Any; b = arena.alloc(12, 4); tAssert(S b)\n" \
+    "  tAssert(not S arena.free(b, 12, 4))\n" \
+    "  tAssert(not S arena.free(a, 10, 4))\n" \
+    "  (a, b)\n"
+
 TEST_FNGI(bba, 20)
   Kern_fns(k); Core_mod(k);
   REPL_START
 
-  COMPILE_EXEC(
-    "fn useBBA[ stopBba:&BBA -> &Any &Any] do (\n"
-    "  var a: &Any; a = ( stopBba.alloc(10, 4) ) tAssertt(S a)\n"
-    "  var b: &Any; \\ b = bba.alloc(12, 4);  tAssert(b)\n"
-    // "  tAssert(not bba.free(b, 12, 4))\n"
-    // "  tAssert(not bba.free(a, 10, 4))\n"
-    "  (a, b)\n"
-    ")");
+  COMPILE_EXEC("fn useBBA[ arena:&BBA -> &Any &Any] do (\n" USE_ARENA_FNGI ")");
+  eprintf("??? bbaDict=%p\n", k->g.bbaDict);
+  COMPILE_EXEC("comp.g.bbaDict"); TASSERT_WS((S)k->g.bbaDict);
+  COMPILE_EXEC("useBBA(comp.g.bbaDict)");
+  void* a = BBA_alloc(k->g.bbaDict,    10, 4);
+  void* b = BBA_alloc(k->g.bbaDict,    12, 4);
+  assert(not BBA_free(k->g.bbaDict, b, 12, 4));
+  assert(not BBA_free(k->g.bbaDict, a, 10, 4));
+  TASSERT_WS((S)b); TASSERT_WS((S)a);
 
+  Arena arena = BBA_asArena(k->g.bbaDict);
+
+  COMPILE_EXEC("fn useArena[ arena:Arena -> &Any &Any] do (\n" USE_ARENA_FNGI ")");
+  COMPILE_EXEC("useArena(Arena comp.g.bbaDict)");
+  a = Xr(arena,alloc,    10, 4);
+  b = Xr(arena,alloc,    12, 4);
+  assert(not Xr(arena,free, b, 12, 4));
+  assert(not Xr(arena,free, a, 10, 4));
+  TASSERT_WS((S)b); TASSERT_WS((S)a);
+
+  COMPILE_EXEC("fn useArenaRef[ arena:&Arena -> &Any &Any] do (\n" USE_ARENA_FNGI ")");
+  COMPILE_EXEC("global a:Arena = Arena comp.g.bbaDict;");
+  // COMPILE_EXEC("&a");
+  // COMPILE_EXEC("useArenaRef(&a)");
+  // TASSERT_WS((S)b); TASSERT_WS((S)a);
 
   REPL_END
 END_TEST_FNGI

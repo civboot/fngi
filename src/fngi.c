@@ -1368,12 +1368,14 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
                         // it may be re-used in next field.
   recSt.checkTy = false; recSt.clear = false; recSt.notParse = true;
   if(isDictRole(d)) {
+    eprintf("??? op=%X asImm=%u offset=%u\n", st->op, st->asImm, offset);
+    eprintf("??? srOffset "); dbgTyDb();
     if(opCreatesRef(st->op)) {
       assert(false);
       // srOffset(k, &TyIs_S, offset, &recSt);
     } else {
       assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
-      assert(not recSt.global); // TODO: not yet tested
+      ASSERT(not recSt.global, "TODO: not yet tested");
       srOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, &recSt);
       srOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, &recSt);
     }
@@ -1648,9 +1650,9 @@ void compileDict(Kern* k, TyDict* d, bool asImm) {
     ASSERT(impl, "role not implemented for type");
     assert(isTyVar((Ty*)impl) && isVarGlobal(impl));
     Buf* b = &k->g.c.code;
-    assert(not asImm);
     assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
-    lit(b, impl->v);
+    if(asImm) WS_ADD(impl->v);
+    else      lit(b, impl->v);
     tyCall(k, db, NULL, &tyI);
   } else {
     assert(isDictStruct(d));
@@ -1673,19 +1675,22 @@ void checkName(Kern* k, bool check) {
 }
 
 void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
-  eprintf("??? compileTy asImm=%u ", asImm); dbgTyDb(k);
   checkName(k, ty);
-  do {
+  while(true) {
+    eprintf("??? compileTy loop %.*s asImm=%u ", Ty_fmt(ty), asImm); dbgTyDb(k);
     if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
     if(isTyDict(ty)) {
       TyDict* d = (TyDict*) ty;
       if(isDictMod(d)) {
+        eprintf("??? um...\n");
+        self = NULL;
         ty = nextDot(k, d); ASSERT(ty, "Cannot access mod directly.");
         continue;
       }
       return compileDict(k, (TyDict*) ty, asImm);
     }
-  } while(0);
+    break;
+  }
   assert(not isFnSig((TyBase*)ty));
   ASSERT(isTyFn(ty), "Unknown type meta"); TyFn* fn = (TyFn*)ty;
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
@@ -2028,14 +2033,13 @@ void N_var(Kern* k) {
 }
 
 
-void _global(Kern* k, U1 meta, bool reqSet) {
+void _global(Kern* k, U1 meta, bool requireSet) {
   N_notImm(k); VarPre pre = varPre(k, true);
   TyVar* v = pre.var; v->meta |= meta;
   v->v = (S) BBA_alloc(&k->bbaCode, pre.els * pre.sz, /*align*/pre.sz);
   ASSERT(v->v, "Global OOM");
-  if(CONSUME("=")) {
-    _globalInit(k, v);
-  } else ASSERT(not reqSet, "expected '='");
+  if(CONSUME("=")) _globalInit(k, v);
+  else             ASSERT(not requireSet, "expected '='");
 }
 
 void N_global(Kern* k) { _global(k, TY_VAR_GLOBAL, false); }
@@ -3079,7 +3083,7 @@ void Core_mod(Kern* k) {
   TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
   TyVar* globals = tyVar(TyDict_find(comp, &KEY("g")));
   TASSERT_EQ(sizeof(Globals), TyDict_sz(tyDictB(globals->tyI->ty)));
-  globals->v = (S)&k->g;
+  *(Globals**)globals->v = &k->g;
 }
 
 
