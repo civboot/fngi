@@ -580,7 +580,7 @@ bool TyDict_unsized(TyDict* ty) {
 // Return the KNOWN TyDict size. Callers must also check TyDict_unsized.
 S TyDict_sz(TyDict* ty) {
   ASSERT(not isDictMod(ty), "attempted size of TY_DICT_MOD");
-  if(isDictNative(ty)) return szIToSz((S)ty->children);
+  if(isDictNative(ty)) return szIToSz((S)ty->fields);
   if(isDictRole(ty))   return 2 * RSIZE; // { &Data, &Methods }
   return ty->sz;
 }
@@ -1397,7 +1397,7 @@ void srOffset(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
   ASSERT(not isTyFnB(tyI->ty), "invalid fn local"); assert(isTyDictB(tyI->ty));
   TyDict* d = (TyDict*) tyI->ty;
   ASSERT(not isDictMod(d), "cannot store in mod");
-  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->children, offset, st->global);
+  if(isDictNative(d)) return opOffset(k, b, st->op, /*szI*/(S)d->fields, offset, st->global);
   SrOffset recSt = *st; // Note: we CANNOT modify 'st', since (unlike ftOffset)
                         // it may be re-used in next field.
   recSt.checkTy = false; recSt.clear = false; recSt.notParse = true;
@@ -1564,7 +1564,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   }
   if(isDictNative(d)) {
     if(addTy) tyCall(k, db, NULL, tyI);
-    return opOffset(k, b, st->op, (S)d->children, offset, st->global);
+    return opOffset(k, b, st->op, (S)d->fields, offset, st->global);
   }
   ASSERT(isDictStruct(d) || isDictRole(d), "unknown dict type");
   if(CONSUME(".")) {
@@ -2669,7 +2669,7 @@ void N_at(Kern* k) { // '@', aka dereference
     TyDict* d = (TyDict*) tyI->ty;
     ASSERT(not isDictMod(d), "Cannot @mod");
     ASSERT(isDictNative(d), "direct @ is only for native types");
-    opOffset(k, b, op, /*szI*/(S)d->children, /*offset*/0, NULL);
+    opOffset(k, b, op, /*szI*/(S)d->fields, /*offset*/0, NULL);
   }
   TyI inp = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta };
   if(op == SRO) {
@@ -2895,7 +2895,7 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
   ADD_ANY_VAR(LINED(ty), TY, NAMELEN, NAME, META, VNAME, V)
 
 #define ADD_TY_NATIVE(VAR, NAMELEN, NAME, META, VAL) \
-  ADD_ANY_VAR(VAR, TyDict, NAMELEN, NAME, TY_DICT | TY_DICT_NATIVE | META, children, VAL)
+  ADD_ANY_VAR(VAR, TyDict, NAMELEN, NAME, TY_DICT | TY_DICT_NATIVE | META, fields, VAL)
 
 #define ADD_FN(NAMELEN, NAME, META, CODE, INP, OUT) \
   ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | (META), code, (U1*)CODE); \
@@ -2920,11 +2920,11 @@ void Kern_fns(Kern* k) {
   Kern_addTy(k, (Ty*) &k->g.rootDict);
 
   // Native data types
-  ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , (Ty*)(SZR + 1));
-  ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (Ty*)(SZR + 1));
-  ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (Ty*)(SZR + 1));
-  ADD_TY_NATIVE(Ty_Self,  "\x04", "Self"    ,  0      , (Ty*)(SZR + 1));
-  ADD_TY_NATIVE(Ty_RoleField, "\x09", "RoleField", 0  , (Ty*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , (TyI*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_Any,   "\x03", "Any"     ,  0      , (TyI*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_Unsafe,"\x06", "Unsafe"  ,  0      , (TyI*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_Self,  "\x04", "Self"    ,  0      , (TyI*)(SZR + 1));
+  ADD_TY_NATIVE(Ty_RoleField, "\x09", "RoleField", 0  , (TyI*)(SZR + 1));
 
 
   TyIs_UNSET  = (TyI) { .ty = (TyBase*)&Ty_UNSET  };
@@ -2935,14 +2935,14 @@ void Kern_fns(Kern* k) {
   TyIs_rAnyS  = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAny };
   TyIs_rAnySS = (TyI) { .ty = (TyBase*)&Ty_S, .next = &TyIs_rAnyS };
 
-  ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , (Ty*)SZ1);
-  ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , (Ty*)SZ2);
-  ADD_TY_NATIVE(Ty_U4, "\x02", "U4",  0               , (Ty*)SZ4);
-  ADD_TY_NATIVE(Ty_S , "\x01", "S",   0               , (Ty*)SZR);
-  ADD_TY_NATIVE(Ty_I1, "\x02", "I1",  TY_NATIVE_SIGNED, (Ty*)SZ1);
-  ADD_TY_NATIVE(Ty_I2, "\x02", "I2",  TY_NATIVE_SIGNED, (Ty*)SZ2);
-  ADD_TY_NATIVE(Ty_I4, "\x02", "I4",  TY_NATIVE_SIGNED, (Ty*)SZ4);
-  ADD_TY_NATIVE(Ty_SI, "\x02", "SI",  TY_NATIVE_SIGNED, (Ty*)SZR);
+  ADD_TY_NATIVE(Ty_U1, "\x02", "U1",  0               , (TyI*)SZ1);
+  ADD_TY_NATIVE(Ty_U2, "\x02", "U2",  0               , (TyI*)SZ2);
+  ADD_TY_NATIVE(Ty_U4, "\x02", "U4",  0               , (TyI*)SZ4);
+  ADD_TY_NATIVE(Ty_S , "\x01", "S",   0               , (TyI*)SZR);
+  ADD_TY_NATIVE(Ty_I1, "\x02", "I1",  TY_NATIVE_SIGNED, (TyI*)SZ1);
+  ADD_TY_NATIVE(Ty_I2, "\x02", "I2",  TY_NATIVE_SIGNED, (TyI*)SZ2);
+  ADD_TY_NATIVE(Ty_I4, "\x02", "I4",  TY_NATIVE_SIGNED, (TyI*)SZ4);
+  ADD_TY_NATIVE(Ty_SI, "\x02", "SI",  TY_NATIVE_SIGNED, (TyI*)SZR);
   TASSERT_EMPTY();
 
   // Ty: S

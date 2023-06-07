@@ -15,10 +15,19 @@ struct SllS [ parent:Sll  v:S ]
 struct Bst  [ l:&Self  r:&Self]
 struct CBst [ parent:Bst  key:&CStr ]
 
+
+\ use:S (
+\   fn min(a:S, b:S) do ( if(a < b) do a else b )
+\   fn max(a:S, b:S) do ( if(a < b) do b else a )
+\ )
+
 use:Slc (
   meth @ [self:&Self i:S -> U1] do (
     root.@ptrAdd(self.dat, i, self.len)
   )
+
+  \ meth cmp [self:&Self, s:Slc -> I4] do (
+  \ )
 )
 
 \ ************
