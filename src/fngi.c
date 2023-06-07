@@ -2913,6 +2913,11 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
 
 void Kern_fns(Kern* k) {
   PARENT = (Key) { .name = SLC("parent") };
+  CStr_ntVar(rootStr, "\x04", "root");
+  k->g.rootDict = (TyDict) {
+    .name = rootStr, .meta = TY_DICT | TY_DICT_MOD
+  };
+  Kern_addTy(k, (Ty*) &k->g.rootDict);
 
   // Native data types
   ADD_TY_NATIVE(Ty_UNSET, "\x08", "Ty_UNSET",  0      , (Ty*)(SZR + 1));

@@ -16,8 +16,8 @@ struct Bst  [ l:&Self  r:&Self]
 struct CBst [ parent:Bst  key:&CStr ]
 
 use:Slc (
-  meth get[self:&Self i:S -> U1] do (
-    @ptrAdd(self.dat, i, self.len)
+  meth @ [self:&Self i:S -> U1] do (
+    root.@ptrAdd(self.dat, i, self.len)
   )
 )
 

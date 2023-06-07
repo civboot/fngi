@@ -690,9 +690,9 @@ TEST_FNGI(core, 20)
     "  @ptrAdd(&dat, 1, 12) = char:i \n"
     "  @ptrAdd(&dat, 2, 12) = char:p \n"
     "  var s: Slc = Slc(&dat, U2(12))\n"
-    "  tAssertEq(char:h, s.get(0))\n"
-    "  tAssertEq(char:i, s.get(1))\n"
-    "  s.get(2)\n"
+    "  tAssertEq(char:h, s.@0)\n"
+    "  tAssertEq(char:i, s.@1)\n"
+    "  s.@2\n"
     ")");
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
