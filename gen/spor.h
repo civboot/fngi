@@ -59,7 +59,8 @@
 #define SRO              0x47
 #define SRGL             0x48
 #define SRLL             0x49
-#define LIT              0x4a
+#define FTOK             0x4a
+#define LIT              0x4b
 #define LCL              0x80
 #define XL               0x81
 #define XW               0x90

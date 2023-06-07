@@ -80,6 +80,9 @@ Slc instrName(U1 instr) {
     case SRLL + SZ1      : return Slc_ntLit("SRLL1");
     case SRLL + SZ2      : return Slc_ntLit("SRLL2");
     case SRLL + SZ4      : return Slc_ntLit("SRLL4");
+    case FTOK + SZ1      : return Slc_ntLit("FTOK1");
+    case FTOK + SZ2      : return Slc_ntLit("FTOK2");
+    case FTOK + SZ4      : return Slc_ntLit("FTOK4");
     case LIT + SZ1       : return Slc_ntLit("LIT1");
     case LIT + SZ2       : return Slc_ntLit("LIT2");
     case LIT + SZ4       : return Slc_ntLit("LIT4");

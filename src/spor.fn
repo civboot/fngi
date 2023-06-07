@@ -104,7 +104,8 @@ const SRBE :U1 = 0x46   \ {addr value} -> {} |Store value at addr (big endian)
 const SRO  :U1 = 0x47   \ {addr value} -> {} |Store value at addr + U1 literal offset
 const SRGL :U1 = 0x48   \ {addr value} -> {} |Store Global Literal
 const SRLL :U1 = 0x49   \ {value} -> {}      |StoRe Literal Local
-const LIT  :U1 = 0x4A   \ {} -> {literal}    |Literal (U1, U2 or U4)
+const FTOK :U1 = 0x4A   \ {addr} -> {value addr}  |FTO but keep addr on stack
+const LIT  :U1 = 0x4B   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ # [1.e] Jmp
 \

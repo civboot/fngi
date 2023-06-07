@@ -646,6 +646,19 @@ TEST_FNGI(role, 20)
     "  useAdder(Adder(&a))"
     ")");
   COMPILE_EXEC("createUseAdder(A 3)"); TASSERT_WS(8);
+
+  // TODO
+  COMPILE_EXEC(
+    "fn useAdderRef[aR:&Adder -> S] do (\n"
+    "  var a:Adder = @aR\n"
+    "  a.add(5)\n"
+    ")");
+  COMPILE_EXEC(
+    "global a:A = A 5\n"
+    "global adder:Adder = Adder &a\n"
+  );
+  COMPILE_EXEC("useAdderRef(&adder)"); TASSERT_WS(10);
+
   REPL_END
 END_TEST_FNGI
 
@@ -730,13 +743,6 @@ TEST_FNGI(bba, 20)
   assert(not Xr(arena,free, b, 12, 4));
   assert(not Xr(arena,free, a, 10, 4));
   TASSERT_WS((S)b); TASSERT_WS((S)a);
-
-  COMPILE_EXEC("fn useArenaRef[ arena:&Arena -> &Any &Any] do (\n" USE_ARENA_FNGI ")");
-  COMPILE_EXEC("global a:Arena = Arena comp.g.bbaDict;");
-  // COMPILE_EXEC("&a");
-  // COMPILE_EXEC("useArenaRef(&a)");
-  // TASSERT_WS((S)b); TASSERT_WS((S)a);
-
   REPL_END
 END_TEST_FNGI
 

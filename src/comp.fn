@@ -150,4 +150,4 @@ struct Globals [
   tyDb:TyDb   tyDbImm:TyDb    bbaTyImm:BBA
 ]
 
-global g:&Globals = NULL\(initialized by native code)
+global g:&Globals = NULL \ initialized by native code

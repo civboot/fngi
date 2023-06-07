@@ -34,7 +34,7 @@ struct BBA    [ ba:&BA; dat:&BANode ]
 
 role Arena [
   absmeth drop [&Self]
-  absmeth free [&Self, &Any, S\sz, U2\alignment -> &Slc ]
+  absmeth free [&Self, &Any, S\sz, U2\alignment -> &Slc]
   absmeth alloc[&Self,       S\sz, U2\alignment -> &Any]
   absmeth maxAlloc[&Self -> S]
 ]

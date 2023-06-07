@@ -7,19 +7,12 @@ if exists("b:current_syntax")
   finish
 endif
 
-syn match elAlpha    '[_a-zA-Z0-9]\+' nextgroup=elInstr
-syn keyword elInstr
-      \ NOP   RETZ  RET   SWP   DRP   OVR   DUP   DUPN  DV
-      \ RG    LR    GR    YLD   FT    FTO   SR    SRO
-      \ INC   INC2  INC4  INCA  DEC   INV   NEG   NOT   CI1   CI2
-      \ ADD   SUB   MOD   SHL   SHR   MSK   JN    XOR   AND   OR
-      \ EQ    NEQ   GE_U  LT_U  GE_S  LT_S
-      \ MUL   DIV_U DIV_S
-      \ SLIT  SZ1   SZ2   SZ4   SZA
-      \ NOJ   JMPL  JMPW  JZL   JTBL  XLL   XLW   XSL   SLC   XSW
-      \ WS    LIT   FTLL  FTGL  FTOL  SRLL  SRGL  SROL
+syn match elAlpha    '[_a-zA-Z0-9]\+' nextgroup=elKey
+syn keyword elKey
       \ if else loop while break ret retIfNot reteq retIf retLt retGe
-      \ xlw xsw
+      \ fn do ; , stk unty NULL Any declared
+      \ global const
+      \ mod use struct role impl meth absmeth
       \ jn msk xor or and inv neg not
       \ ge_s gt_s le_s lt_s
       \ nextgroup=elSymbol
@@ -37,7 +30,7 @@ syn match elStrRaw     '|.*|'
 
 let b:current_syntax = "fngi"
 
-hi def link elInstr         PreProc
+hi def link elKey           PreProc
 hi def link elSymbol        Type
 hi def link elSpecial       Keyword
 hi def link elDecimal       Constant
