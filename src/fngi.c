@@ -1857,7 +1857,6 @@ TyDict* _useGet(Kern *k) {
   do {
     d = next;
     ASSERT(isTyDict((Ty*) d), "Cannot use 'use' with non-dict");
-    ASSERT(not isDictNative(d), "Cannot use 'use' with native dict");
     next = (TyDict*) nextDot(k, d);
   } while(next);
   return d;
@@ -1865,7 +1864,6 @@ TyDict* _useGet(Kern *k) {
 
 
 void _use(Kern* k, TyDict* d) {
-  assert(not isDictNative(d));
   DictStk_add(&k->g.dictStk, d);
   DictStk_add(&k->g.modStk, d);
   Kern_compFn(k);

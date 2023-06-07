@@ -16,10 +16,10 @@ struct Bst  [ l:&Self  r:&Self]
 struct CBst [ parent:Bst  key:&CStr ]
 
 
-\ use:S (
-\   fn min(a:S, b:S) do ( if(a < b) do a else b )
-\   fn max(a:S, b:S) do ( if(a < b) do b else a )
-\ )
+use:S (
+  fn min[a:S, b:S -> S] do ( if(a < b) do a else b )
+  fn max[a:S, b:S -> S] do ( if(a < b) do b else a )
+)
 
 use:Slc (
   meth @ [self:&Self i:S -> U1] do (
