@@ -16,17 +16,17 @@ struct Bst  [ l:&Self  r:&Self]
 struct CBst [ parent:Bst  key:&CStr ]
 
 
-use:S (
+impl S (
   fn min[a:S, b:S -> S] do ( if(a < b) do a else b )
   fn max[a:S, b:S -> S] do ( if(a < b) do b else a )
 )
 
-use:U2 (
+impl U2 (
   fn min[a:U2, b:U2 -> U2] do ( if(a < b) do a else b )
   fn max[a:U2, b:U2 -> U2] do ( if(a < b) do b else a )
 )
 
-use:Slc (
+impl Slc (
   meth @ [self:&Self i:S -> U1] do (
     root.@ptrAdd(self.dat, i, self.len)
   )
@@ -44,7 +44,7 @@ use:Slc (
 
 struct Block  [
   const SIZE: U2 = 0x1000;
-  dat:Arr[(SIZE - 4) U1];  bot:U2;  top:U2
+  dat:Arr[(Block.SIZE - 4) U1];  bot:U2;  top:U2
 ]
 struct BANode [ next:&BANode; prev:&BANode; block:&Block ]
 struct BA     [ free:&BANode; len:S ]
@@ -58,7 +58,7 @@ role Arena [
 ]
 
 \ Note: method implementations are native (see fngi.c)
-unty use:BBA (
+unty impl BBA (
   meth drop     [stk:&Self      ] do;
   meth free     [stk:&Self stk\dat:&Any stk\sz:S stk\alignment:U2 -> &Slc ] do;
   meth alloc    [stk:&Self              stk\sz:S stk\alignment:U2 -> &Any] do;

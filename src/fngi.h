@@ -189,7 +189,7 @@ typedef struct _Kern {
   BBA bbaRepl; BBA bbaTmp;
   BBA bbaSllArena;
   U1 tokenDat[64];
-  TyDict* dictBuf[DICT_DEPTH]; TyDict* modBuf[DICT_DEPTH];
+  TyDict* dictBuf[DICT_DEPTH]; TyDict* implBuf[DICT_DEPTH];
   TyDbDat tyDbDat; TyDbDat tyDbImmDat;
   SllSpArena sllArena;
   Globals g;     // kernel globals

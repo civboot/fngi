@@ -3,6 +3,7 @@
 \ TODO: Stk, CStr, Sll
 
 fileUse:comp
+fileImpl:comp
 
 \ Auto-generates bin/const.h
 const CSZ_CATCH : U2 = 0xFF
@@ -136,7 +137,6 @@ struct GlobalsCode [
   fnLocals:U2 \ locals size
   fnState:U1
   blk_:&Blk
-  curTy:&Ty     \ current type (fn, struct) being compiled
   compFn:&TyFn  \ current function that does compilation
 ]
 
@@ -145,7 +145,7 @@ struct Globals [
   c:GlobalsCode
   bbaDict:&BBA
   rootDict:TyDict
-  dictStk:DictStk
+  dictStk:DictStk  implStk:DictStk
   cBst:&CBst  tyIBst:&TyIBst  fnSigBst:&FnSig
   tyDb:TyDb   tyDbImm:TyDb    bbaTyImm:BBA
 ]

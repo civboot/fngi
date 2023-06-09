@@ -191,7 +191,6 @@ typedef struct _GlobalsCode {
   U2 fnLocals;
   U1 fnState;
   Blk* blk_;
-  Ty* curTy;
   TyFn* compFn;
 } GlobalsCode;
 
@@ -200,6 +199,7 @@ typedef struct _Globals {
   BBA* bbaDict;
   TyDict rootDict;
   DictStk dictStk;
+  DictStk implStk;
   CBst* cBst;
   TyIBst* tyIBst;
   FnSig* fnSigBst;

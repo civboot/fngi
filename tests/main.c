@@ -183,7 +183,7 @@ TEST_FNGI(tyDb, 4)
   tyCall(k, db, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
 
   // ret[done] causes errors on future operations
-  k->g.c.curTy = Kern_findTy(k, &KEY("+"));
+  DictStk_add(&k->g.implStk, Kern_findTy(k, &KEY("+")));
   tyCall(k, db, NULL, &TyIs_S);
   tyRet(k, db, RET_DONE);  TASSERT_EQ(RET_DONE, TyDb_done(db));
   FNGI_EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL), "Code after guaranteed 'ret'");
@@ -513,7 +513,7 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
 
-  COMPILE_EXEC("use:A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
+  COMPILE_EXEC("impl A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
   COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( a.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
 
@@ -525,7 +525,7 @@ TEST_FNGI(method, 20)
   COMPILE_EXEC("imm#tAssertEq(13, a.aDo(8))");
   COMPILE_EXEC("imm#tAssertEq(14, a.nonMeth(7))");
 
-  COMPILE_EXEC("use:A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
+  COMPILE_EXEC("impl A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
   COMPILE_EXEC("imm#tAssertEq(13, a.aDoSelf(8))");
 
   TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));

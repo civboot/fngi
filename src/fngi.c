@@ -149,13 +149,14 @@ void TyDb_clearDone(TyDb* db) { *Stk_topRef(&db->done) = NOT_DONE; }
 
 void DictStk_reset(Kern* k) {
   k->g.dictStk.sp = k->g.dictStk.cap;
+  k->g.implStk.sp = k->g.implStk.cap;
   DictStk_add(&k->g.dictStk, &k->g.rootDict);
+  DictStk_add(&k->g.implStk, &k->g.rootDict);
 }
 
 void Kern_errCleanup(Kern* k) {
   k->g.c.metaNext = 0; k->g.c.cstate = 0;
   k->g.c.fnLocals = 0; k->g.c.fnState = 0;
-  k->g.c.curTy = NULL;
   k->g.c.compFn = &TyFn_baseCompFn;
   DictStk_reset(k);
   k->g.c.blk_ = NULL;
@@ -195,6 +196,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
         .compFn = &TyFn_baseCompFn,
       },
       .dictStk = (DictStk) { .dat = k->dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
+      .implStk = (DictStk) { .dat = k->implBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .bbaDict = &k->bbaDict,
       .bbaTyImm = (BBA) { &civ.ba },
     },
@@ -240,7 +242,7 @@ Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   memset(ty, 0, sz);
   ty->name  = key; ty->tyKey = tyKey;
-  ty->container = DictStk_topMaybe(&k->g.dictStk);
+  ty->container = DictStk_top(&k->g.implStk);
   ty->meta = meta;
   ty->line = k->g.c.srcInfo->line;
   ty->file = k->g.c.srcInfo;
@@ -963,7 +965,8 @@ void tyCallSelf(Kern* k, TyDb* db, TyI* inp, TyI* out, TyDict* self) {
 void tyRet(Kern* k, TyDb* db, HowDone done) {
   if(IS_UNTY) return;
   ASSERT(not TyDb_done(db), "Code after guaranteed 'ret'");
-  tyCheck(tyFn(k->g.c.curTy)->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
+  TyFn* fn = tyFn(DictStk_top(&k->g.implStk));
+  tyCheck(fn->out, TyDb_top(db), true, SLC("Type error during 'ret'"));
   TyDb_setDone(db, done);
 }
 
@@ -1253,9 +1256,9 @@ void scan(Kern* k) {
 
 void Kern_addTy(Kern* k, Ty* ty) {
   ty->l = NULL; ty->r = NULL;
-  DictStk* dicts = &k->g.dictStk;
-  ASSERT(dicts->sp < dicts->cap, "No dicts");
-  Ty** root = &DictStk_top(dicts)->children;
+  TyDict* d = DictStk_top(&k->g.implStk);
+  assert(isTyDict((Ty*)d) or isTyFn((Ty*)d));
+  Ty** root = (Ty**) &d->children;
   ty = Ty_add(root, ty);
   if(ty) {
     eprintf("!! Overwritten key: %.*s\n", Dat_fmt(*ty->name));
@@ -1858,6 +1861,7 @@ TyDict* _useGet(Kern *k) {
   TyDict* d;
   do {
     d = next;
+    // TODO: pass in slc for token name
     ASSERT(isTyDict((Ty*) d), "Cannot use 'use' with non-dict");
     next = (TyDict*) nextDot(k, d);
   } while(next);
@@ -1884,8 +1888,10 @@ void N_cast(Kern* k) {
 
 void N_mod(Kern* k) {
   N_notImm(k);
-  TyDict* d = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_MOD, NULL);
-  _use(k, d);
+  TyDict* m = (TyDict*) Ty_new(k, TY_DICT | TY_DICT_MOD, NULL);
+  DictStk_add(&k->g.implStk, m);
+  Kern_compFn(k);
+  DictStk_pop(&k->g.implStk);
 }
 
 void N_use(Kern* k) {
@@ -1893,10 +1899,16 @@ void N_use(Kern* k) {
   _use(k, _useGet(k));
 }
 
-void N_fileUse(Kern* k) { // loc that stays for whole file
+void N_fileUse(Kern* k) { // use that stays for whole file
   N_notImm(k); REQUIRE(":");
   TyDict* d = _useGet(k);
   DictStk_add(&k->g.dictStk, d);
+}
+
+void N_fileImpl(Kern* k) { // impl that stays for whole file
+  N_notImm(k); REQUIRE(":");
+  TyDict* d = _useGet(k);
+  DictStk_add(&k->g.implStk, d);
 }
 
 // ***********************
@@ -1946,9 +1958,9 @@ void synFnFound(Kern* k, Ty* ty) {
 // Used for both stk and out
 void N_stk(Kern *k) {
   N_notImm(k);
-  TyI** root;
-  if(     IS_FN_STATE(FN_STATE_STK)) root = &tyFn(k->g.c.curTy)->inp;
-  else if(IS_FN_STATE(FN_STATE_OUT)) root = &tyFn(k->g.c.curTy)->out;
+  TyI** root; TyFn* fn = tyFn(DictStk_top(&k->g.implStk));
+  if(     IS_FN_STATE(FN_STATE_STK)) root = &fn->inp;
+  else if(IS_FN_STATE(FN_STATE_OUT)) root = &fn->out;
   else { SET_ERR(SLC("stk used after local variable inputs or in body")); }
   CONSUME(":");
   TyI* tyI = scanTyI(k, NULL); ASSERT(not tyI->arrLen, "Stk input cannot be array");
@@ -1989,7 +2001,7 @@ void checkSelf(TyI* arg, bool expectFirst) {
 }
 
 TyDict* currentSelf(Kern* k) {
-  DictStk* m = &k->g.dictStk;
+  DictStk* m = &k->g.implStk;
   for(U2 i = m->sp; i < m->cap; i++) {
     if(isTyDict((Ty*)m->dat[i])) return m->dat[i];
   }
@@ -2011,7 +2023,7 @@ void N_inp(Kern* k) {
          , "inp used after out");
   VarPre pre = varPre(k, true);
   SET_FN_STATE(FN_STATE_INP);
-  TyI_rootAdd(k, &tyFn(k->g.c.curTy)->inp, pre.var->tyI);
+  TyI_rootAdd(k, &tyFn(DictStk_top(&k->g.implStk))->inp, pre.var->tyI);
   pre.var->tyI = replaceSelf(k, pre.var->tyI, currentSelf(k));
   localImpl(k, &pre);
 }
@@ -2095,9 +2107,8 @@ TyFn* parseFn(Kern* k) {
   U2 meta = k->g.c.metaNext;
   // Create TyFn based on NAME
   TyFn* fn = (TyFn*) Ty_new(k, TY_FN | meta, NULL);
-  Ty* prevTy = k->g.c.curTy; k->g.c.curTy = (Ty*) fn;
-
   DictStk_add(&k->g.dictStk, (TyDict*) fn); // local variables
+  DictStk_add(&k->g.implStk, (TyDict*) fn); // local variables
   fnSignature(k, fn);
 
   Buf* code = &k->g.c.code;  Buf prevCode = Kern_reserveCode(k, FN_ALLOC);
@@ -2128,8 +2139,7 @@ TyFn* parseFn(Kern* k) {
   ASSERT(db_startLen == Stk_len(&k->g.tyDb.done),
          "A type operation (i.e. if/while/etc) is incomplete in fn");
   END_LOCAL_TYDB_BBA(tyDb);
-  DictStk_pop(&k->g.dictStk);
-  k->g.c.curTy = prevTy;
+  DictStk_pop(&k->g.dictStk); DictStk_pop(&k->g.implStk);
   return fn;
 }
 
@@ -2392,9 +2402,7 @@ void field(Kern* k, TyDict* st) {
 }
 
 void _parseDataTy(Kern* k, TyDict* st) {
-  Ty* prevTy = k->g.c.curTy;        k->g.c.curTy = (Ty*) st;
-  // No, this is pretty bad
-  DictStk_add(&k->g.dictStk, st);
+  DictStk_add(&k->g.implStk, st);
   REQUIRE("["); bool hasUnsized = false;
   while(not CONSUME("]")) {
     Ty* ty = Kern_findToken(k);
@@ -2411,10 +2419,9 @@ void _parseDataTy(Kern* k, TyDict* st) {
       }
     }
   }
-  DictStk_pop(&k->g.dictStk);
   if(hasUnsized) st->sz = TY_UNSIZED;
   assert(Struct_computeSz(k, st->fields, 0) == st->sz);
-  k->g.c.curTy = prevTy;
+  DictStk_pop(&k->g.implStk);
 }
 
 void N_struct(Kern* k) {
@@ -2435,7 +2442,7 @@ void N_struct(Kern* k) {
 
 void N_meth(Kern* k) {
   N_notImm(k);
-  TyDict* st = DictStk_topMaybe(&k->g.dictStk);
+  TyDict* st = DictStk_top(&k->g.implStk);
   ASSERT(isTyDict((Ty*)st) && isDictStruct(st), "'meth' can only be in struct");
   k->g.c.metaNext |= TY_FN_METH;
   TyFn* meth = parseFn(k);
@@ -2451,7 +2458,7 @@ void N_meth(Kern* k) {
 // role Resource [ meth drop(&Self) do; ]
 
 void N_absmeth(Kern* k) {
-  TyDict* role = DictStk_topMaybe(&k->g.dictStk);
+  TyDict* role = DictStk_top(&k->g.implStk);
   ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
   TyFn* fn = (TyFn*) Ty_new(k, TY_FN | TY_FN_ABSMETH, NULL);
@@ -2480,9 +2487,9 @@ void _implRole(Kern* k, TyDict* st) {
 
   // Create a variable for storing the methods
   TyI* roleTyI = TyI_findOrAdd(k, &(TyI){ .ty = (TyBase*)role });
-  DictStk_add(&k->g.dictStk, st);
+  DictStk_add(&k->g.implStk, st);
   TyVar* v = (TyVar*) Ty_newTyKey(k, TY_VAR | TY_VAR_GLOBAL, role->name, roleTyI);
-  DictStk_pop(&k->g.dictStk);
+  DictStk_pop(&k->g.implStk);
   VarPre pre = { .var = v, .sz = role->sz, .els = 1 };
   S* storeLoc = BBA_alloc(&k->bbaCode, pre.sz, /*align*/RSIZE);
   ASSERT(storeLoc, "Role impl OOM");
@@ -2503,10 +2510,10 @@ void N_impl(Kern* k) {
   N_notImm(k); ASSERT(IS_FN_STATE(FN_STATE_NO), "impl used in a fn");
   TyDict* st = (TyDict*) scanTy(k); // TODO: follow .
   ASSERT(st and isTyDict((Ty*)st), "Can only implement for TyDict");
-  Ty* prevTy = k->g.c.curTy; k->g.c.curTy = (Ty*)st;
+  DictStk_add(&k->g.implStk, st);
   if(CONSUME(":")) _implRole(k, st);
-  else {}
-  k->g.c.curTy = prevTy;
+  else             Kern_compFn(k);
+  DictStk_pop(&k->g.implStk);
 }
 
 
@@ -2997,6 +3004,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x03", "mod"          , TY_FN_SYN       , N_mod      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x03", "use"          , TY_FN_SYN       , N_use      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x07", "fileUse"      , TY_FN_SYN       , N_fileUse  , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x08", "fileImpl"     , TY_FN_SYN       , N_fileImpl , TYI_VOID, TYI_VOID);
   ADD_FNN("\x02", "fn"           , TY_FN_SYN       , N_fn       , TYI_VOID, TYI_VOID);
   ADD_FNN("\x04", "meth"         , TY_FN_SYN       , N_meth     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x07", "absmeth"      , TY_FN_SYN       , N_absmeth  , TYI_VOID, TYI_VOID);
@@ -3074,15 +3082,12 @@ void Kern_fns(Kern* k) {
 
   static TyDict comp; // these are all inside comp
   ADD_ANY_VAR(comp, TyDict, "\x04", "comp", TY_DICT | TY_DICT_MOD, children, /*v=*/0);
-  DictStk_add(&k->g.dictStk, &comp);
+  DictStk_add(&k->g.implStk, &comp);
   ADD_FNN("\x06", "single"     , 0   , N_single     , &TyIs_S, TYI_VOID);
   ADD_FNN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
   ADD_FNN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
   ADD_FNN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
-
-  DictStk_pop(&k->g.dictStk);
-
-  // assert(&comp.v == (S)DictStk_pop(&k->g.dictStk).root);
+  DictStk_pop(&k->g.implStk);
 
   TASSERT_EMPTY();
 }
