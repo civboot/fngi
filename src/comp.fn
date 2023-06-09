@@ -2,8 +2,8 @@
 \ Note: etc/gen.py converts this into gen/comp.h
 \ TODO: Stk, CStr, Sll
 
-fileUse:comp
-fileImpl:comp
+fileUse  comp
+fileImpl comp
 
 \ Auto-generates bin/const.h
 const CSZ_CATCH : U2 = 0xFF

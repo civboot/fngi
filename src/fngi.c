@@ -1895,18 +1895,18 @@ void N_mod(Kern* k) {
 }
 
 void N_use(Kern* k) {
-  N_notImm(k); REQUIRE(":");
+  N_notImm(k);
   _use(k, _useGet(k));
 }
 
 void N_fileUse(Kern* k) { // use that stays for whole file
-  N_notImm(k); REQUIRE(":");
+  N_notImm(k);
   TyDict* d = _useGet(k);
   DictStk_add(&k->g.dictStk, d);
 }
 
 void N_fileImpl(Kern* k) { // impl that stays for whole file
-  N_notImm(k); REQUIRE(":");
+  N_notImm(k);
   TyDict* d = _useGet(k);
   DictStk_add(&k->g.implStk, d);
 }

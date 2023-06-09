@@ -210,6 +210,7 @@ void fngiErrPrinter();
 void fngiHandleSig(int sig, struct sigcontext ctx);
 
 void DictStk_reset(Kern* k);
+void DictStk_add(DictStk* stk, TyDict* r);
 void Kern_init(Kern* k, FnFiber* fb);
 
 // Initialze FnFiber (beyond Fiber init).

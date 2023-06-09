@@ -183,7 +183,7 @@ TEST_FNGI(tyDb, 4)
   tyCall(k, db, &TyIs_S, NULL); TY_CHECK(NULL, TyDb_top(db), true);
 
   // ret[done] causes errors on future operations
-  DictStk_add(&k->g.implStk, Kern_findTy(k, &KEY("+")));
+  DictStk_add(&k->g.implStk, (TyDict*)Kern_findTy(k, &KEY("+")));
   tyCall(k, db, NULL, &TyIs_S);
   tyRet(k, db, RET_DONE);  TASSERT_EQ(RET_DONE, TyDb_done(db));
   FNGI_EXPECT_ERR(tyCall(k, db, &TyIs_S, NULL), "Code after guaranteed 'ret'");
@@ -440,7 +440,7 @@ TEST_FNGI(mod, 10)
   Kern_fns(k); REPL_START
   COMPILE_EXEC("mod foo ( fn one[ -> S] do 1 )");
   COMPILE_EXEC("imm#tAssertEq(1, foo.one())");
-  COMPILE_EXEC("use:foo ( imm#tAssertEq(1, one()) )");
+  COMPILE_EXEC("use foo ( imm#tAssertEq(1, one()) )");
   REPL_END
 END_TEST_FNGI
 
