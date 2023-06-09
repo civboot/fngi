@@ -1,0 +1,7 @@
+\ require[dat.fn comp.fn]
+
+fnMeta:TY_FN_SYN
+fn while[stk:U1] do (
+  comp.compile:blk;
+
+)

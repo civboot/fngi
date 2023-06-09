@@ -104,11 +104,11 @@ TEST_FNGI(compile0, 4)
   TASSERT_EMPTY();
 
   COMPILE_EXEC("0x44");     TASSERT_WS(0x44);
-  COMPILE_EXEC("char:d");   TASSERT_WS('d');
-  COMPILE_EXEC("char:\\n"); TASSERT_WS('\n');
-  COMPILE_EXEC("char:\\t"); TASSERT_WS('\t');
-  COMPILE_EXEC("char: ");   TASSERT_WS(' ');
-  COMPILE_EXEC("char:\\ "); TASSERT_WS(' ');
+  COMPILE_EXEC("ch:d");   TASSERT_WS('d');
+  COMPILE_EXEC("ch:\\n"); TASSERT_WS('\n');
+  COMPILE_EXEC("ch:\\t"); TASSERT_WS('\t');
+  COMPILE_EXEC("ch: ");   TASSERT_WS(' ');
+  COMPILE_EXEC("ch:\\ "); TASSERT_WS(' ');
 END_TEST_FNGI
 
 TEST_FNGI(inlineFns, 4)
@@ -686,12 +686,12 @@ TEST_FNGI(core, 20)
   COMPILE_EXEC(
     "fn useSlc[ -> U1] do (\n"
     "  var dat:Arr[12 U1]\n"
-    "  dat                  = char:h \n"
-    "  @ptrAdd(&dat, 1, 12) = char:i \n"
-    "  @ptrAdd(&dat, 2, 12) = char:p \n"
+    "  dat                  = ch:h \n"
+    "  @ptrAdd(&dat, 1, 12) = ch:i \n"
+    "  @ptrAdd(&dat, 2, 12) = ch:p \n"
     "  var s: Slc = Slc(&dat, U2(12))\n"
-    "  tAssertEq(char:h, s.@0)\n"
-    "  tAssertEq(char:i, s.@1)\n"
+    "  tAssertEq(ch:h, s.@0)\n"
+    "  tAssertEq(ch:i, s.@1)\n"
     "  s.@2\n"
     ")");
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
@@ -709,6 +709,10 @@ TEST_FNGI(core, 20)
   TASSERT_EQ(sizeof(Ty), TYDICT_SZ(comp, "Ty"));
   TASSERT_EQ(sizeof(TyDict) - 2, TYDICT_SZ(comp, "TyDict"));
   TASSERT_EQ(sizeof(Globals), TYDICT_SZ(comp, "Globals"));
+
+  TASSERT_EQ(1, Slc_cmp(SLC("world"), SLC("aliens")));
+
+  CStr_ntVar(testDat, "\x11", "tests/test_dat.fn"); compilePath(k, testDat);
 
   REPL_END
 END_TEST_FNGI

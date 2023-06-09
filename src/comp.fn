@@ -151,3 +151,4 @@ struct Globals [
 ]
 
 global g:&Globals = NULL \ initialized by native code
+

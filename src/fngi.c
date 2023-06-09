@@ -978,12 +978,13 @@ void tyClone(Kern* k, TyDb* db, U2 depth) {
   if(stream) TyI_cloneAdd(db->bba, TyDb_root(db), stream);
 }
 
-void tyMerge(Kern* k, TyDb* db) {
+Slc MERGE_ERR = SLC("Type error during merge (i.e. if/else)");
+void tyMerge(Kern* k, TyDb* db, Slc* msg) {
   if(IS_UNTY) return;
   ASSERT(Stk_len(&db->tyIs) > 1, "tyMerge with 1 or fewer snapshots");
   if(not TyDb_done(db)) {
-    tyCheck(TyDb_index(db, 1), TyDb_top(db), true,
-            SLC("Type error during merge (i.e. if/else)"));
+    if(not msg) msg = &MERGE_ERR;
+    tyCheck(TyDb_index(db, 1), TyDb_top(db), true, *msg);
   }
   TyDb_drop(k, db);
 }
@@ -2202,11 +2203,11 @@ IfState tyIf(Kern* k, IfState is) {
   TyDb* db = tyDb(k, false); HowDone done = TyDb_done(db);
   if(is.hadFull) {
     is.done = is.done ? S_min(is.done, done) : done;
-    tyMerge(k, db);    // check stateToUse==fullIfState
+    tyMerge(k, db, NULL);    // check stateToUse==fullIfState
     tyClone(k, db, 1); // clone outer state
   } else if (TyDb_done(db)) {
     is.done = is.done ? S_min(is.done, done) : done;
-    tyMerge(k, db);    // drop stateToUse
+    tyMerge(k, db, NULL);    // drop stateToUse
     tyClone(k, db, 0); // clone outer statet
   } else {
     tyClone(k, db, 1); // stateToUse becomes fullIfState. Clone outer as stateToUse
@@ -2215,16 +2216,19 @@ IfState tyIf(Kern* k, IfState is) {
   return is;
 }
 
+Slc MERGE_COND = SLC("elif conditional changed type stack");
 IfState _N_if(Kern* k, IfState is) {
-  TyDb* db = tyDb(k, false);
-  Buf* b = &k->g.c.code;
+  TyDb* db = tyDb(k, false); Buf* b = &k->g.c.code;
   U2 i = _if(b);
   REQUIRE("do"); Kern_compFn(k);
   is = tyIf(k, is);
 
   if(CONSUME("elif")) {
     i = _else(b, i);
+    tyClone(k, db, 0);
     Kern_compFn(k); tyCall(k, db, &TyIs_S, NULL);
+    ASSERT(not TyDb_done(db), "ret/break/etc in if check");
+    tyMerge(k, db, &MERGE_COND);
     ASSERT(IS_UNTY or not TyDb_done(db), "Detected done in elif test");
     is = _N_if(k, is); // look for next elif or else
   } else if(CONSUME("else")) {
@@ -2346,21 +2350,32 @@ void N_break(Kern* k) {
   Buf_addBE2(b, 0);
 }
 
-void N_blk(Kern* k) {
-  N_notImm(k); TyDb* db = tyDb(k, false);
-  Buf* b = &k->g.c.code;
+Blk* blkStart(Kern* k, bool asImm) {
+  assert(not asImm);
+  TyDb* db = tyDb(k, asImm); Buf* b = &k->g.c.code;
   Blk* blk = BBA_alloc(k->g.bbaDict, sizeof(Blk), RSIZE);
   ASSERT(blk, "block OOM");
   *blk = (Blk) { .start = b->len };
   TyI_cloneAdd(k->g.bbaDict, &blk->startTyI, TyDb_top(db));
   Sll_add(Blk_root(k), Blk_asSll(blk));
+  return blk;
+}
 
-  Kern_compFn(k); // compile code block
+void blkEnd(Kern* k, bool asImm, Blk* blk) {
+  assert(not asImm);
+  TyDb* db = tyDb(k, asImm); Buf* b = &k->g.c.code;
   if(not TyDb_done(db)) tyBreak(k, db); // implicit break checks blk type
-  if(TyDb_done(db) < RET_DONE) TyDb_clearDone(db);
+  if(blk->breaks or (TyDb_done(db) < RET_DONE)) TyDb_clearDone(db);
   for(Sll* br = blk->breaks; br; br = br->next) {
     srBE2(b->dat + br->dat, b->len - br->dat);
   }
+}
+
+void N_blk(Kern* k) {
+  N_notImm(k);
+  Blk* blk = blkStart(k, false);
+  Kern_compFn(k); // compile code block
+  blkEnd(k, false, blk);
 }
 
 // ***********************
@@ -2764,7 +2779,7 @@ CharNextEsc charNextEsc(Kern* k, SpReader f) {
   return (CharNextEsc) { .c = *c, .unknownEsc = true };
 }
 
-void N_char(Kern* k) {
+void N_ch(Kern* k) {
   bool asImm = WS_POP(); REQUIRE(":");
   CharNextEsc c = charNextEsc(k, k->g.c.src);
   ASSERT(not c.unknownEsc, "Unknown escape in char");
@@ -2893,8 +2908,6 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
   assert(false); // not implemented
   return (U1*)WS_POP();
 }
-
-
 
 // ***********************
 // * 7: Registering Functions
@@ -3030,7 +3043,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x07", "tAssert"      , 0               , N_tAssert  , &TyIs_S,  TYI_VOID);
   ADD_FNN("\x09", "tAssertEq"    , 0               , N_tAssertEq, &TyIs_SS, TYI_VOID);
   ADD_FNN("\x0D", "assertWsEmpty", 0           , N_assertWsEmpty, TYI_VOID, TYI_VOID);
-  ADD_FNN("\x04", "char"         , TY_FN_SYN       , N_char     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x02", "ch"           , TY_FN_SYN       , N_ch       , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "|"            , TY_FN_SYN       , N_pipe     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
 
@@ -3048,7 +3061,7 @@ void Kern_fns(Kern* k) {
   ADD_INLINE_FN("\x04", "inc4" , 0       , &TyIs_S,  &TyIs_S, INC4    );
   ADD_INLINE_FN("\x03", "dec"  , 0       , &TyIs_S,  &TyIs_S, DEC     );
   ADD_INLINE_FN("\x03", "inv"  , 0       , &TyIs_S,  &TyIs_S, INV     );
-  ADD_INLINE_FN("\x03", "neg"  , 0       , &TyIs_SI,  &TyIs_SI, NEG    );
+  ADD_INLINE_FN("\x02", "--"   , 0       , &TyIs_SI, &TyIs_SI, NEG    );
   ADD_INLINE_FN("\x03", "not"  , 0       , &TyIs_S,  &TyIs_S, NOT     );
   ADD_INLINE_FN("\x05", "i1to4", 0       , &TyIs_S,  &TyIs_S, CI1     );
   ADD_INLINE_FN("\x05", "i2to4", 0       , &TyIs_S,  &TyIs_S, CI2     );
@@ -3131,7 +3144,7 @@ void Core_mod(Kern* k) {
 void Kern_handleSig(Kern* k, int sig, struct sigcontext* ctx) {
   eprintf("!!! fngi return stack:\n");
   N_dbgRs(k);
-  eprintf("!!! Code: token=\"%.*s\" line=%u\n", Dat_fmt(k->g.c.token), k->g.c.srcInfo->line + 1);
+  eprintf("!!! Code: token=\"%.*s\" %.*s line=%u\n", Dat_fmt(k->g.c.token), Dat_fmt(*k->g.c.srcInfo->path), k->g.c.srcInfo->line + 1);
   if(sig || k->isTest) {
     Trace_handleSig(sig, ctx);
   }

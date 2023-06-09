@@ -15,7 +15,6 @@ struct SllS [ parent:Sll  v:S ]
 struct Bst  [ l:&Self  r:&Self]
 struct CBst [ parent:Bst  key:&CStr ]
 
-
 impl S (
   fn min[a:S, b:S -> S] do ( if(a < b) do a else b )
   fn max[a:S, b:S -> S] do ( if(a < b) do b else a )
@@ -32,10 +31,23 @@ impl Slc (
   )
 
   meth cmp [self:&Self, s:Slc -> I4] do (
-    var left:&U1
-    drp(1)
-    root.@left
-      ;;;
+    var len:U2 = U2.min(self.len, s.len)
+    var l:&U1 = self.dat; var r:&U1 = s.dat
+    var i:U2 = 0;
+    blk(
+      if(i >= len) do break;
+      if(@l == @r) do (
+        \ unty (l = inc l; r = inc r);
+        l = ptrAdd(l, 1, len) r = ptrAdd(r, 1, len)
+        i = U2(inc i)
+        cont;
+        )
+      if(@l < @r) do ret (--1)
+      else           ret (  1);
+    )
+    if  (self.len == s.len) do (SI 0)
+    elif(self.len <  s.len) do ( --1)
+    else                       (SI 1)
   )
 )
 

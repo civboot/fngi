@@ -412,7 +412,7 @@ void tyCheck(TyI* require, TyI* given, bool sameLen, Slc errCxt);
 void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out);
 void tyRet(Kern* k, TyDb* db, HowDone done);
 void tySplit(Kern* k);
-void tyMerge(Kern* k, TyDb* db);
+void tyMerge(Kern* k, TyDb* db, Slc* msg);
 void TyI_printAll(TyI* tyI);
 Ty* TyDict_find(TyDict* dict, Key* s);
 S TyDict_sz(TyDict* ty);

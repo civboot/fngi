@@ -1,0 +1,12 @@
+mod testDat;  fileUse testDat;  fileImpl testDat;
+
+global world: Slc =  |hello world!|
+global aliens: Slc = |hello aliens!|
+
+imm#tAssertEq(12, world.len)
+imm#tAssertEq(0,  S world.cmp(world))
+imm#tAssertEq(0,  S aliens.cmp(aliens))
+imm#tAssertEq(1,  S world.cmp(aliens))
+\ imm#tAssertEq(1,        S aliens.cmp(world))
+imm#tAssertEq(ch:h, world.@0)
+imm#tAssertEq(ch:e, world.@1)
