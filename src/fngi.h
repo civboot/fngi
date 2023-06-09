@@ -448,6 +448,7 @@ S TyDict_sz(TyDict* ty);
   PRE TyI TyIs_U2;     /* U2         */ \
   PRE TyI TyIs_U4;     /* U4         */ \
   PRE TyI TyIs_U4x2;   /* U4 U4      */ \
+  PRE TyI TyIs_SI;     /* SI         */ \
   PRE TyI TyIs_rU1;    /* &U1        */ \
   PRE TyI TyIs_rU2;    /* &U2        */ \
   PRE TyI TyIs_rU4;    /* &U4        */ \

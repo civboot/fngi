@@ -157,7 +157,7 @@ void Kern_errCleanup(Kern* k) {
   k->g.c.fnLocals = 0; k->g.c.fnState = 0;
   k->g.c.curTy = NULL;
   k->g.c.compFn = &TyFn_baseCompFn;
-  DictStk_reset(k);  k->g.modStk.sp = k->g.modStk.cap;
+  DictStk_reset(k);
   k->g.c.blk_ = NULL;
   k->g.c.code.len = 0;
 
@@ -195,7 +195,6 @@ void Kern_init(Kern* k, FnFiber* fb) {
         .compFn = &TyFn_baseCompFn,
       },
       .dictStk = (DictStk) { .dat = k->dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
-      .modStk  = (DictStk) { .dat = k->modBuf,  .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .bbaDict = &k->bbaDict,
       .bbaTyImm = (BBA) { &civ.ba },
     },
@@ -241,7 +240,7 @@ Ty* Ty_newTyKey(Kern* k, U2 meta, CStr* key, TyI* tyKey) {
   Ty* ty = (Ty*) BBA_alloc(k->g.bbaDict, sz, 4);
   memset(ty, 0, sz);
   ty->name  = key; ty->tyKey = tyKey;
-  ty->container = DictStk_topMaybe(&k->g.modStk);
+  ty->container = DictStk_topMaybe(&k->g.dictStk);
   ty->meta = meta;
   ty->line = k->g.c.srcInfo->line;
   ty->file = k->g.c.srcInfo;
@@ -753,7 +752,8 @@ bool TyI_check(TyI* r, TyI* g) { // r=require g=given
   } else if ((&Ty_U2 == rd) and (&Ty_U1 == gd)) {
     return true;
   } else if ((&Ty_I4 == rd) or (&Ty_SI == rd)) {
-    return (&Ty_I4 == gd) or (&Ty_SI == gd);
+    return (&Ty_I4 == gd) or (&Ty_SI == gd)
+        or (&Ty_U1 == gd) or (&Ty_U2 == gd);
   }
   if(isDictStruct(rd) and isDictStruct(gd)) {
     while(true) {
@@ -1064,6 +1064,7 @@ void scanLine(Kern* k) {
 }
 
 void tokenDrop(Kern* k) {
+  eprintf("??? dropping %.*s\n", TOKEN);
   Buf* b = &k->g.c.token;
   SrcRing_incHead(k, &SpReader_asBase(k, k->g.c.src)->ring, b->len);
   Buf_clear(b);
@@ -1500,6 +1501,7 @@ void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
 }
 
 void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
+  eprintf("??? compileFn %.*s\n", Ty_fmt(fn));
   tyCallSelf(k, tyDb(k, asImm), fn->inp, fn->out, self);
   if(asImm) return executeFn(k, fn);
   Buf* b = &k->g.c.code;
@@ -1611,6 +1613,7 @@ void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
 
 int count = 0;
 void compileVar(Kern* k, TyVar* v, bool asImm) {
+  eprintf("??? compileVar start %.*s\n", Ty_fmt(v));
   count += 1;
   TyVar* global = isVarGlobal(v) ? v : NULL;
   if(asImm) ASSERT(not isVarLocal(v), "'imm#' used with local variable");
@@ -1624,6 +1627,7 @@ void compileVar(Kern* k, TyVar* v, bool asImm) {
     END_IMM;
   } else compileVarFt(k, v, asImm, /*addTy*/true);
   count -= 1;
+  eprintf("??? compileVar end %.*s\n", Ty_fmt(v));
 }
 
 // Return the next member through '.', or NULL if there is no '.'
@@ -1688,20 +1692,18 @@ void checkName(Kern* k, bool check) {
 void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
   checkName(k, ty);
   while(true) {
-    if(isTyVar(ty))   return compileVar(k, (TyVar*) ty, asImm);
+    if(isTyVar(ty)) return compileVar(k, (TyVar*) ty, asImm);
+    if(isTyFn(ty))  break;
+    ASSERT(not self, "invalid access through reference");
     if(isTyDict(ty)) {
       TyDict* d = (TyDict*) ty;
-      if(isDictMod(d)) {
-        self = NULL;
-        ty = nextDot(k, d); ASSERT(ty, "Cannot access mod directly.");
-        continue;
-      }
-      return compileDict(k, (TyDict*) ty, asImm);
-    }
-    break;
+      ty = nextDot(k, d);
+      if(ty) continue;
+      else ASSERT(not isDictMod(d), "Cannot access mod directly.");
+      return compileDict(k, d, asImm);
+    } assert(false);
   }
-  assert(not isFnSig((TyBase*)ty));
-  ASSERT(isTyFn(ty), "Unknown type meta"); TyFn* fn = (TyFn*)ty;
+  TyFn* fn = tyFn(ty); assert(not isFnSig((TyBase*)ty));
   if(isFnSyn(fn)) { WS_ADD(asImm); return executeFn(k, fn); }
   Kern_compFn(k); // non-syn functions consume next token
   if(isFnImm(fn)) { ASSERT(asImm, "fn must be called with 'imm#'"); }
@@ -1865,10 +1867,8 @@ TyDict* _useGet(Kern *k) {
 
 void _use(Kern* k, TyDict* d) {
   DictStk_add(&k->g.dictStk, d);
-  DictStk_add(&k->g.modStk, d);
   Kern_compFn(k);
   DictStk_pop(&k->g.dictStk);
-  DictStk_pop(&k->g.modStk);
 }
 
 void N_cast(Kern* k) {
@@ -1989,7 +1989,7 @@ void checkSelf(TyI* arg, bool expectFirst) {
 }
 
 TyDict* currentSelf(Kern* k) {
-  DictStk* m = &k->g.modStk;
+  DictStk* m = &k->g.dictStk;
   for(U2 i = m->sp; i < m->cap; i++) {
     if(isTyDict((Ty*)m->dat[i])) return m->dat[i];
   }
@@ -2393,7 +2393,8 @@ void field(Kern* k, TyDict* st) {
 
 void _parseDataTy(Kern* k, TyDict* st) {
   Ty* prevTy = k->g.c.curTy;        k->g.c.curTy = (Ty*) st;
-  DictStk_add(&k->g.dictStk, st); DictStk_add(&k->g.modStk, st);
+  // No, this is pretty bad
+  DictStk_add(&k->g.dictStk, st);
   REQUIRE("["); bool hasUnsized = false;
   while(not CONSUME("]")) {
     Ty* ty = Kern_findToken(k);
@@ -2410,7 +2411,7 @@ void _parseDataTy(Kern* k, TyDict* st) {
       }
     }
   }
-  DictStk_pop(&k->g.dictStk); DictStk_pop(&k->g.modStk);
+  DictStk_pop(&k->g.dictStk);
   if(hasUnsized) st->sz = TY_UNSIZED;
   assert(Struct_computeSz(k, st->fields, 0) == st->sz);
   k->g.c.curTy = prevTy;
@@ -2434,7 +2435,7 @@ void N_struct(Kern* k) {
 
 void N_meth(Kern* k) {
   N_notImm(k);
-  TyDict* st = DictStk_topMaybe(&k->g.modStk);
+  TyDict* st = DictStk_topMaybe(&k->g.dictStk);
   ASSERT(isTyDict((Ty*)st) && isDictStruct(st), "'meth' can only be in struct");
   k->g.c.metaNext |= TY_FN_METH;
   TyFn* meth = parseFn(k);
@@ -2450,7 +2451,7 @@ void N_meth(Kern* k) {
 // role Resource [ meth drop(&Self) do; ]
 
 void N_absmeth(Kern* k) {
-  TyDict* role = DictStk_topMaybe(&k->g.modStk);
+  TyDict* role = DictStk_topMaybe(&k->g.dictStk);
   ASSERT(isTyDict((Ty*)role) && isDictRole(role), "'absmeth' can only be in role");
   N_notImm(k);
   TyFn* fn = (TyFn*) Ty_new(k, TY_FN | TY_FN_ABSMETH, NULL);
@@ -2471,13 +2472,9 @@ void N_role(Kern* k) {
   }
 }
 
-// impl Struct:Role { add = &Struct.add }
-void N_impl(Kern* k) {
-  N_notImm(k);
-  TyDict* st = (TyDict*) scanTy(k);
-  ASSERT(st and isTyDict((Ty*)st), "Can only implement for TyDict");
-  ASSERT(isDictStruct(st)        , "Can only implement for struct");
-  REQUIRE(":"); TyDict* role = (TyDict*) scanTy(k);
+void _implRole(Kern* k, TyDict* st) {
+  ASSERT(isDictStruct(st), "Can only implement role for struct");
+  TyDict* role = (TyDict*) scanTy(k);
   ASSERT(role and isTyDict((Ty*)role) and isDictRole(role),
          "must be impl Type:Role");
 
@@ -2498,6 +2495,18 @@ void N_impl(Kern* k) {
     tyCall(k, tyDb(k, true), &(TyI){.ty = (TyBase*)sig, .meta = 1}, NULL);
     storeLoc[field->v / RSIZE] = WS_POP();
   }
+
+}
+
+// impl Struct:Role { add = &Struct.add }
+void N_impl(Kern* k) {
+  N_notImm(k); ASSERT(IS_FN_STATE(FN_STATE_NO), "impl used in a fn");
+  TyDict* st = (TyDict*) scanTy(k); // TODO: follow .
+  ASSERT(st and isTyDict((Ty*)st), "Can only implement for TyDict");
+  Ty* prevTy = k->g.c.curTy; k->g.c.curTy = (Ty*)st;
+  if(CONSUME(":")) _implRole(k, st);
+  else {}
+  k->g.c.curTy = prevTy;
 }
 
 
@@ -2508,6 +2517,7 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
   TyI* top = TyDb_top(db);
+  eprintf("??? N_dot %p: "); TyI_print(top); NL;
   U2 refs = TyI_refs(top);
   if(not refs) {
     SET_ERR(SLC("invalid '.', the value on the stack is not a reference"));
@@ -2650,6 +2660,7 @@ bool _atHandleLocalFn(Kern *k, bool asImm) { // return true if handled
 }
 
 void N_at(Kern* k) { // '@', aka dereference
+  eprintf("??? N_at start\n");
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   bool asImm = WS_POP(); if(_atHandleLocalFn(k, asImm)) return;
   TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.c.code;
@@ -2657,6 +2668,7 @@ void N_at(Kern* k) { // '@', aka dereference
   Kern_compFn(k);  U1 op = FTO;
   if(CONSUME("="))    op = SRO;
   TyI* tyI = TyDb_top(db); U2 refs = TyI_refs(tyI);
+  eprintf("??? N_at "); TyI_print(tyI); NL;
   if(not refs) {
     SET_ERR(SLC("invalid '@', the value on the stack is not a reference"));
   }
@@ -2677,6 +2689,7 @@ void N_at(Kern* k) { // '@', aka dereference
     TyI out = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta - 1};
     tyCall(k, db, &inp, &out);
   }
+  eprintf("??? N_at done "); TyDb_print(k, db); NL;
 }
 
 void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
@@ -2955,6 +2968,8 @@ void Kern_fns(Kern* k) {
   TyIs_U4 = (TyI) { .ty = (TyBase*)&Ty_U4 };
   TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = (TyBase*)&Ty_U4 };
 
+  TyIs_SI = (TyI) { .ty = (TyBase*)&Ty_SI };
+
   TyIs_rU1 = (TyI) { .ty = (TyBase*)&Ty_U1, .meta = 1 };
   TyIs_rU2 = (TyI) { .ty = (TyBase*)&Ty_U2, .meta = 1 };
   TyIs_rU4 = (TyI) { .ty = (TyBase*)&Ty_U4, .meta = 1 };
@@ -3011,21 +3026,21 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x01", "|"            , TY_FN_SYN       , N_pipe     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x07", "setFnTy"      , TY_FN_SYN       , N_setFnTy  , TYI_VOID, TYI_VOID);
 
-  // Stack operators. These are **not** PRE since they directly modify the stack.
+  // Stack operators.
   ADD_INLINE_FN("\x03", "swp"  , 0       , &TyIs_SS, &TyIs_SS,   SWP   );
-  ADD_INLINE_FN("\x03", "drp"  , 0       , &TyIs_S,  TYI_VOID,   DRP   );
+  ADD_INLINE_FN("\x03", "drp"  , 0       , &TyIs_S,  NULL    ,   DRP   );
   ADD_INLINE_FN("\x03", "ovr"  , 0       , &TyIs_SS, &TyIs_SSS,  OVR   );
   ADD_INLINE_FN("\x03", "dup"  , 0       , &TyIs_S,  &TyIs_SS,   DUP   );
   ADD_INLINE_FN("\x04", "dupn" , 0       , &TyIs_S,  &TyIs_SS,   DUPN  );
 
-  // Standard operators that use PRE syntax. Either "a <op> b" or simply "<op> b"
+  // Standard operators Either "a <op> b" or simply "<op> b"
   ADD_INLINE_FN("\x03", "nop"  , 0       , &TyIs_S,  &TyIs_S, NOP     );
   ADD_INLINE_FN("\x03", "inc"  , 0       , &TyIs_S,  &TyIs_S, INC     );
   ADD_INLINE_FN("\x04", "inc2" , 0       , &TyIs_S,  &TyIs_S, INC2    );
   ADD_INLINE_FN("\x04", "inc4" , 0       , &TyIs_S,  &TyIs_S, INC4    );
   ADD_INLINE_FN("\x03", "dec"  , 0       , &TyIs_S,  &TyIs_S, DEC     );
   ADD_INLINE_FN("\x03", "inv"  , 0       , &TyIs_S,  &TyIs_S, INV     );
-  ADD_INLINE_FN("\x03", "neg"  , 0       , &TyIs_S,  &TyIs_S, NEG     );
+  ADD_INLINE_FN("\x03", "neg"  , 0       , &TyIs_SI,  &TyIs_SI, NEG    );
   ADD_INLINE_FN("\x03", "not"  , 0       , &TyIs_S,  &TyIs_S, NOT     );
   ADD_INLINE_FN("\x05", "i1to4", 0       , &TyIs_S,  &TyIs_S, CI1     );
   ADD_INLINE_FN("\x05", "i2to4", 0       , &TyIs_S,  &TyIs_S, CI2     );

@@ -9,11 +9,14 @@ endif
 
 syn match elAlpha    '[_a-zA-Z0-9]\+' nextgroup=elKey
 syn keyword elKey
-      \ if else loop while break ret retIfNot reteq retIf retLt retGe
-      \ fn do ; , stk unty NULL Any declared
+      \ ret retIfNot reteq retIf retLt retGe
+      \ fn do stk unty NULL Any declared
+      \ loop while break cont
+      \ if elif else
       \ global const
       \ mod use struct role impl meth absmeth
       \ jn msk xor or and inv neg not
+      \ drp ovr swp
       \ ge_s gt_s le_s lt_s
       \ nextgroup=elSymbol
 

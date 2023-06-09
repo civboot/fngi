@@ -200,7 +200,6 @@ typedef struct _Globals {
   BBA* bbaDict;
   TyDict rootDict;
   DictStk dictStk;
-  DictStk modStk;
   CBst* cBst;
   TyIBst* tyIBst;
   FnSig* fnSigBst;

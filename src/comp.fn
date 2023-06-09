@@ -145,7 +145,7 @@ struct Globals [
   c:GlobalsCode
   bbaDict:&BBA
   rootDict:TyDict
-  dictStk:DictStk  modStk:DictStk
+  dictStk:DictStk
   cBst:&CBst  tyIBst:&TyIBst  fnSigBst:&FnSig
   tyDb:TyDb   tyDbImm:TyDb    bbaTyImm:BBA
 ]
