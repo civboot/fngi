@@ -2902,6 +2902,13 @@ void N_BBA_free(Kern* k) {
   WS_ADD((S)BBA_free(bba, (void*)dat, sz, alignment));
 }
 
+// &Self -> ()
+void N_UFile_read(Kern *k) { UFile_read((UFile*)WS_POP()); }
+
+// &Self -> &BaseFile
+void N_UFile_asBase(Kern *k)
+  { UFile_asBase((UFile*) WS_POP()); }
+
 BaseFile* SpReader_asBase(Kern* k, SpReader r) {
   if(r.m == &mSpReader_UFile)   return UFile_asBase((UFile*) r.d);
   if(r.m == &mSpReader_BufFile) return BufFile_asBase((BufFile*) r.d);
@@ -3110,6 +3117,8 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
   ADD_FNN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
   ADD_FNN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
+  ADD_FNN("\x07", "__Fread"    , 0   , N_UFile_read , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x09", "__FasBase"  , 0   , N_UFile_asBase , TYI_VOID, TYI_VOID);
   DictStk_pop(&k->g.implStk);
 
   TASSERT_EMPTY();
@@ -3131,8 +3140,15 @@ void Core_mod(Kern* k) {
   REPL_END
 
   CStr_ntVar(datPath, "\x0A", "src/dat.fn"); compilePath(k, datPath);
-  TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));
 
+  CStr_ntVar(compPath, "\x0B", "src/comp.fn"); compilePath(k, compPath);
+  TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
+
+  TyVar* globals = tyVar(TyDict_find(comp, &KEY("g")));
+  TASSERT_EQ(sizeof(Globals), TyDict_sz(tyDictB(globals->tyI->ty)));
+  *(Globals**)globals->v = &k->g;
+
+  TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));
   mSpArena_BBA = (MSpArena) {
     .drop     = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("drop")),     &N_BBA_drop),
     .alloc    = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("alloc")),    &N_BBA_alloc),
@@ -3140,11 +3156,10 @@ void Core_mod(Kern* k) {
     .maxAlloc = FN_OVERRIDE(TyDict_find(tyBBA, &KEY("maxAlloc")), &N_BBA_maxAlloc),
   };
 
-  CStr_ntVar(compPath, "\x0B", "src/comp.fn"); compilePath(k, compPath);
-  TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
-  TyVar* globals = tyVar(TyDict_find(comp, &KEY("g")));
-  TASSERT_EQ(sizeof(Globals), TyDict_sz(tyDictB(globals->tyI->ty)));
-  *(Globals**)globals->v = &k->g;
+  mSpReader_UFile = (MSpReader) {
+    .read     = tyFn(TyDict_find(comp, &KEY("__Fread"))),
+    .asBase   = tyFn(TyDict_find(comp, &KEY("__FasBase"))),
+  };
 }
 
 

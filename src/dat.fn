@@ -104,6 +104,7 @@ struct BaseFile [
   code: U2   \ status or error (File_*)
 ]
 
+\ Note: method implementations are native (see fngi.c)
 role Reader [
   absmeth read   [&Self]
   absmeth asBase [&Self -> &BaseFile]
