@@ -7,18 +7,32 @@
 \(this a block comment)
 \these \are \token \comments
 
-\ Native data types. An integer is signed, a slot is pointer sized.
-\    U1 U2 U4: whole number > 0 of N bytes (U=unsigned)
-\    I1 I2 I4: integer number of N bytes
-\        S SI: slot unsigned and signed
-\       &Type: reference to any type
-\ Arr[3 Type]: array wht len 3 of type Type
+\ Native data types.
 
-\ Declare a global variable
-global g: S = 7
+\ S (slot) is pointer sized
+global s:S = 9
+
+\ SI (integer slot) is pointer sized and signed
+global si:SI = --7  \ negative 7
+
+\ Or select the number of bytes
+global u1:U1 = 0xFF        \ 1 byte unsigned
+global u2:U2 = 0xFFFF      \ 2 byte unsigned
+global u4:U4 = 0xFFFF_FFFF \ 4 byte unsigned
+global i1:I1 = I1 --42
+global i2:I2 = I2 --1
+
+\ A reference (can be to any type)
+global refU1:&U1 = &u1
+
+\ Four U1's in an array
+global arrU1:Arr[4 U1];
 
 \ Do assertions at immediate (aka compile) time
-imm#tAssertEq(8, g + 1)
+imm#tAssertEq(2,           s + S si) \ TODO: cast shouldn't be necessary
+imm#tAssertEq(0xFFFF_0000, u4 - u2)
+imm#tAssertEq(u1,          @refU1)   \ @ is the deref operator
+\ imm#tAssertEq(S --43, S i1 + S i2) \ TODO: negative arithmetic needs improvement
 
 \ Define a function with recurssion (fibonacci number)
 fn fib[n:S -> S] do (
