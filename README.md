@@ -7,7 +7,7 @@
 > the issue tracker for how to help, or ask on [discord][discord] (click
 > [here][discord invite] to get an invite).
 
-**For a quick tutorial and overview see [learn_in_y.md](./learn_in_y.md)**
+**For a quick tutorial and overview see [learn_in_y.fn](./learn_in_y.fn)**
 
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
