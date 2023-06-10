@@ -4,6 +4,8 @@
 \ struct Slc [ dat:&U1  len:U2 ]
 
 unty const NULL:&Any = 0
+const FALSE:S = 0
+const TRUE:S  = 1
 
 struct Buf  [ parent:Slc cap:U2 ]
 struct CStr [ len:U2  dat:Arr[ ? U1] ]
@@ -15,6 +17,7 @@ struct SllS [ parent:Sll  v:S ]
 struct Bst  [ l:&Self  r:&Self]
 struct CBst [ parent:Bst  key:&CStr ]
 
+
 impl S (
   fn min[a:S, b:S -> S] do ( if(a < b) do a else b )
   fn max[a:S, b:S -> S] do ( if(a < b) do b else a )
@@ -23,6 +26,15 @@ impl S (
 impl U2 (
   fn min[a:U2, b:U2 -> U2] do ( if(a < b) do a else b )
   fn max[a:U2, b:U2 -> U2] do ( if(a < b) do b else a )
+)
+
+impl SI (
+  \ TODO: make inline
+  fn <  [stk:SI, stk:SI -> S] do ( lt_s; )
+  fn >= [stk:SI, stk:SI -> S] do ( ge_s; )
+
+  fn min[a:SI, b:SI -> SI] do ( if(a.< b) do a else b )
+  fn max[a:SI, b:SI -> SI] do ( if(a SI.< b) do b else a )
 )
 
 impl Slc (

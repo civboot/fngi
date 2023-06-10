@@ -192,7 +192,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
     .fb = fb,
     .g = {
       .c = (GlobalsCode) {
-        .token = (Buf){.dat = k->tokenDat, .cap = 64},
+        .token = (Buf){.dat = k->tokenDat, .cap = 128},
         .compFn = &TyFn_baseCompFn,
       },
       .dictStk = (DictStk) { .dat = k->dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
@@ -458,6 +458,9 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
     case SZ1 + JLZ: r = popLit(k, 1); if(!WS_POP()) { cfb->ep += (I1)r - 1; } R0
     case SZ2 + JLZ: r = popLit(k, 2); if(!WS_POP()) { cfb->ep += (I2)r - 2; } R0
     // case SZ4 + JLZ: r = popLit(k, 4); if(!WS_POP()) { cfb->ep  = (U1*)r;    } R0
+
+    case SZ1 + JLNZ: r = popLit(k, 1); if(WS_POP()) { cfb->ep += (I1)r - 1; } R0
+    case SZ2 + JLNZ: r = popLit(k, 2); if(WS_POP()) { cfb->ep += (I2)r - 2; } R0
 
     case SZ1 + JTBL: assert(false);
     case SZ2 + JTBL: assert(false);
@@ -1010,7 +1013,7 @@ void SrcRing_incHead(Kern* k, Ring* r, U2 inc) {
   Ring_incHead(r, inc);
 }
 
-U1 toTokenGroup(U1 c) {
+U1 tokenGroup(U1 c) {
   if(c <= ' ')             return T_WHITE;
   if('0' <= c && c <= '9') return T_NUM;
   if('a' <= c && c <= 'f') return T_HEX;
@@ -1042,12 +1045,12 @@ void scanRaw(Kern* k) {
   SpReader f = k->g.c.src;
   skipWhitespace(k, f);
   U1* c = SpReader_get(k, f, 0); if(c == NULL) return;
-  const U1 firstTg = toTokenGroup(*c);
+  const U1 firstTg = tokenGroup(*c);
   Buf_add(b, *c);
   if(T_SINGLE == firstTg) return;
   while(true) {
     c = SpReader_get(k, f, b->len); if(c == NULL) return;
-    U1 tg = toTokenGroup(*c);
+    U1 tg = tokenGroup(*c);
     if (tg == firstTg) {}
     else if ((tg <= T_ALPHA) && (firstTg <= T_ALPHA)) {}
     else break;
@@ -1274,10 +1277,10 @@ Ty* scanTy(Kern* k) {
   return ty;
 }
 
-TyI* _scanTyI(Kern* k) {
-  scan(k); TyBase* ty = (TyBase*) Kern_findToken(k);
+TyI* _scanTyI(Kern* k, TyDict* d) {
+  TyBase* ty; if(NULL == d) ty = (TyBase*) scanTy(k);
+              else          ty = (TyBase*) TyDict_scanTy(k, d);
   ASSERT(ty, "Type not found");
-  tokenDrop(k);
   if(isTyFnB(ty)) {
     if(isFnSynty((TyFn*)ty)) return executeFnSynty(k, (TyFn*)ty);
     ty = (TyBase*) FnSig_findOrAdd(k, *TyFn_asInOut((TyFn*)ty));
@@ -1304,9 +1307,16 @@ TyI* scanTySpec(Kern *k) {
     ASSERT(not s.arrLen, "nested arrays not allowed");
     s.arrLen = n;
   } else {
-    TyI* scanned = _scanTyI(k);
-    ASSERT(not (scanned->meta   && s.meta),   "type refs double specified");
-    ASSERT(not (scanned->arrLen && s.arrLen), "type array double specified");
+    TyI* scanned = _scanTyI(k, NULL);
+    while(true) {
+      ASSERT(not (scanned->meta   && s.meta),   "type refs double specified");
+      ASSERT(not (scanned->arrLen && s.arrLen), "type array double specified");
+      if(isTyDictB(scanned->ty) and CONSUME(".")) {
+        ASSERT(not TyI_refs(scanned), "Do not use . after &Ty");
+        scanned = _scanTyI(k, (TyDict*)scanned->ty);
+      } else break;
+    }
+
     s = (TyI) {
       .ty = scanned->ty,
       .meta   = s.meta   + scanned->meta,
@@ -1536,8 +1546,7 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
     if(st->asImm) executeFn(k, (TyFn*)WS_POP());
     else          Buf_add(&k->g.c.code, XW);
     return;
-  }
-  if(isFnMeth(meth)) {
+  } else if(isFnMeth(meth)) {
     TyI self = { .ty = (TyBase*)d, .meta = /*refs*/1 };
     tyCall(k, db, TYI_VOID, &self);
     opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
@@ -1557,6 +1566,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     if(PEEK(".")) Kern_compFn(k);
     return;
   }
+  eprintf("??? ftOffset no refs\n");
   ASSERT(not isTyFnB(tyI->ty), "invalid fn local");
   ASSERT(isTyDictB(tyI->ty), "invalid non-dict fetch");
   TyDict* d = (TyDict*) tyI->ty; ASSERT(not isDictMod(d), "cannot fetch in mod");
@@ -1568,6 +1578,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
     };
     return srOffset(k, tyI, offset, &srSt);
   }
+  // TODO: I think this needs to move below the '.'
   if(isDictNative(d)) {
     if(addTy) tyCall(k, db, NULL, tyI);
     return opOffset(k, b, st->op, (S)d->fields, offset, st->global);
@@ -1581,6 +1592,7 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
       assert(isVarLocal(field));
       return ftOffset(k, field->tyI, offset + field->v, st);
     } else {
+      eprintf("??? compiling method\n");
       return compileMethod(k, tyI, d, tyFn(f), offset, st);
     }
   }
@@ -2308,22 +2320,25 @@ void N_if(Kern* k) {
 
 static inline Sll** Blk_root(Kern* k) { return (Sll**) &k->g.c.blk_; }
 
-void tyCont(Kern* k, TyDb* db) {
-  if(IS_UNTY) return;
+void tyCont(Kern* k, TyDb* db, U1 op) {
+  assert(JL == op or JLZ == op or JLNZ == op); if(IS_UNTY) return;
   Blk* blk = k->g.c.blk_;
   ASSERT(not TyDb_done(db), "Cont after guaranteed 'ret'");
+  if(JL != op) tyCall(k, db, &TyIs_S, NULL);
   tyCheck(blk->startTyI, TyDb_top(db), /*sameLen*/true,
           SLC("Type error: cont not identical as block start."));
-  TyDb_setDone(db, BLK_DONE);
+  if(JL == op) TyDb_setDone(db, BLK_DONE);
 }
 
-void N_cont(Kern* k) {
-  N_notImm(k);
-  tyCont(k, tyDb(k, false));
+void _cont(Kern *k, U1 op) {
+  tyCont(k, tyDb(k, false), op);
   Buf* b = &k->g.c.code;
-  Buf_add(b, SZ2 | JL);
+  Buf_add(b, SZ2 | op);
   Buf_addBE2(b, k->g.c.blk_->start - b->len);
 }
+
+void N_cont(Kern* k) { N_notImm(k); _cont(k, JL); }
+void N_contIf(Kern* k) { N_notImm(k); Kern_compFn(k); _cont(k, JLNZ); }
 
 void tyBreak(Kern* k, TyDb* db) {
   if(IS_UNTY) return;
@@ -2350,32 +2365,25 @@ void N_break(Kern* k) {
   Buf_addBE2(b, 0);
 }
 
-Blk* blkStart(Kern* k, bool asImm) {
-  assert(not asImm);
-  TyDb* db = tyDb(k, asImm); Buf* b = &k->g.c.code;
+void N_blk(Kern* k) {
+  N_notImm(k); TyDb* db = tyDb(k, false);
+  Buf* b = &k->g.c.code;
   Blk* blk = BBA_alloc(k->g.bbaDict, sizeof(Blk), RSIZE);
   ASSERT(blk, "block OOM");
   *blk = (Blk) { .start = b->len };
   TyI_cloneAdd(k->g.bbaDict, &blk->startTyI, TyDb_top(db));
   Sll_add(Blk_root(k), Blk_asSll(blk));
-  return blk;
-}
 
-void blkEnd(Kern* k, bool asImm, Blk* blk) {
-  assert(not asImm);
-  TyDb* db = tyDb(k, asImm); Buf* b = &k->g.c.code;
+  Kern_compFn(k); // compile code block
+  eprintf("??? prewhile\n");
+  if(CONSUME("while")) { 
+    eprintf("??? while\n");
+    Kern_compFn(k); _cont(k, JLNZ); }
   if(not TyDb_done(db)) tyBreak(k, db); // implicit break checks blk type
   if(blk->breaks or (TyDb_done(db) < RET_DONE)) TyDb_clearDone(db);
   for(Sll* br = blk->breaks; br; br = br->next) {
     srBE2(b->dat + br->dat, b->len - br->dat);
   }
-}
-
-void N_blk(Kern* k) {
-  N_notImm(k);
-  Blk* blk = blkStart(k, false);
-  Kern_compFn(k); // compile code block
-  blkEnd(k, false, blk);
 }
 
 // ***********************
@@ -2463,7 +2471,8 @@ void N_meth(Kern* k) {
   TyFn* meth = parseFn(k);
   checkSelfIo(TyFn_asInOut(meth), true);
   Ty* parent = TyDict_find(st, &PARENT); if(parent) {
-    ASSERT(not TyDict_find(tyDict(parent), &TY_KEY(meth)),
+    TyDict* parentDict = tyDictB(tyVar(parent)->tyI->ty);
+    ASSERT(not TyDict_find(parentDict, &TY_KEY(meth)),
            "method already defined in a parent");
   }
 }
@@ -2496,7 +2505,7 @@ void N_role(Kern* k) {
 
 void _implRole(Kern* k, TyDict* st) {
   ASSERT(isDictStruct(st), "Can only implement role for struct");
-  TyDict* role = (TyDict*) scanTy(k);
+  TyDict* role = (TyDict*) scanTySpec(k)->ty;
   ASSERT(role and isTyDict((Ty*)role) and isDictRole(role),
          "must be impl Type:Role");
 
@@ -2538,16 +2547,15 @@ void N_impl(Kern* k) {
 void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
-  TyI* top = TyDb_top(db);
+  TyI* top = TyDb_top(db); ASSERT(top, "'.' used with an empty stack");
   eprintf("??? N_dot %p: "); TyI_print(top); NL;
-  U2 refs = TyI_refs(top);
-  if(not refs) {
-    SET_ERR(SLC("invalid '.', the value on the stack is not a reference"));
-  }
-  TyDict* d = (TyDict*) top->ty; assert(d);
+  TyDict* d = (TyDict*) top->ty;
   ASSERT(isTyDict((Ty*)d), "invalid '.', the value on the stack is not a TyDict");
-  ASSERT(not isDictMod(d), "accessing mod through ref");
-  ASSERT(not isDictRole(d), "accessing role method through ref");
+  ASSERT(not isDictMod(d), "accessing mod on stack");
+  ASSERT(not isDictRole(d), "accessing role method on stack");
+  U2 refs = TyI_refs(top); if(not refs) {
+    return compileTy(k, TyDict_scanTy(k, d), d, asImm);
+  }
 
   Buf* b = &k->g.c.code;
   // Trim the refs to be only 1
@@ -2983,12 +2991,13 @@ void Kern_fns(Kern* k) {
   // Ty: S, s, S
   TyIs_SSS = (TyI) { .next = &TyIs_SS, .ty = (TyBase*)&Ty_S };
 
-  TyIs_U1 = (TyI) { .ty = (TyBase*)&Ty_U1 };
-  TyIs_U2 = (TyI) { .ty = (TyBase*)&Ty_U2 };
-  TyIs_U4 = (TyI) { .ty = (TyBase*)&Ty_U4 };
-  TyIs_U4x2 = (TyI) { .next = &TyIs_U4, .ty = (TyBase*)&Ty_U4 };
+  TyIs_U1   = (TyI) { .ty = (TyBase*)&Ty_U1 };
+  TyIs_U2   = (TyI) { .ty = (TyBase*)&Ty_U2 };
+  TyIs_U4   = (TyI) { .ty = (TyBase*)&Ty_U4 };
+  TyIs_U4x2 = (TyI) { .ty = (TyBase*)&Ty_U4, .next = &TyIs_U4, };
 
-  TyIs_SI = (TyI) { .ty = (TyBase*)&Ty_SI };
+  TyIs_SI    = (TyI) { .ty = (TyBase*)&Ty_SI };
+  TyIs_SI_SI = (TyI) { .ty = (TyBase*)&Ty_SI, .next = &TyIs_SI};
 
   TyIs_rU1 = (TyI) { .ty = (TyBase*)&Ty_U1, .meta = 1 };
   TyIs_rU2 = (TyI) { .ty = (TyBase*)&Ty_U2, .meta = 1 };
@@ -3029,6 +3038,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x05", "alias"        , TY_FN_SYN       , N_alias    , TYI_VOID, TYI_VOID);
   ADD_FNN("\x02", "if"           , TY_FN_SYN       , N_if       , TYI_VOID, TYI_VOID);
   ADD_FNN("\x04", "cont"         , TY_FN_SYN       , N_cont     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x06", "contIf"       , TY_FN_SYN       , N_contIf   , TYI_VOID, TYI_VOID);
   ADD_FNN("\x05", "break"        , TY_FN_SYN       , N_break    , TYI_VOID, TYI_VOID);
   ADD_FNN("\x03", "blk"          , TY_FN_SYN       , N_blk      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x06", "struct"       , TY_FN_SYN       , N_struct   , TYI_VOID, TYI_VOID);
@@ -3079,8 +3089,8 @@ void Kern_fns(Kern* k) {
   ADD_INLINE_FN("\x02", "!="   , 0       , &TyIs_SS, &TyIs_S, NEQ     );
   ADD_INLINE_FN("\x02", ">="   , 0       , &TyIs_SS, &TyIs_S, GE_U    );
   ADD_INLINE_FN("\x01", "<"    , 0       , &TyIs_SS, &TyIs_S, LT_U    );
-  ADD_INLINE_FN("\x04", "ge_s" , 0       , &TyIs_SS, &TyIs_S, GE_S    );
-  ADD_INLINE_FN("\x04", "lt_s" , 0       , &TyIs_SS, &TyIs_S, LT_S    );
+  ADD_INLINE_FN("\x04", "ge_s" , 0       , &TyIs_SI_SI, &TyIs_S, GE_S );
+  ADD_INLINE_FN("\x04", "lt_s" , 0       , &TyIs_SI_SI, &TyIs_S, LT_S );
   ADD_INLINE_FN("\x01", "*"    , 0       , &TyIs_SS, &TyIs_S, MUL     );
   ADD_INLINE_FN("\x01", "/"    , 0       , &TyIs_SS, &TyIs_S, DIV_U   );
 

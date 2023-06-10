@@ -122,8 +122,9 @@ const XRL  :U1 = 0xA0 \ Execute role method local offset
 \ Sized jumps:
 const JL   :U1 = 0x82 \ Jmp to Literal
 const JLZ  :U1 = 0x83 \ Jmp to Literal if 0 (popping WS)
-const JTBL :U1 = 0x84 \ Jump to Table index using size=Literal
-const SLIC :U1 = 0x85 \ Inline Slc, jmp sz and push {ref, len}
+const JLNZ :U1 = 0x84 \ Jmp to Literal if not 0 (popping WS)
+const JTBL :U1 = 0x85 \ Jump to Table index using size=Literal
+const SLIC :U1 = 0x86 \ Inline Slc, jmp sz and push {ref, len}
 
 \ # [1.f] Small Literal [0xC0 - 0xFF]
 const SLIT :U1 = 0xC0

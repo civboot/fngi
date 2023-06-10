@@ -68,6 +68,7 @@
 #define XRL              0xa0
 #define JL               0x82
 #define JLZ              0x83
-#define JTBL             0x84
-#define SLIC             0x85
+#define JLNZ             0x84
+#define JTBL             0x85
+#define SLIC             0x86
 #define SLIT             0xc0

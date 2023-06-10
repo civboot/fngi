@@ -1,0 +1,220 @@
+\ Learn fngi in y minutes.
+\
+\ Syntax highlighting:
+\ * vim: etc/fngi.vim
+
+\ Comments: this is a line comment
+\(this a block comment)
+\these \are \token \comments
+
+\ Native data types. An integer is signed, a slot is pointer sized.
+\    U1 U2 U4: whole number > 0 of N bytes (U=unsigned)
+\    I1 I2 I4: integer number of N bytes
+\        S SI: slot unsigned and signed
+\       &Type: reference to any type
+\ Arr[3 Type]: array wht len 3 of type Type
+
+\ Declare a global variable
+global g: S = 7
+
+\ Do assertions at immediate (aka compile) time
+imm#tAssertEq(8, g + 1)
+
+\ Define a function with recurssion (fibonacci number)
+fn fib[n:S -> S] do (
+  if(n < 2) do ( ret 1 )
+  \ implicit return
+  fib(dec n) + fib(n - 2)
+)
+imm#tAssertEq(1, fib 0)
+imm#tAssertEq(1, fib 1)
+imm#tAssertEq(2, fib 2)
+imm#tAssertEq(3, fib 3)
+imm#tAssertEq(5, fib 4)
+imm#tAssertEq(8, fib 5)
+
+\ Use loops
+fn badMultiply[a:S b:S -> S] do (
+  var out:S = 0;
+  \ similar to a loop in other languages but we must continue
+  blk ( if(not b) do break;
+    \ '=' compiles only a single "token" after it, so (a + a) must be wrapped
+    \ with parens. '('  is a special kind of function that gets run at compile
+    \ time (called a syn function, since it makes its own syntax)
+    out = (out + a);  b = dec b;
+    cont)
+  out
+)
+imm#tAssertEq(2,  badMultiply(1, 2))
+imm#tAssertEq(4,  badMultiply(2, 2))
+imm#tAssertEq(12, badMultiply(4, 3))
+
+\ Or use the working stack directly.
+\ The working stack is how all operations are done, including
+\ operations (like add, sub, etc), fn argument passing,
+\ conditional checking, etc.
+fn badMultiplyStk[stk\a:S stk\b:S -> S] do (
+  var out:S = 0                  \ stk[a b]
+  \ TODO: bug here if the drops are done before the break
+  blk ( if(not dup\b;) do break; \ stk[a b]
+    swp;                         \ stk[b a]
+    out = (dup\a; + out)         \ stk[b a]
+    swp\(b a); dec \b; cont)     \ stk[a b]
+  drp\b; drp\a; out              \ stk[out]
+)
+imm#tAssertEq(0,  badMultiplyStk(0, 5))
+imm#tAssertEq(0,  badMultiplyStk(5, 0))
+imm#tAssertEq(25, badMultiplyStk(5, 5))
+
+\ ###############
+\ # Struct
+\ Structs are a way to associate data.
+\
+\ Note for C developers:
+\   They are very similar to C structs except slightly more compact.
+\   sub-structs do not "round up" their size and alginment like C.
+\
+\ Structs are JUST a collection of data and act as a container of names for
+\ global values, functions and methods. The compiler has special handling of
+\ method access which pushes &Self.
+\
+\ Note for Object Oriented developers:
+\   Structs are not objects, there are no data structures which associate
+\   methods to a struct at runtime.
+
+\ Define a struct with two fields
+struct Point2D [ x:I2  y:I2 ]
+
+\ implement methods
+impl Point2D (
+  \ associate constants
+  global 2D_ORIGIN:Point2D = Point2D(I2 0, I2 0)
+
+  \ Define a method to add a constant to both fields
+  meth add2D[self:&Self, v:I2 ] do (
+    self.x = I2 (S self.x + S v);
+    self.y = I2 (S self.y + S v);
+  )
+
+  \ Method to test equality
+  meth eq2D[self:&Self, p:&Self -> S] do (
+    (S self.x == S p.x) and (S self.y == S p.y)
+  )
+
+  meth isOrigin2D[self:&Self -> S] do self.eq2D(&Point2D.2D_ORIGIN)
+)
+
+\ Copy of the struct
+global 2d:Point2D = Point2D.2D_ORIGIN
+imm#(
+  tAssert(2d.isOrigin2D;)
+  tAssert(2d.eq2D(&Point2D.2D_ORIGIN))
+  2d.add2D(I2 4)  tAssertEq(4, S 2d.x)
+                  tAssertEq(4, S 2d.y)
+  tAssertEq(FALSE, 2d.isOrigin2D;)
+)
+
+\ ###############
+\ # Struct Inheritance (single data inheritance)
+\ You can specify a parent struct as the first field, which will
+\ cause the struct to inherit all parent's fields and methods.
+\
+\ * Allows eronomic access of parent items.
+\ * The type system reconizes that &Self == &Parent for function
+\   calls, etc.
+\ * Overriding parent items is not allowed.
+\
+\ Note for Object Oriented developers:
+\   Again, this is not an Object. It is simply extending a collection
+\   of data and the type system recognizes their data prefixes are
+\   identical.
+struct Point3D [
+  parent:Point2D
+  z:I2 \ additional field
+]
+
+impl Point3D (
+  global 3D_ORIGIN:Point3D = Point3D(Point2D.2D_ORIGIN, I2 0)
+
+  meth add3D[self:&Self, v:I2 ] do (
+    self.add2D(v) \ call parent method
+    self.z = I2 (S self.z + S v);
+  )
+
+  meth eq3D[self:&Self, p:&Self -> S] do (
+    self.eq2D(p) and (S self.z == S p.z)
+  )
+
+  meth isOrigin3D[self:&Self -> S] do self.eq3D(&Point3D.3D_ORIGIN)
+)
+
+global 3d:Point3D = Point3D.3D_ORIGIN
+imm#(
+  \ Can access parent fields
+  tAssertEq(0, S 3d.x)
+  \ Can call methods and parent methods
+  tAssert(3d.isOrigin3D;)  tAssert(3d.isOrigin2D;)
+  3d.add2D(I2 5) 3d.add3D(I2 2)
+  tAssertEq(7, S 3d.x)  tAssertEq(7, S 3d.y)
+  tAssertEq(2, S 3d.z)
+)
+
+\ ###############
+\ # Roles
+\ Roles allow associating data and methods for the type system. This allows
+\ multiple implementations of common interfaces like memory allocators, files
+\ or loggers without generating new code for each of them.
+\
+\ For Object Oriented Programmers:
+\    Roles can be thought of extremely simple and lightweight Interfaces.
+\
+\ A role is just a struct of [ data:&Any, methods:&Methods ] where each method
+\ is a fn that takes the `data` as it's first argument. The fngi language
+\ helps enforce that data is only wrapped with it's associated methods.
+\
+\ The role shown here is is for demonstration purposes. Roles are intended
+\ to be for things that back a resource which could have multiple possible
+\ implementations (each with their own tradeoffs) but which all have an
+\ identical interface.
+
+\ We use impl to put this inside the I2 struct, i.e. I2.Adder
+impl I2 role Adder [
+  absmeth add[&Self, I2]
+]
+
+impl Point2D:I2.Adder { add = &Point2D.add2D }
+impl Point3D:I2.Adder { add = &Point3D.add3D }
+
+global adder2D:I2.Adder = I2.Adder &2d \ currently (4, 4)
+global adder3D:I2.Adder = I2.Adder &3d \ currently (7, 7, 2)
+imm#(
+  adder2D.add(I2 1)
+  tAssertEq(5, S 2d.x)  tAssertEq(5, S 2d.y)
+
+  adder3D.add(I2 2)
+  tAssertEq(9, S 3d.x)  tAssertEq(9, S 3d.y)
+  tAssertEq(4, S 3d.z)
+)
+
+\ ###############
+\ # Parsing Details
+\ Tokens are a group of similar characters, except for the following
+\ which always create a single character token:
+\
+\   # | . : ( ) & ;
+\
+\ The other groups are:
+\ * whitespace: any character code less than or equal to space (0x20)
+\ * alphanumeric: [a-ZA-Z0-9_]
+\ * symbols: anything not in the above
+
+\ */+ is a single token, abc is a different token
+const */+:U1 = 5
+const abc:U1 = 7
+
+\ Tokens from different groups don't combine
+\ Note we are using '+' as a function. Also
+\ note that ',' are not actually required.
+imm#tAssertEq(+(*/+abc), */+ + abc)
+
+

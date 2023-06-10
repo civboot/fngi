@@ -188,7 +188,7 @@ typedef struct _Kern {
   BBA bbaCode; BBA bbaDict;
   BBA bbaRepl; BBA bbaTmp;
   BBA bbaSllArena;
-  U1 tokenDat[64];
+  U1 tokenDat[128];
   TyDict* dictBuf[DICT_DEPTH]; TyDict* implBuf[DICT_DEPTH];
   TyDbDat tyDbDat; TyDbDat tyDbImmDat;
   SllSpArena sllArena;
@@ -450,6 +450,7 @@ S TyDict_sz(TyDict* ty);
   PRE TyI TyIs_U4;     /* U4         */ \
   PRE TyI TyIs_U4x2;   /* U4 U4      */ \
   PRE TyI TyIs_SI;     /* SI         */ \
+  PRE TyI TyIs_SI_SI;  /* SI SI      */ \
   PRE TyI TyIs_rU1;    /* &U1        */ \
   PRE TyI TyIs_rU2;    /* &U2        */ \
   PRE TyI TyIs_rU4;    /* &U4        */ \

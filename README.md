@@ -7,6 +7,8 @@
 > the issue tracker for how to help, or ask on [discord][discord] (click
 > [here][discord invite] to get an invite).
 
+**For a quick tutorial and overview see [learn_in_y.md](./learn_in_y.md)**
+
 If we want to build an entirely understandable tech stack (as part of
 [civboot.org](http://civboot.org) or [bootstrappable.org](http://bootstrappable.org))
 we need a language which can be implemented easily, has excellent expressiveness

@@ -291,6 +291,18 @@ TEST_FNGI(compileBlk, 10)
     "    inc; cont;\n"
     "  )\n"
     ") loop()"); TASSERT_WS(0x15);
+
+  COMPILE_EXEC(
+    "fn useContIf[ -> S] do (\n"
+    "  S 0 -> blk(\n"
+    "    inc; contIf(dup, < 5)\n"
+    "  )\n"
+    ") useContIf()"); TASSERT_WS(5);
+
+  COMPILE_EXEC(
+    "fn useWhile[ -> S] do (\n"
+    "  S 0 -> blk ( inc; ) while ( dup, < 7 )\n"
+    ") useWhile()"); TASSERT_WS(7);
   REPL_END
   TASSERT_EQ(0, Stk_len(&k->g.tyDb.tyIs));
 END_TEST_FNGI
@@ -750,6 +762,11 @@ TEST_FNGI(bba, 20)
   REPL_END
 END_TEST_FNGI
 
+TEST_FNGI(learn, 20)
+  Kern_fns(k); Core_mod(k);
+  CStr_ntVar(learn, "\x0D", "learn_in_y.fn"); compilePath(k, learn);
+END_TEST_FNGI
+
 TEST_FNGI(repl, 20)
   Kern_fns(k);
   simpleRepl(k);
@@ -797,6 +814,7 @@ int main(int argc, char* argv[]) {
   test_file_basic();
   test_core();
   test_bba();
+  test_learn();
   eprintf("# Tests complete\n");
 
   if(repl) test_repl();
