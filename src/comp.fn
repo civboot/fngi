@@ -124,7 +124,7 @@ struct TyDb [
 struct Blk [
   parent:Sll
   start:S
-  breaks:&SllS \ store breaks (to update at end of block)
+  breaks:&Sll \ store breaks (to update at end of block)
   startTyI:&TyI  endTyI:&TyI  \ types at start+end(incl break) of block
 ]
 

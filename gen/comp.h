@@ -176,7 +176,7 @@ typedef struct _TyDb {
 typedef struct _Blk {
   struct _Blk* next;
   S start;
-  SllS* breaks;
+  Sll* breaks;
   TyI* startTyI;
   TyI* endTyI;
 } Blk;

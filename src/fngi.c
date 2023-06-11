@@ -3079,7 +3079,7 @@ void Kern_fns(Kern* k) {
   ADD_INLINE_FN("\x03", "dec"  , 0       , &TyIs_S,  &TyIs_S, DEC     );
   ADD_INLINE_FN("\x03", "inv"  , 0       , &TyIs_S,  &TyIs_S, INV     );
   ADD_INLINE_FN("\x02", "--"   , 0       , &TyIs_SI, &TyIs_SI, NEG    );
-  ADD_INLINE_FN("\x03", "not"  , 0       , &TyIs_S,  &TyIs_S, NOT     );
+  ADD_INLINE_FN("\x03", "not"  , 0       , &TyIs_S,  &TyIs_U1, NOT     );
   ADD_INLINE_FN("\x05", "i1to4", 0       , &TyIs_S,  &TyIs_S, CI1     );
   ADD_INLINE_FN("\x05", "i2to4", 0       , &TyIs_S,  &TyIs_S, CI2     );
   ADD_INLINE_FN("\x01", "+"    , 0       , &TyIs_SS, &TyIs_S, ADD     );
@@ -3089,15 +3089,15 @@ void Kern_fns(Kern* k) {
   ADD_INLINE_FN("\x03", "shr"  , 0       , &TyIs_SS, &TyIs_S, SHR     );
   ADD_INLINE_FN("\x03", "msk"  , 0       , &TyIs_SS, &TyIs_S, MSK     );
   ADD_INLINE_FN("\x02", "jn"   , 0       , &TyIs_SS, &TyIs_S, JN      );
-  ADD_INLINE_FN("\x03", "xor"  , 0       , &TyIs_SS, &TyIs_S, XOR     );
-  ADD_INLINE_FN("\x03", "and"  , 0       , &TyIs_SS, &TyIs_S, AND     );
-  ADD_INLINE_FN("\x02", "or"   , 0       , &TyIs_SS, &TyIs_S, OR      );
-  ADD_INLINE_FN("\x02", "=="   , 0       , &TyIs_SS, &TyIs_S, EQ      );
-  ADD_INLINE_FN("\x02", "!="   , 0       , &TyIs_SS, &TyIs_S, NEQ     );
-  ADD_INLINE_FN("\x02", ">="   , 0       , &TyIs_SS, &TyIs_S, GE_U    );
-  ADD_INLINE_FN("\x01", "<"    , 0       , &TyIs_SS, &TyIs_S, LT_U    );
-  ADD_INLINE_FN("\x04", "ge_s" , 0       , &TyIs_SI_SI, &TyIs_S, GE_S );
-  ADD_INLINE_FN("\x04", "lt_s" , 0       , &TyIs_SI_SI, &TyIs_S, LT_S );
+  ADD_INLINE_FN("\x03", "xor"  , 0       , &TyIs_SS, &TyIs_U1, XOR     );
+  ADD_INLINE_FN("\x03", "and"  , 0       , &TyIs_SS, &TyIs_U1, AND     );
+  ADD_INLINE_FN("\x02", "or"   , 0       , &TyIs_SS, &TyIs_U1, OR      );
+  ADD_INLINE_FN("\x02", "=="   , 0       , &TyIs_SS, &TyIs_U1, EQ      );
+  ADD_INLINE_FN("\x02", "!="   , 0       , &TyIs_SS, &TyIs_U1, NEQ     );
+  ADD_INLINE_FN("\x02", ">="   , 0       , &TyIs_SS, &TyIs_U1, GE_U    );
+  ADD_INLINE_FN("\x01", "<"    , 0       , &TyIs_SS, &TyIs_U1, LT_U    );
+  ADD_INLINE_FN("\x04", "ge_s" , 0       , &TyIs_SI_SI, &TyIs_U1, GE_S );
+  ADD_INLINE_FN("\x04", "lt_s" , 0       , &TyIs_SI_SI, &TyIs_U1, LT_S );
   ADD_INLINE_FN("\x01", "*"    , 0       , &TyIs_SS, &TyIs_S, MUL     );
   ADD_INLINE_FN("\x01", "/"    , 0       , &TyIs_SS, &TyIs_S, DIV_U   );
 

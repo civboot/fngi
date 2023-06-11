@@ -47,15 +47,46 @@ imm#tAssertEq(3, fib 3)
 imm#tAssertEq(5, fib 4)
 imm#tAssertEq(8, fib 5)
 
-\ Use loops
+\ Compile const value
+\ Syntax:
+\   const $NAME:$TYPE = $VALUE
+\
+\ Syntax code will always be like the above, each $NAME represents a single
+\ "token". Some tokens like '(' are syn functions (syntax functions) which
+\ compile multiple tokens.
+\
+\ Note for experienced programmers:
+\   syn functions are similar to macros in other languages
+const dozen     : S = 12
+const bakerDozen: S = (dozen + 1)
+\ bakerDozen = 7  \ ERROR cannot set const variable
+imm#tAssertEq(12, dozen)   imm#tAssertEq(13, bakerDozen)
+
+
+\ Defining functions
+\ Syntax:
+\   fn $NAME[$INPUTS -> $OUTPUTS] do $CODE
+fn isDozen[v:S -> U1] do (
+  dozen == v \ value left on the stack is returned
+)
+fn is2Dozen[v:S -> U1] do (
+  \ 'lit#' compiles the next token (computed immediately) as a literal
+  lit#(dozen * 2) == v
+)
+imm#tAssertEq(FALSE, isDozen(13))
+imm#tAssert  (isDozen(12))
+imm#tAssertEq(FALSE, is2Dozen(12))
+imm#tAssert  (is2Dozen(24))
+
+\ Write a function with a loop.
+\ Functions are type checked, the return value is whatever is
+\ left on the working stack.
 fn badMultiply[a:S b:S -> S] do (
   var out:S = 0;
-  \ similar to a loop in other languages but we must continue
+  \ blk let's us use break and cont (continue)
   blk ( if(not b) do break;
-    \ '=' compiles only a single "token" after it, so (a + a) must be wrapped
-    \ with parens. '('  is a special kind of function that gets run at compile
-    \ time (called a syn function, since it makes its own syntax)
-    out = (out + a);  b = dec b;
+    out = (out + a)
+    b = dec b  \ dec reduces by 1
     cont)
   out
 )
@@ -63,10 +94,14 @@ imm#tAssertEq(2,  badMultiply(1, 2))
 imm#tAssertEq(4,  badMultiply(2, 2))
 imm#tAssertEq(12, badMultiply(4, 3))
 
-\ Or use the working stack directly.
-\ The working stack is how all operations are done, including
-\ operations (like add, sub, etc), fn argument passing,
-\ conditional checking, etc.
+\ We can also manipulate the working stack directly.
+\ The working stack is fundamentally how all operations are performed
+\ such as arithmetic and calling functions.
+\
+\ Note: if you've never used FORTH or other stack based languages
+\       feel free to skip this. It's primarily a performance
+\       improvement (not using local variables uses less memory).
+\       In this tutorial we will typically NOT use stack manipulation.
 fn badMultiplyStk[stk\a:S stk\b:S -> S] do (
   var out:S = 0                  \ stk[a b]
   \ TODO: bug here if the drops are done before the break
@@ -85,12 +120,14 @@ imm#tAssertEq(25, badMultiplyStk(5, 5))
 \ Structs are a way to associate data.
 \
 \ Note for C developers:
-\   They are very similar to C structs except slightly more compact.
-\   sub-structs do not "round up" their size and alginment like C.
+\   They are very similar to C structs except they have a slightly more compact
+\   data layout: sub-structs do not "round up" their size to their alginment.
+\   See https://stackoverflow.com/questions/76451239
 \
 \ Structs are JUST a collection of data and act as a container of names for
-\ global values, functions and methods. The compiler has special handling of
-\ method access which pushes &Self.
+\ global values, functions and methods.
+\
+\ For method calls, the compiler automatically pushes &Self.
 \
 \ Note for Object Oriented developers:
 \   Structs are not objects, there are no data structures which associate
@@ -104,23 +141,30 @@ impl Point2D (
   \ associate constants
   global 2D_ORIGIN:Point2D = Point2D(I2 0, I2 0)
 
-  \ Define a method to add a constant to both fields
+  \ Define methods, which are associated functions that takes &Self as the
+  \ first argument
+
+  \ Method which adds a constant to both fields
   meth add2D[self:&Self, v:I2 ] do (
     self.x = I2 (S self.x + S v);
     self.y = I2 (S self.y + S v);
   )
 
-  \ Method to test equality
+  \ Method which tests equality
   meth eq2D[self:&Self, p:&Self -> S] do (
     (S self.x == S p.x) and (S self.y == S p.y)
   )
 
+  \ return whether this is the origin
   meth isOrigin2D[self:&Self -> S] do self.eq2D(&Point2D.2D_ORIGIN)
 )
 
-\ Copy of the struct
+\ Copy the origin struct to a new global variable
 global 2d:Point2D = Point2D.2D_ORIGIN
 imm#(
+  \ Note: ';' is required since isOrigin2D consumes one token
+  \       and ';' is a "do nothing" token.
+  \       Equivalently you could use '()' or ',' which also do nothing.
   tAssert(2d.isOrigin2D;)
   tAssert(2d.eq2D(&Point2D.2D_ORIGIN))
   2d.add2D(I2 4)  tAssertEq(4, S 2d.x)
@@ -131,8 +175,9 @@ imm#(
 \ ###############
 \ # Struct Inheritance (single data inheritance)
 \ You can specify a parent struct as the first field, which will
-\ cause the struct to inherit all parent's fields and methods.
+\ will cause the struct to inherit all parent's fields and methods.
 \
+\ Single inheritance has the following features:
 \ * Allows eronomic access of parent items.
 \ * The type system reconizes that &Self == &Parent for function
 \   calls, etc.
