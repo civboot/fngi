@@ -64,6 +64,28 @@ typedef struct {
 } MSpReader;
 typedef struct { MSpReader* m; void* d; } SpReader;
 
+typedef struct {
+  struct _TyFn*  asBase; // this:&This -> &BaseFile
+  struct _TyFn*  write;  // this:&This -> ()
+} MSpWriter;
+typedef struct { MSpWriter* m; void* d; } SpWriter;
+
+typedef struct {
+  MSpWriter w;
+  struct _TyFn*  state;  // this:&This -> &FmtState
+} MSpFmt;
+typedef struct { MSpFmt* m; void* d; } SpFmt;
+
+typedef struct {
+  MSpFmt         fmt;
+  struct _TyFn*  logConfig;  // this:&This -> &LogConfig
+
+  struct _TyFn*  start;      // this:&This U1  -> U1
+  struct _TyFn*  add;        // this:&This Slc -> ()
+  struct _TyFn*  end;        // this:&This     -> ()
+} MSpLogger;
+typedef struct { MSpLogger* m; void* d; } SpLogger;
+
 typedef struct _FileInfo {
   CStr* path;
   U2 line;
@@ -196,6 +218,7 @@ typedef struct _GlobalsCode {
 
 typedef struct _Globals {
   GlobalsCode c;
+  SpLogger log;
   BBA* bbaDict;
   TyDict rootDict;
   DictStk dictStk;

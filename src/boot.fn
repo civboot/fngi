@@ -1,7 +1,20 @@
 \ require[dat.fn comp.fn]
 
-fnMeta:TY_FN_SYN
-fn while[stk:U1] do (
-  comp.compile:blk;
+\ global lgr:Logger = comp.g.log
 
+fn logHello[l:Logger] do (
+  tAssert l.start(0x4);
+  l.add(|hello|);
+  l.end()
 )
+
+\ TODO: catch situations where I'm trying to compile out of function
+\ imm#(
+\   logHello(comp.g.log)
+\ )
+
+\ fnMeta:TY_FN_SYN
+\ fn while[stk:U1] do (
+\   comp.compile:blk;
+\ 
+\ )

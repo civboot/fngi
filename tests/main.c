@@ -3,6 +3,8 @@
 
 #include "fngi.h"
 
+#define NL  eprintf("\n");
+
 void disassemble(void* fn, U2 len) {
   U1* c = fn; eprintf("## Disassemble %p [len=%u]\n", c, len);
   for(U2 i = 0; i < len; i++) {
@@ -365,6 +367,102 @@ TEST_FNGI(compileStruct, 10)
 
   COMPILE_EXEC("fn getStruct[b:B -> B] do ( b ); getStruct(B(A 0x4321, 0x321))");
   TASSERT_WS(0x321); TASSERT_WS(0x4321);
+  REPL_END
+END_TEST_FNGI
+
+void assertStPath(StPath* p, U1 op, U1 meta, U2 offset, void* ty) {
+  TASSERT_EQ(op,     p->op);
+  TASSERT_EQ(offset, p->offset);
+  TASSERT_EQ(meta,   p->tyI->meta);
+  TASSERT_EQ(ty,     (TyBase*)p->tyI->ty);
+}
+
+TEST_FNGI(pathStruct, 10)
+  Kern_fns(k); REPL_START;
+
+  COMPILE_EXEC(
+    "  struct A [ a0:U2 a1:U2 ]\n"
+    "  struct B [ b0:A  b1:&A b2:U4]\n"
+    "  struct C [ c0:B  c1:&B c2:A ]\n");
+  TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
+  TyDict* B = tyDict(Kern_findTy(k, &KEY("B")));
+  TyDict* C = tyDict(Kern_findTy(k, &KEY("C")));
+
+  TyI TyI_A  = { .ty = (TyBase*) A };
+  TyI TyI_B  = { .ty = (TyBase*) B };
+  TyI TyI_C  = { .ty = (TyBase*) C };
+
+  TyVar* g = (TyVar*)0xF00F;
+
+  SET_SRC(".a0");
+  StPath* p = structPath(k, &TyI_A, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".b0"); // b.b0 returns a struct
+  p = structPath(k, &TyI_B, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, A);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".b0.a0"); // b.b0.a0 is basically identical to A.a0
+  p = structPath(k, &TyI_B, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".b0.a1"); // b.b0.a1 is basically identical to A.a2
+  p = structPath(k, &TyI_B, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/2, &Ty_U2);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".b1.a1"); // b.b1.a1 has to go through a reference
+  p = structPath(k, &TyI_B, g, 0, FTGL);
+  assertStPath(p, FTO,  /*meta*/0, /*off*/2, &Ty_U2);
+  TASSERT_EQ(NULL, p->global);
+  p = p->next; TASSERT_EQ(NULL, p->next);
+  assertStPath(p, FTGL, /*meta*/1, /*off*/4, A);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".b1.a1"); // it matters little whether the first value is a ref
+  TyI TyI_Br = { .ty = (TyBase*) B, .meta = 1 };
+  p = structPath(k, &TyI_Br, NULL, 0, FTO);
+  assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
+  TASSERT_EQ(NULL, p->global);
+  p = p->next; TASSERT_EQ(NULL, p->next);
+  assertStPath(p, FTO, /*meta*/1, /*off*/4, A);
+  TASSERT_EQ(NULL, p->global);
+
+  SET_SRC(".c0.b0.a0"); // basically identical to A.a0
+  p = structPath(k, &TyI_C, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
+
+  COMPILE_EXEC(
+    "impl A (\n"
+    "  meth aMeth[self:&Self -> U4 ] do (self.a0 + self.a1 )\n"
+    ")\n");
+  TyFn* aMeth = tyFn(TyDict_find(A, &KEY("aMeth")));
+  SET_SRC(".aMeth");
+  p = structPath(k, &TyI_A, g, 0, FTGL);
+  assertStPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
+  p = p->next; // where to get &Self
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, A);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".c0.b0.aMeth");
+  p = structPath(k, &TyI_C, g, 0, FTGL);
+  assertStPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
+  p = p->next; // where to get &Self
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, A);
+  TASSERT_EQ(g, p->global);
+
+  SET_SRC(".c1.b0.aMeth");
+  p = structPath(k, &TyI_C, g, 0, FTGL);
+  assertStPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
+  TASSERT_EQ(NULL, p->global);
+  p = p->next; // where to get &Self from &B
+  assertStPath(p, FTO, /*meta*/0, /*off*/0, A); TASSERT_EQ(NULL, p->global);
+  p = p->next; // where to get B (.c1) from C
+  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/1, /*off*/TyDict_sz(B), B);
+  TASSERT_EQ(g, p->global);
   REPL_END
 END_TEST_FNGI
 
@@ -799,6 +897,7 @@ int main(int argc, char* argv[]) {
   test_compileBlk();
   test_compileVar();
   test_compileStruct();
+  test_pathStruct();
   test_fnSig();
   test_alias();
   test_structBrackets();

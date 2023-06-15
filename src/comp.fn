@@ -143,6 +143,7 @@ struct GlobalsCode [
 
 struct Globals [
   c:GlobalsCode
+  log:Logger
   bbaDict:&BBA
   rootDict:TyDict
   dictStk:DictStk  implStk:DictStk
@@ -151,4 +152,3 @@ struct Globals [
 ]
 
 global g:&Globals = NULL \ initialized by native code
-

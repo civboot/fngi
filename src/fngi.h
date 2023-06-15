@@ -93,17 +93,16 @@ struct _Kern;
   do { WS_ADD((S) (ROLE).d); WS_ADD3(A0, A1, A2); executeFn(k, (ROLE).m->METHOD); } \
   while (0)
 
-// Spore version of Arena
-
-extern MSpArena mSpArena_BBA;
+// Native role implemntations
+extern MSpArena  mSpArena_BBA;
+extern MSpReader mSpReader_UFile;
+extern MSpReader mSpReader_BufFile;
+extern MSpLogger mSpLogger_File;
 
 static inline SpArena BBA_asSpArena(BBA* bba) {
   return (SpArena) { .m = &mSpArena_BBA, .d = bba };
 }
 
-// Spore version of Reader
-extern MSpReader mSpReader_UFile;
-extern MSpReader mSpReader_BufFile;
 BaseFile* SpReader_asBase(struct _Kern* k, SpReader r);
 U1*       SpReader_get(struct _Kern* k, SpReader r, U2 i);
 
@@ -413,10 +412,20 @@ void tyCall(Kern* k, TyDb* db, TyI* inp, TyI* out);
 void tyRet(Kern* k, TyDb* db, HowDone done);
 void tySplit(Kern* k);
 void tyMerge(Kern* k, TyDb* db, Slc* msg);
+void TyI_print(TyI* tyI);
 void TyI_printAll(TyI* tyI);
 Ty* TyDict_find(TyDict* dict, Key* s);
 S TyDict_sz(TyDict* ty);
 
+typedef struct _StPath {
+  struct _StPath* next;
+  TyI* tyI;
+  TyVar* global; // TyVarGlobal (optional)
+  U2   offset;
+  U1   op;   // operation
+} StPath;
+
+StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op);
 
 #define TYI_VOID  NULL
 

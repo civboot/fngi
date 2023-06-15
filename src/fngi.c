@@ -195,6 +195,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
         .token = (Buf){.dat = k->tokenDat, .cap = 128},
         .compFn = &TyFn_baseCompFn,
       },
+      .log = { .m = &mSpLogger_File, .d = &civ.log },
       .dictStk = (DictStk) { .dat = k->dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .implStk = (DictStk) { .dat = k->implBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .bbaDict = &k->bbaDict,
@@ -288,6 +289,9 @@ static inline void executeNative(Kern* k, TyFn* fn) {
 }
 
 void xImpl(Kern* k, Ty* ty) {
+  if(not isTyFn(ty)) {
+    eprintf("??? Invalid tyFn %p\n", ty);
+  }
   TyFn* fn = tyFn(ty);
   if(isFnNative(fn)) return executeNative(k, fn);
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
@@ -1343,6 +1347,86 @@ TyI* scanTyI(Kern* k, CStr* name) {
   return TyI_findOrAdd(k, &tyI);
 }
 
+static inline void pushStPath(
+    Kern* k, BBA* bba, Sll** root, TyI* tyI, TyVar* global, U1 offset, U1 op) {
+  if(NOP == op) return;
+  StPath* st = BBA_alloc(bba, sizeof(StPath), RSIZE); ASSERT(st, "stPath OOM");
+  *st = (StPath) {
+    .tyI = TyI_findOrAdd(k, tyI), .global = global, .offset = offset, .op = op };
+  Sll_add(root, (Sll*) st);
+}
+
+U1 Ty_ftOp(Ty* ty) {
+  if(isTyDict(ty)) return NOP;
+  if(isTyVar(ty)) {
+    TyVar* v = (TyVar*)ty;
+    if(isVarLocal(v))  return FTLL;
+    if(isVarGlobal(v)) return FTGL;
+    if(isVarConst(v))  return FTGL;
+    assert(false);
+  }
+  if(isTyFn(ty)) return XL;
+  assert(false);
+}
+
+// see notes/path.md
+StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
+  Sll* root = NULL; BBA* bba = &k->bbaTmp;
+  while(CONSUME(".")) {
+    TyDict* d = tyDictB(cur->ty);
+    Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "Unknown member");
+    eprintf("??? path .%.*s\n", Ty_fmt(ty));
+    if(isTyDict(ty)) {
+      cur = TyI_findOrAdd(k, &(TyI){.ty = (TyBase*)ty});
+      global = NULL; offset = 0; op = NOP;
+    } else if (isTyVar(ty)) {
+      TyVar* v = (TyVar*) ty;
+      assert(isVarLocal(v)); // TODO: impl sub-global at least
+      offset += v->v;
+      if(TyI_refs(v->tyI)) {
+        pushStPath(k, bba, &root, v->tyI, global, offset, op);
+        global = NULL; offset = 0; op = FTO;
+      }
+      cur = v->tyI;
+      if(isFnSig(cur->ty)) break;
+    } else if (isTyFn(ty)) {
+      pushStPath(k, bba, &root, cur, global, offset, op);
+      cur = TyI_findOrAdd(k, &(TyI){.ty = (TyBase*)ty});
+      global = NULL; offset = 0; op = XL;
+      break;
+    } else assert(false);
+  }
+  pushStPath(k, bba, &root, cur, global, offset, op);
+  return (StPath*)root;
+}
+
+// VPath* pathWalk(Kern* k, TyI* tyI, BBA* bba, PathWalk root) {
+//   TyDict* d = tyDict(tyI->ty);
+//   U2 offset = 0;
+//   Sll* out = NULL;
+//   for(bool hasNext = true; hasNext;) {
+//     if(isTyFn(tyI)) {
+//       assert(false); // method, ends here
+//     } else {
+//       ASSERT(isTyVar(tyI), "member must be field or method");
+//       TyVar* f = (TyVar*)mem; ASSERT(isVarLocal(f), "member must be field or method");
+//       hasNext = CONSUME(".");
+//       offset += f->v;
+//       if(TyI_refs(f)) {
+//         VPath* vp = BBA_alloc(bba, sizeof(VPath), RSIZE); ASSERT(vp, "pathWalk OOM");
+//         Sll_add(&out, (Sll*)vp);
+//         vp->tyI = f->tyI;  vp->offset = offset;
+//         offset = 0;
+//       }
+//       TyI* tyI = f->tyI;
+//     }
+//     if(hasNext) {
+//       Ty* mem = TyDict_scanTy(k, d);
+//     }
+//   }
+//   out = Sll_reverse(out);
+//   return (VPath*)out;
+// }
 
 // ***********************
 //   * srOffset
@@ -1506,6 +1590,7 @@ bool opIsConcrete(U1 op) {
 
 // Handle type operations of refs.
 void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
+  eprintf("??? ftOffsetRefs "); TyDb_print(k, db); NL;
   assert(not tyI->next);
   if(st->noAddTy) return;
   assert(st->op == FTLL || st->op == FTGL || st->op == FTO);
@@ -1560,6 +1645,7 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
 void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   bool addTy = not st->noAddTy;
   Buf* b = st->asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, st->asImm);
+  eprintf("??? ftOffset "); TyI_print(tyI); NL;
   if(TyI_refs(tyI)) {
     _tyFtOffsetRefs(k, db, tyI, st);
     opOffset(k, b, st->op, SZR, offset, st->global);
@@ -1600,8 +1686,20 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   st->noAddTy = true;
   if(isDictRole(d)) {
     assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
+    eprintf("??? isDictRole = true "); TyDb_print(k, db); NL;
+    eprintf("???   ws="); dbgWs(k); NL;
+    eprintf("???   st  op=0x%X  offset=%u  global=%p\n", st->op, offset, st->global);
+    eprintf("???   expectedOffset=%u\n", offsetof(Globals, log));
+    S addr; if(FTO == st->op) {
+      if(b) { Buf_add(b, DUP); } else  { addr = WS_POP(); WS_ADD(addr); }
+    }
     ftOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, st);
+    if(FTO == st->op) {
+      if(b) { Buf_add(b, SWP); } else  { WS_ADD(addr); }
+    }
     ftOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, st);
+    eprintf("??? after role "); TyDb_print(k, db); NL;
+    eprintf("???   ws="); dbgWs(k); NL;
   }
   else ftOffsetStruct(k, d, d->fields, offset, st);
 }
@@ -2883,6 +2981,7 @@ void N_findTy(Kern* k) {
 /*extern*/ MSpArena  mSpArena_BBA      = {};
 /*extern*/ MSpReader mSpReader_UFile   = {};
 /*extern*/ MSpReader mSpReader_BufFile = {};
+/*extern*/ MSpLogger mSpLogger_File    = {};
 
 // this:&This -> ()
 void N_BBA_drop(Kern* k) { BBA* bba = (BBA*)WS_POP(); BBA_drop(bba); }
@@ -2924,6 +3023,19 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
   return (U1*)WS_POP();
 }
 
+void N_FileLogger_state(Kern* k)     { WS_ADD((S) FileLogger_state((FileLogger*)WS_POP())); }
+void N_FileLogger_asBase(Kern* k)    { WS_ADD((S) FileLogger_asBase((FileLogger*)WS_POP())); }
+void N_FileLogger_write(Kern* k)     {            FileLogger_write((FileLogger*) WS_POP()); }
+void N_FileLogger_logConfig(Kern* k) { WS_ADD((S) FileLogger_logConfig((FileLogger*)WS_POP())); }
+void N_FileLogger_start(Kern* k) {
+  WS_POP2(S fl, S lvl); WS_ADD(FileLogger_start((FileLogger*) fl, lvl));
+}
+void N_FileLogger_add(Kern* k) {
+  WS_POP3(S fl, S dat, S len);
+  FileLogger_add((FileLogger*) fl, (Slc){.dat = (U1*)dat, .len = len});
+}
+void N_FileLogger_end(Kern* k)       {            FileLogger_end((FileLogger*)WS_POP()); }
+
 // ***********************
 // * 7: Registering Functions
 
@@ -2945,7 +3057,8 @@ U1* SpReader_get(Kern* k, SpReader r, U2 i) {
 
 #define ADD_FN(NAMELEN, NAME, META, CODE, INP, OUT) \
   ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | (META), code, (U1*)CODE); \
-  LINED(ty).inp = INP; LINED(ty).out = OUT;
+  LINED(ty).inp = INP; LINED(ty).out = OUT; \
+  eprintf("??? Added %s at %p\n", NAME, &LINED(ty));
 
 #define ADD_FNN(NAMELEN, NAME, META, CODE, INP, OUT) \
   ADD_FN(NAMELEN, NAME, TY_FN_NATIVE | (META), CODE, INP, OUT)
@@ -3117,8 +3230,17 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x0A", "compileLit" , 0   , N_compileLit , &TyIs_SS, TYI_VOID);
   ADD_FNN("\x09", "compileTy"  , 0   , N_compileTy  , &TyIs_UNSET, &TyIs_UNSET);
   ADD_FNN("\x06", "findTy"     , 0   , N_findTy     , &TyIs_UNSET, &TyIs_UNSET);
-  ADD_FNN("\x07", "__Fread"    , 0   , N_UFile_read , TYI_VOID, TYI_VOID);
-  ADD_FNN("\x09", "__FasBase"  , 0   , N_UFile_asBase , TYI_VOID, TYI_VOID);
+
+  ADD_FNN("\x07", "__Fread"    , 0   , N_UFile_read ,        TYI_VOID, TYI_VOID);
+  ADD_FNN("\x09", "__FasBase"  , 0   , N_UFile_asBase ,      TYI_VOID, TYI_VOID);
+
+  ADD_FNN("\x0A", "__FLasBase" , 0   , N_FileLogger_asBase , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x09", "__FLwrite"  , 0   , N_FileLogger_asBase , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x09", "__FLstate"  , 0   , N_FileLogger_state ,  TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "__FLcfg"    , 0   , N_FileLogger_logConfig , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x09", "__FLstart"  , 0   , N_FileLogger_start ,  TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "__FLadd"    , 0   , N_FileLogger_add ,    TYI_VOID, TYI_VOID);
+  ADD_FNN("\x07", "__FLend"    , 0   , N_FileLogger_end ,    TYI_VOID, TYI_VOID);
   DictStk_pop(&k->g.implStk);
 
   TASSERT_EMPTY();
@@ -3160,6 +3282,22 @@ void Core_mod(Kern* k) {
     .read     = tyFn(TyDict_find(comp, &KEY("__Fread"))),
     .asBase   = tyFn(TyDict_find(comp, &KEY("__FasBase"))),
   };
+
+  mSpLogger_File = (MSpLogger) {
+    .fmt = (MSpFmt) {
+      .w = (MSpWriter) {
+        .asBase= tyFn(TyDict_find(comp, &KEY("__FLasBase"))),
+        .write = tyFn(TyDict_find(comp, &KEY("__FLwrite"))),
+      },
+      .state   = tyFn(TyDict_find(comp, &KEY("__FLstate"))),
+    },
+    .logConfig = tyFn(TyDict_find(comp, &KEY("__FLcfg"))),
+    .start     = tyFn(TyDict_find(comp, &KEY("__FLstart"))),
+    .add       = tyFn(TyDict_find(comp, &KEY("__FLadd"))),
+    .end       = tyFn(TyDict_find(comp, &KEY("__FLend"))),
+  };
+
+  CStr_ntVar(bootPath, "\x0B", "src/boot.fn"); compilePath(k, bootPath);
 }
 
 

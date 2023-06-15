@@ -97,7 +97,7 @@ impl BBA:Arena {
 }
 
 \ ************
-\ * File
+\ * File + Fmt
 
 struct BaseFile [
   ring: Ring \ buffer for reading or writing data
@@ -108,4 +108,33 @@ struct BaseFile [
 role Reader [
   absmeth read   [&Self]
   absmeth asBase [&Self -> &BaseFile]
+]
+
+role Writer [
+  absmeth asBase [&Self -> &BaseFile]
+  absmeth write  [&Self]
+]
+
+struct FmtState [ arena:Arena;  pretty:U2; ]
+
+\ TODO: embed roles
+\ role Fmt [
+\   absmeth asBase   [&Self -> &BaseFile]
+\   absmeth write    [&Self]
+\   absmeth fmtState [&Self -> &FmtState]
+\ ]
+
+\ ************
+\ * Logger
+
+struct LogConfig [ lvl:U1 ]
+
+role Logger [
+  absmeth asBase    [&Self       -> &BaseFile]
+  absmeth write     [&Self]
+  absmeth fmtState  [&Self       -> &FmtState]
+  absmeth logConfig [&Self       -> &LogConfig]
+  absmeth start     [&Self S     -> U1        ]
+  absmeth add       [&Self Slc]
+  absmeth end       [&Self]
 ]
