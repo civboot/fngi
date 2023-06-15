@@ -360,7 +360,7 @@ static inline void srSzI(U1* addr, U1 szI, S v) {
 // # Test Helpers
 
 #define SET_SRC(CODE) \
-  BufFile_var(LINED(bf), 64, CODE); \
+  BufFile_varNt(LINED(bf), 64, CODE); \
   k->g.c.src = (SpReader) {.m = &mSpReader_BufFile, .d = &LINED(bf) };
 
 #define COMPILE_NAMED(NAME, CODE, withRet) \

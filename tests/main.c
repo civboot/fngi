@@ -63,7 +63,7 @@ END_TEST_FNGI
 
 TEST_FNGI(scan, 1)
   U1 dat[32]; k->g.c.token = (Buf){.dat = dat, .cap = 32};
-  BufFile_var(bf, 8, "  this-has(*) eight tokens");
+  BufFile_varNt(bf, 8, "  this-has(*) eight tokens");
   k->g.c.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
 
   TASSERT_TOKEN("this");  TASSERT_TOKEN("-"); TASSERT_TOKEN("has");
@@ -80,7 +80,7 @@ TEST_FNGI(compile0, 4)
   TASSERT_EMPTY();
 
   // Very explicit memory layout
-  BufFile_var(bf, 8, "42 + 7 ret;");
+  BufFile_varNt(bf, 8, "42 + 7 ret;");
   k->g.c.src = (SpReader) {.m = &mSpReader_BufFile, .d = &bf };
   U1 codeDat[256]; k->g.c.code = (Buf){.dat=codeDat, .cap=256};
   compileSrc(k);
