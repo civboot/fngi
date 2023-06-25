@@ -1377,11 +1377,17 @@ StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
     Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "Unknown member");
     eprintf("??? path .%.*s\n", Ty_fmt(ty));
     if(isTyDict(ty)) {
+      // TODO push cur?
       cur = TyI_findOrAdd(k, &(TyI){.ty = (TyBase*)ty});
       global = NULL; offset = 0; op = NOP;
     } else if (isTyVar(ty)) {
       TyVar* v = (TyVar*) ty;
       assert(isVarLocal(v)); // TODO: impl sub-global at least
+      if((FTO != op) and TyI_refs(cur)) { // handle &var
+        eprintf("??? handling &var op=%X\n", op);
+        pushStPath(k, bba, &root, cur, global, offset, op);
+        global = NULL; offset = 0; op = FTO;
+      }
       offset += v->v;
       if(TyI_refs(v->tyI)) {
         pushStPath(k, bba, &root, v->tyI, global, offset, op);
@@ -1400,34 +1406,6 @@ StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
   return (StPath*)root;
 }
 
-// VPath* pathWalk(Kern* k, TyI* tyI, BBA* bba, PathWalk root) {
-//   TyDict* d = tyDict(tyI->ty);
-//   U2 offset = 0;
-//   Sll* out = NULL;
-//   for(bool hasNext = true; hasNext;) {
-//     if(isTyFn(tyI)) {
-//       assert(false); // method, ends here
-//     } else {
-//       ASSERT(isTyVar(tyI), "member must be field or method");
-//       TyVar* f = (TyVar*)mem; ASSERT(isVarLocal(f), "member must be field or method");
-//       hasNext = CONSUME(".");
-//       offset += f->v;
-//       if(TyI_refs(f)) {
-//         VPath* vp = BBA_alloc(bba, sizeof(VPath), RSIZE); ASSERT(vp, "pathWalk OOM");
-//         Sll_add(&out, (Sll*)vp);
-//         vp->tyI = f->tyI;  vp->offset = offset;
-//         offset = 0;
-//       }
-//       TyI* tyI = f->tyI;
-//     }
-//     if(hasNext) {
-//       Ty* mem = TyDict_scanTy(k, d);
-//     }
-//   }
-//   out = Sll_reverse(out);
-//   return (VPath*)out;
-// }
-
 // ***********************
 //   * srOffset
 // Handles not only storing offset, but also parsing '{' syntax.
@@ -1438,6 +1416,17 @@ bool opCreatesRef(U1 op) {
     case GR: return true;
     default: return false;
   }
+}
+
+bool opIsFt(U1 op) {
+  switch(op) {
+    case LR:   case GR:
+    case FTLL: case FTGL:
+    case FTO: return true;
+    case SRLL: case SRGL:
+    case SRO: return false;
+  }
+  assert(false);
 }
 
 U1 ftOpToSr(U1 ftOp) {
@@ -1463,6 +1452,16 @@ U1 srOpToFt(U1 srOp) {
     case SRGL: return FTGL;
   }
   assert(false);
+}
+
+U1 opAlwaysFt(U1 op) {
+  if(opIsFt(op)) return op;
+  else           return srOpToFt(op);
+}
+
+U1 opAlwaysSr(U1 op) {
+  if(opIsFt(op)) return ftOpToSr(op);
+  else           return op;
 }
 
 typedef struct {
@@ -1725,6 +1724,136 @@ void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
   END_IMM;
 }
 
+bool StPath_free(Kern* k, StPath* st) {
+  return Sll_free((Sll*)st, sizeof(StPath), BBA_asArena(&k->bbaTmp));
+}
+
+void StPath_print(StPath* st) {
+  eprintf("StPath[");
+  for(; st; st = st->next) {
+    eprintf("%.*s o=%u ", Dat_fmt(instrName(st->op)), st->offset);
+    TyI_print(st->tyI);
+    if(st->global) eprintf(" G");
+    eprintf("; ");
+  }
+  eprintf("]");
+}
+
+bool _isTyStruct(TyBase* ty) {
+  if(not isTyDictB(ty)) return false;
+  return isDictStruct((TyDict*)ty);
+}
+
+
+bool isTyNative(TyBase* ty) {
+  if(not isTyDictB(ty)) return false;
+  return isDictNative((TyDict*)ty);
+}
+
+void compileStruct(Kern* k, StPath* p, TyDict* st, Buf* b) {
+  TyI* fields = NULL;
+  // The fields are in the revere order, so copy them first
+  for(TyI* field = st->fields; field; field = field->next) {
+    TyI* add = TyI_cloneNode(field, &k->bbaTmp);
+    Sll_add((Sll**) &fields, (Sll*)add);
+  }
+  for(TyI* field = fields; field; field = field->next) {
+    if(_isTyStruct(field->ty)) compileStruct(k, p, (TyDict*)field->ty, b);
+    else {
+      assert(TyI_refs(field) or isTyNative(field->ty));
+      opOffset(
+        k, b, p->op, szToSzI(TyI_sz(field)),
+        p->offset + TyDict_field(st, field)->v,
+        p->global);
+    }
+  }
+
+  Sll_free((Sll*)fields, sizeof(TyI), BBA_asArena(&k->bbaTmp));
+}
+
+void compileStPath(Kern* k, bool isSr, StPath* p, bool asImm, bool tyCheck) {
+  if(not p) return;
+  if(_isTyStruct(p->tyI->ty)) {
+    ASSERT((FTGL == p->op) or (FTLL == p->op), "full struct access through reference");
+  }
+  Buf* b = asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, asImm);
+  if(tyCheck) {
+    if(isSr) tyCall(k, db, p->tyI, NULL);
+    else     tyCall(k, db, NULL, p->tyI);
+  }
+  p = (StPath*)Sll_reverse((Sll*) p);
+  for(; p; p = p->next) {
+    U1 op = p->op; if(isSr and not p->next) op = opAlwaysSr(op);
+    if(TyI_refs(p->tyI) or isTyNative(p->tyI->ty)) {
+      opOffset(k, b, op, szToSzI(TyI_sz(p->tyI)), p->offset, p->global);
+    } else if(isTyDictB(p->tyI->ty)) {
+      TyDict* d = (TyDict*) p->tyI->ty;
+      if (isDictStruct(d)) {
+        compileStruct(k, p, d, b);
+      } else assert(false);
+    } else if (isFnSig(p->tyI->ty)) {
+      ASSERT(TyI_refs(p->tyI), "non-ref fn signature");
+      assert(false);
+    } else if (isTyFnB(p->tyI->ty)) {
+      SET_ERR(SLC("Cannot compile ty"));
+    }
+  }
+  p = (StPath*)Sll_reverse((Sll*) p);
+}
+
+void compileVar2(Kern* k, TyVar* v, bool asImm) {
+  bool isGlobal = isVarGlobal(v) or isVarConst(v); assert(isGlobal or isVarLocal(v));
+  StPath* p = structPath(
+    k, v->tyI,
+    /*global*/ isGlobal ? v : NULL,
+    /*offset*/ isGlobal ? 0 : v->v,
+    /*op*/     isGlobal ? FTGL : FTLL);
+  StPath* stFn = NULL; TyDict* self = NULL;
+  if(XL == p->op) {
+    // Pop off the method/function to call if there is one
+    stFn = p; p = p->next; stFn->next = NULL;
+    TyFn* fn = tyFn(stFn->tyI->ty);
+    if(isFnMeth(fn)) {
+      self = tyDict((Ty*) p->tyI->ty);
+    } else if(isFnAbsmeth(fn)) {
+      assert(false);
+    } else {
+      // TODO: allow regular method when the first arg is the type
+      assert(false);
+    }
+  }
+
+  // Look for the "last" NOP path elements. These are the "true start" fields
+  for(StPath* find = p; find; find = find->next) {
+    if(NOP == find->op) {
+      StPath_free(k, find->next); find->next = NULL;
+      break;
+    }
+  }
+
+  bool isSr = false; StPath* ref = NULL;
+
+  if(not stFn) { isSr = CONSUME("="); }
+  eprintf("??? isSr=%u  "); StPath_print(p); NL;
+  if(isSr and (FTO == p->op)) {
+    // We need to do a SRO {addr, value} so we put
+    // the addr on the stack.
+    ref = p->next; p->next = NULL;
+    if(ref) compileStPath(k, false, ref, asImm, false);
+  }
+  if(stFn) { // calling a method
+    assert(not TyI_refs(stFn->tyI));
+    if(self) compileStPath(k, false, p, asImm, not IS_UNTY); // &self
+    Kern_compFn(k);
+    compileFn(k, tyFn((Ty*)stFn->tyI->ty), self, asImm);
+  } else {
+    if(isSr) Kern_compFn(k);
+    compileStPath(k, isSr, p, asImm, not IS_UNTY);
+  }
+  assert(not StPath_free(k, p));
+  if(ref) assert(not StPath_free(k, ref));
+}
+
 int count = 0;
 void compileVar(Kern* k, TyVar* v, bool asImm) {
   eprintf("??? compileVar start %.*s\n", Ty_fmt(v));
@@ -1806,7 +1935,7 @@ void checkName(Kern* k, bool check) {
 void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
   checkName(k, ty);
   while(true) {
-    if(isTyVar(ty)) return compileVar(k, (TyVar*) ty, asImm);
+    if(isTyVar(ty)) return compileVar2(k, (TyVar*) ty, asImm);
     if(isTyFn(ty))  break;
     ASSERT(not self, "invalid access through reference");
     if(isTyDict(ty)) {

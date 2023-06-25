@@ -69,3 +69,14 @@ c.c1.b0.a0
 \ { op=XL,   tyI=(tyFn(aMeth), &0), offset=0 }
 c.c1.b1.aMeth
 ```
+
+Some trickier ones
+```
+var br: &B
+
+\ { op=FTLL, tyI=(B, &1),  offset=b.v }
+\ { op=FTO,  tyI=(A, &1),  offset=b1.v }
+br.b1
+
+
+```

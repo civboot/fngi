@@ -426,6 +426,7 @@ typedef struct _StPath {
 } StPath;
 
 StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op);
+void StPath_print(StPath* st);
 
 #define TYI_VOID  NULL
 

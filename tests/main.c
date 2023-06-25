@@ -192,7 +192,7 @@ TEST_FNGI(tyDb, 4)
   END_LOCAL_TYDB_BBA(tyDb);
 END_TEST_FNGI
 
-TEST_FNGI(compileTy, 6)
+TEST_FNGI(compileTy, 7)
   Kern_fns(k);
   REPL_START
   COMPILE_EXEC("fn pop2  [  a:U1 b:U2 c:S -> \\a:U1] do (a)");
@@ -392,6 +392,9 @@ TEST_FNGI(pathStruct, 10)
   TyI TyI_B  = { .ty = (TyBase*) B };
   TyI TyI_C  = { .ty = (TyBase*) C };
 
+  TyI TyI_Ar = { .ty = (TyBase*) A, .meta = 1 };
+  TyI TyI_Br = { .ty = (TyBase*) B, .meta = 1 };
+
   TyVar* g = (TyVar*)0xF00F;
 
   SET_SRC(".a0");
@@ -423,7 +426,6 @@ TEST_FNGI(pathStruct, 10)
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".b1.a1"); // it matters little whether the first value is a ref
-  TyI TyI_Br = { .ty = (TyBase*) B, .meta = 1 };
   p = structPath(k, &TyI_Br, NULL, 0, FTO);
   assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(NULL, p->global);
@@ -463,6 +465,15 @@ TEST_FNGI(pathStruct, 10)
   p = p->next; // where to get B (.c1) from C
   TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/1, /*off*/TyDict_sz(B), B);
   TASSERT_EQ(g, p->global);
+
+  // Through reference
+  eprintf("??? ar.a1\n");
+  SET_SRC(".a1"); p = structPath(k, &TyI_Ar, g, 0, FTGL);
+  eprintf("??? ar.a1 "); StPath_print(p); NL
+  assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
+  p = p->next; TASSERT_EQ(NULL, p->next);
+  assertStPath(p, FTGL, /*meta*/1, /*off*/0, A);
+
   REPL_END
 END_TEST_FNGI
 
@@ -560,14 +571,17 @@ TEST_FNGI(structDeep, 12)
   COMPILE_EXEC("struct B [ a: A; b: S; rA: &A ]");
   COMPILE_EXEC("struct C [a: &A, b: &B]")
   COMPILE_EXEC("fn cGetA[c:&C -> S] do ( c.b.a.a );");
+  DISASSEMBLE("cGetA");
   COMPILE_EXEC("fn useC[ -> S S] do (\n"
                "  var a: A = A 1\n"
                "  var b: B = B(A 2, 3, &a)\n"
-               "  var c: C = C(&a, &b)\n"
+               "  tAssertEq(b.a.a, 2)\n"
                "  tAssertEq(b.rA.a, 1)\n"
+               "  var c: C = C(&a, &b)\n"
                "  tAssertEq(@(&b.rA.a), 1)\n"
                "  c.b.a.a, cGetA(&c)\n"
                ")");
+  DISASSEMBLE("useC");
   COMPILE_EXEC("useC;");
     TASSERT_WS(2); TASSERT_WS(2);
 
@@ -579,8 +593,13 @@ TEST_FNGI(structDeep, 12)
   COMPILE_EXEC("assign()"); TASSERT_WS(0x42);
 
   COMPILE_EXEC("fn assignRef[a:&A] do (a.a = 0x44)")
+  DISASSEMBLE("assignRef");
+
   COMPILE_EXEC("fn useAssignRef[ -> S] do (var a:A; assignRef(&a); a.a)");
-  COMPILE_EXEC("useAssignRef()"); TASSERT_WS(0x44);
+  DISASSEMBLE("useAssignRef");
+
+  COMPILE_EXEC("useAssignRef()");
+  TASSERT_WS(0x44);
   REPL_END
 END_TEST_FNGI
 
@@ -619,7 +638,11 @@ END_TEST_FNGI
 
 TEST_FNGI(method, 20)
   Kern_fns(k); REPL_START
-  COMPILE_EXEC("struct A [ v:S; meth aDo [self: &Self, x: S -> S] do ( self.v + x ) ]")
+  COMPILE_EXEC("struct A [\n"
+               "  v:S;\n"
+               "  meth aDo [self: &Self, x: S -> S] \n"
+               "    do ( self.v + x )\n"
+               "]")
   COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
 
