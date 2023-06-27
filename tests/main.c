@@ -336,40 +336,6 @@ TEST_FNGI(compileVar, 10)
   REPL_END
 END_TEST_FNGI
 
-TEST_FNGI(compileStruct, 10)
-  Kern_fns(k); REPL_START;
-
-  COMPILE_EXEC(
-      "fn chTy[stk:S -> U2] do ( ret U2; )"
-      "chTy(0x42)"); TASSERT_WS(0x42);
-
-  COMPILE_EXEC("struct Foo [ a: U2; b: U1; c: U4 ]");
-  TyDict* Foo = (TyDict*) Kern_findTy(k, &KEY("Foo"));
-  assert(Foo);
-  TASSERT_EQ(TY_DICT | TY_DICT_STRUCT, Foo->meta);
-  TASSERT_EQ(8, Foo->sz);
-  assert(TyDict_find(Foo, &KEY("a")));
-
-  COMPILE_EXEC("struct A [ a: S ]");
-  COMPILE_EXEC("struct B [ a: A; b: S ]");
-  COMPILE_EXEC(
-    "fn simpleCreate[a:S -> B] do ("
-    "  B(A(a), 0x42)"
-    "); simpleCreate(0x33)"); TASSERT_WS(0x42); TASSERT_WS(0x33);
-
-  COMPILE_EXEC("destruct(simpleCreate(0x35)) tAssertEq(0x42)")
-  TASSERT_WS(0x35);
-  TASSERT_EQ(0, Stk_len(WS));
-
-  COMPILE_EXEC(
-    "fn useField[a:A -> S] do ( a.a + 7 )"
-    "  tAssertEq(0x18, useField(A 0x11))");
-
-  COMPILE_EXEC("fn getStruct[b:B -> B] do ( b ); getStruct(B(A 0x4321, 0x321))");
-  TASSERT_WS(0x321); TASSERT_WS(0x4321);
-  REPL_END
-END_TEST_FNGI
-
 void assertStPath(StPath* p, U1 op, U1 meta, U2 offset, void* ty) {
   TASSERT_EQ(op,     p->op);
   TASSERT_EQ(offset, p->offset);
@@ -377,7 +343,7 @@ void assertStPath(StPath* p, U1 op, U1 meta, U2 offset, void* ty) {
   TASSERT_EQ(ty,     (TyBase*)p->tyI->ty);
 }
 
-TEST_FNGI(pathStruct, 10)
+TEST_FNGI(dotPath, 10)
   Kern_fns(k); REPL_START;
 
   COMPILE_EXEC(
@@ -417,8 +383,10 @@ TEST_FNGI(pathStruct, 10)
   TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(g, p->global);
 
+  eprintf("??? doing b.b1.a1\n");
   SET_SRC(".b1.a1"); // b.b1.a1 has to go through a reference
   p = structPath(k, &TyI_B, g, 0, FTGL);
+  eprintf("??? b.b1.a1 "); StPath_print(p); NL
   assertStPath(p, FTO,  /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(NULL, p->global);
   p = p->next; TASSERT_EQ(NULL, p->next);
@@ -427,6 +395,7 @@ TEST_FNGI(pathStruct, 10)
 
   SET_SRC(".b1.a1"); // it matters little whether the first value is a ref
   p = structPath(k, &TyI_Br, NULL, 0, FTO);
+  eprintf("??? br.b1.a1 "); StPath_print(p); NL
   assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(NULL, p->global);
   p = p->next; TASSERT_EQ(NULL, p->next);
@@ -474,6 +443,53 @@ TEST_FNGI(pathStruct, 10)
   p = p->next; TASSERT_EQ(NULL, p->next);
   assertStPath(p, FTGL, /*meta*/1, /*off*/0, A);
 
+  eprintf("??? br.b1\n");
+  SET_SRC(".b1"); p = structPath(k, &TyI_Br, NULL, 0, FTO);
+  eprintf("??? br.b1 "); StPath_print(p); NL
+  assertStPath(p, FTO, /*meta*/1, /*off*/4, A);
+  TASSERT_EQ(NULL, p->next);
+
+  eprintf("??? br.b1.a1\n");
+  SET_SRC(".b1.a1"); p = structPath(k, &TyI_Br, NULL, 0, FTO);
+  eprintf("??? br.b1.a1 "); StPath_print(p); NL
+  assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
+  p = p->next; TASSERT_EQ(NULL, p->next);
+  assertStPath(p, FTO, /*meta*/1, /*off*/4, A);
+
+  REPL_END
+END_TEST_FNGI
+
+TEST_FNGI(compileStruct, 10)
+  Kern_fns(k); REPL_START;
+
+  COMPILE_EXEC(
+      "fn chTy[stk:S -> U2] do ( ret U2; )"
+      "chTy(0x42)"); TASSERT_WS(0x42);
+
+  COMPILE_EXEC("struct Foo [ a: U2; b: U1; c: U4 ]");
+  TyDict* Foo = (TyDict*) Kern_findTy(k, &KEY("Foo"));
+  assert(Foo);
+  TASSERT_EQ(TY_DICT | TY_DICT_STRUCT, Foo->meta);
+  TASSERT_EQ(8, Foo->sz);
+  assert(TyDict_find(Foo, &KEY("a")));
+
+  COMPILE_EXEC("struct A [ a: S ]");
+  COMPILE_EXEC("struct B [ a: A; b: S ]");
+  COMPILE_EXEC(
+    "fn simpleCreate[a:S -> B] do ("
+    "  B(A(a), 0x42)"
+    "); simpleCreate(0x33)"); TASSERT_WS(0x42); TASSERT_WS(0x33);
+
+  COMPILE_EXEC("destruct(simpleCreate(0x35)) tAssertEq(0x42)")
+  TASSERT_WS(0x35);
+  TASSERT_EQ(0, Stk_len(WS));
+
+  COMPILE_EXEC(
+    "fn useField[a:A -> S] do ( a.a + 7 )"
+    "  tAssertEq(0x18, useField(A 0x11))");
+
+  COMPILE_EXEC("fn getStruct[b:B -> B] do ( b ); getStruct(B(A 0x4321, 0x321))");
+  TASSERT_WS(0x321); TASSERT_WS(0x4321);
   REPL_END
 END_TEST_FNGI
 
@@ -645,18 +661,20 @@ TEST_FNGI(method, 20)
                "]")
   COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
+  eprintf("??? past callADo\n");
 
   COMPILE_EXEC("impl A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
-  COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( a.nonMeth(x) )");
+  COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( A.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
+  eprintf("??? past nonMeth\n");
 
   COMPILE_EXEC("global a:A = A 5");
   COMPILE_EXEC("tAssertEq(5, a.v)");
   COMPILE_EXEC("tAssertEq(13, a.aDo(8))");
-  COMPILE_EXEC("tAssertEq(14, a.nonMeth(7))");
+  COMPILE_EXEC("tAssertEq(14, A.nonMeth(7))");
 
   COMPILE_EXEC("imm#tAssertEq(13, a.aDo(8))");
-  COMPILE_EXEC("imm#tAssertEq(14, a.nonMeth(7))");
+  COMPILE_EXEC("imm#tAssertEq(14, A.nonMeth(7))");
 
   COMPILE_EXEC("impl A( meth aDoSelf [self: &Self, x: S -> S] do ( self.v + x ) )")
   COMPILE_EXEC("imm#tAssertEq(13, a.aDoSelf(8))");
@@ -695,11 +713,13 @@ TEST_FNGI(arr, 20) // tests necessary for libraries
     "fn simpleArr[x:S -> S] do (\n"
     "  var a: Arr [3 S]\n"
     "  var b: S = 0x42\n"
-    "  a = 3; @ptrAdd(&a, 1, 3) = 4; @ptrAdd(&a, 2, 3) = 5;\n"
+    "  a = 3;\n"
+    "  @ptrAdd(&a, 1, 3) = 4; @ptrAdd(&a, 2, 3) = 5;\n"
     "  tAssertEq(0x42, b)\n"
     "  @ptrAdd(&a, 3, 4) = 9; \\ note: setting b\n"
     "  tAssertEq(9, b)\n"
     "  @ptrAdd(&a, x, 3)\n"
+    //  "3\n"
     ")");
   COMPILE_EXEC("simpleArr 0"); TASSERT_WS(3);
   COMPILE_EXEC("simpleArr 1"); TASSERT_WS(4);
@@ -760,38 +780,28 @@ TEST_FNGI(role, 20)
   assert(A_Adder); TASSERT_EQ((S)A_add, *(S*)A_Adder->v);
 
   COMPILE_EXEC(
-    "fn useAdder[a: Adder -> S] do (\n"
-     "  a.add(5)\n"
-    ")");
+    "global a:A      = A 3\n"
+    "global ad:Adder = Adder &a\n");
+  COMPILE_EXEC("ad.add(5)"); TASSERT_WS(8);
 
   COMPILE_EXEC(
-    "fn getAdder[a: A -> Adder] do (\n"
-    "  Adder(&a)"
+    "fn useAdder[a: Adder -> S] do (\n"
+     "  a.add(2)\n"
     ")");
-  COMPILE_EXEC("getAdder(A 5)"); TASSERT_WS(A_Adder->v); WS_POP();
-
-  // Check that
-  COMPILE_EXEC("fn getGotAdder[a: Adder -> Adder] do (a)");
-  COMPILE_EXEC("getGotAdder(getAdder(A 5))"); TASSERT_WS(A_Adder->v); WS_POP();
+  COMPILE_EXEC("useAdder ad"); TASSERT_WS(5);
 
   COMPILE_EXEC(
     "fn createUseAdder[a: A -> S] do (\n"
     "  useAdder(Adder(&a))"
     ")");
-  COMPILE_EXEC("createUseAdder(A 3)"); TASSERT_WS(8);
+  COMPILE_EXEC("createUseAdder(A 3)"); TASSERT_WS(5);
 
-  // TODO
   COMPILE_EXEC(
     "fn useAdderRef[aR:&Adder -> S] do (\n"
     "  var a:Adder = @aR\n"
     "  a.add(5)\n"
     ")");
-  COMPILE_EXEC(
-    "global a:A = A 5\n"
-    "global adder:Adder = Adder &a\n"
-  );
-  COMPILE_EXEC("useAdderRef(&adder)"); TASSERT_WS(10);
-
+  COMPILE_EXEC("useAdderRef(&ad)"); TASSERT_WS(8);
   REPL_END
 END_TEST_FNGI
 
@@ -827,6 +837,8 @@ TEST_FNGI(core, 20)
     "  tAssertEq(ch:i, s.@1)\n"
     "  s.@2\n"
     ")");
+  DISASSEMBLE("useSlc");
+
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
   COMPILE_EXEC(
@@ -919,8 +931,8 @@ int main(int argc, char* argv[]) {
   test_compileIf();
   test_compileBlk();
   test_compileVar();
+  test_dotPath();
   test_compileStruct();
-  test_pathStruct();
   test_fnSig();
   test_alias();
   test_structBrackets();

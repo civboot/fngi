@@ -301,7 +301,6 @@ static inline TyFn* tyFn(void* p) {
 
 static inline TyDict* tyDict(Ty* ty) {
   ASSERT(isTyDict(ty), "invalid TyDict");
-  ASSERT(not isDictNative((TyDict*)ty), "native dict");
   return (TyDict*) ty;
 }
 
@@ -417,12 +416,15 @@ void TyI_printAll(TyI* tyI);
 Ty* TyDict_find(TyDict* dict, Key* s);
 S TyDict_sz(TyDict* ty);
 
+typedef enum { ROLE_NONE, ROLE_DAT, ROLE_METH } CompRole;
+
 typedef struct _StPath {
   struct _StPath* next;
   TyI* tyI;
   TyVar* global; // TyVarGlobal (optional)
   U2   offset;
   U1   op;   // operation
+  U1   compRole;
 } StPath;
 
 StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op);

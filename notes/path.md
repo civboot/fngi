@@ -66,17 +66,42 @@ c.c1.b0.a0
 
 \ { op=FTLL, tyI=(B, &1),           offset=c.v + c1.v }
 \ { op=FTO,  tyI=(A, &1),           offset=b1.v }
-\ { op=XL,   tyI=(tyFn(aMeth), &0), offset=0 }
+\ { op=XL,   tyI=(aMeth, &0), offset=0 }
 c.c1.b1.aMeth
 ```
 
-Some trickier ones
+Through references
 ```
 var br: &B
 
 \ { op=FTLL, tyI=(B, &1),  offset=b.v }
 \ { op=FTO,  tyI=(A, &1),  offset=b1.v }
 br.b1
+```
 
+Role Access
+```
+role Inner [
+  absmeth i[ -> S ]
+]
+role R [
+  absmeth m[ -> S ]
+]
 
+struct RS [
+  rs0: U4
+  rs1: R
+]
+
+var r: R
+
+\ { op=FTLL, tyI=(R, &0), offset=r.v }
+\ { op=XL,   tyI=(m, &0), offset=0 }
+r.m
+
+var rs: RS
+
+\ { op=FTLL, tyI=(R, &0), offset=rs.v + rs1.v }
+\ { op=XL,   tyI=(m, &0), offset=0 }
+rs.rs1.m
 ```
