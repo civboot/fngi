@@ -264,7 +264,6 @@ TEST_FNGI(compileIf, 10)
   #define IF_ALL_RET \
     "if(0) do (0 ret;) elif(0) do (0 ret;) else (1 ret;)"
 
-  eprintf("??? FAILURE\n");
   COMPILE_EXEC("fn one[ -> S] do (" IF_ALL_RET ")");
   COMPILE_EXEC("tAssertEq(1,    one;)");
   COMPILE_EXEC("fn ifRet1[ -> S] do ( if(1) do ret 2; ret 4; )");
@@ -336,7 +335,7 @@ TEST_FNGI(compileVar, 10)
   REPL_END
 END_TEST_FNGI
 
-void assertStPath(StPath* p, U1 op, U1 meta, U2 offset, void* ty) {
+void assertDotPath(DotPath* p, U1 op, U1 meta, U2 offset, void* ty) {
   TASSERT_EQ(op,     p->op);
   TASSERT_EQ(offset, p->offset);
   TASSERT_EQ(meta,   p->tyI->meta);
@@ -364,47 +363,44 @@ TEST_FNGI(dotPath, 10)
   TyVar* g = (TyVar*)0xF00F;
 
   SET_SRC(".a0");
-  StPath* p = structPath(k, &TyI_A, g, 0, FTGL);
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
+  DotPath* p = dotPath(k, &TyI_A, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".b0"); // b.b0 returns a struct
-  p = structPath(k, &TyI_B, g, 0, FTGL);
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, A);
+  p = dotPath(k, &TyI_B, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/0, A);
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".b0.a0"); // b.b0.a0 is basically identical to A.a0
-  p = structPath(k, &TyI_B, g, 0, FTGL);
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
+  p = dotPath(k, &TyI_B, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".b0.a1"); // b.b0.a1 is basically identical to A.a2
-  p = structPath(k, &TyI_B, g, 0, FTGL);
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/2, &Ty_U2);
+  p = dotPath(k, &TyI_B, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(g, p->global);
 
-  eprintf("??? doing b.b1.a1\n");
   SET_SRC(".b1.a1"); // b.b1.a1 has to go through a reference
-  p = structPath(k, &TyI_B, g, 0, FTGL);
-  eprintf("??? b.b1.a1 "); StPath_print(p); NL
-  assertStPath(p, FTO,  /*meta*/0, /*off*/2, &Ty_U2);
+  p = dotPath(k, &TyI_B, g, 0, FTGL);
+  assertDotPath(p, FTO,  /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(NULL, p->global);
   p = p->next; TASSERT_EQ(NULL, p->next);
-  assertStPath(p, FTGL, /*meta*/1, /*off*/4, A);
+  assertDotPath(p, FTGL, /*meta*/1, /*off*/4, A);
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".b1.a1"); // it matters little whether the first value is a ref
-  p = structPath(k, &TyI_Br, NULL, 0, FTO);
-  eprintf("??? br.b1.a1 "); StPath_print(p); NL
-  assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
+  p = dotPath(k, &TyI_Br, NULL, 0, FTO);
+  assertDotPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
   TASSERT_EQ(NULL, p->global);
   p = p->next; TASSERT_EQ(NULL, p->next);
-  assertStPath(p, FTO, /*meta*/1, /*off*/4, A);
+  assertDotPath(p, FTO, /*meta*/1, /*off*/4, A);
   TASSERT_EQ(NULL, p->global);
 
   SET_SRC(".c0.b0.a0"); // basically identical to A.a0
-  p = structPath(k, &TyI_C, g, 0, FTGL);
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
+  p = dotPath(k, &TyI_C, g, 0, FTGL);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/0, &Ty_U2);
 
   COMPILE_EXEC(
     "impl A (\n"
@@ -412,49 +408,43 @@ TEST_FNGI(dotPath, 10)
     ")\n");
   TyFn* aMeth = tyFn(TyDict_find(A, &KEY("aMeth")));
   SET_SRC(".aMeth");
-  p = structPath(k, &TyI_A, g, 0, FTGL);
-  assertStPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
+  p = dotPath(k, &TyI_A, g, 0, FTGL);
+  assertDotPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
   p = p->next; // where to get &Self
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, A);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/0, A);
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".c0.b0.aMeth");
-  p = structPath(k, &TyI_C, g, 0, FTGL);
-  assertStPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
+  p = dotPath(k, &TyI_C, g, 0, FTGL);
+  assertDotPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
   p = p->next; // where to get &Self
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/0, /*off*/0, A);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/0, /*off*/0, A);
   TASSERT_EQ(g, p->global);
 
   SET_SRC(".c1.b0.aMeth");
-  p = structPath(k, &TyI_C, g, 0, FTGL);
-  assertStPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
+  p = dotPath(k, &TyI_C, g, 0, FTGL);
+  assertDotPath(p, XL, /*meta*/0, /*off*/0, aMeth); TASSERT_EQ(NULL, p->global);
   TASSERT_EQ(NULL, p->global);
   p = p->next; // where to get &Self from &B
-  assertStPath(p, FTO, /*meta*/0, /*off*/0, A); TASSERT_EQ(NULL, p->global);
+  assertDotPath(p, FTO, /*meta*/0, /*off*/0, A); TASSERT_EQ(NULL, p->global);
   p = p->next; // where to get B (.c1) from C
-  TASSERT_EQ(NULL, p->next); assertStPath(p, FTGL, /*meta*/1, /*off*/TyDict_sz(B), B);
+  TASSERT_EQ(NULL, p->next); assertDotPath(p, FTGL, /*meta*/1, /*off*/TyDict_sz(B), B);
   TASSERT_EQ(g, p->global);
 
   // Through reference
-  eprintf("??? ar.a1\n");
-  SET_SRC(".a1"); p = structPath(k, &TyI_Ar, g, 0, FTGL);
-  eprintf("??? ar.a1 "); StPath_print(p); NL
-  assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
+  SET_SRC(".a1"); p = dotPath(k, &TyI_Ar, g, 0, FTGL);
+  assertDotPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
   p = p->next; TASSERT_EQ(NULL, p->next);
-  assertStPath(p, FTGL, /*meta*/1, /*off*/0, A);
+  assertDotPath(p, FTGL, /*meta*/1, /*off*/0, A);
 
-  eprintf("??? br.b1\n");
-  SET_SRC(".b1"); p = structPath(k, &TyI_Br, NULL, 0, FTO);
-  eprintf("??? br.b1 "); StPath_print(p); NL
-  assertStPath(p, FTO, /*meta*/1, /*off*/4, A);
+  SET_SRC(".b1"); p = dotPath(k, &TyI_Br, NULL, 0, FTO);
+  assertDotPath(p, FTO, /*meta*/1, /*off*/4, A);
   TASSERT_EQ(NULL, p->next);
 
-  eprintf("??? br.b1.a1\n");
-  SET_SRC(".b1.a1"); p = structPath(k, &TyI_Br, NULL, 0, FTO);
-  eprintf("??? br.b1.a1 "); StPath_print(p); NL
-  assertStPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
+  SET_SRC(".b1.a1"); p = dotPath(k, &TyI_Br, NULL, 0, FTO);
+  assertDotPath(p, FTO, /*meta*/0, /*off*/2, &Ty_U2);
   p = p->next; TASSERT_EQ(NULL, p->next);
-  assertStPath(p, FTO, /*meta*/1, /*off*/4, A);
+  assertDotPath(p, FTO, /*meta*/1, /*off*/4, A);
 
   REPL_END
 END_TEST_FNGI
@@ -661,12 +651,10 @@ TEST_FNGI(method, 20)
                "]")
   COMPILE_EXEC("fn callADo[x:S a:A -> S] do ( a.aDo(x) )");
   COMPILE_EXEC("tAssertEq(8, callADo(3, A 5)) assertWsEmpty;");
-  eprintf("??? past callADo\n");
 
   COMPILE_EXEC("impl A( fn nonMeth[x:S -> S] do ( 7 + x ) )")
   COMPILE_EXEC("fn callNonMeth[x:S a:A -> S] do ( A.nonMeth(x) )");
   COMPILE_EXEC("tAssertEq(10, callNonMeth(3, A 1)) assertWsEmpty;");
-  eprintf("??? past nonMeth\n");
 
   COMPILE_EXEC("global a:A = A 5");
   COMPILE_EXEC("tAssertEq(5, a.v)");
@@ -681,7 +669,16 @@ TEST_FNGI(method, 20)
 
   TyDict* A = tyDict(Kern_findTy(k, &KEY("A")));
   TyFn* aDo = tyFn(TyDict_find(A, &KEY("aDo")));
-  COMPILE_EXEC("&A.aDo"); TASSERT_WS((S)aDo);
+  COMPILE_EXEC("&A.aDo;"); TASSERT_WS((S)aDo);
+
+  COMPILE_EXEC("impl A( meth assignInc [self: &Self, x: S -> S] do\n"
+               "  ( self.v = (x + 1); self.v ) )")
+  COMPILE_EXEC("imm#tAssertEq(6, a.assignInc(5))");
+  COMPILE_EXEC("imm#tAssertEq(6, a.v)");
+
+  COMPILE_EXEC("impl A( meth inc [self: &Self -> S] do\n"
+               "  ( self.v = (self.v + 1); self.v ) )")
+  COMPILE_EXEC("imm#tAssertEq(7, a.inc;)");
   REPL_END
 END_TEST_FNGI
 
@@ -874,7 +871,6 @@ TEST_FNGI(bba, 20)
   REPL_START
 
   COMPILE_EXEC("fn useBBA[ arena:&BBA -> &Any &Any] do (\n" USE_ARENA_FNGI ")");
-  eprintf("??? bbaDict=%p\n", k->g.bbaDict);
   COMPILE_EXEC("comp.g.bbaDict"); TASSERT_WS((S)k->g.bbaDict);
   COMPILE_EXEC("useBBA(comp.g.bbaDict)");
   void* a = BBA_alloc(k->g.bbaDict,    10, 4);

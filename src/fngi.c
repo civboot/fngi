@@ -289,9 +289,7 @@ static inline void executeNative(Kern* k, TyFn* fn) {
 }
 
 void xImpl(Kern* k, Ty* ty) {
-  if(not isTyFn(ty)) {
-    eprintf("??? Invalid tyFn %p\n", ty);
-  }
+  if(not isTyFn(ty))  eprintf("!!! Invalid tyFn %p\n", ty);
   TyFn* fn = tyFn(ty);
   if(isFnNative(fn)) return executeNative(k, fn);
   ASSERT(RS->sp >= fn->lSlots + 1, "execute: return stack overflow");
@@ -1076,7 +1074,6 @@ void scanLine(Kern* k) {
 }
 
 void tokenDrop(Kern* k) {
-  eprintf("??? dropping %.*s\n", TOKEN);
   Buf* b = &k->g.c.token;
   SrcRing_incHead(k, &SpReader_asBase(k, k->g.c.src)->ring, b->len);
   Buf_clear(b);
@@ -1225,8 +1222,8 @@ void opImm(Kern* k, U1 op, U1 szI, U2 offset, TyVar* g) {
 // If 'b' is provided, then the operation is compiled. Else it is executed
 // immediately.
 void opOffset(Kern* k, Buf* b, U1 op, U1 szI, U2 offset, TyVar* g) {
-  eprintf("??? opOffset b=%p op=%.*s szI=%X offset=%u  g=%p\n",
-        b, Dat_fmt(instrName(op)), szI, offset, g);
+  // eprintf("??? opOffset b=%p op=%.*s szI=%X offset=%u  g=%p\n",
+  //       b, Dat_fmt(instrName(op)), szI, offset, g);
   if(b)  opCompile(b, op, szI, offset, g);
   else   opImm(    k, op, szI, offset, g);
 }
@@ -1350,11 +1347,12 @@ TyI* scanTyI(Kern* k, CStr* name) {
   return TyI_findOrAdd(k, &tyI);
 }
 
-static inline void pushStPath(
-    Kern* k, BBA* bba, Sll** root, TyI* tyI, TyVar* global, U1 offset, U1 op) {
+static inline void pushDotPath(
+    Kern* k, Sll** root, TyI* tyI, TyVar* global, U1 offset, U1 op) {
   if(NOP == op) return;
-  StPath* st = BBA_alloc(bba, sizeof(StPath), RSIZE); ASSERT(st, "stPath OOM");
-  *st = (StPath) {
+  BBA* bba = &k->bbaTmp;
+  DotPath* st = BBA_alloc(bba, sizeof(DotPath), alignment(sizeof(DotPath))); ASSERT(st, "stPath OOM");
+  *st = (DotPath) {
     .tyI = TyI_findOrAdd(k, tyI), .global = global, .offset = offset, .op = op };
   Sll_add(root, (Sll*) st);
 }
@@ -1373,14 +1371,12 @@ U1 Ty_ftOp(Ty* ty) {
 }
 
 // see notes/path.md
-StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
-  Sll* root = NULL; BBA* bba = &k->bbaTmp; bool push = true;
+DotPath* dotPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
+  Sll* root = NULL; bool push = true;
   while(CONSUME(".")) {
     push = true;
-    eprintf("??? structPath %.*s offset=%u . ", Dat_fmt(instrName(op)), offset); TyI_print(cur); NL;
     TyDict* d = tyDictB(cur->ty);
     Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "Unknown member");
-    eprintf("??? path .%.*s\n", Ty_fmt(ty));
     if(isTyDict(ty)) {
       // TODO push cur?
       cur = TyI_findOrAdd(k, &(TyI){.ty = (TyBase*)ty});
@@ -1392,28 +1388,27 @@ StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
       // we need to push it to continue access
       // if((FTO != op) and TyI_refs(cur)) { // handle &var
       if((FTO != op) and TyI_refs(cur)) { // handle &var
-        eprintf("??? handling &var op=%X\n", op);
-        pushStPath(k, bba, &root, cur, global, offset, op);
+        pushDotPath(k, &root, cur, global, offset, op);
         global = NULL; offset = 0; op = FTO;
       }
       offset += v->v;
       // If the value is a reference we have to push it to the stack so the dot
       // path can continue. We set push=false to avoid double-pushing.
       if(TyI_refs(v->tyI)) {
-        pushStPath(k, bba, &root, v->tyI, global, offset, op);
+        pushDotPath(k, &root, v->tyI, global, offset, op);
         push = false; global = NULL; offset = 0; op = FTO;
       }
       cur = v->tyI;
       if(isFnSig(cur->ty)) break;
     } else if (isTyFn(ty)) {
-      pushStPath(k, bba, &root, cur, global, offset, op);
+      pushDotPath(k, &root, cur, global, offset, op);
       cur = TyI_findOrAdd(k, &(TyI){.ty = (TyBase*)ty});
       global = NULL; offset = 0; op = XL;
       break;
     } else assert(false);
   }
-  if(push) pushStPath(k, bba, &root, cur, global, offset, op);
-  return (StPath*)root;
+  if(push) pushDotPath(k, &root, cur, global, offset, op);
+  return (DotPath*)root;
 }
 
 // ***********************
@@ -1599,7 +1594,6 @@ bool opIsConcrete(U1 op) {
 
 // Handle type operations of refs.
 void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
-  eprintf("??? ftOffsetRefs "); TyDb_print(k, db); NL;
   assert(not tyI->next);
   if(st->noAddTy) return;
   assert(st->op == FTLL || st->op == FTGL || st->op == FTO);
@@ -1609,7 +1603,6 @@ void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
 }
 
 void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
-  eprintf("??? compileFn %.*s\n", Ty_fmt(fn));
   tyCallSelf(k, tyDb(k, asImm), fn->inp, fn->out, self);
   if(asImm) return executeFn(k, fn);
   Buf* b = &k->g.c.code;
@@ -1654,14 +1647,12 @@ void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffse
 void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   bool addTy = not st->noAddTy;
   Buf* b = st->asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, st->asImm);
-  eprintf("??? ftOffset "); TyI_print(tyI); NL;
   if(TyI_refs(tyI)) {
     _tyFtOffsetRefs(k, db, tyI, st);
     opOffset(k, b, st->op, SZR, offset, st->global);
     if(PEEK(".")) Kern_compFn(k);
     return;
   }
-  eprintf("??? ftOffset no refs\n");
   ASSERT(not isTyFnB(tyI->ty), "invalid fn local");
   ASSERT(isTyDictB(tyI->ty), "invalid non-dict fetch");
   TyDict* d = (TyDict*) tyI->ty; ASSERT(not isDictMod(d), "cannot fetch in mod");
@@ -1687,7 +1678,6 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
       assert(isVarLocal(field));
       return ftOffset(k, field->tyI, offset + field->v, st);
     } else {
-      eprintf("??? compiling method\n");
       return compileMethod(k, tyI, d, tyFn(f), offset, st);
     }
   }
@@ -1695,10 +1685,6 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
   st->noAddTy = true;
   if(isDictRole(d)) {
     assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
-    eprintf("??? isDictRole = true "); TyDb_print(k, db); NL;
-    eprintf("???   ws="); dbgWs(k); NL;
-    eprintf("???   st  op=0x%X  offset=%u  global=%p\n", st->op, offset, st->global);
-    eprintf("???   expectedOffset=%u\n", offsetof(Globals, log));
     S addr; if(FTO == st->op) {
       if(b) { Buf_add(b, DUP); } else  { addr = WS_POP(); WS_ADD(addr); }
     }
@@ -1707,8 +1693,6 @@ void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
       if(b) { Buf_add(b, SWP); } else  { WS_ADD(addr); }
     }
     ftOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, st);
-    eprintf("??? after role "); TyDb_print(k, db); NL;
-    eprintf("???   ws="); dbgWs(k); NL;
   }
   else ftOffsetStruct(k, d, d->fields, offset, st);
 }
@@ -1734,12 +1718,13 @@ void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
   END_IMM;
 }
 
-bool StPath_free(Kern* k, StPath* st) {
-  return Sll_free((Sll*)st, sizeof(StPath), BBA_asArena(&k->bbaTmp));
+void DotPath_free(Kern* k, DotPath* st) {
+  Slc* err = Sll_free((Sll*)st, sizeof(DotPath), BBA_asArena(&k->bbaTmp));
+  if(err) SET_ERR(*err);
 }
 
-void StPath_print(StPath* st) {
-  eprintf("StPath[");
+void DotPath_print(DotPath* st) {
+  eprintf("DotPath[");
   for(; st; st = st->next) {
     eprintf("%.*s o=%u ", Dat_fmt(instrName(st->op)), st->offset);
     TyI_print(st->tyI);
@@ -1760,7 +1745,7 @@ bool isTyNative(TyBase* ty) {
   return isDictNative((TyDict*)ty);
 }
 
-void compileStruct(Kern* k, StPath* p, TyDict* st, Buf* b) {
+void compileStruct(Kern* k, DotPath* p, TyDict* st, Buf* b) {
   TyI* fields = NULL;
   // The fields are in the revere order, so copy them first
   for(TyI* field = st->fields; field; field = field->next) {
@@ -1781,18 +1766,18 @@ void compileStruct(Kern* k, StPath* p, TyDict* st, Buf* b) {
   Sll_free((Sll*)fields, sizeof(TyI), BBA_asArena(&k->bbaTmp));
 }
 
-void compileStPath(Kern* k, bool isSr, StPath* p, bool asImm, bool tyCheck) {
-  if(not p) return;
-  if(not TyI_refs(p->tyI) and _isTyStruct(p->tyI->ty)) {
-    ASSERT(FTO != p->op, "full struct access through reference");
+void compileDotPath(Kern* k, bool isSr, DotPath* path, bool asImm, bool tyCheck) {
+  if(not path) return;
+  if(not TyI_refs(path->tyI) and _isTyStruct(path->tyI->ty)) {
+    ASSERT(FTO != path->op, "full struct access through reference");
   }
   Buf* b = asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, asImm);
   if(tyCheck) {
-    if(isSr) tyCall(k, db, p->tyI, NULL);
-    else     tyCall(k, db, NULL, p->tyI);
+    if(isSr) tyCall(k, db, path->tyI, NULL);
+    else     tyCall(k, db, NULL, path->tyI);
   }
-  p = (StPath*)Sll_reverse((Sll*) p);
-  for(; p; p = p->next) {
+  path = (DotPath*)Sll_reverse((Sll*) path);
+  for(DotPath* p = path; p; p = p->next) {
     U1 op = p->op; if(isSr and not p->next) op = opAlwaysSr(op);
     U1 refs = TyI_refs(p->tyI);
     if(p->compRole) {
@@ -1803,7 +1788,6 @@ void compileStPath(Kern* k, bool isSr, StPath* p, bool asImm, bool tyCheck) {
         opOffset(k, b, FTO, SZR, roleOffset, NULL);
       } else opOffset(k, b, p->op, SZR, p->offset + roleOffset, p->global);
     } else if(TyI_refs(p->tyI) or isTyNative(p->tyI->ty)) {
-      eprintf("??? compile native "); TyI_print(p->tyI); NL;
       opOffset(k, b, op, szToSzI(TyI_szBasic(p->tyI)), p->offset, p->global);
     } else if(isTyDictB(p->tyI->ty)) {
       TyDict* d = (TyDict*) p->tyI->ty;
@@ -1812,7 +1796,6 @@ void compileStPath(Kern* k, bool isSr, StPath* p, bool asImm, bool tyCheck) {
         compileStruct(k, p, d, b);
       } else if (isDictRole(d)) { // Push {&d &m}
         // TODO Role not happening quite right... I think it's here
-        eprintf("??? compiling role\n");
         S addr; if(FTO == p->op) {
           if(b) { Buf_add(b, DUP); } else  { addr = WS_POP(); WS_ADD(addr); }
         }
@@ -1829,11 +1812,11 @@ void compileStPath(Kern* k, bool isSr, StPath* p, bool asImm, bool tyCheck) {
       SET_ERR(SLC("Cannot compile ty"));
     }
   }
-  p = (StPath*)Sll_reverse((Sll*) p);
+  path = (DotPath*)Sll_reverse((Sll*) path);
 }
 
 // Given a path, make sure the last item is a ref
-void StPath_makeRef1(Kern* k, StPath* p) {
+void DotPath_makeRef1(Kern* k, DotPath* p) {
   U2 refs = TyI_refs(p->tyI); if(1 == refs) return;
   assert(0 == refs); // TODO: insert fetches
   switch(p->op) {
@@ -1847,88 +1830,66 @@ void StPath_makeRef1(Kern* k, StPath* p) {
   p->tyI = TyI_findOrAdd(k, &tyI);
 }
 
-void compileVar2(Kern* k, TyVar* v, bool asImm) {
+void compileVar(Kern* k, TyVar* v, bool asImm) {
   bool isGlobal = isVarGlobal(v) or isVarConst(v); assert(isGlobal or isVarLocal(v));
   Buf* b = asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, asImm);
-  StPath* p = structPath(
+  DotPath* p = dotPath(
     k, v->tyI,
     /*global*/ isGlobal ? v : NULL,
     /*offset*/ isGlobal ? 0 : v->v,
     /*op*/     isGlobal ? FTGL : FTLL);
-  StPath* stFn = NULL;
+  DotPath* stFn = NULL;
   if(XL == p->op) {
     // Pop off the method/function to call if there is one
     stFn = p; p = p->next; stFn->next = NULL;
   }
 
   // Look for the "last" NOP path elements. These are the "true start" fields
-  for(StPath* find = p; find; find = find->next) {
+  for(DotPath* find = p; find; find = find->next) {
     if(NOP == find->op) {
-      StPath_free(k, find->next); find->next = NULL;
+      DotPath_free(k, find->next); find->next = NULL;
       break;
     }
   }
 
-  bool isSr = false; StPath* ref = NULL;
+  bool isSr = false; DotPath* ref = NULL;
   if(not stFn) { isSr = CONSUME("="); }
-  eprintf("??? isSr=%u  ", isSr); StPath_print(p); NL;
   if(isSr and (FTO == p->op)) {
     // We need to do a SRO {addr, value} so we put
     // the addr on the stack first;
     ref = p->next; p->next = NULL;
-    if(ref) compileStPath(k, false, ref, asImm, false);
+    if(ref) compileDotPath(k, false, ref, asImm, false);
   }
   if(stFn) { // calling a method
     TyFn* fn = tyFn(stFn->tyI->ty);
     if(isFnMeth(fn)) {
       assert(not TyI_refs(stFn->tyI));
-      StPath_makeRef1(k, p);
-      eprintf("??? meth p="); TyI_print(p->tyI); NL;
-      compileStPath(k, false, p, asImm, not IS_UNTY); // &self
+      DotPath_makeRef1(k, p);
+      compileDotPath(k, false, p, asImm, not IS_UNTY); // &self
       Kern_compFn(k);
       compileFn(k, fn, /*self*/tyDict((Ty*) p->tyI->ty), asImm);
     } else if(isFnAbsmeth(fn)) {
       assert(isDictRole(tyDictB(p->tyI->ty)));
       tyCall(k, db, NULL, &TyIs_rSelf);
-      p->compRole = ROLE_DAT; compileStPath(k, false, p, asImm, false);
+      p->compRole = ROLE_DAT; compileDotPath(k, false, p, asImm, false);
       Kern_compFn(k);
-      p->compRole = ROLE_METH; compileStPath(k, false, p, asImm, false);
+      p->compRole = ROLE_METH; compileDotPath(k, false, p, asImm, false);
       opOffset(k, b, FTO, SZR, /*offset*/(S)fn->code, NULL); // get actual method
       tyCall(k, db, fn->inp, fn->out);
       if(asImm) executeFn(k, (TyFn*)WS_POP());
       else      Buf_add(&k->g.c.code, XW);
     } else {
-      compileStPath(k, false, p, asImm, not IS_UNTY);
+      compileDotPath(k, false, p, asImm, not IS_UNTY);
       Kern_compFn(k);
       compileFn(k, fn, /*self*/NULL, asImm);
     }
   } else {
     if(isSr) Kern_compFn(k);
-    compileStPath(k, isSr, p, asImm, not IS_UNTY);
+    compileDotPath(k, isSr, p, asImm, not IS_UNTY);
   }
-  eprintf("??? freeing stFn=%p  p=%p  ref=%p\n", stFn, p, ref);
-  if(stFn) assert(not StPath_free(k, stFn));
-  ASSERT(not StPath_free(k, p), "internal error");
-  if(ref)  assert(not StPath_free(k, ref));
-}
-
-int count = 0;
-void compileVar(Kern* k, TyVar* v, bool asImm) {
-  eprintf("??? compileVar start %.*s\n", Ty_fmt(v));
-  count += 1;
-  TyVar* global = isVarGlobal(v) ? v : NULL;
-  if(asImm) ASSERT(not isVarLocal(v), "'imm#' used with local variable");
-  if(CONSUME("=")) {
-    ASSERT(not isVarConst(v), "cannot set const variable");
-    START_IMM(asImm);
-    SrOffset st = (SrOffset) {
-      .op = global ? SRGL : SRLL, .checkTy = true, .asImm = asImm, .global = global
-    };
-    srOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
-    END_IMM;
-  } else compileVarFt(k, v, asImm, /*addTy*/true);
-  count -= 1;
-  eprintf("??? compileVar end %.*s\n", Ty_fmt(v));
+  if(stFn) DotPath_free(k, stFn);
+  DotPath_free(k, p);
+  if(ref)  DotPath_free(k, ref);
 }
 
 // Return the next member through '.', or NULL if there is no '.'
@@ -1993,7 +1954,7 @@ void checkName(Kern* k, bool check) {
 void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
   checkName(k, ty);
   while(true) {
-    if(isTyVar(ty)) return compileVar2(k, (TyVar*) ty, asImm);
+    if(isTyVar(ty)) return compileVar(k, (TyVar*) ty, asImm);
     if(isTyFn(ty))  break;
     ASSERT(not self, "invalid access through reference");
     if(isTyDict(ty)) {
@@ -2660,9 +2621,7 @@ void N_blk(Kern* k) {
   Sll_add(Blk_root(k), Blk_asSll(blk));
 
   Kern_compFn(k); // compile code block
-  eprintf("??? prewhile\n");
   if(CONSUME("while")) { 
-    eprintf("??? while\n");
     Kern_compFn(k); _cont(k, JLNZ); }
   if(not TyDb_done(db)) tyBreak(k, db); // implicit break checks blk type
   if(blk->breaks or (TyDb_done(db) < RET_DONE)) TyDb_clearDone(db);
@@ -2833,7 +2792,6 @@ void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
   TyI* top = TyDb_top(db); ASSERT(top, "'.' used with an empty stack");
-  eprintf("??? N_dot %p: "); TyI_print(top); NL;
   TyDict* d = (TyDict*) top->ty;
   ASSERT(isTyDict((Ty*)d), "invalid '.', the value on the stack is not a TyDict");
   ASSERT(not isDictMod(d), "accessing mod on stack");
@@ -2975,7 +2933,6 @@ bool _atHandleLocalFn(Kern *k, bool asImm) { // return true if handled
 }
 
 void N_at(Kern* k) { // '@', aka dereference
-  eprintf("??? N_at start\n");
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   bool asImm = WS_POP(); if(_atHandleLocalFn(k, asImm)) return;
   TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.c.code;
@@ -2983,7 +2940,6 @@ void N_at(Kern* k) { // '@', aka dereference
   Kern_compFn(k);  U1 op = FTO;
   if(CONSUME("="))    op = SRO;
   TyI* tyI = TyDb_top(db); U2 refs = TyI_refs(tyI);
-  eprintf("??? N_at "); TyI_print(tyI); NL;
   if(not refs) {
     SET_ERR(SLC("invalid '@', the value on the stack is not a reference"));
   }
@@ -3004,7 +2960,6 @@ void N_at(Kern* k) { // '@', aka dereference
     TyI out = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta - 1};
     tyCall(k, db, &inp, &out);
   }
-  eprintf("??? N_at done "); TyDb_print(k, db); NL;
 }
 
 void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
@@ -3244,8 +3199,7 @@ void N_FileLogger_end(Kern* k)       {            FileLogger_end((FileLogger*)WS
 
 #define ADD_FN(NAMELEN, NAME, META, CODE, INP, OUT) \
   ADD_ANY_CREATE(TyFn, NAMELEN, NAME, TY_FN | (META), code, (U1*)CODE); \
-  LINED(ty).inp = INP; LINED(ty).out = OUT; \
-  eprintf("??? Added %s at %p\n", NAME, &LINED(ty));
+  LINED(ty).inp = INP; LINED(ty).out = OUT;
 
 #define ADD_FNN(NAMELEN, NAME, META, CODE, INP, OUT) \
   ADD_FN(NAMELEN, NAME, TY_FN_NATIVE | (META), CODE, INP, OUT)

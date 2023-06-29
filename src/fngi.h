@@ -418,17 +418,17 @@ S TyDict_sz(TyDict* ty);
 
 typedef enum { ROLE_NONE, ROLE_DAT, ROLE_METH } CompRole;
 
-typedef struct _StPath {
-  struct _StPath* next;
+typedef struct _DotPath {
+  struct _DotPath* next;
   TyI* tyI;
   TyVar* global; // TyVarGlobal (optional)
   U2   offset;
   U1   op;   // operation
   U1   compRole;
-} StPath;
+} DotPath;
 
-StPath* structPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op);
-void StPath_print(StPath* st);
+DotPath* dotPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op);
+void DotPath_print(DotPath* st);
 
 #define TYI_VOID  NULL
 
