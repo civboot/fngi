@@ -550,6 +550,8 @@ TEST_FNGI(global, 10)
 
   COMPILE_EXEC("tAssertEq(7, foo.a)   tAssertEq(3, foo.b)");
   COMPILE_EXEC("@ &foo.a"); TASSERT_WS(7);
+  COMPILE_EXEC("(&foo).a"); TASSERT_WS(7);
+
   COMPILE_EXEC("imm#tAssertEq(7, foo.a)");
   COMPILE_EXEC("foo.a = 0x444 tAssertEq(0x444, foo.a)");
   COMPILE_EXEC("imm#( tAssertEq(0x444, foo.a); tAssertEq(3, foo.b) )");

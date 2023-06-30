@@ -1373,9 +1373,10 @@ U1 Ty_ftOp(Ty* ty) {
 }
 
 // see notes/path.md
-DotPath* dotPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
+DotPath* dotPathFull(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op, bool dotFirst) {
   Sll* root = NULL; bool push = true;
-  while(CONSUME(".")) {
+  while(dotFirst or CONSUME(".")) {
+    dotFirst = false;
     push = true;
     TyDict* d = tyDictB(cur->ty);
     Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "Unknown member");
@@ -1411,6 +1412,10 @@ DotPath* dotPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
   }
   if(push) pushDotPath(k, &root, cur, global, offset, op);
   return (DotPath*)root;
+}
+
+DotPath* dotPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
+  return dotPathFull(k, cur, global, offset, op, false);
 }
 
 // ***********************
@@ -1564,25 +1569,7 @@ void _srOffsetMove(Kern* k, TyI* tyI, U2 offset, SrOffset* st) {
 }
 
 // ***********************
-//   * ftOffset
-// Handles not only fetching offset, but also parsing '.' syntax.
-//
-// For example:
-// struct A [ U4 v; method aDo self: &A, x: U4 -> U4 do ( self.v + x ) ]
-// struct B [ U4 b; A a; method bDo(self: &B) do ( self.a.aDo(self.b) ) ]
-//
-// var b: B = (A 3, 4);
-//            \ + compileVar(name="b")
-//            \ + ftOffset(b.tyI, offset=0)
-//            \   + ftOffset(a.tyI, offset=4)
-//            \   + compileMethod
-// tAssertEq(6, b.a.aDo(3)
-
-typedef struct {
-  U1 op; bool noAddTy; bool findEqual; bool asImm; TyVar* global;
-} FtOffset;
-
-void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st);
+//   * Compile Operation
 
 bool opIsConcrete(U1 op) {
   switch(op) {
@@ -1592,16 +1579,6 @@ bool opIsConcrete(U1 op) {
     case SRGL: return true;
     default:   return false;
   }
-}
-
-// Handle type operations of refs.
-void _tyFtOffsetRefs(Kern* k, TyDb* db, TyI* tyI, FtOffset* st) {
-  assert(not tyI->next);
-  if(st->noAddTy) return;
-  assert(st->op == FTLL || st->op == FTGL || st->op == FTO);
-  // In both cases (FTO and FTLL) we just put the tyI on the stack
-  // For FTO, the dot compiler already reduced the number of references.
-  tyCall(k, db, NULL, tyI);
 }
 
 void compileFnStk(Kern* k, InOut* io, bool asImm) {
@@ -1619,101 +1596,6 @@ void compileFn(Kern* k, TyFn* fn, TyDict* self, bool asImm) {
   if(isFnInline(fn)) return Buf_extend(b, (Slc){fn->code, .len=fn->len});
   Buf_add(b, XL); Buf_addBE4(b, (U4)fn);
 }
-
-// Just pushes &self onto the stack and calls the method.
-void compileMethod(Kern* k, TyI* vTyI, TyDict* d, TyFn* meth, U2 offset, FtOffset* st) {
-  Buf* b = st->asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, st->asImm);
-  assert(not st->noAddTy);
-  if (isFnAbsmeth(meth)) {
-    ASSERT(opIsConcrete(st->op), "absmeth not allowed on reference");
-    tyCall(k, db, TYI_VOID, &TyIs_rSelf);
-    // Get &Data first
-    if(TyI_refs(vTyI)) {
-           opOffset(k, b, st->op, SZR, offset, st->global); // &Role
-           opOffset(k, b,    FTO, SZR, offset + ROLE_DATA_OFFSET, NULL);
-    } else opOffset(k, b, st->op, SZR, offset + ROLE_DATA_OFFSET, st->global);
-    Kern_compFn(k);
-    // Get &Methods and ft the offset, then call it
-    if(TyI_refs(vTyI)) {
-           opOffset(k, b, st->op,  SZR, offset, st->global); // &Role
-           opOffset(k, b,     FTO, SZR, offset + ROLE_METH_OFFSET, NULL);
-    } else opOffset(k, b, st->op,  SZR, offset + ROLE_METH_OFFSET, st->global);
-    opOffset(k, b, FTO, SZR, /*offset*/(S)meth->code, NULL); // get actual method
-    tyCall(k, db, meth->inp, meth->out);
-    if(st->asImm) executeFn(k, (TyFn*)WS_POP());
-    else          Buf_add(&k->g.c.code, XW);
-    return;
-  } else if(isFnMeth(meth)) {
-    TyI self = { .ty = (TyBase*)d, .meta = /*refs*/1 };
-    tyCall(k, db, TYI_VOID, &self);
-    opOffset(k, b, ftOpToRef(st->op), 0, offset, st->global);
-  }
-  Kern_compFn(k);
-  compileFn(k, meth, d, st->asImm);
-}
-
-// Fetch an offset using st->op operation.
-// This defines the basic syntax for `foo.bar = baz`
-void ftOffset(Kern* k, TyI* tyI, U2 offset, FtOffset* st) {
-  bool addTy = not st->noAddTy;
-  Buf* b = st->asImm ? NULL : &k->g.c.code; TyDb* db = tyDb(k, st->asImm);
-  if(TyI_refs(tyI)) {
-    _tyFtOffsetRefs(k, db, tyI, st);
-    opOffset(k, b, st->op, SZR, offset, st->global);
-    if(PEEK(".")) Kern_compFn(k);
-    return;
-  }
-  ASSERT(not isTyFnB(tyI->ty), "invalid fn local");
-  ASSERT(isTyDictB(tyI->ty), "invalid non-dict fetch");
-  TyDict* d = (TyDict*) tyI->ty; ASSERT(not isDictMod(d), "cannot fetch in mod");
-  if(st->findEqual && CONSUME("=")) {
-    SrOffset srSt = (SrOffset) {
-      .op = ftOpToSr(st->op),
-      .checkTy = true, .clear = true, .asImm = st->asImm,
-      .global = st->global,
-    };
-    return srOffset(k, tyI, offset, &srSt);
-  }
-  // TODO: I think this needs to move below the '.'
-  if(isDictNative(d)) {
-    if(addTy) tyCall(k, db, NULL, tyI);
-    return opOffset(k, b, st->op, (S)d->fields, offset, st->global);
-  }
-  ASSERT(isDictStruct(d) || isDictRole(d), "unknown dict type");
-  if(CONSUME(".")) {
-    Ty* f = TyDict_scanTy(k, d);
-    ASSERT(f, "member not found");
-    if(isTyVar(f)) {
-      TyVar* field = (TyVar*)f;
-      assert(isVarLocal(field));
-      return ftOffset(k, field->tyI, offset + field->v, st);
-    } else {
-      return compileMethod(k, tyI, d, tyFn(f), offset, st);
-    }
-  }
-  if(addTy) tyCall(k, db, NULL, tyI);
-  st->noAddTy = true;
-  if(isDictRole(d)) {
-    assert(RSIZE == ROLE_METH_OFFSET); // ensure meth is "top" of stack
-    S addr; if(FTO == st->op) {
-      if(b) { Buf_add(b, DUP); } else  { addr = WS_POP(); WS_ADD(addr); }
-    }
-    ftOffset(k, &TyIs_S, offset + ROLE_DATA_OFFSET, st);
-    if(FTO == st->op) {
-      if(b) { Buf_add(b, SWP); } else  { WS_ADD(addr); }
-    }
-    ftOffset(k, &TyIs_S, offset + ROLE_METH_OFFSET, st);
-  }
-  else ftOffsetStruct(k, d, d->fields, offset, st);
-}
-
-// fetch fields in "reverse" order (but the SLL is last -> first)
-void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
-  if(not field) return;
-  ftOffsetStruct(k, d, field->next, offset, st);
-  ftOffset(k, field, offset + TyDict_field(d, field)->v, st);
-}
-
 
 // ***********************
 //   * compileTy (Var, Dict, Fn)
@@ -2804,35 +2686,14 @@ void N_impl(Kern* k) {
 // ***********************
 //   * '.', '&', '@'
 
-void N_dot(Kern* k) { // A reference is on the stack, get a (sub)field
+void N_dot(Kern* k) {
   bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   ASSERT(not IS_UNTY, "Cannot use '.' on stack references without type checking");
-  TyI* top = TyDb_top(db); ASSERT(top, "'.' used with an empty stack");
-  TyDict* d = (TyDict*) top->ty;
+  TyI* tyI = TyDb_top(db); ASSERT(tyI, "'.' used with an empty stack");
+  TyDict* d = (TyDict*) tyI->ty;
   ASSERT(isTyDict((Ty*)d), "invalid '.', the value on the stack is not a TyDict");
-  ASSERT(not isDictMod(d), "accessing mod on stack");
-  ASSERT(not isDictRole(d), "accessing role method on stack");
-  U2 refs = TyI_refs(top); if(not refs) {
-    return compileTy(k, TyDict_scanTy(k, d), d, asImm);
-  }
-
-  Buf* b = &k->g.c.code;
-  // Trim the refs to be only 1
-  while(refs > 1) { Buf_add(b, FT | SZR); }
-  TyDb_pop(db);
-  Ty* ty = TyDict_scanTy(k, d); ASSERT(ty, "member not found");
-  if(isTyVar(ty)) {
-    TyVar* var = (TyVar*) ty;
-    // Note: "global" field is not a member.
-    ASSERT(isVarLocal(var), "invalid '.', accessing non-field through ref");
-    FtOffset st = (FtOffset) {.op = FTO, .findEqual = true, .asImm = asImm};
-    ftOffset(k, var->tyI, var->v, &st);
-    return;
-  }
-  // Call the method
-  TyI this = (TyI) { .ty = (TyBase*)d, .meta = /*refs*/1 };
-  tyCall(k, db, NULL, &this); // put back on ty stack (from TyDb_pop above)
-  compileTy(k, ty, d, asImm);
+  DotPath* p = dotPathFull(k, tyI, /*global*/NULL, /*offset*/0, FTO, true);
+  compileDotPath(k, p, asImm);
 }
 
 // & on a nested reference type (i.e. a struct field)
