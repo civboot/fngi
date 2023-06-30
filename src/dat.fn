@@ -7,6 +7,13 @@ unty const NULL:&Any = 0
 const FALSE:S = 0
 const TRUE:S  = 1
 
+const TRACE:U1 = 0x10
+const DEBUG:U1 = 0x08
+const INFO :U1 = 0x04
+const WARN :U1 = 0x02
+const ERROR:U1 = 0x01
+const LOG_NEVER:U1 = 0x00
+
 struct Buf  [ parent:Slc cap:U2 ]
 struct CStr [ len:U2  dat:Arr[ ? U1] ]
 struct Ring [ dat:&U1  head:U2  tail:U2  _cap:U2 ]

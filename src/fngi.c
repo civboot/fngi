@@ -195,7 +195,7 @@ void Kern_init(Kern* k, FnFiber* fb) {
         .token = (Buf){.dat = k->tokenDat, .cap = 128},
         .compFn = &TyFn_baseCompFn,
       },
-      .log = { .m = &mSpLogger_File, .d = &civ.log },
+      .log = { .d = civ.log.d, .m = &mSpLogger_File },
       .dictStk = (DictStk) { .dat = k->dictBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .implStk = (DictStk) { .dat = k->implBuf, .sp = DICT_DEPTH, .cap = DICT_DEPTH },
       .bbaDict = &k->bbaDict,
@@ -1679,14 +1679,21 @@ void addDotPath(Kern* k, bool isSr, DotPath* path, bool asImm, bool tyCheck) {
         compileStruct(k, p, d, b);
       } else if (isDictRole(d)) { // Push {&d &m}
         // TODO Role not happening quite right... I think it's here
-        S addr; if(FTO == p->op) {
-          if(b) { Buf_add(b, DUP); } else  { addr = WS_POP(); WS_ADD(addr); }
+        eprintf("??? isDictRole op=%.*s asImm=%u offset=%u\n", Instr_fmt(p->op), asImm, p->offset);
+        if(b and FTO == p->op) {
+          Buf_add(b, DUP);
+          opOffset(k, b, p->op, SZR, p->offset + ROLE_DATA_OFFSET, p->global);
+          Buf_add(b, SWP);
+          opOffset(k, b, p->op, SZR, p->offset + ROLE_METH_OFFSET, p->global);
+        } else if (/*asImm and*/ FTO == p->op) {
+          S addr = WS_POP() + p->offset;
+          WS_ADD(*(S*)(addr + ROLE_DATA_OFFSET));
+          WS_ADD(*(S*)(addr + ROLE_METH_OFFSET));
+          eprintf("??? role asImm FTO %p", addr); dbgWs(k); NL;
+        } else {
+          opOffset(k, b, p->op, SZR, p->offset + ROLE_DATA_OFFSET, p->global);
+          opOffset(k, b, p->op, SZR, p->offset + ROLE_METH_OFFSET, p->global);
         }
-        opOffset(k, b, p->op, SZR, p->offset + ROLE_DATA_OFFSET, p->global);
-        if(FTO == p->op) {
-          if(b) { Buf_add(b, SWP); } else  { WS_ADD(addr); }
-        }
-        opOffset(k, b, p->op, SZR, p->offset + ROLE_METH_OFFSET, p->global);
       } else SET_ERR(SLC("not impl"));
     } else if (isFnSig(p->tyI->ty)) {
       ASSERT(TyI_refs(p->tyI), "non-ref fn signature");
@@ -3292,12 +3299,14 @@ void Core_mod(Kern* k) {
   REPL_END
 
   CStr_ntVar(datPath, "\x0A", "src/dat.fn"); compilePath(k, datPath);
-
   CStr_ntVar(compPath, "\x0B", "src/comp.fn"); compilePath(k, compPath);
   TyDict* comp = tyDict(Kern_findTy(k, &KEY("comp")));
 
   TyVar* globals = tyVar(TyDict_find(comp, &KEY("g")));
-  TASSERT_EQ(sizeof(Globals), TyDict_sz(tyDictB(globals->tyI->ty)));
+  TyDict* GlobalsDict = tyDictB(globals->tyI->ty);
+  TASSERT_EQ(sizeof(Globals), TyDict_sz(GlobalsDict));
+  TyVar* logField = tyVar(TyDict_find(GlobalsDict, &KEY("log")));
+  TASSERT_EQ(offsetof(Globals, log), logField->v);
   *(Globals**)globals->v = &k->g;
 
   TyDict* tyBBA = tyDict(Kern_findTy(k, &KEY("BBA")));

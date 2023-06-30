@@ -163,25 +163,25 @@ typedef struct {
   struct _TyFn*  free;     // this:&This dat:Ref sz:S alignment:U2 -> ()
   struct _TyFn*  maxAlloc; // this:&This -> S
 } MSpArena;
-typedef struct { MSpArena* m; void* d; } SpArena;
+typedef struct { void* d; MSpArena* m; } SpArena;
 
 typedef struct {
   struct _TyFn*  read;   // this:&This -> ()
   struct _TyFn*  asBase; // this:&This -> &BaseFile
 } MSpReader;
-typedef struct { MSpReader* m; void* d; } SpReader;
+typedef struct { void* d; MSpReader* m; } SpReader;
 
 typedef struct {
   struct _TyFn*  asBase; // this:&This -> &BaseFile
   struct _TyFn*  write;  // this:&This -> ()
 } MSpWriter;
-typedef struct { MSpWriter* m; void* d; } SpWriter;
+typedef struct { void* d; MSpWriter* m; } SpWriter;
 
 typedef struct {
   MSpWriter w;
   struct _TyFn*  state;  // this:&This -> &FmtState
 } MSpFmt;
-typedef struct { MSpFmt* m; void* d; } SpFmt;
+typedef struct { void* d; MSpFmt* m; } SpFmt;
 
 typedef struct {
   MSpFmt         fmt;
@@ -191,7 +191,7 @@ typedef struct {
   struct _TyFn*  add;        // this:&This Slc -> ()
   struct _TyFn*  end;        // this:&This     -> ()
 } MSpLogger;
-typedef struct { MSpLogger* m; void* d; } SpLogger;
+typedef struct { void* d; MSpLogger* m; } SpLogger;
 '''
 
 with open("gen/comp.h", "w") as f:

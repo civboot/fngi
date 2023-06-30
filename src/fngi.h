@@ -100,7 +100,7 @@ extern MSpReader mSpReader_BufFile;
 extern MSpLogger mSpLogger_File;
 
 static inline SpArena BBA_asSpArena(BBA* bba) {
-  return (SpArena) { .m = &mSpArena_BBA, .d = bba };
+  return (SpArena) { .d = bba, .m = &mSpArena_BBA };
 }
 
 BaseFile* SpReader_asBase(struct _Kern* k, SpReader r);

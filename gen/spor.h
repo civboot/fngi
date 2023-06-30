@@ -11,11 +11,10 @@
 #define OVR              0x6
 #define DUP              0x7
 #define DUPN             0x8
-#define DV               0x9
-#define RG               0xa
-#define OWR              0xb
-#define LR               0xc
-#define GR               0xd
+#define RG               0x9
+#define OWR              0xa
+#define LR               0xb
+#define GR               0xc
 #define XR               0xf
 #define INC              0x10
 #define INC2             0x11

@@ -41,11 +41,10 @@ const DRP  :U1 = 0x05 \ {l   -> }       drop
 const OVR  :U1 = 0x06 \ {l r -> l r l}  over
 const DUP  :U1 = 0x07 \ {l   -> l l}    duplicate
 const DUPN :U1 = 0x08 \ {l   -> l l==0} DUP then NOT
-const DV   :U1 = 0x09 \ Device Operation (U1 literal)
-const RG   :U1 = 0x0A \ {-> v} Register  (U1 literal)
-const OWR  :U1 = 0x0B \ {-> &OwnedValue} owned reference
-const LR   :U1 = 0x0C \ {-> &local}  local reference  (U2 literal)
-const GR   :U1 = 0x0D \ {-> &global} global reference (U4+U2 literals)
+const RG   :U1 = 0x09 \ {-> v} Register  (U1 literal)
+const OWR  :U1 = 0x0A \ {-> &OwnedValue} owned reference
+const LR   :U1 = 0x0B \ {-> &local}  local reference  (U2 literal)
+const GR   :U1 = 0x0C \ {-> &global} global reference (U4+U2 literals)
 const XR   :U1 = 0x0F \ {-> &fn} function reference   (U4 literal)
 
 \ # [1.b] Operations: One Inp -> One Out

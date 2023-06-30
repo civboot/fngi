@@ -872,6 +872,46 @@ TEST_FNGI(core, 20)
     "tAssertEq(0xFFFF, a3.a1)\n"
     "tAssertEq(3,      a3.a3)\n");
 
+  TyVar* g = tyVar(TyDict_find(comp, &KEY("g")));
+  TASSERT_EQ(&k->g, *(void**)g->v);
+
+  COMPILE_EXEC("fn getGlobals[ -> &comp.Globals] do ( comp.g )");
+  DISASSEMBLE("getGlobals");
+  COMPILE_EXEC("getGlobals;");
+  eprintf("??? Get globals "); dbgWs(k); NL;
+  TASSERT_WS((S)&k->g);
+
+  COMPILE_EXEC("fn getLog[ -> Logger] do ( comp.g.log )");
+  DISASSEMBLE("getLog");
+  COMPILE_EXEC("getLog;");
+  eprintf("??? log_offset=%u g=%p ", offsetof(Globals, log), &k->g); dbgWs(k); NL;
+  eprintf("mLogger=%p\n", &mSpLogger_File);
+  TASSERT_WS((S)k->g.log.m); TASSERT_WS((S)k->g.log.d);
+
+  COMPILE_EXEC("global l:Logger = comp.g.log");
+  eprintf("g: d=%p  m=%p\n", k->g.log.d, k->g.log.m);
+  TyVar* l = tyVar(Kern_findTy(k, &KEY("l")));
+  void* dLocal = *(void**)(l->v);
+  void* mLocal = *(void**)(l->v + RSIZE);
+  eprintf("l: d=%p  m=%p  l->v=%p \n", dLocal, mLocal, (void*)l->v);
+  TASSERT_EQ(&mSpLogger_File, *(void**)(l->v + RSIZE));
+  TASSERT_EQ(k->g.log.d, dLocal);
+  TASSERT_EQ(k->g.log.m, mLocal);
+
+  eprintf("??? CivUnix.log=%p logLvl=%X\n", &civUnix.log, civUnix.log.config.lvl);
+  eprintf("???   civ.log.d=%p\n", civ.log.d);
+  eprintf("         logLvl=%X\n", Xr(civ.log,logConfig)->lvl);
+  TASSERT_EQ(civ.log.d, k->g.log.d);
+
+  COMPILE_EXEC(
+    "fn doLog[ ] do (\n"
+    "  tAssert(l.start INFO) l.add|hello| l.end;\n"
+    ")");
+  COMPILE_EXEC("doLog;");
+  assert(false);
+
+  // COMPILE_EXEC("l.start INFO;  l.end;");
+
   REPL_END
 END_TEST_FNGI
 
@@ -907,7 +947,7 @@ TEST_FNGI(bba, 20)
   REPL_END
 END_TEST_FNGI
 
-TEST_FNGI(learn, 20)
+TEST_FNGI(learn, 26)
   Kern_fns(k); Core_mod(k);
   CStr_ntVar(learn, "\x0D", "learn_in_y.fn"); compilePath(k, learn);
 END_TEST_FNGI
