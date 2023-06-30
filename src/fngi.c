@@ -1718,16 +1718,6 @@ void ftOffsetStruct(Kern* k, TyDict* d, TyI* field, U2 offset, FtOffset* st) {
 // ***********************
 //   * compileTy (Var, Dict, Fn)
 
-void compileVarFt(Kern* k, TyVar* v, bool asImm, bool addTy) {
-  TyVar* global = (isVarConst(v) || isVarGlobal(v)) ? v : NULL;
-  FtOffset st = (FtOffset) {
-    .op = global ? FTGL : FTLL, .findEqual = not isVarConst(v), .asImm = asImm,
-    .global = global, .noAddTy = not addTy };
-  START_IMM(asImm);
-  ftOffset(k, v->tyI, /*offset=*/global ? 0 : v->v, &st);
-  END_IMM;
-}
-
 void DotPath_free(Kern* k, DotPath* st) {
   Slc* err = Sll_free((Sll*)st, sizeof(DotPath), BBA_asArena(&k->bbaTmp));
   if(err) SET_ERR(*err);
@@ -2942,75 +2932,32 @@ void N_amp(Kern* k) {
   else opCompile(b, global ? GR : LR, /*szI*/0, offset, global);
 }
 
-bool _atHandleLocalFn(Kern *k, bool asImm) { // return true if handled
-  // Using @localFn requires that we compile the variable
-  // AFTER the arguments. N_at would compile it before arguments.
-  Key key = (Key) { tokenSlc(k) }; Ty* ty = Kern_findTy(k, &key);
-  if(not isTyVar(ty)) { return false; } TyVar* v = (TyVar*)ty;
-  if((1 != TyI_refs(v->tyI)) or not isFnSig(v->tyI->ty))
-    return false;
-  assert(not asImm); // TODO
-  tokenDrop(k); Kern_compFn(k); // compile arguments
-  FnSig* fn = (FnSig*) v->tyI->ty;
-  tyCall(k, tyDb(k, false), fn->io.inp, fn->io.out);
-  compileVarFt(k, v, false, /*addTy*/false);
-  Buf_add(&k->g.c.code, XW);
-  return true;
-}
-
-void N_at2(Kern* k) {
+void N_at(Kern* k) {
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
   bool asImm = WS_POP();
   TyDb* db = tyDb(k, asImm);
-  scan(k); Ty* ty = Kern_findToken(k); TyI* tyI;
+  scan(k); Ty* ty = Kern_findToken(k); TyI tyI;
   DotPath* p = NULL;
   if(isTyVar(ty)) {
     TyVar* v = (TyVar*) ty;
-    tokenDrop(k);     tyI = v->tyI;
+    tokenDrop(k);     tyI = *v->tyI;
     eprintf("??? @var %.*s\n", Ty_fmt(v));
     DotPathSet s = varDotPathSet(v);
-    p = dotPath(k, tyI, s.global, s.offset, s.op);
+    p = dotPath(k, &tyI, s.global, s.offset, s.op);
   } else { // function call, constant, etc
     eprintf("??? @single\n");
-    single(k, asImm); tyI = TyDb_top(db);
+    single(k, asImm);
+    tyI = *TyDb_top(db); tyI.next = NULL;
+    TyDb_pop(db);
   }
   eprintf("??? N_at "); TyDb_print(k, db); NL;
-  U2 refs = TyI_refs(tyI); ASSERT(refs, "@ on non-ref object");
-  TyI last = { .ty = tyI->ty, .meta = tyI->meta - 1 };
-  pushDotPath(k, (Sll**)&p, &last, NULL, 0, FTO);
-  if((1 == refs) and isFnSig(tyI->ty)) p->op = XW;
+  U2 refs = TyI_refs(&tyI); ASSERT(refs, "@ on non-ref object");
+  tyI.meta -= 1;
+  pushDotPath(k, (Sll**)&p, &tyI, NULL, 0, FTO);
+  if((1 == refs) and isFnSig(tyI.ty)) p->op = XW;
   eprintf("??? N_at compile "); DotPath_print(p); NL;
   compileDotPath(k, p, asImm);
-}
-
-void N_at(Kern* k) { // '@', aka dereference
-  ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
-  bool asImm = WS_POP(); if(_atHandleLocalFn(k, asImm)) return;
-  TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.c.code;
-
-  Kern_compFn(k);  U1 op = FTO;
-  if(CONSUME("="))    op = SRO;
-  TyI* tyI = TyDb_top(db); U2 refs = TyI_refs(tyI);
-  if(not refs) {
-    SET_ERR(SLC("invalid '@', the value on the stack is not a reference"));
-  }
-  if(SRO == op) Kern_compFn(k); // compile value to store
-  if(refs > 1) opOffset(k, b, op, SZR, /*offset*/0, NULL);
-  else {
-    ASSERT(isTyDictB(tyI->ty), "Cannot direct ft/sr non-dict type");
-    TyDict* d = (TyDict*) tyI->ty;
-    ASSERT(not isDictMod(d), "Cannot @mod");
-    ASSERT(isDictNative(d), "direct @ is only for native types");
-    opOffset(k, b, op, /*szI*/(S)d->fields, /*offset*/0, NULL);
-  }
-  TyI inp = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta };
-  if(op == SRO) {
-    TyI inp2 = *TyDb_top(db); inp2.next = &inp;
-    tyCall(k, db, &inp2, NULL);
-  } else {
-    TyI out = (TyI) { .ty = (TyBase*)tyI->ty, .meta = tyI->meta - 1};
-    tyCall(k, db, &inp, &out);
-  }
+  eprintf("??? N_at end "); TyDb_print(k, db); NL;
 }
 
 void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
@@ -3358,7 +3305,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x04", "impl"         , TY_FN_SYN       , N_impl     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
-  ADD_FNN("\x01", "@"            , TY_FN_SYN       , N_at2      , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
   ADD_FNN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
   ADD_FNN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
   ADD_FNN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);
