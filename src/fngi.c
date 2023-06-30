@@ -1353,13 +1353,13 @@ TyI* scanTyI(Kern* k, CStr* name) {
 }
 
 static inline void pushDotPath(
-    Kern* k, Sll** root, TyI* tyI, TyVar* global, U1 offset, U1 op) {
+    Kern* k, DotPath** root, TyI* tyI, TyVar* global, U1 offset, U1 op) {
   if(NOP == op) return;
   BBA* bba = &k->bbaTmp;
   DotPath* st = BBA_alloc(bba, sizeof(DotPath), alignment(sizeof(DotPath))); ASSERT(st, "stPath OOM");
   *st = (DotPath) {
     .tyI = TyI_findOrAdd(k, tyI), .global = global, .offset = offset, .op = op };
-  Sll_add(root, (Sll*) st);
+  Sll_add((Sll**)root, (Sll*) st);
 }
 
 U1 Ty_ftOp(Ty* ty) {
@@ -1377,7 +1377,7 @@ U1 Ty_ftOp(Ty* ty) {
 
 // see notes/path.md
 DotPath* dotPathFull(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op, bool dotFirst) {
-  Sll* root = NULL; bool push = true;
+  DotPath* root = NULL; bool push = true;
   while(dotFirst or CONSUME(".")) {
     dotFirst = false;
     push = true;
@@ -1414,7 +1414,7 @@ DotPath* dotPathFull(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op, bool do
     } else assert(false);
   }
   if(push) pushDotPath(k, &root, cur, global, offset, op);
-  return (DotPath*)root;
+  return root;
 }
 
 DotPath* dotPath(Kern* k, TyI* cur, TyVar* global, U2 offset, U1 op) {
@@ -1585,8 +1585,6 @@ bool opIsConcrete(U1 op) {
 }
 
 void compileFnStk(Kern* k, InOut* io, bool asImm) {
-  eprintf("??? compileFnStk "); InOut_print(io); NL;
-  eprintf("???     "); TyDb_print(k, tyDb(k, asImm)); NL;
   tyCall(k, tyDb(k, asImm), io->inp, io->out);
   if(asImm) executeFn(k, tyFn((Ty*)WS_POP()));
   else      Buf_add(&k->g.c.code, XW);
@@ -1728,7 +1726,6 @@ void compileDotPath(Kern* k, DotPath* p, bool asImm) {
   DotPath* stFn = NULL;
   bool isSr = false; DotPath* ref = NULL;
   if((XL == p->op) or (XW == p->op)) {
-    eprintf("??? stFn op=%.*s\n", Instr_fmt(p->op));
     // Pop off the method/function to call if there is one
     stFn = p; p = p->next; stFn->next = NULL;
   } else isSr = CONSUME("=");
@@ -1739,7 +1736,6 @@ void compileDotPath(Kern* k, DotPath* p, bool asImm) {
     if(ref) addDotPath(k, false, ref, asImm, false);
   }
   if(stFn and (XW == stFn->op)) {
-    eprintf("??? comp fnSig\n");
     FnSig* fn = (FnSig*) stFn->tyI->ty;
     Kern_compFn(k);
     addDotPath(k, false, p, asImm, /*tyCheck*/false);
@@ -2097,6 +2093,29 @@ FnSig* parseFnSig(Kern* k) {
   return FnSig_findOrAdd(k, io);
 }
 
+void _atEq(Kern* k, bool asImm) {
+  TyDb* db = tyDb(k, asImm); Buf* b = asImm ? NULL : &k->g.c.code;
+  Kern_compFn(k);
+  TyI* r = TyDb_top(db); TyI* l = r ? r->next : NULL;
+  if(not l or not ((1 == TyI_refs(l)) and (1 == TyI_refs(r)))) {
+    eprintf("!!! ty check fails: "); TyDb_print(k, db); NL;
+    SET_ERR(SLC("@= requires two single references"));
+  }
+  ASSERT(isTyDictB(r->ty), "@= must be a data type");
+  TyDict* d = (TyDict*) r->ty;
+  ASSERT(not TyDict_unsized(d), "@= must be on a sized type");
+
+  if(not TyI_check(l, r)) {
+    eprintf("!!! ty check fails: "); TyDb_print(k, db); NL;
+    SET_ERR(SLC("'l @= r', l is not a subtype of r"));
+  }
+  TyDb_pop(db); TyDb_pop(db);
+  if(asImm) {
+    WS_POP2(S lv, S rv);
+    memmove((void*)lv, (void*)rv, TyDict_sz(d));
+  } else op2(b, MMV, /*szI*/0, TyDict_sz(d));
+}
+void N_atEq(Kern* k) { _atEq(k, WS_POP()); }
 
 // synty function
 // Example:
@@ -2197,12 +2216,23 @@ void _globalInit(Kern* k, TyVar* v) {
   START_IMM(true); srOffset(k, v->tyI, /*offset*/ 0, &st); END_IMM;
 }
 
+bool _varAtEq(Kern* k, TyVar* v) {
+  if (not CONSUME("@=")) return false;
+  TyVar* g = (isVarGlobal(v) or isVarConst(v)) ? v : NULL;
+  opOffset(k, /*buf*/g ? NULL : &k->g.c.code,
+           /*op*/g ? GR : LR,
+           /*szI*/0, /*offset*/g ? 0 : v->v, g);
+  tyCall(k, tyDb(k, g), NULL, &(TyI){.ty = (TyBase*)v->tyI->ty, .meta = 1});
+  START_IMM(g); _atEq(k, g); END_IMM;
+  return true;
+}
+
 void _varLocal(Kern* k, VarPre* pre) {
   localImpl(k, pre);
   if(CONSUME("=")) {
     SrOffset st = (SrOffset) {.op = SRLL, .checkTy = true };
     srOffset(k, pre->var->tyI, /*offset=*/pre->var->v, &st);
-  }
+  } else _varAtEq(k, pre->var);
 }
 
 void N_var(Kern* k) {
@@ -2218,6 +2248,7 @@ void _global(Kern* k, U1 meta, bool requireSet) {
   v->v = (S) BBA_alloc(&k->bbaCode, pre.els * pre.sz, /*align*/pre.sz);
   ASSERT(v->v, "Global OOM");
   if(CONSUME("=")) _globalInit(k, v);
+  else if (_varAtEq(k, v)) {}
   else             ASSERT(not requireSet, "expected '='");
 }
 
@@ -2804,48 +2835,20 @@ void N_at(Kern* k) {
   if(isTyVar(ty)) {
     TyVar* v = (TyVar*) ty;
     tokenDrop(k);     tyI = *v->tyI;
-    eprintf("??? @var %.*s\n", Ty_fmt(v));
     DotPathSet s = varDotPathSet(v);
     p = dotPath(k, &tyI, s.global, s.offset, s.op);
   } else { // function call, constant, etc
-    eprintf("??? @single\n");
     single(k, asImm);
     tyI = *TyDb_top(db); tyI.next = NULL;
     TyDb_pop(db);
   }
-  eprintf("??? N_at "); TyDb_print(k, db); NL;
   U2 refs = TyI_refs(&tyI); ASSERT(refs, "@ on non-ref object");
   tyI.meta -= 1;
-  pushDotPath(k, (Sll**)&p, &tyI, NULL, 0, FTO);
+  pushDotPath(k, &p, &tyI, NULL, 0, FTO);
   if((1 == refs) and isFnSig(tyI.ty)) p->op = XW;
-  eprintf("??? N_at compile "); DotPath_print(p); NL;
   compileDotPath(k, p, asImm);
-  eprintf("??? N_at end "); TyDb_print(k, db); NL;
 }
 
-void N_eqAt(Kern* k) {
-  bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
-  Buf* b = asImm ? NULL : &k->g.c.code;
-  Kern_compFn(k);
-  TyI* r = TyDb_top(db); TyI* l = r ? r->next : NULL;
-  if(not l or not ((1 == TyI_refs(l)) and (1 == TyI_refs(r)))) {
-    eprintf("!!! ty check fails: "); TyDb_print(k, db); NL;
-    SET_ERR(SLC("@= requires two single references"));
-  }
-  ASSERT(isTyDictB(r->ty), "@= must be a data type");
-  TyDict* d = (TyDict*) r->ty;
-  ASSERT(not TyDict_unsized(d), "@= must be on a sized type");
-
-  if(not TyI_check(l, r)) {
-    eprintf("!!! ty check fails: "); TyDb_print(k, db); NL;
-    SET_ERR(SLC("'l @= r', l is not a subtype of r"));
-  }
-  TyDb_pop(db); TyDb_pop(db);
-  if(asImm) {
-    WS_POP2(S lv, S rv);
-    memmove((void*)lv, (void*)rv, TyDict_sz(d));
-  } else op2(b, MMV, /*szI*/0, TyDict_sz(d));
-}
 
 void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
   S sz = WS_POP(); WS_POP3(S ptr, S i, S bound);
@@ -3193,7 +3196,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
-  ADD_FNN("\x02", "@="           , TY_FN_SYN       , N_eqAt     , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x02", "@="           , TY_FN_SYN       , N_atEq     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
   ADD_FNN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
   ADD_FNN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);

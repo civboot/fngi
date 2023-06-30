@@ -867,6 +867,10 @@ TEST_FNGI(core, 20)
     "tAssertEq(42,     a2.a2)\n"
     "tAssertEq(3,      a2.a3)\n");
 
+  COMPILE_EXEC(
+    "global a3:A @= &a2;\n"
+    "tAssertEq(0xFFFF, a3.a1)\n"
+    "tAssertEq(3,      a3.a3)\n");
 
   REPL_END
 END_TEST_FNGI
