@@ -94,18 +94,22 @@ const SZ2     :U1 = 0x10
 const SZ4     :U1 = 0x20
 
 \ # [1.d] Mem
-const FT   :U1 = 0x40   \ {addr} -> {value}  |FeTch value from addr
-const FTBE :U1 = 0x41   \ {addr} -> {value}  |FeTch value from addr (big endian)
-const FTO  :U1 = 0x42   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
-const FTLL :U1 = 0x43   \ {} -> {local}      |FeTch Literal Local
-const FTGL :U1 = 0x44   \ {} -> {local}      |FeTch Global Literal
-const SR   :U1 = 0x45   \ {addr value} -> {} |Store value at addr
-const SRBE :U1 = 0x46   \ {addr value} -> {} |Store value at addr (big endian)
-const SRO  :U1 = 0x47   \ {addr value} -> {} |Store value at addr + U1 literal offset
-const SRGL :U1 = 0x48   \ {addr value} -> {} |Store Global Literal
-const SRLL :U1 = 0x49   \ {value} -> {}      |StoRe Literal Local
-const FTOK :U1 = 0x4A   \ {addr} -> {value addr}  |FTO but keep addr on stack
-const LIT  :U1 = 0x4B   \ {} -> {literal}    |Literal (U1, U2 or U4)
+\ unsized
+const MMV  :U1 = 0x40 \ {&to &from [U2 lit:sz]} memmove
+
+\ sized
+const FT   :U1 = 0x41   \ {addr} -> {value}  |FeTch value from addr
+const FTBE :U1 = 0x42   \ {addr} -> {value}  |FeTch value from addr (big endian)
+const FTO  :U1 = 0x43   \ {addr} -> {value}  |FeTch value from addr + U1 literal offset
+const FTLL :U1 = 0x44   \ {} -> {local}      |FeTch Literal Local
+const FTGL :U1 = 0x45   \ {} -> {local}      |FeTch Global Literal
+const SR   :U1 = 0x46   \ {addr value} -> {} |Store value at addr
+const SRBE :U1 = 0x47   \ {addr value} -> {} |Store value at addr (big endian)
+const SRO  :U1 = 0x48   \ {addr value} -> {} |Store value at addr + U1 literal offset
+const SRGL :U1 = 0x49   \ {addr value} -> {} |Store Global Literal
+const SRLL :U1 = 0x4A   \ {value} -> {}      |StoRe Literal Local
+const FTOK :U1 = 0x4B   \ {addr} -> {value addr}  |FTO but keep addr on stack
+const LIT  :U1 = 0x4C   \ {} -> {literal}    |Literal (U1, U2 or U4)
 
 \ # [1.e] Jmp
 \

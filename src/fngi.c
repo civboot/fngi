@@ -379,6 +379,9 @@ inline static U1 executeInstr(Kern* k, U1 instr) {
                 WS_ADD((I4)l / (I4)r);             R0
 
     // Mem Cases
+    case MMV:
+      l = WS_POP(); memmove((void*)WS_POP(), (void*)l, popLit(k, 2)); R0
+
     case SZ1 + FT: WS_ADD(*(U1*)WS_POP()); R0
     case SZ2 + FT: WS_ADD(*(U2*)WS_POP()); R0
     case SZ4 + FT: WS_ADD(*(U4*)WS_POP()); R0
@@ -2795,8 +2798,7 @@ void N_amp(Kern* k) {
 
 void N_at(Kern* k) {
   ASSERT(not IS_UNTY, "Cannot use '@' without type checking");
-  bool asImm = WS_POP();
-  TyDb* db = tyDb(k, asImm);
+  bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
   scan(k); Ty* ty = Kern_findToken(k); TyI tyI;
   DotPath* p = NULL;
   if(isTyVar(ty)) {
@@ -2819,6 +2821,30 @@ void N_at(Kern* k) {
   eprintf("??? N_at compile "); DotPath_print(p); NL;
   compileDotPath(k, p, asImm);
   eprintf("??? N_at end "); TyDb_print(k, db); NL;
+}
+
+void N_eqAt(Kern* k) {
+  bool asImm = WS_POP(); TyDb* db = tyDb(k, asImm);
+  Buf* b = asImm ? NULL : &k->g.c.code;
+  Kern_compFn(k);
+  TyI* r = TyDb_top(db); TyI* l = r ? r->next : NULL;
+  if(not l or not ((1 == TyI_refs(l)) and (1 == TyI_refs(r)))) {
+    eprintf("!!! ty check fails: "); TyDb_print(k, db); NL;
+    SET_ERR(SLC("@= requires two single references"));
+  }
+  ASSERT(isTyDictB(r->ty), "@= must be a data type");
+  TyDict* d = (TyDict*) r->ty;
+  ASSERT(not TyDict_unsized(d), "@= must be on a sized type");
+
+  if(not TyI_check(l, r)) {
+    eprintf("!!! ty check fails: "); TyDb_print(k, db); NL;
+    SET_ERR(SLC("'l @= r', l is not a subtype of r"));
+  }
+  TyDb_pop(db); TyDb_pop(db);
+  if(asImm) {
+    WS_POP2(S lv, S rv);
+    memmove((void*)lv, (void*)rv, TyDict_sz(d));
+  } else op2(b, MMV, /*szI*/0, TyDict_sz(d));
 }
 
 void N_ptrAddRaw(Kern* k) { // ptr:S index:S cap:S sz:S
@@ -3167,6 +3193,7 @@ void Kern_fns(Kern* k) {
   ADD_FNN("\x01", "."            , TY_FN_SYN       , N_dot      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "&"            , TY_FN_SYN       , N_amp      , TYI_VOID, TYI_VOID);
   ADD_FNN("\x01", "@"            , TY_FN_SYN       , N_at       , TYI_VOID, TYI_VOID);
+  ADD_FNN("\x02", "@="           , TY_FN_SYN       , N_eqAt     , TYI_VOID, TYI_VOID);
   ADD_FNN("\x06", "ptrAdd"       , TY_FN_SYN       , N_ptrAdd   , TYI_VOID, TYI_VOID);
   ADD_FNN("\x08", "destruct"     , TY_FN_SYN       , N_destruct , TYI_VOID, TYI_VOID);
   ADD_FNN("\x05", "dbgRs"        , 0               , N_dbgRs    , TYI_VOID, TYI_VOID);

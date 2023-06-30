@@ -608,6 +608,7 @@ TEST_FNGI(structDeep, 12)
 
   COMPILE_EXEC("useAssignRef()");
   TASSERT_WS(0x44);
+
   REPL_END
 END_TEST_FNGI
 
@@ -857,6 +858,15 @@ TEST_FNGI(core, 20)
   TASSERT_EQ(1, Slc_cmp(SLC("world"), SLC("aliens")));
 
   CStr_ntVar(testDat, "\x11", "tests/test_dat.fn"); compilePath(k, testDat);
+
+  COMPILE_EXEC(
+    "struct A [ a1:S  a2:U2  a3:U1 ]\n"
+    "global a1:A = A(0xFFFF, 42, 3);\n"
+    "global a2:A; &a2 @= &a1\n"
+    "tAssertEq(0xFFFF, a2.a1)\n"
+    "tAssertEq(42,     a2.a2)\n"
+    "tAssertEq(3,      a2.a3)\n");
+
 
   REPL_END
 END_TEST_FNGI

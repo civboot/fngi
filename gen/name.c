@@ -50,6 +50,7 @@ Slc instrName(U1 instr) {
     case MUL             : return Slc_ntLit("MUL");
     case DIV_U           : return Slc_ntLit("DIV_U");
     case DIV_S           : return Slc_ntLit("DIV_S");
+    case MMV             : return Slc_ntLit("MMV");
     case FT + SZ1        : return Slc_ntLit("FT1");
     case FT + SZ2        : return Slc_ntLit("FT2");
     case FT + SZ4        : return Slc_ntLit("FT4");
