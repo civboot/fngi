@@ -579,7 +579,6 @@ TEST_FNGI(structDeep, 12)
   COMPILE_EXEC("struct B [ a: A; b: S; rA: &A ]");
   COMPILE_EXEC("struct C [a: &A, b: &B]")
   COMPILE_EXEC("fn cGetA[c:&C -> S] do ( c.b.a.a );");
-  DISASSEMBLE("cGetA");
   COMPILE_EXEC("fn useC[ -> S S] do (\n"
                "  var a: A = A 1\n"
                "  var b: B = B(A 2, 3, &a)\n"
@@ -589,7 +588,6 @@ TEST_FNGI(structDeep, 12)
                "  tAssertEq(@(&b.rA.a), 1)\n"
                "  c.b.a.a, cGetA(&c)\n"
                ")");
-  DISASSEMBLE("useC");
   COMPILE_EXEC("useC;");
     TASSERT_WS(2); TASSERT_WS(2);
 
@@ -601,10 +599,8 @@ TEST_FNGI(structDeep, 12)
   COMPILE_EXEC("assign()"); TASSERT_WS(0x42);
 
   COMPILE_EXEC("fn assignRef[a:&A] do (a.a = 0x44)")
-  DISASSEMBLE("assignRef");
 
   COMPILE_EXEC("fn useAssignRef[ -> S] do (var a:A; assignRef(&a); a.a)");
-  DISASSEMBLE("useAssignRef");
 
   COMPILE_EXEC("useAssignRef()");
   TASSERT_WS(0x44);
@@ -837,7 +833,6 @@ TEST_FNGI(core, 20)
     "  tAssertEq(ch:i, s.@1)\n"
     "  s.@2\n"
     ")");
-  DISASSEMBLE("useSlc");
 
   COMPILE_EXEC("useSlc;"); TASSERT_WS('p');
 
@@ -876,42 +871,28 @@ TEST_FNGI(core, 20)
   TASSERT_EQ(&k->g, *(void**)g->v);
 
   COMPILE_EXEC("fn getGlobals[ -> &comp.Globals] do ( comp.g )");
-  DISASSEMBLE("getGlobals");
   COMPILE_EXEC("getGlobals;");
-  eprintf("??? Get globals "); dbgWs(k); NL;
   TASSERT_WS((S)&k->g);
 
   COMPILE_EXEC("fn getLog[ -> Logger] do ( comp.g.log )");
-  DISASSEMBLE("getLog");
   COMPILE_EXEC("getLog;");
-  eprintf("??? log_offset=%u g=%p ", offsetof(Globals, log), &k->g); dbgWs(k); NL;
-  eprintf("mLogger=%p\n", &mSpLogger_File);
   TASSERT_WS((S)k->g.log.m); TASSERT_WS((S)k->g.log.d);
 
   COMPILE_EXEC("global l:Logger = comp.g.log");
-  eprintf("g: d=%p  m=%p\n", k->g.log.d, k->g.log.m);
   TyVar* l = tyVar(Kern_findTy(k, &KEY("l")));
   void* dLocal = *(void**)(l->v);
   void* mLocal = *(void**)(l->v + RSIZE);
-  eprintf("l: d=%p  m=%p  l->v=%p \n", dLocal, mLocal, (void*)l->v);
   TASSERT_EQ(&mSpLogger_File, *(void**)(l->v + RSIZE));
   TASSERT_EQ(k->g.log.d, dLocal);
   TASSERT_EQ(k->g.log.m, mLocal);
-
-  eprintf("??? CivUnix.log=%p logLvl=%X\n", &civUnix.log, civUnix.log.config.lvl);
-  eprintf("???   civ.log.d=%p\n", civ.log.d);
-  eprintf("         logLvl=%X\n", Xr(civ.log,logConfig)->lvl);
   TASSERT_EQ(civ.log.d, k->g.log.d);
 
   COMPILE_EXEC(
     "fn doLog[ ] do (\n"
-    "  tAssert(l.start INFO) l.add|hello| l.end;\n"
-    ")");
-  COMPILE_EXEC("doLog;");
-  assert(false);
-
-  // COMPILE_EXEC("l.start INFO;  l.end;");
-
+    "  tAssert(l.start INFO) l.add|testing compiled log| l.end;\n"
+    ") doLog;");
+  COMPILE_EXEC("tAssert(l.start INFO) l.add|testing global log| l.end;");
+  COMPILE_EXEC("imm#(tAssert(l.start INFO) l.add|testing global imm log| l.end;)");
   REPL_END
 END_TEST_FNGI
 

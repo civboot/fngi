@@ -174,7 +174,7 @@ void Kern_errCleanup(Kern* k) {
   Stk_clear(&k->fb->info);
   k->g.c.code.len = 0;
 
-  // // Drop all but the last
+  // Drop all but the last
   SllSpArena** root = &k->fb->sllArena;
   while(*root and (*root)->next) {
     SllSpArena* drop = (SllSpArena*)Sll_pop((Sll**)root);
@@ -325,7 +325,7 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  eprintf("!!! instr %0.u: %+10.*s: ", k->fb->ep, Instr_fmt(instr)); dbgWs(k); NL;
+  // eprintf("&&& instr %0.u: %+10.*s: ", k->fb->ep, Instr_fmt(instr)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
@@ -538,8 +538,8 @@ void executeLoop(Kern* k) { // execute fibers until all fibers are done.
 }
 
 void executeFn(Kern* k, TyFn* fn) {
-  if(fn->name) eprintf("!!! executeFn %.*s meta=%X\n", Ty_fmt(fn), fn->meta);
-  else         eprintf("!!! executeFn <unknown> meta=%X\n", fn->meta);
+  // if(fn->name) eprintf("&&& executeFn %.*s meta=%X\n", Ty_fmt(fn), fn->meta);
+  // else         eprintf("&&& executeFn <unknown> meta=%X\n", fn->meta);
   if(isFnNative(fn)) {
     return executeNative(k, fn);
   }
@@ -1679,7 +1679,6 @@ void addDotPath(Kern* k, bool isSr, DotPath* path, bool asImm, bool tyCheck) {
         compileStruct(k, p, d, b);
       } else if (isDictRole(d)) { // Push {&d &m}
         // TODO Role not happening quite right... I think it's here
-        eprintf("??? isDictRole op=%.*s asImm=%u offset=%u\n", Instr_fmt(p->op), asImm, p->offset);
         if(b and FTO == p->op) {
           Buf_add(b, DUP);
           opOffset(k, b, p->op, SZR, p->offset + ROLE_DATA_OFFSET, p->global);
@@ -1689,7 +1688,6 @@ void addDotPath(Kern* k, bool isSr, DotPath* path, bool asImm, bool tyCheck) {
           S addr = WS_POP() + p->offset;
           WS_ADD(*(S*)(addr + ROLE_DATA_OFFSET));
           WS_ADD(*(S*)(addr + ROLE_METH_OFFSET));
-          eprintf("??? role asImm FTO %p", addr); dbgWs(k); NL;
         } else {
           opOffset(k, b, p->op, SZR, p->offset + ROLE_DATA_OFFSET, p->global);
           opOffset(k, b, p->op, SZR, p->offset + ROLE_METH_OFFSET, p->global);
@@ -1880,7 +1878,7 @@ void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
 //   * single: compile a single token + compileSrc
 void single(Kern* k, bool asImm) {
   scan(k); Slc t = *Buf_asSlc(&k->g.c.token);
-  // eprintf("!!! single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
+  // eprintf("&&& single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
   if(not t.len) return;
   ParsedNumber n = parseU4(k, t);
   if(n.isNum) {
@@ -2944,7 +2942,7 @@ Slc* SpBuf_freeEnd(Kern* k, Buf* b, SpArena a) {
 
 #define STRING_MAX 512
 Slc parseSlc(Kern* k) {
-  Buf b = SpBuf_new(k, *ARENA_TOP, STRING_MAX);
+  Buf b = SpBuf_new(k, ARENA_TOP, STRING_MAX);
   bool ignoringWhite = true;
   CharNextEsc c;
   while(true) {
@@ -2962,24 +2960,22 @@ Slc parseSlc(Kern* k) {
     else                    ignoringWhite = false;
     Buf_add(&b, c.c);
   }
-  SpBuf_freeEnd(k, &b, *ARENA_TOP);
+  SpBuf_freeEnd(k, &b, ARENA_TOP);
   return *Buf_asSlc(&b);
 }
 
 TyI TyI_Slc;
 void N_pipe(Kern* k) { // Slc literal, aka |this is a string|
-  bool asImm = WS_POP();
-  Slc s = parseSlc(k);
+  bool asImm = WS_POP(); Slc s = parseSlc(k);
   if(asImm) { WS_ADD2((S)s.dat, s.len); }
   else      {
-    Sp_Xr2(*ARENA_TOP,alloc, sizeof(OwnedValue), RSIZE);
+    Sp_Xr2(ARENA_TOP,alloc, sizeof(OwnedValue), RSIZE);
     OwnedValue* owned = (OwnedValue*) WS_POP();
-    Sp_Xr2(*ARENA_TOP,alloc, sizeof(Ownership),  RSIZE);
+    Sp_Xr2(ARENA_TOP,alloc, sizeof(Ownership),  RSIZE);
     Ownership*  ship  = (Ownership*) WS_POP();
     ASSERT(owned, "String OOM"); ASSERT(ship, "String OOM");
     *owned = (OwnedValue) { .ref = s.dat, .ty = &Ty_U1, .ownership = ship };
     *ship = (Ownership) { .offset = 0, .len = s.len };
-
     Buf* b = &k->g.c.code; Buf_add(b, OWR); Buf_addBE4(b, (S)owned);
     lit(&k->g.c.code, s.len);
   }

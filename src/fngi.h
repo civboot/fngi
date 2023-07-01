@@ -217,7 +217,7 @@ bool FnFiber_init(FnFiber* fb);
 
 static inline U1* kFn(void(*native)(Kern*)) { return (U1*) native; }
 
-#define ARENA_TOP (&k->fb->sllArena->arena)
+#define ARENA_TOP (k->fb->sllArena->arena)
 
 #define LOCAL_TYDB_BBA(NAME) \
   BBA  bba_##NAME       = (BBA) { &civ.ba }; \

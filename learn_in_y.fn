@@ -7,7 +7,13 @@
 \(this a block comment)
 \these \are \token \comments
 
+\ Use the logger directly to print "hello world".
+\ Note: strings are wrapped in '|' to prevent having so many
+\       escapes (when do you use '|' in natural language?)
+imm#if(lgr.start INFO) do (lgr.add|Hello Learn X in Y!| lgr.end;)
+
 \ Native data types.
+
 
 \ S (slot) is pointer sized
 global s:S = 9
