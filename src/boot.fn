@@ -2,8 +2,7 @@
 
 global lgr:Logger = comp.g.log
 
-\ fnMeta:TY_FN_SYN
+\ fnMeta:comp.TY_FN_SYN
 \ fn while[stk:U1] do (
-\   comp.compile:blk;
-\ 
+\   comp.c:blk
 \ )

@@ -1876,6 +1876,40 @@ void compileTy(Kern* k, Ty* ty, TyDict* self, bool asImm) {
 
 // ***********************
 //   * single: compile a single token + compileSrc
+typedef struct { bool isNum; Ty* ty; DotPath* p; } Expression;
+
+// Parse the expression. If isNum, then ty is a literal value.
+Expression expression(Kern* k) {
+  scan(k); Slc t = *Buf_asSlc(&k->g.c.token);
+  // eprintf("&&& single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
+  if(not t.len) return;
+  Expression e = {0};
+  ParsedNumber n = parseU4(k, t);
+  if(n.isNum) {
+    tokenDrop(k); e.isNum = true; e.ty = (void*)e.v;
+    return e;
+  }
+  e.ty = scanTy(k); checkName(k, e.ty); TyDict* self = NULL;
+  while(true) {
+    if(isTyVar(e.ty)) {
+      TyVar* v = (TyVar*) e.ty;
+      bool isGlobal = isVarGlobal(v) or isVarConst(v);
+      assert(isGlobal or isVarLocal(v));
+      DotPathSet s = varDotPathSet(v);
+      e.p = dotPath(k, v->tyI, s.global, s.offset, s.op);
+      return e;
+    }
+    if(isTyFn(e.ty)) return e;
+    ASSERT(not self, "invalid access through reference");
+    if(isTyDict(ty)) {
+      TyDict* d = (TyDict*) s.ty;
+      s.ty = nextDot(k, d);
+      if(s.ty) continue;
+      return s;
+    } else assert(false);
+  }
+}
+
 void single(Kern* k, bool asImm) {
   scan(k); Slc t = *Buf_asSlc(&k->g.c.token);
   // eprintf("&&& single: asImm=%X t=%.*s\n", asImm, Dat_fmt(t));
@@ -3003,6 +3037,10 @@ void N_compileLit(Kern* k) {
 void N_findTy(Kern* k) {
   Key key = { popSlc(k) };
   WS_ADD((S)Kern_findTy(k, &key));
+}
+void N_compile(Kern* k) {
+  N_notImm(k); REQUIRE(":");
+  // DotPath* dotPathFull(k, 
 }
 
 // ********
