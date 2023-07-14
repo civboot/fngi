@@ -9,13 +9,17 @@ ARGS=
 
 all: test
 
-test: build
+test: lua build
 	./$(OUT) $(ARGS)
 
 build:
 	mkdir -p bin/
 	python3 etc/gen.py
 	$(CC) $(FLAGS) -Wall $(DISABLE_WARNINGS) $(LIBS) $(FNGI_SRC) $(TEST_SRC) -o $(OUT)
+
+lua:
+	lua etc/test_civ.lua
+	lua etc/test_gen.lua
 
 dbg: build
 	gdb -q ./$(OUT) $(ARGS)

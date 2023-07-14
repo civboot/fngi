@@ -11,7 +11,6 @@ CONST_RE = re.compile(
     + r"\s*(?P<ty>\w+)\s*="
     + r"\s*(?P<value>\w+)*")
 STRUCT_RE = re.compile(r"struct\s+(?P<name>\w+)\s*\[(?P<body>.*?)\]", re.DOTALL)
-_TY = r""
 TY_PAT = r"(?P<refs>&*)\s*(?P<ty>\w+)"
 FIELD_RE = re.compile(r"(?P<name>\w+)\s*:\s*" + TY_PAT, re.MULTILINE)
 
@@ -65,11 +64,6 @@ class Struct:
       f.write(f'  {ty}{refs} {field.name};\n')
     sname = RENAME.get(self.name, self.name)
     f.write(f'}} {sname};\n')
-
-def parseTyI(s: str):
-  refs, ty = TYI_RE.match(s).group("refs", "ty")
-  refs = int(refs) if refs else 0
-  return TyI(refs, ty)
 
 def parseFngi(path, structs):
   with open(path) as f: text = f.read()
