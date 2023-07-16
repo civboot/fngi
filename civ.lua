@@ -113,18 +113,34 @@ end
 -- Define a types method
 local function method(ty, name, body) ty[name] = body  end
 
--- A table: literally a lua table with some methods.
+-- Iter: iterator type that traverses an indexed table
+--
+-- All iterators return the key into their data as the first value
+local Iter = newTy('Iter')
+getmetatable(Iter).__call = function(self)
+  if self.i < #self.data then
+    self.i = self.i + 1
+    return self.i, self.data[self.i]
+  end
+end
+method(Iter, 'new', function(ty, l)
+  local it = {data=l, i=0}
+  return setmetatable(it, ty)
+end)
+
+-- A Map: literally a lua table with some methods.
 -- Use like:
 --
---   t = Tbl{'a'=2, 'b'=7, 1='d', 2='f'}
+--   t = Mbl{'a'=2, 'b'=7, 1='d', 2='f'}
 --   s[3] = 'e'
-getmetatable(Tbl).__call = function(ty, t)
+local Map = newTy('Map')
+getmetatable(Map).__call = function(ty, t)
   return setmetatable(t, ty)
 end
-local result = Tbl{a=2, b=3}
+local result = Map{a=2, b=3}
 assert(2 == result.a); assert(3 == result.b)
 -- assert(nil == result.c) -- TODO raises error "unknown member"
-assert(Tbl == ty(result))
+assert(Map == ty(result))
 
 -- A set: unique keys in arbitrary order. Values are all `true`
 -- Use like:
@@ -139,6 +155,16 @@ getmetatable(Set).__call = function(ty, t)
 end
 method(Set, '__index',    _methIndex)
 method(Set, 'add', function(self, k)  self[k] = true  end)
+method(Set, 'union', function(self, r)
+  local both = Set{}
+  for k in pairs(self) do if r[k] then both[k] = true end end
+  return both
+end)
+method(Set, 'leftOnly', function(self, r)
+  local left = Set{}
+  for k in pairs(self) do if not r[k] then left[k] = true end end
+  return left
+end)
 
 -- List: ordered set of possibly duplicated values
 -- A list is just the normal Lua list with type information and a few methods.
@@ -193,14 +219,13 @@ local _bufFmtTy = {
   end,
   table = function(b, t)
     local mt = getmetatable(t)
-    print('table', t, ' mt', mt)
     if mt and mt.__tostring then return table.insert(b, tostring(t)) end
     fmtTableRaw(b, t, orderedKeys(t))
   end,
 }
 
--- Tbl.__tostring
-method(Tbl, '__tostring', function(t)
+-- Map.__tostring
+method(Map, '__tostring', function(t)
   local b = {}; fmtTableRaw(b, t, orderedKeys(t))
   return join(b)
 end)
@@ -227,7 +252,7 @@ method(List, '__tostring', function(self)
   b[#b + endAdd] = ']'; return join(b)
 end)
 assert("[5 6 3 4]"  == tostring(List{5, 6, 3, 4}))
-assert("{a=5 b=77}" == tostring(Tbl{a=5, b=77}))
+assert("{a=5 b=77}" == tostring(Map{a=5, b=77}))
 
 -- fmt any object
 local function fmt(obj)
@@ -250,23 +275,28 @@ local function getcomphandler (op1, op2, event)
 end
 
 local eq = nil
+local function eqNoHandler(a, b)
+  -- TODO: compare addresses? I can't figure it out
+  if ty(a) ~= ty(b)     then return false  end
+  local aLen = 0
+  for aKey, aValue in pairs(a) do
+    local bValue = b[aKey]
+    if not eq(aValue, bValue) then return false end
+    aLen = aLen + 1
+  end
+  local bLen = 0
+  -- Note: #b only returns length of integer indexes
+  for bKey in pairs(b) do bLen = bLen + 1 end
+  return aLen == bLen
+end
+
 local eqTy = {
   number = nativeEq, boolean = nativeEq, string = nativeEq,
   ['nil'] = nativeEq, ['function'] = nativeEq,
   ['table'] = function(a, b)
-    if ty(a) ~= ty(b)     then return false  end
-    if a == b             then return true   end
     if getcomphandler(a, b, '__eq') then return a == b end
-    local aLen = 0
-    for aKey, aValue in pairs(a) do
-      bValue = b[aKey]
-      if not eq(aValue, bValue) then return false end
-      aLen = aLen + 1
-    end
-    local bLen = 0
-    -- Note: #b only returns length of integer indexes
-    for bKey in pairs(b) do bLen = bLen + 1 end
-    return aLen == bLen
+    if a == b             then return true   end
+    return eqNoHandler(a, b)
   end,
 }
 eq = function(a, b) return eqTy[type(a)](a, b) end
@@ -278,8 +308,9 @@ assert(not eq({4, {5, 6, 7}}, {4, {5, 6}}))
 assert(not eq({4, {5, 6}}, {4, {5, 6, 7}}))
 
 -- Now update the eq for our types
--- method(Tbl, '__eq', eq)
--- method(Set, '__eq', eq)
+method(Map, '__eq', eqNoHandler)
+method(Set, '__eq', eqNoHandler)
+assert(Map{4, 5} == Map{4, 5})
 
 local function eqArr(a, b)
   if(#a ~= #b) then return false end
@@ -327,14 +358,11 @@ local function structNewIndex (t, k, v)
 end
 
 local function structFmt(t)
-  print("structName ", tyName(getmetatable(t)))
   local b = {tyName(getmetatable(t))}
   fmtTableRaw(b, t, iterarr(getmetatable(t)['#fieldOrder']))
   return join(b, '')
 end
 
--- TODO: add sortedFields and improve print
--- TODO: add methods
 local function struct(name, fields)
   local st = newTy(name)
   local tys, defaults, ordered = {}, {}, {}
@@ -343,7 +371,6 @@ local function struct(name, fields)
     if 'string' == type(f) then fname = f
     else fname, fty, fdef = table.unpack(f) end
     assert(type(fname) == 'string');
-    print(fname, fty, fdef)
     tys[fname] = fty or true; defaults[fname] = fdef;
     List.add(ordered, fname)
   end
@@ -354,15 +381,12 @@ local function struct(name, fields)
     __tostring=structFmt,
   })
   getmetatable(st).__call = function(st, t)
-    print("new struct", fmt(t))
     for f, v in pairs(t) do
-      print("found field", f)
       local fTy = st["#fields"][f]
       if not fTy then structInvalidField(st, f) end
       if not tyCheck(fTy, ty(v)) then tyError(fTy, ty(v)) end
     end
     for f in pairs(st["#fields"]) do
-      print("found field", f, st["#defaults"][f])
       if nil == t[f] and nil == st["#defaults"][f] then
         error("missing field: " .. f)
       end
@@ -372,9 +396,35 @@ local function struct(name, fields)
   return st
 end
 
+-- ###################
+-- # Test Harness
+
+-- assert that globals haven't changed
+local function globals()
+  local out = Set{}
+  for k in pairs(_G) do out[k] = true end
+  return out
+end
+local function assertGlobals(prev, expect)
+  expect = expect or Set{}
+  local new = globals():leftOnly(prev)
+  if not eq(expect, new) then
+    error(string.format("New globals: %s", new))
+  end
+end
+assertGlobals(globals())
+
+local function test(name, options, fn)
+  local g, options = globals(), options or {}
+  print("## Test", name)
+  fn()
+  assertGlobals(g, options.expectGlobals)
+end
+
 return {
   Nil = Nil, Bool = Bool, Str  = Str,  Num = Num,
-  Fn  = Fn,  Tbl  = Tbl,  List = List, Set = Set,
+  Fn  = Fn,  Tbl  = Tbl,
+  Map = Map, List = List, Set = Set,
 
   -- Generic table operations
   eq = eq, update = update, extend = extend,
@@ -382,8 +432,12 @@ return {
   -- Formatters
   fmt = fmt,
   fmtBuf = fmtBuf,
-  assertEq = assertEq,
 
   -- struct
   struct = struct,
+
+  -- tests
+  test = test,
+  assertEq = assertEq,
+  globals = globals, assertGlobals = assertGlobals,
 }
