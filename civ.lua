@@ -19,11 +19,11 @@ local function iterarr(l)
   end
 end
 
+local join = table.concat
+local function sort(t) table.sort(t) return t end
+local function orderedKeys(t) return iterarr(sort(keysarr(t))) end
+
 -- used primarily for formatting
-local function orderedKeys(t)
-  l = keysarr(t); table.sort(l)
-  return iterarr(l)
-end
 
 -- shallow copy and update with add
 local function copy(t, add)
@@ -35,15 +35,8 @@ local function copy(t, add)
   return {table.unpack(t)}
 end
 
--- update t with the key/values in add
-local function update (t, add)
-  for k, v in pairs(add) do t[k] = v end
-end
-
-local function withmetatable(t, mt)
-  setmetatable(t, mt); return t
-end
-
+-- update is for dict/set, extend for list
+local function update (t, add) for k, v in pairs(add) do t[k] = v end end
 local function extend (a, vals)
   for _, v in ipairs(vals) do table.insert(a, v) end
 end
@@ -58,7 +51,7 @@ local function _methIndex(self, k)
   return getmetatable(self)[k]
 end
 
--- __index function used for types
+-- __index function used for most types
 local function _tyIndex(self, k)
   local ty = getmetatable(self)
   local v = ty["#defaults"][k] or ty[k]
@@ -80,7 +73,10 @@ local function newTy(name)
     ["#methods"]={},
     ["#defaults"]={},
   }
-  return setmetatable(ty, {__name='Meta_' .. name })
+  return setmetatable(ty, {
+    __name=name,
+    __tostring=function(_) return name end,
+  })
 end
 
 local Nil  = newTy('Nil');  local Fn   = newTy('Fn')
@@ -105,6 +101,14 @@ assert(Tbl == ty({}))
 
 local function tyName(ty) return ty.__name end
 assert('Str' == tyName(Str)); assert(nil   == tyName({}))
+
+-- check if given is a subtype (child of) req
+local function tyCheck(req, given)
+  if (true == req) or (req == given) then return true end
+  local a = given["#ancestors"]
+  return a and a[req]
+end
+
 
 -- Define a types method
 local function method(ty, name, body) ty[name] = body  end
@@ -198,7 +202,7 @@ local _bufFmtTy = {
 -- Tbl.__tostring
 method(Tbl, '__tostring', function(t)
   local b = {}; fmtTableRaw(b, t, orderedKeys(t))
-  return table.concat(b)
+  return join(b)
 end)
 fmtBuf = function (b, obj) _bufFmtTy[type(obj)](b, obj) end
 
@@ -208,7 +212,7 @@ method(Set, '__tostring', function(self)
   for k in orderedKeys(self) do
     fmtBuf(b, k); table.insert(b, ' '); endAdd = 0
   end
-  b[#b + endAdd] = '}'; return table.concat(b)
+  b[#b + endAdd] = '}'; return join(b)
 end)
 result = Set{'a', 'b', 'c'}; assert("{a b c}"   == tostring(result))
 result:add('d');             assert("{a b c d}" == tostring(result))
@@ -220,14 +224,18 @@ method(List, '__tostring', function(self)
     fmtBuf(b, v); table.insert(b, ' ')
     endAdd = 0 -- remove last space
   end
-  b[#b + endAdd] = ']'; return table.concat(b)
+  b[#b + endAdd] = ']'; return join(b)
 end)
 assert("[5 6 3 4]"  == tostring(List{5, 6, 3, 4}))
 assert("{a=5 b=77}" == tostring(Tbl{a=5, b=77}))
 
 -- fmt any object
 local function fmt(obj)
-  local b = {}; fmtBuf(b, obj); return table.concat(b, "")
+  local b = {}; fmtBuf(b, obj); return join(b, "")
+end
+
+local function tyError(req, given)
+  error(string.format("%s is not an ancestor of %s", given, req))
 end
 
 -- ###################
@@ -288,7 +296,7 @@ local function assertEq(left, right)
   fmtBuf(err, "Values not equal:")
   fmtBuf(err, "\n   left: "); fmtBuf(err, left)
   fmtBuf(err, "\n  right: "); fmtBuf(err, right)
-  error(table.concat(err))
+  error(join(err))
 end
 
 local result = List{1, 'a', 2}
@@ -300,13 +308,14 @@ assert  (List{2, 'a', 2} ~= result)
 -- # Struct
 
 local function structInvalidField (st, f)
-  error(st.ty .. " does not have field " .. f)
+  error(string.format("%s does not have field %s", st, f))
 end
 local function structTy (t) return getmetatable(t).__name end
 local function structIndex (t, k)
-  if CHECK.field and getmetatable(t)["#fields"][k] then
-    return nil
-  end
+  local m = (
+    getmetatable(t)["#defaults"][k]
+    or getmetatable(t)[k]);
+  if nil ~= m then return m end
   structInvalidField(getmetatable(t), k)
 end
 
@@ -321,26 +330,44 @@ local function structFmt(t)
   print("structName ", tyName(getmetatable(t)))
   local b = {tyName(getmetatable(t))}
   fmtTableRaw(b, t, iterarr(getmetatable(t)['#fieldOrder']))
-  return table.concat(b, '')
+  return join(b, '')
 end
 
 -- TODO: add sortedFields and improve print
 -- TODO: add methods
 local function struct(name, fields)
   local st = newTy(name)
-  local fieldSet = Set(fields)
-  local ordered = fields; table.sort(ordered)
+  local tys, defaults, ordered = {}, {}, {}
+  for _, f in ipairs(fields) do
+    local fname, fty, fdef = nil, nil, false
+    if 'string' == type(f) then fname = f
+    else fname, fty, fdef = table.unpack(f) end
+    assert(type(fname) == 'string');
+    print(fname, fty, fdef)
+    tys[fname] = fty or true; defaults[fname] = fdef;
+    List.add(ordered, fname)
+  end
   update(st, {
-    ["#fields"]=fieldSet,  ["#fieldOrder"]=ordered,
-    -- ["#fieldTy"]={},
+    ["#fields"]=tys,  ["#fieldOrder"]=sort(ordered),
+    ["#defaults"]=defaults,
     __index=structIndex, __newindex=structNewIndex,
     __tostring=structFmt,
   })
-  getmetatable(st).__call = function(ty, t)
-    for f in pairs(t) do
-      if not ty["#fields"][f] then structInvalidField(st, f) end
+  getmetatable(st).__call = function(st, t)
+    print("new struct", fmt(t))
+    for f, v in pairs(t) do
+      print("found field", f)
+      local fTy = st["#fields"][f]
+      if not fTy then structInvalidField(st, f) end
+      if not tyCheck(fTy, ty(v)) then tyError(fTy, ty(v)) end
     end
-    return setmetatable(t, ty)
+    for f in pairs(st["#fields"]) do
+      print("found field", f, st["#defaults"][f])
+      if nil == t[f] and nil == st["#defaults"][f] then
+        error("missing field: " .. f)
+      end
+    end
+    return setmetatable(t, st)
   end
   return st
 end

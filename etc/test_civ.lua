@@ -40,7 +40,8 @@ assertEq(3, a.a1); assertEq(5, a.a2)
 a.a2 = 4;          assertEq(4, a.a2)
 assertEq('A{a1=3 a2=4}', civ.fmt(a))
 
-B = civ.struct('B', {'b1', 'b2'})
-b = B{b1=5, b2=7}
-assert(A == getmetatable(a))
-assertEq(5, b.b1); assertEq(7, b.b2)
+B = civ.struct('B', {{'b1', civ.Num}, {'b2', civ.Num, 32}})
+b = B{b1=5}
+assert(B == getmetatable(b))
+assertEq(5, b.b1); assertEq(32, b.b2)
+b.b2 = 7;          assertEq(7, b.b2)
