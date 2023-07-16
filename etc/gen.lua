@@ -9,7 +9,7 @@ local STRUCT_PAT = 'struct%s+(%w+)%s*(%b[])'
 local TY_PAT = '(&*)%s*(%w+)'
 local FIELD_PAT = '(%w+)%s*:%s*' .. TY_PAT
 
-local NATIVE_TYS = set.new{"U1", "U2", "U4", "S", "I1", "I2", "I4"}
+local NATIVE_TYS = civ.Set{"U1", "U2", "U4", "S", "I1", "I2", "I4"}
 
 local RENAME = {
     Arena  = "SpArena",
@@ -20,7 +20,6 @@ local RENAME = {
 }
 
 local tyDictDefined = False
-
 
 -- Const: {name, ty, value}
 local function parseConsts(s)
