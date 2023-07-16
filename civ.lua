@@ -111,22 +111,26 @@ end
 
 
 -- Define a types method
-local function method(ty, name, body) ty[name] = body  end
+local function constructor(ty, fn)
+  getmetatable(ty).__call = fn
+end
+local function method(ty, name, fn) ty[name] = fn  end
 
--- Iter: iterator type that traverses an indexed table
---
--- All iterators return the key into their data as the first value
+-- Iter: iterator subtype, traverses indexed table.
 local Iter = newTy('Iter')
-getmetatable(Iter).__call = function(self)
+constructor(Iter, function(ty, l)
+  return setmetatable({data=l, i=0}, ty)
+end)
+method(Iter, '__call', function(self, l)
   if self.i < #self.data then
     self.i = self.i + 1
-    return self.i, self.data[self.i]
+    return self.data[self.i]
   end
-end
-method(Iter, 'new', function(ty, l)
-  local it = {data=l, i=0}
-  return setmetatable(it, ty)
 end)
+
+local result = Iter{3, 4}
+assert(3 == result()); assert(4 == result())
+assert(nil == result());
 
 -- A Map: literally a lua table with some methods.
 -- Use like:
@@ -359,12 +363,11 @@ end
 
 local function structFmt(t)
   local b = {tyName(getmetatable(t))}
-  fmtTableRaw(b, t, iterarr(getmetatable(t)['#fieldOrder']))
+  fmtTableRaw(b, t, Iter(getmetatable(t)['#fieldOrder']))
   return join(b, '')
 end
 
-local function struct(name, fields)
-  local st = newTy(name)
+local function specifyFields(fields)
   local tys, defaults, ordered = {}, {}, {}
   for _, f in ipairs(fields) do
     local fname, fty, fdef = nil, nil, false
@@ -374,8 +377,13 @@ local function struct(name, fields)
     tys[fname] = fty or true; defaults[fname] = fdef;
     List.add(ordered, fname)
   end
+  return tys, defaults, ordered
+end
+local function struct(name, fields)
+  local st = newTy(name)
+  local tys, defaults, ordered = specifyFields(fields)
   update(st, {
-    ["#fields"]=tys,  ["#fieldOrder"]=sort(ordered),
+    ["#fields"]=tys,  ["#fieldOrder"]=ordered,
     ["#defaults"]=defaults,
     __index=structIndex, __newindex=structNewIndex,
     __tostring=structFmt,
@@ -395,6 +403,42 @@ local function struct(name, fields)
   end
   return st
 end
+
+-- ###################
+-- # Schema
+-- A schema type is a set of named columns with indexed data.
+-- The data can be a callable object that accepts a Query
+-- object.
+
+local Query = struct('Query', {
+  'indexes',
+  'filter',  'pattern',
+  'eq', 'lt', 'gt', 'lte', 'gte'
+})
+
+local Schema = newTy('Schema')
+local _schConstructor = {
+  [List] = function(l)
+    local cols, it = Map{}, Iter(l)
+    -- first row is list of column names
+    for _, k in ipairs(it()) do cols[k] = List{} end
+    -- other rows are Maps/structs with data
+    for row in it do
+      for k, v in pairs(row) do
+        l = cols[k]; if not l then
+          error(string.format("unknown column %s", k))
+        end
+        l:add(v)
+      end
+    end
+    return cols
+  end,
+}
+
+constructor(Schema, function(ty, data)
+  local sch = {cols = _schConstructor(data)}
+  return setmetatable(sch, ty)
+end)
 
 -- ###################
 -- # Test Harness
@@ -424,7 +468,7 @@ end
 return {
   Nil = Nil, Bool = Bool, Str  = Str,  Num = Num,
   Fn  = Fn,  Tbl  = Tbl,
-  Map = Map, List = List, Set = Set,
+  Map = Map, List = List, Set = Set, Iter = Iter,
 
   -- Generic table operations
   eq = eq, update = update, extend = extend,

@@ -44,12 +44,12 @@ test("update-extend", nil, function()
 end)
 
 test("struct", nil, function()
-  local A = civ.struct('A', {'a1', 'a2'})
+  local A = civ.struct('A', {'a2', 'a1'})
   local a = A{a1=3, a2=5}
   assert(A == getmetatable(a))
   assertEq(3, a.a1); assertEq(5, a.a2)
   a.a2 = 4;          assertEq(4, a.a2)
-  assertEq('A{a1=3 a2=4}', civ.fmt(a))
+  assertEq('A{a2=4 a1=3}', civ.fmt(a))
 
   local B = civ.struct('B', {{'b1', civ.Num}, {'b2', civ.Num, 32}})
   local b = B{b1=5}
