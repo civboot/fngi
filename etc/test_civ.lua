@@ -58,4 +58,8 @@ test("struct", nil, function()
   b.b2 = 7;          assertEq(7, b.b2)
 end)
 
+test("iter", nil, function()
+
+end)
+
 assertGlobals(g)

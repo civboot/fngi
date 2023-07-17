@@ -15,7 +15,7 @@ end
 local function iterarr(l)
   local i, n = 0, #l
   return function()
-    i = i + 1; if i <= n then  return l[i]  end
+    i = i + 1; if i <= n then  return i, l[i]  end
   end
 end
 
@@ -102,7 +102,7 @@ assert(Tbl == ty({}))
 local function tyName(ty) return ty.__name end
 assert('Str' == tyName(Str)); assert(nil   == tyName({}))
 
--- check if given is a subtype (child of) req
+-- check if given is a subtype (descendant) of req
 local function tyCheck(req, given)
   if (true == req) or (req == given) then return true end
   local a = given["#ancestors"]
@@ -121,15 +121,39 @@ local Iter = newTy('Iter')
 constructor(Iter, function(ty, l)
   return setmetatable({data=l, i=0}, ty)
 end)
+method(Iter, 'filter', function(self, fn)
+  return function()
+    for i, v in self do
+      if fn(v) then return i, v end
+    end
+  end
+end)
+method(Iter, 'collectList', function(self, fn)
+end)
 method(Iter, '__call', function(self, l)
   if self.i < #self.data then
     self.i = self.i + 1
-    return self.data[self.i]
+    return self.i, self.data[self.i]
+  end
+end)
+
+-- return as the index (first value) from an iterator when there is no index
+local NoIndex = setmetatable({}, {__name='NoIndex'})
+
+local Range = newTy('Range')
+constructor(Range, function(ty, start, end_, step)
+  return setmetatable({start=start, end_=end_, step=step})
+end)
+method(Range, '__call', function(self, l)
+  if self.i < self.end_ then
+    self.i = self.i + self.step
+    return self.i
   end
 end)
 
 local result = Iter{3, 4}
-assert(3 == result()); assert(4 == result())
+assert(3 == select(2, result()))
+assert(4 == select(2, result()))
 assert(nil == result());
 
 -- A Map: literally a lua table with some methods.
@@ -196,7 +220,7 @@ local fmtBuf = nil
 local function fmtTableRaw(b, t, keys)
   table.insert(b, '{')
   local endAdd = 1
-  for key in keys do
+  for _, key in keys do
     fmtBuf(b, key);    table.insert(b, '=')
     fmtBuf(b, t[key]); table.insert(b, ' ')
     endAdd = 0 -- remove space for last
@@ -238,7 +262,7 @@ fmtBuf = function (b, obj) _bufFmtTy[type(obj)](b, obj) end
 -- Set.__tostring
 method(Set, '__tostring', function(self)
   local b, endAdd = {'{'}, 1
-  for k in orderedKeys(self) do
+  for _, k in orderedKeys(self) do
     fmtBuf(b, k); table.insert(b, ' '); endAdd = 0
   end
   b[#b + endAdd] = '}'; return join(b)
@@ -279,8 +303,8 @@ local function getcomphandler (op1, op2, event)
 end
 
 local eq = nil
-local function eqNoHandler(a, b)
-  -- TODO: compare addresses? I can't figure it out
+local function eqDeep(a, b)
+  if rawequal(a, b)     then return true   end
   if ty(a) ~= ty(b)     then return false  end
   local aLen = 0
   for aKey, aValue in pairs(a) do
@@ -299,8 +323,8 @@ local eqTy = {
   ['nil'] = nativeEq, ['function'] = nativeEq,
   ['table'] = function(a, b)
     if getcomphandler(a, b, '__eq') then return a == b end
-    if a == b             then return true   end
-    return eqNoHandler(a, b)
+    if a == b                       then return true   end
+    return eqDeep(a, b)
   end,
 }
 eq = function(a, b) return eqTy[type(a)](a, b) end
@@ -312,8 +336,8 @@ assert(not eq({4, {5, 6, 7}}, {4, {5, 6}}))
 assert(not eq({4, {5, 6}}, {4, {5, 6, 7}}))
 
 -- Now update the eq for our types
-method(Map, '__eq', eqNoHandler)
-method(Set, '__eq', eqNoHandler)
+method(Map, '__eq', eqDeep)
+method(Set, '__eq', eqDeep)
 assert(Map{4, 5} == Map{4, 5})
 
 local function eqArr(a, b)
@@ -355,7 +379,7 @@ local function structIndex (t, k)
 end
 
 local function structNewIndex (t, k, v)
-  if CHECK.field and not getmetatable(t)["#fields"][k] then
+  if CHECK.field and not getmetatable(t)["#tys"][k] then
     structInvalidField(getmetatable(t), k)
   end
   rawset(t, k, v)
@@ -383,18 +407,18 @@ local function struct(name, fields)
   local st = newTy(name)
   local tys, defaults, ordered = specifyFields(fields)
   update(st, {
-    ["#fields"]=tys,  ["#fieldOrder"]=ordered,
+    ["#tys"]=tys,  ["#fieldOrder"]=ordered,
     ["#defaults"]=defaults,
     __index=structIndex, __newindex=structNewIndex,
     __tostring=structFmt,
   })
   getmetatable(st).__call = function(st, t)
     for f, v in pairs(t) do
-      local fTy = st["#fields"][f]
+      local fTy = st["#tys"][f]
       if not fTy then structInvalidField(st, f) end
       if not tyCheck(fTy, ty(v)) then tyError(fTy, ty(v)) end
     end
-    for f in pairs(st["#fields"]) do
+    for f in pairs(st["#tys"]) do
       if nil == t[f] and nil == st["#defaults"][f] then
         error("missing field: " .. f)
       end
@@ -403,42 +427,6 @@ local function struct(name, fields)
   end
   return st
 end
-
--- ###################
--- # Schema
--- A schema type is a set of named columns with indexed data.
--- The data can be a callable object that accepts a Query
--- object.
-
-local Query = struct('Query', {
-  'indexes',
-  'filter',  'pattern',
-  'eq', 'lt', 'gt', 'lte', 'gte'
-})
-
-local Schema = newTy('Schema')
-local _schConstructor = {
-  [List] = function(l)
-    local cols, it = Map{}, Iter(l)
-    -- first row is list of column names
-    for _, k in ipairs(it()) do cols[k] = List{} end
-    -- other rows are Maps/structs with data
-    for row in it do
-      for k, v in pairs(row) do
-        l = cols[k]; if not l then
-          error(string.format("unknown column %s", k))
-        end
-        l:add(v)
-      end
-    end
-    return cols
-  end,
-}
-
-constructor(Schema, function(ty, data)
-  local sch = {cols = _schConstructor(data)}
-  return setmetatable(sch, ty)
-end)
 
 -- ###################
 -- # Test Harness
@@ -468,7 +456,8 @@ end
 return {
   Nil = Nil, Bool = Bool, Str  = Str,  Num = Num,
   Fn  = Fn,  Tbl  = Tbl,
-  Map = Map, List = List, Set = Set, Iter = Iter,
+  Map = Map, List = List, Set = Set,
+  Iter = Iter, NoIndex = NoIndex,
 
   -- Generic table operations
   eq = eq, update = update, extend = extend,
