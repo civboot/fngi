@@ -45,7 +45,7 @@ print("myI2", join(list(myI2)))
 myI2.i = 3
 print("myI2", join(list(myI2)))
 
--- ... expression basically causes a
+-- ... expression causes a
 -- table.unwrap(additionalArgs) anywhere it is used.
 function aPrint(a, ...)
   print('...', type('...'), ...)

@@ -4,6 +4,7 @@ local CHECK = {field = false}
 -- ###################
 -- # Utility Functions
 
+local function identity(v) return v end
 -- return keys array
 local function keysarr(t)
   local a = {}; for k in pairs(t) do table.insert(a, k) end
@@ -19,9 +20,19 @@ local function iterarr(l)
   end
 end
 
-local join = table.concat
+local concat = table.concat
 local function sort(t) table.sort(t) return t end
 local function orderedKeys(t) return iterarr(sort(keysarr(t))) end
+
+-- return as the index (first value) from an iterator when there is no index
+local NoIndex = setmetatable({}, {__name='NoIndex'})
+local function keysIter(t)
+  local i, keys = 0, keysarr(t)
+  return function()
+    i = i + 1; if i < #keys then return NoIndex, keys[i] end
+  end
+end
+
 
 -- used primarily for formatting
 
@@ -74,7 +85,7 @@ local function newTy(name)
     ["#defaults"]={},
   }
   return setmetatable(ty, {
-    __name=name,
+    __name=concat{'Ty[', name, ']'},
     __tostring=function(_) return name end,
   })
 end
@@ -99,8 +110,19 @@ local function ty(obj) return _tyMap[type(obj)](obj) end
 assert(Str == ty('hi')); assert(Num == ty(3))
 assert(Tbl == ty({}))
 
-local function tyName(ty) return ty.__name end
-assert('Str' == tyName(Str)); assert(nil   == tyName({}))
+local _tyName = {
+  boolean = identity, number = identity, string = identity,
+  ['nil'] = identity, ['function'] = identity,
+}
+
+-- Get the name of obj's type
+local function tyName(obj)
+  local n = _tyName[type(obj)]; if n then return n end
+  local mt = getmetatable(obj)
+  if not mt or not mt.__name then return type(obj) end
+  return mt.__name
+end
+assert('Ty[Str]' == tyName(Str)); assert('table' == tyName({}))
 
 -- check if given is a subtype (descendant) of req
 local function tyCheck(req, given)
@@ -137,9 +159,6 @@ method(Iter, '__call', function(self, l)
   end
 end)
 
--- return as the index (first value) from an iterator when there is no index
-local NoIndex = setmetatable({}, {__name='NoIndex'})
-
 local Range = newTy('Range')
 constructor(Range, function(ty, start, end_, step)
   return setmetatable({start=start, end_=end_, step=step})
@@ -152,6 +171,8 @@ method(Range, '__call', function(self, l)
 end)
 
 local result = Iter{3, 4}
+print(tyName(result))
+assert('Iter' == tyName(result))
 assert(3 == select(2, result()))
 assert(4 == select(2, result()))
 assert(nil == result());
@@ -255,7 +276,7 @@ local _bufFmtTy = {
 -- Map.__tostring
 method(Map, '__tostring', function(t)
   local b = {}; fmtTableRaw(b, t, orderedKeys(t))
-  return join(b)
+  return concat(b)
 end)
 fmtBuf = function (b, obj) _bufFmtTy[type(obj)](b, obj) end
 
@@ -265,7 +286,7 @@ method(Set, '__tostring', function(self)
   for _, k in orderedKeys(self) do
     fmtBuf(b, k); table.insert(b, ' '); endAdd = 0
   end
-  b[#b + endAdd] = '}'; return join(b)
+  b[#b + endAdd] = '}'; return concat(b)
 end)
 result = Set{'a', 'b', 'c'}; assert("{a b c}"   == tostring(result))
 result:add('d');             assert("{a b c d}" == tostring(result))
@@ -277,14 +298,14 @@ method(List, '__tostring', function(self)
     fmtBuf(b, v); table.insert(b, ' ')
     endAdd = 0 -- remove last space
   end
-  b[#b + endAdd] = ']'; return join(b)
+  b[#b + endAdd] = ']'; return concat(b)
 end)
 assert("[5 6 3 4]"  == tostring(List{5, 6, 3, 4}))
 assert("{a=5 b=77}" == tostring(Map{a=5, b=77}))
 
 -- fmt any object
 local function fmt(obj)
-  local b = {}; fmtBuf(b, obj); return join(b, "")
+  local b = {}; fmtBuf(b, obj); return concat(b, "")
 end
 
 local function tyError(req, given)
@@ -355,7 +376,7 @@ local function assertEq(left, right)
   fmtBuf(err, "Values not equal:")
   fmtBuf(err, "\n   left: "); fmtBuf(err, left)
   fmtBuf(err, "\n  right: "); fmtBuf(err, right)
-  error(join(err))
+  error(concat(err))
 end
 
 local result = List{1, 'a', 2}
@@ -386,9 +407,9 @@ local function structNewIndex (t, k, v)
 end
 
 local function structFmt(t)
-  local b = {tyName(getmetatable(t))}
+  local b = {tyName(t)}
   fmtTableRaw(b, t, Iter(getmetatable(t)['#fieldOrder']))
-  return join(b, '')
+  return concat(b, '')
 end
 
 local function specifyFields(fields)
@@ -427,6 +448,39 @@ local function struct(name, fields)
   end
   return st
 end
+
+-- ###################
+-- # File Helpers
+local function readAll(path)
+  local f = io.open(path, 'r')
+  local out = f:read('a'); f:close()
+  return out
+end
+
+-- ###################
+-- # Picker
+local Picker = newTy('Picker')
+constructor(Picker, function(ty, struct, list)
+  local p = {struct=struct, list=list}
+  return setmetatable(p, ty)
+end)
+method(Picker, '__tostring', function(self)
+  return string.format("Picker[%s len=%s]",
+    self.struct.__name, #self.list)
+end)
+
+local Query = newTy('Query')
+constructor(Query, function(ty, picker, field)
+  local path = field
+  if 'string' == type(field) then path = {field}
+
+  local q = {picker=picker, path=path}
+  return setmetatable(p, ty)
+end)
+
+method(Picker, '__index', function(self)
+  
+end)
 
 -- ###################
 -- # Test Harness
@@ -468,6 +522,9 @@ return {
 
   -- struct
   struct = struct,
+
+  -- file
+  readAll = readAll,
 
   -- tests
   test = test,

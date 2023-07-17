@@ -1,4 +1,4 @@
-local civ = require('civ'); local fmt = civ.fmt
+require('gciv')
 
 local CONST_PAT = (
   'const%s+(%w+)%s*:'
@@ -9,7 +9,7 @@ local STRUCT_PAT = 'struct%s+(%w+)%s*(%b[])'
 local TY_PAT = '(&*)%s*(%w+)'
 local FIELD_PAT = '(%w+)%s*:%s*' .. TY_PAT
 
-local NATIVE_TYS = civ.Set{"U1", "U2", "U4", "S", "I1", "I2", "I4"}
+local NATIVE_TYS = Set{"U1", "U2", "U4", "S", "I1", "I2", "I4"}
 
 local RENAME = {
     Arena  = "SpArena",
@@ -19,35 +19,55 @@ local RENAME = {
     Logger = "SpLogger",
 }
 
-local tyDictDefined = False
+local tyDictDefined = false
 
+local FConst = struct('FConst', {'name', 'ty', 'value'})
 -- Const: {name, ty, value}
-local function parseConsts(s)
-  local out = {}
+local function parseConsts(s, to)
+  if not to then to = Map{} end
   for name, ty, value in string.gmatch(s, CONST_PAT) do
-    out[name] = {name=name, ty=ty, value=value}
+    to[name] = FConst{name=name, ty=ty, value=value}
   end
-  return out
+  return to
 end
+
+local FField = struct('FField', {
+  {'name', String}, {'refs', Int}, {'ty', String}
+})
+local FStruct = struct('FStruct', {
+  {'name', String}, {'fields', List}
+})
 
 local function parseStructs(s, to)
-  local out = {}
+  if not to then to = Map{} end
   for sname, body in string.gmatch(s, STRUCT_PAT) do
-    fields = {}
+    fields = List{}
     for name, refs, ty in string.gmatch(body, FIELD_PAT) do
-      if name == 'parent' then arr.extend(fields, to.structs[ty].fields)
+      if name == 'parent' then fields:extend(to[ty].fields)
       else
-        arr.append(fields, {name=name, refs=string.len(refs), ty=ty})
+        fields:add(FField{
+          name=name, refs=string.len(refs), ty=ty
+        })
       end
-
     end
+    to[sname] = FStruct{name=sname, fields=fields}
   end
+  return to
 end
 
-local function parseFngi(text, to)
-  civ.update(to.consts, parseConsts(text))
-  civ.update(to.structs, parseStructs(text))
+local function parseFngi(path, to)
+  local text = readAll(path)
+  if not to then
+    to = Map{consts=Map{}, structs=Map{}}
+  end
+  parseConsts(text, to.consts)
+  parseStructs(text, to.structs)
+  return to
 end
+
+local spor = parseFngi('src/spor.fn')
+local dat = parseFngi('src/dat.fn')
+local structsBefore = Set(dat.structs)
 
 --  parsed = [Const(*m.group("name", "ty", "value")) for m in CONST_RE.finditer(text)]
 --  consts = [(c.name, lit(c.value)) for c in parsed if c.isNative()]
@@ -64,6 +84,9 @@ end
 
 return {
   parseConsts = parseConsts,
+  parseStructs = parseStructs,
   STRUCT_PAT = STRUCT_PAT,
   FIELD_PAT = FIELD_PAT,
+  FConst = FConst, FField = FField, FStruct = FStruct,
+  spor = spor,
 }
