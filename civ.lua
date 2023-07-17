@@ -12,7 +12,6 @@ local function keysarr(t)
 end
 
 -- convert array to an iterator
--- similar to ipairs returns only the values.
 local function iterarr(l)
   local i, n = 0, #l
   return function()
@@ -33,7 +32,6 @@ local function keysIter(t)
   end
 end
 
-
 -- used primarily for formatting
 
 -- shallow copy and update with add
@@ -52,6 +50,18 @@ local function extend (a, vals)
   for _, v in ipairs(vals) do table.insert(a, v) end
 end
 
+local _tyName = {
+  boolean = identity, number = identity, string = identity,
+  ['nil'] = identity, ['function'] = identity,
+}
+-- Get the name of obj's type
+local function tyName(obj)
+  local n = _tyName[type(obj)]; if n then return n end
+  local mt = getmetatable(obj)
+  if not mt or not mt.__name then return type(obj) end
+  return mt.__name
+end
+
 local function fmtString(s)
   if not string.find(s, '%s') then return s
   else return string.format("%q", s) end
@@ -68,7 +78,7 @@ local function _tyIndex(self, k)
   local v = ty["#defaults"][k] or ty[k]
   if v then  return v  end
   if "string" ~= type(k) then k = "<not str>" end
-  error("Unknown member: " .. ty.__name .. "." .. k)
+  error("Unknown member: " .. tyName(self) .. "." .. k)
 end
 
 local Set = nil
@@ -93,6 +103,7 @@ end
 local Nil  = newTy('Nil');  local Fn   = newTy('Fn')
 local Bool = newTy('Bool'); local Num  = newTy('Num')
 local Str  = newTy('Str');  local Tbl  = newTy('Tbl')
+assert('Ty[Str]' == tyName(Str)); assert('table' == tyName({}))
 
 local _tyMap = {
   ['nil']      = function(_) return Nil  end,
@@ -110,19 +121,20 @@ local function ty(obj) return _tyMap[type(obj)](obj) end
 assert(Str == ty('hi')); assert(Num == ty(3))
 assert(Tbl == ty({}))
 
-local _tyName = {
-  boolean = identity, number = identity, string = identity,
-  ['nil'] = identity, ['function'] = identity,
-}
 
--- Get the name of obj's type
-local function tyName(obj)
-  local n = _tyName[type(obj)]; if n then return n end
-  local mt = getmetatable(obj)
-  if not mt or not mt.__name then return type(obj) end
-  return mt.__name
+-- Get the type of a container based on the value
+local function containerTy(cont)
+  for _, v in pairs(cont) do
+    return ty(v)
+  end
+  error("contains no values!")
 end
-assert('Ty[Str]' == tyName(Str)); assert('table' == tyName({}))
+
+-- In some cases we cannot trust an object's __index
+local function callMethod(obj, meth, ...)
+  return ty(obj)[meth](obj, ...)
+end
+
 
 -- check if given is a subtype (descendant) of req
 local function tyCheck(req, given)
@@ -130,7 +142,6 @@ local function tyCheck(req, given)
   local a = given["#ancestors"]
   return a and a[req]
 end
-
 
 -- Define a types method
 local function constructor(ty, fn)
@@ -143,15 +154,14 @@ local Iter = newTy('Iter')
 constructor(Iter, function(ty, l)
   return setmetatable({data=l, i=0}, ty)
 end)
-method(Iter, 'filter', function(self, fn)
-  return function()
-    for i, v in self do
-      if fn(v) then return i, v end
-    end
-  end
-end)
-method(Iter, 'collectList', function(self, fn)
-end)
+-- this is NOT right
+-- method(Iter, 'filter', function(self, fn)
+--   return function()
+--     for i, v in self do
+--       if fn(v) then return i, v end
+--     end
+--   end
+-- end)
 method(Iter, '__call', function(self, l)
   if self.i < #self.data then
     self.i = self.i + 1
@@ -171,7 +181,6 @@ method(Range, '__call', function(self, l)
 end)
 
 local result = Iter{3, 4}
-print(tyName(result))
 assert('Iter' == tyName(result))
 assert(3 == select(2, result()))
 assert(4 == select(2, result()))
@@ -199,21 +208,26 @@ assert(Map == ty(result))
 Set = newTy('Set')
 getmetatable(Set).__call = function(ty, t)
   local s = {}
-  for _, key in pairs(t) do s[key] = true end
+  for _, key in pairs(t) do s[key] = key end
   return setmetatable(s, ty)
 end
 method(Set, '__index',    _methIndex)
 method(Set, 'add', function(self, k)  self[k] = true  end)
 method(Set, 'union', function(self, r)
   local both = Set{}
-  for k in pairs(self) do if r[k] then both[k] = true end end
+  for k in pairs(self) do if r[k] then both[k] = k end end
   return both
 end)
 method(Set, 'leftOnly', function(self, r)
   local left = Set{}
-  for k in pairs(self) do if not r[k] then left[k] = true end end
+  for k in pairs(self) do if not r[k] then left[k] = k end end
   return left
 end)
+
+-- Note: Bool is intentionally not here.
+-- Technically it can be used, but it causes awkwardness
+-- in APIs and there is really no value in using it.
+local KEY_TYS = Set{Num, Str}
 
 -- List: ordered set of possibly duplicated values
 -- A list is just the normal Lua list with type information and a few methods.
@@ -224,11 +238,19 @@ end)
 --   l:extend{1, 2, 3}
 --   l[1] get first (aka very first) index.
 local List = newTy("List")
-getmetatable(List).__call = function(ty, t) return setmetatable(t, ty) end
+getmetatable(List).__call = function(ty, t)
+  return setmetatable(t, ty)
+end
 method(List, '__index', _methIndex)
 method(List, 'iter', ipairs)
 method(List, 'add', table.insert)
 method(List, 'extend', extend)
+List.fromIter = function(iter)
+  local out = List{}
+  for _, v in iter do out:add(v) end
+  return out
+end
+method(List, 'iter', iterarr)
 
 result = List{5, 6}; assert(5 == result[1])
 result:extend{3, 4}; assert(4 == result[4])
@@ -358,7 +380,15 @@ assert(not eq({4, {5, 6}}, {4, {5, 6, 7}}))
 
 -- Now update the eq for our types
 method(Map, '__eq', eqDeep)
-method(Set, '__eq', eqDeep)
+method(Set, '__eq', function(self, s)
+  for k in pairs(self) do
+    if(not s[k])    then return false end
+  end
+  for k in pairs(s) do
+    if(not self[k]) then return false end
+  end
+  return true
+end)
 assert(Map{4, 5} == Map{4, 5})
 
 local function eqArr(a, b)
@@ -424,7 +454,33 @@ local function specifyFields(fields)
   end
   return tys, defaults, ordered
 end
-local function struct(name, fields)
+
+-- Examples: to get value of
+--   a.a1       pathVal(a, {'a1'})
+--   a.a1.b2    pathVal(a, {'a1', 'b2'})
+local function pathVal(st, path)
+  for _, p in ipairs(path) do st = st[p] end
+  return st
+end
+
+-- Examples: to get type of
+--   A.a1       pathTy(A, {'a1'})
+--   A.a1.b2    pathTy(A, {'a1', 'b2'})
+local function pathTy(st, path)
+  for _, p in ipairs(path) do st = st["#tys"][p] end
+  return st
+end
+
+local function tyCheckPath(st, path, given)
+  local req = pathTy(st, path)
+  if not tyCheck(req, given) then error(string.format(
+    "%s not is not ancestor of %s (%s.%s)",
+    given, req, st, fmt(path)
+  ))end
+end
+
+local struct = newTy('Struct')
+constructor(struct, function(ty_, name, fields)
   local st = newTy(name)
   local tys, defaults, ordered = specifyFields(fields)
   update(st, {
@@ -433,7 +489,7 @@ local function struct(name, fields)
     __index=structIndex, __newindex=structNewIndex,
     __tostring=structFmt,
   })
-  getmetatable(st).__call = function(st, t)
+  constructor(st, function(st, t)
     for f, v in pairs(t) do
       local fTy = st["#tys"][f]
       if not fTy then structInvalidField(st, f) end
@@ -445,9 +501,9 @@ local function struct(name, fields)
       end
     end
     return setmetatable(t, st)
-  end
+  end)
   return st
-end
+end)
 
 -- ###################
 -- # File Helpers
@@ -458,28 +514,133 @@ local function readAll(path)
 end
 
 -- ###################
--- # Picker
+-- # Picker / Query
+-- Picker is an ergonomic way to query over a list of structs
+-- while using struct indexes
+
+-- An operation to do in a Query
+local QueryOp = struct('Op',
+  {{'name', Str}, {'path', List}, {'value'}})
+
+-- A set of query operations to perform on a Picker
+-- _path is built up by multiple field accesses.
+local Query = struct('Query', {
+  {'picker', Picker}, {'ops', List}, {'_path', List},
+  {'i', Num}
+})
+method(Query, 'new',  function(picker)
+  return Query{picker=picker, _path=List{}, ops=List{},
+               i=0}
+end)
+
+-- A picker itself, which holds the struct type
+-- and the data (or the way to access the data)
 local Picker = newTy('Picker')
 constructor(Picker, function(ty, struct, list)
   local p = {struct=struct, list=list}
   return setmetatable(p, ty)
 end)
+method(Picker, '__index', function(self, k)
+  local mv = getmetatable(self)[k]; if mv then return mv end
+  return Query.new(self)[k]
+end)
 method(Picker, '__tostring', function(self)
   return string.format("Picker[%s len=%s]",
-    self.struct.__name, #self.list)
+    rawget(self, 'struct').__name, #rawget(self, 'list'))
 end)
 
-local Query = newTy('Query')
-constructor(Query, function(ty, picker, field)
-  local path = field
-  if 'string' == type(field) then path = {field}
+local function queryCheckTy(query, ty_)
+  local st = rawget(query, 'picker').struct
+  tyCheckPath(st, rawget(query, '_path'), ty_)
+end
 
-  local q = {picker=picker, path=path}
-  return setmetatable(p, ty)
+local function _queryOpImpl(query, op, value, ty_)
+  queryCheckTy(query, ty_)
+  rawget(query, 'ops'):add(QueryOp{
+    name=op, path=rawget(query, '_path'), value=value})
+  query._path = List{}
+  return query
+
+end
+method(Query, 'in_', function(self, value)
+  if 'table' == type(value) then value = Set(value) end
+  if Set ~= ty(value) then error(
+    "in_ must be on Set, got " .. tyName(value)
+  )end
+  return _queryOpImpl(self, 'in_', value, containerTy(value))
+end)
+local function _queryOp(op)
+  return function(self, value)
+    queryCheckTy(self, ty(value))
+    rawget(self, 'ops'):add(QueryOp{
+      name=op, path=rawget(self, '_path'), value=value})
+    self._path = List{}
+    return self
+  end
+end
+for _, op in pairs({'filter', 'eq', 'lt', 'lte', 'gt', 'gte'}) do
+  method(Query, op, _queryOp(op))
+end
+
+-- The __index function for Query.
+-- Mostly you do queries doing `q.structField.otherField.lt(3)`
+--
+-- If a struct field is (i.e) 'lt' you can use `path` like so:
+--   q.path.lt.eq(3) -- lt less equal to 3
+local PathBuilder = struct('PathBuilder', {'#query'})
+
+local function buildQuery(query, field)
+  local ty_ = rawget(query, 'picker').struct
+  ty_ = pathTy(ty_, query._path)
+  if not ty_['#tys'][field] then error(
+    string.format("%s does not have field %s", ty_, field)
+  )end
+  rawget(query, '_path'):add(field);
+  return query
+end
+method(Query, '__index', function(self, k)
+  local mv = getmetatable(self)[k]; if mv then return mv end
+  if 'path' == k then return PathBuilder{['#query']=self} end
+  return buildQuery(self, k)
+end)
+method(PathBuilder, '__index', function(self, field)
+  return buildQuery(self['#query'])
 end)
 
-method(Picker, '__index', function(self)
-  
+local opIml = {
+  in_=function(op, v)    return op.value[v]     end,
+  filter=function(op, f) return f(op.value)     end,
+  eq =function(op, v) return op.value == v      end,
+  lt =function(op, v) return op.value <  v      end,
+  lte=function(op, v) return op.value <= v      end,
+  gt =function(op, v) return op.value >  v      end,
+  gte=function(op, v) return op.value >= v      end,
+}
+
+method(Query, 'iter', function(self)
+  self.i = 0; return self
+end)
+method(Query, '__call', function(self)
+  ::top::
+  local i    = rawget(self, 'i')
+  local list = rawget(self, 'picker').list
+  if i >= #list then return nil end
+  i = i+1; self.i = i; local v = list[i]
+  for _, op in ipairs(rawget(self, 'ops')) do
+    if not opIml[op.name](op, pathVal(v, op.path)) then
+      goto top
+    end
+  end
+  return i, v
+end)
+method(Query, 'toList', function(self)
+  return List.fromIter(callMethod(self, 'iter'))
+end)
+
+local PickerIter = newTy('PickerIter')
+constructor(PickerIter, function(ty_, query)
+  local pi = {i=0, query=query}
+  return setmetatable(pi, ty_)
 end)
 
 -- ###################
@@ -521,7 +682,10 @@ return {
   fmtBuf = fmtBuf,
 
   -- struct
-  struct = struct,
+  struct = struct, pathVal = pathVal, pathTy = pathTy,
+
+  -- Picker
+  Picker = Picker,
 
   -- file
   readAll = readAll,

@@ -35,7 +35,7 @@ local expected = Map{Foo=gen.FStruct{
 local result = gen.parseStructs(STRUCT_EXAMPLE)
 assertEq(expected, result)
 
-for k, v in pairs(gen.spor.consts) do
-  print(k, v)
-end
+-- for k, v in pairs(gen.spor.consts) do
+--   print(k, v)
+-- end
 

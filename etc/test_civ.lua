@@ -43,23 +43,61 @@ test("update-extend", nil, function()
   assertEq({'a', 'b', 'c', 'd', 'e'}, a)
 end)
 
+local function structs()
+  local A = civ.struct('A', {'a2', {'a1', Str}})
+  local B = civ.struct('B', {
+    {'b1', civ.Num}, {'b2', civ.Num, 32},
+    {'a', A, false}
+  })
+  return A, B
+end
 test("struct", nil, function()
-  local A = civ.struct('A', {'a2', 'a1'})
-  local a = A{a1=3, a2=5}
+  local A, B = structs()
+  local a = A{a1='hi', a2=5}
   assert(A == getmetatable(a))
-  assertEq(3, a.a1); assertEq(5, a.a2)
-  a.a2 = 4;          assertEq(4, a.a2)
-  assertEq('A{a2=4 a1=3}', civ.fmt(a))
+  assertEq('hi', a.a1); assertEq(5, a.a2)
+  a.a2 = 4;             assertEq(4, a.a2)
+  assertEq('A{a2=4 a1=hi}', civ.fmt(a))
 
-  local B = civ.struct('B', {{'b1', civ.Num}, {'b2', civ.Num, 32}})
-  local b = B{b1=5}
+  local b = B{b1=5, a=a}
   assert(B == getmetatable(b))
   assertEq(5, b.b1); assertEq(32, b.b2)
   b.b2 = 7;          assertEq(7, b.b2)
+  assertEq(Num, pathTy(B, {'b1'}))
+  assertEq(Str, pathTy(B, {'a', 'a1'}))
+  assertEq('hi', pathVal(b, {'a', 'a1'}))
 end)
 
 test("iter", nil, function()
+  local i = List{1, 4, 6}:iter()
+  assert(1 == select(2, i()))
+  assert(4 == select(2, i()))
+  assert(6 == select(2, i()))
 
+  local l = List.fromIter(List{1, 4, 6}:iter())
+  assertEq(List{1, 4, 6}, l)
+end)
+
+test('picker', nil, function()
+  local A = structs()
+  local l = List{
+    A{a1='one',   a2=1},
+    A{a1='two',   a2=2},
+    A{a1='three', a2=3},
+  }
+  local p = Picker(A, l)
+  local result = p.a1:eq('one')
+  result = result:toList()
+  assertEq(List{
+    A{a1='one',   a2=1},
+  }, result)
+
+  result = p.a2:in_{2, 3}
+  result = result:toList()
+  assertEq(List{
+    A{a1='two',   a2=2},
+    A{a1='three', a2=3},
+  }, result)
 end)
 
 assertGlobals(g)
