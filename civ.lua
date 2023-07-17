@@ -20,7 +20,7 @@ local function iterarr(l)
 end
 
 local concat = table.concat
-local function sort(t) table.sort(t) return t end
+local function sort(t) table.sort(t); return t end
 local function orderedKeys(t) return iterarr(sort(keysarr(t))) end
 
 -- return as the index (first value) from an iterator when there is no index
@@ -194,14 +194,37 @@ method(Iter, '__call', function(self, l)
   end
 end)
 
+-- These can be useful as filter functions
+local function isEq(vEq)
+  return function(v) return vEq == v end
+end
+local function isNotEq(nEq)
+  return function(v) return nEq ~= v end
+end
+local function isIn(in_)
+  return function(v) return in_[v] end
+end
+
+local function rangeFmt(r)
+end
 local Range = newTy('Range')
-constructor(Range, function(ty, start, end_, step)
-  return setmetatable({start=start, end_=end_, step=step})
+constructor(Range, function(ty_, start, end_, step)
+  if not start or not end_ then error(
+    "must provide start and end for range"
+  )end
+  return setmetatable({
+    i=start, start=start, end_=end_,
+    step=step or 1}, ty_)
 end)
-method(Range, '__call', function(self, l)
-  if self.i < self.end_ then
-    self.i = self.i + self.step
-    return self.i
+method(Range, '__tostring', function(self)
+  local step = ''
+  if self.step ~= 1 then step = ' '..self.step end
+  return string.format(
+    '[%s:%s%s]', self.start, self.end_, step)
+end)
+method(Range, '__call', function(self)
+  local i = self.i; if i <= self.end_ then
+    self.i = i + self.step; return i, i
   end
 end)
 
@@ -217,12 +240,34 @@ assert(nil == result());
 --   t = Mbl{'a'=2, 'b'=7, 1='d', 2='f'}
 --   s[3] = 'e'
 local Map = newTy('Map')
-getmetatable(Map).__call = function(ty, t)
-  return setmetatable(t, ty)
-end
+constructor(Map,  function(ty_, t)
+  return setmetatable(t, ty_)
+end)
+method(Map, '__index', _methIndex)
+-- get a value. If vFn is given it will be called to
+-- set the value (and return it)
+method(Map, 'empty', function() return Map{} end)
+method(Map, 'get', function(self, k, vFn)
+  local v = self[k]; if v then return v end
+  if vFn then v = vFn(self); self[k] = v end
+  return v
+end)
+method(Map, 'getPath', function(self, path, vFn)
+  local d = self
+  for i, k in ipairs(path) do
+    d = self[k];
+    if d then
+    elseif vFn then d = vFn(self, i); self[k] = d
+    else error('path %s failed at i=%s', fmt(path), i) end
+  end
+  return d
+end)
+
 local result = Map{a=2, b=3}
 assert(2 == result.a); assert(3 == result.b)
--- assert(nil == result.c) -- TODO raises error "unknown member"
+assert(nil == result.c) -- TODO raises error "unknown member"
+assert(5 == result:get('c', function() return 5 end))
+assert(5 == result.c)
 assert(Map == ty(result))
 
 -- A set: unique keys in arbitrary order. Values are all `true`
@@ -237,6 +282,11 @@ getmetatable(Set).__call = function(ty, t)
   return setmetatable(s, ty)
 end
 method(Set, '__index',    _methIndex)
+method(Set, 'asSorted', function(self)
+  local l = List{}
+  for k in pairs(self) do l:add(k) end
+  return sort(l)
+end)
 method(Set, 'add', function(self, k)  self[k] = true  end)
 method(Set, 'union', function(self, r)
   local both = Set{}
@@ -270,10 +320,11 @@ method(List, '__index', _methIndex)
 method(List, 'iter', ipairs)
 method(List, 'add', table.insert)
 method(List, 'extend', extend)
+method(List, 'asSorted', sort)
 List.fromIter = function(iter)
-  local out = List{}
-  for _, v in iter do out:add(v) end
-  return out
+  local l = List{}
+  for i, v in iter do l:add(v) end
+  return l
 end
 method(List, 'iter', iterarr)
 
@@ -312,7 +363,7 @@ local _bufFmtTy = {
     end
   end,
   ['function'] = function(b, f)
-    s = debug.getinfo(f, 'S')
+    local s = debug.getinfo(f, 'S')
     b[#b + 1] = 'function['
     b[#b + 1] = s.short_src;   b[#b + 1] = ':'
     b[#b + 1] = s.linedefined; b[#b + 1] = ']'
@@ -516,6 +567,7 @@ local function tyCheckPath(st, path, given)
     "%s not is not ancestor of %s (%s.%s)",
     given, req, st, fmt(path)
   ))end
+  return req
 end
 
 local struct = newTy('Struct')
@@ -559,14 +611,15 @@ end
 
 local Picker = newTy('Picker')
 local Query = struct('Query', {
-    -- data comes from one of these
-    {'#picker', Picker, false}, {'#i', Num, false}, -- i=picker index
+    -- data comes from one of
+    -- (picker,i[ndexIter]) or (iter, struct)
+    {'#picker', Picker, false}, {'#i', nil, false},
     {'#iter', nil, false}, {'#struct', nil, false},
+    {'#iNew', nil, false},
 
     -- path and ops are built-up by user
     {'#path', List}, {'#ops', List},
   })
-local PickerIter = newTy('PickerIter')
 local PathBuilder = struct('PathBuilder', {'#query'})
 local QueryOp = struct('Op',
   {{'name', Str}, {'path'}, {'value'}})
@@ -600,15 +653,25 @@ end
 
 -- A set of query operations to perform on a Picker
 -- path is built up by multiple field accesses.
+method(Query, '__tostring', function(self) return 'Query' end)
 method(Query, 'new',  function(picker)
   return Query{['#picker']=picker, ['#path']=List{}, ['#ops']=List{},
-               ['#i']=0}
+               ['#i']=Range(1, picker.len)}
+end)
+method(Query, 'iter', function(self)
+  local r = rawget(self, '#iNew')
+  if r then self['#i'] = r()
+  else r = rawget(self, '#picker');
+    if r then self['#i'] = Range(1, r.len) end
+  end
+  return self
 end)
 
 -- A picker itself, which holds the struct type
 -- and the data (or the way to access the data)
 constructor(Picker, function(ty, struct, data)
-  local p = {struct=struct, data=data, len=#data}
+  local p = {struct=struct, data=data, len=#data,
+             indexes=Map{}}
   return setmetatable(p, ty)
 end)
 method(Picker, '__index', function(self, k)
@@ -617,7 +680,7 @@ method(Picker, '__index', function(self, k)
 end)
 method(Picker, '__tostring', function(self)
   return string.format("Picker[%s len=%s]",
-    rawget(self, 'struct').__name, #rawget(self, 'len'))
+    rawget(self, 'struct').__name, rawget(self, 'len'))
 end)
 
 local function queryStruct(q)
@@ -625,7 +688,7 @@ local function queryStruct(q)
 end
 local function queryCheckTy(query, ty_)
   local st = queryStruct(query)
-  tyCheckPath(st, query['#path'], ty_)
+  return tyCheckPath(st, query['#path'], ty_)
 end
 
 local function _queryOpImpl(query, op, value, ty_)
@@ -636,13 +699,6 @@ local function _queryOpImpl(query, op, value, ty_)
   return query
 
 end
-method(Query, 'in_', function(self, value)
-  if 'table' == type(value) then value = Set(value) end
-  if Set ~= ty(value) then error(
-    "in_ must be on Set, got " .. tyName(value)
-  )end
-  return _queryOpImpl(self, 'in_', value, containerTy(value))
-end)
 local function _queryOp(op)
   return function(self, value)
     queryCheckTy(self, ty(value))
@@ -652,9 +708,65 @@ local function _queryOp(op)
     return self
   end
 end
-for _, op in pairs({'filter', 'eq', 'lt', 'lte', 'gt', 'gte'}) do
+for _, op in pairs({'filter', 'lt', 'lte', 'gt', 'gte'}) do
   method(Query, op, _queryOp(op))
 end
+
+local function queryCreateIndexes(query, filter)
+  return idx
+end
+
+-- Get or create query indexes using filter.
+local function queryIndexes(query, v, vTy, filter)
+  local pty = queryCheckTy(query, vTy)
+  local picker = query['#picker'] or {}
+  local indexes = picker.indexes
+  if not indexes or not KEY_TYS[pty] then return nil end
+  local path = List{concat(query['#path'], '.')}
+  if 'table' == type(v) then path:extend(v:asSorted())
+  else                       path:add(v) end
+  indexes = indexes:getPath(path, function(d, i)
+    if i < #path then return Map{}
+    else              return List{} end
+  end)
+  if #indexes ~= 0 then return indexes end
+  -- fill indexes
+  local stTy, path = queryStruct(query), query['#path']
+  for i, v in ipairs(picker.data) do
+    if filter(pathVal(v, path)) then indexes:add(i) end
+  end
+  return indexes
+end
+
+local function queryUseIndexes(query, idx)
+  if not idx then return nil end
+  local iNew = function()
+    local i = 0;
+    return function()
+      if i < #idx then i = i + 1; return idx[i] end
+    end
+  end
+  query['#iNew'], query['#i'] = iNew, iNew()
+  return query
+end
+
+local normalEq = _queryOp('eq')
+
+method(Query, 'eq', function(self, value)
+  local idx = queryIndexes(self, value, ty(value), isEq(value))
+  if idx then return queryUseIndexes(self, idx) end
+  return normalEq(self, value)
+end)
+method(Query, 'in_', function(self, value)
+  if 'table' == type(value) then value = Set(value) end
+  if Set ~= ty(value) then error(
+    "in_ must be on Set, got " .. tyName(value)
+  )end
+  local idx = queryIndexes(
+    self, value, containerTy(value), isIn(value))
+  if idx then return queryUseIndexes(self, idx) end
+  return _queryOpImpl(self, 'in_', value, containerTy(value))
+end)
 
 local function querySelect(iter, stTy, paths)
   return function()
@@ -662,8 +774,7 @@ local function querySelect(iter, stTy, paths)
     local keys = {}; for key, path in pairs(paths) do
       keys[key] = pathVal(st, path)
     end
-    local out = stTy(keys)
-    return i, out
+    return i, stTy(keys)
   end
 end
 -- select{'a.b', 'c.d'}}       -- accessible through .c, .d
@@ -700,7 +811,6 @@ end)
 --
 -- If a struct field is (i.e) 'lt' you can use `path` like so:
 --   q.path.lt.eq(3) -- lt less equal to 3
-
 local function buildQuery(query, field)
   local st = queryStruct(query)
   st = pathTy(st, query['#path'])
@@ -728,19 +838,14 @@ local opIml = {
   gt =function(op, v) return op.value >  v      end,
   gte=function(op, v) return op.value >= v      end,
 }
-
-method(Query, 'iter', function(self)
-  if rawget(self, '#i') then self['#i'] = 0 end
-  return self
-end)
 method(Query, '__call', function(self)
-  local i = rawget(self, '#iter')
-  if i then return i() end
-  ::top::
-  i          = self['#i']
+  local iter = rawget(self, '#iter')
+  if iter then return iter() end
+  ::top:: -- loop, goto is for double break/continue
+  iter = self['#i']; local i = iter()
   local data = self['#picker'].data
-  if i >= #data then return nil end
-  i = i+1; self['#i'] = i; local v = data[i]
+  local v = data[i]
+  if not i or i > #data then return nil end
   for _, op in ipairs(self['#ops']) do
     if not opIml[op.name](op, pathVal(v, op.path)) then
       goto top
@@ -753,11 +858,6 @@ end)
 -- end)
 method(Query, 'toList', function(self)
   return List.fromIter(callMethod(self, 'iter'))
-end)
-
-constructor(PickerIter, function(ty_, query)
-  local pi = {i=0, query=query}
-  return setmetatable(pi, ty_)
 end)
 
 -- ###################
@@ -790,18 +890,22 @@ return {
   Fn  = Fn,  Tbl  = Tbl,
   Map = Map, List = List, Set = Set,
   Iter = Iter, NoIndex = NoIndex,
+  Range = Range,
 
   -- Generic table operations
   eq = eq, update = update, extend = extend,
 
   -- Formatters
+  concat = concat,
   fmt = fmt,
   fmtBuf = fmtBuf,
+  fmtTableRaw = fmtTableRaw,
 
   -- struct
   struct = struct, pathVal = pathVal, pathTy = pathTy,
   dotSplit = dotSplit,
   genStruct = genStruct,
+  orderedKeys = orderedKeys,
 
   -- Picker
   Picker = Picker,

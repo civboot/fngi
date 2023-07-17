@@ -44,7 +44,7 @@ test("update-extend", nil, function()
 end)
 
 local function structs()
-  local A = civ.struct('A', {'a2', {'a1', Str}})
+  local A = civ.struct('A', {{'a2', civ.Num}, {'a1', Str}})
   local B = civ.struct('B', {
     {'b1', civ.Num}, {'b2', civ.Num, 32},
     {'a', A, false}
@@ -78,6 +78,10 @@ test("iter", nil, function()
 
   local l = List.fromIter(List{1, 4, 6}:iter())
   assertEq(List{1, 4, 6}, l)
+
+  local r = Range(1, 5); assertEq('[1:5]', tostring(r))
+  l = List.fromIter(Range(1, 5))
+  assertEq(List{1, 2, 3, 4, 5}, l)
 end)
 
 test('picker', nil, function()
@@ -94,11 +98,19 @@ test('picker', nil, function()
     A{a1='one',   a2=1},
   }, result)
 
+  assertEq(List{
+    A{a1='one',   a2=1},
+  }, p.a1:eq('one'):toList())
+
   result = p.a2:in_{2, 3}:toList()
   assertEq(List{
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
   }, result)
+  assertEq(List{
+    A{a1='two',   a2=2},
+    A{a1='three', a2=3},
+  }, p.a2:in_{2, 3}:toList())
 
   local G1 = genStruct('G1', {'a', Num, 'b', Str})
   assertEq('G1{a:Num b:Str}', tostring(G1))
@@ -112,8 +124,8 @@ test('picker', nil, function()
   assertEq('G2{a:Any b:Str}', tostring(G2))
 
   result = p.a2:in_{2, 3}:select{'a1'}
-  result = result:toList()
-  assertEq('[Q{a1=two} Q{a1=three}]', tostring(result))
+  local b = {}; fmtTableRaw(b, result, orderedKeys(result))
+  assertEq('[Q{a1=two} Q{a1=three}]', tostring(result:toList()))
 end)
 
 assertGlobals(g)
