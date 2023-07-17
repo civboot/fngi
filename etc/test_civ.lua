@@ -81,25 +81,39 @@ test("iter", nil, function()
 end)
 
 test('picker', nil, function()
-  local A = structs()
-  local l = List{
+  local A, B = structs()
+  local lA = List{
     A{a1='one',   a2=1},
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
   }
-  local p = Picker(A, l)
+  local p = Picker(A, lA)
   local result = p.a1:eq('one')
   result = result:toList()
   assertEq(List{
     A{a1='one',   a2=1},
   }, result)
 
-  result = p.a2:in_{2, 3}
-  result = result:toList()
+  result = p.a2:in_{2, 3}:toList()
   assertEq(List{
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
   }, result)
+
+  local G1 = genStruct('G1', {'a', Num, 'b', Str})
+  assertEq('G1{a:Num b:Str}', tostring(G1))
+  assert(rawequal(G1, genStruct('G1', {'a', Num, 'b', Str})))
+
+  local g1 = G1{a=8, b='hel'}
+  assert('G1{a=8 b=hel}', tostring(g1))
+
+  local G2 = genStruct('G2', {'a', true, 'b', Str})
+  assert(not rawequal(G1, G2))
+  assertEq('G2{a:Any b:Str}', tostring(G2))
+
+  result = p.a2:in_{2, 3}:select{'a1'}
+  result = result:toList()
+  assertEq('[Q{a1=two} Q{a1=three}]', tostring(result))
 end)
 
 assertGlobals(g)

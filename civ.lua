@@ -89,20 +89,21 @@ local ALL_TYS = {}
 -- You can retreive or add them here.
 --
 -- Example:
---   generated = genTyRep({A, B})
+--   generated = genTyRepo({A, B})
 --   if not generated then
---     generated = genTyRepo({A, B}, generateType({A, B}))
+--     generated = genTyRepo({A, B})
 --   end
 local GEN_TYS = {}
-local function genTyRepo(tys, addTy)
+local function genTyRepo(tys, first)
   local t = GEN_TYS
+  -- if first then t = genTyRepo(first) end
   for _, ty_ in ipairs(tys) do
+    if not ty_ then return nil end -- error
     local e = t[ty_]
     if not e then e = {}; t[ty_] = e end
     t = e
   end
-  if addTy then t[addTy] = {ty = addTy} end
-  return t.ty
+  return t
 end
 
 -- A Ty has methods (which holds documentation)
@@ -296,7 +297,11 @@ local function fmtTableRaw(b, t, keys)
 end
 
 local _bufFmtTy = {
-  number = table.insert, boolean = table.insert,
+  number = table.insert,
+  boolean = function(b, bool)
+    if(bool) then table.insert(b, 'true')
+    else          table.insert(b, 'false') end
+  end,
   ['nil'] = function(b, obj) table.insert(b, 'nil') end,
   string = function(b, s)
     if not string.find(s, '%s') then table.insert(b, s)
@@ -351,7 +356,8 @@ assert("{a=5 b=77}" == tostring(Map{a=5, b=77}))
 
 -- fmt any object
 local function fmt(obj)
-  local b = {}; fmtBuf(b, obj); return concat(b, "")
+  local b = {}; fmtBuf(b, obj);
+  return concat(b, "")
 end
 
 local function tyError(req, given)
@@ -462,7 +468,7 @@ end
 
 local function structFmt(t)
   local b = {tyName(t)}
-  fmtTableRaw(b, t, Iter(getmetatable(t)['#fieldOrder']))
+  fmtTableRaw(b, t, Iter(getmetatable(t)['#ordered']))
   return concat(b, '')
 end
 
@@ -517,7 +523,7 @@ constructor(struct, function(ty_, name, fields)
   local st = newTy(name)
   local tys, defaults, ordered = specifyFields(fields)
   update(st, {
-    ["#tys"]=tys,  ["#fieldOrder"]=ordered,
+    ["#tys"]=tys,  ["#ordered"]=ordered,
     ["#defaults"]=defaults,
     __index=structIndex, __newindex=structNewIndex,
     __tostring=structFmt,
@@ -551,16 +557,49 @@ end
 -- Picker is an ergonomic way to query over a list of structs
 -- while using struct indexes
 
--- An operation to do in a Query
+local Picker = newTy('Picker')
+local Query = struct('Query', {
+    -- data comes from one of these
+    {'#picker', Picker, false}, {'#i', Num, false}, -- i=picker index
+    {'#iter', nil, false}, {'#struct', nil, false},
+
+    -- path and ops are built-up by user
+    {'#path', List}, {'#ops', List},
+  })
+local PickerIter = newTy('PickerIter')
+local PathBuilder = struct('PathBuilder', {'#query'})
 local QueryOp = struct('Op',
   {{'name', Str}, {'path'}, {'value'}})
 
+local function fmtStructFull(stTy)
+  local endAdd, b = 1, List{stTy.__name, '{'}
+  for _, field in ipairs(stTy['#ordered']) do
+    local fieldTy = stTy['#tys'][field]
+    if true == fieldTy then fieldTy = 'Any' end
+    b:extend{field, ':', tostring(fieldTy), ' '}
+    endAdd = 0
+  end
+  b[#b + endAdd] = '}'
+  return concat(b)
+end
+local function genStruct(name, namedTys)
+  local repo = genTyRepo(namedTys, {name})
+  if not repo then error(string.format(
+    "All types must be defined in path: %s", sel))
+  end
+  if repo.ty then return repo.ty end
+  local fields = List{}
+  local i = 1; while i+1 <= #namedTys do
+    fields:add{namedTys[i], namedTys[i+1]}
+    i = i + 2
+  end
+  local st = struct(name, fields); repo.ty = st
+  getmetatable(st).__tostring = fmtStructFull
+  return repo.ty
+end
+
 -- A set of query operations to perform on a Picker
 -- path is built up by multiple field accesses.
-local Query = struct('Query', {
-  {'#picker', Picker}, {'#ops', List}, {'#path', List},
-  {'#i', Num}
-})
 method(Query, 'new',  function(picker)
   return Query{['#picker']=picker, ['#path']=List{}, ['#ops']=List{},
                ['#i']=0}
@@ -568,9 +607,8 @@ end)
 
 -- A picker itself, which holds the struct type
 -- and the data (or the way to access the data)
-local Picker = newTy('Picker')
-constructor(Picker, function(ty, struct, list)
-  local p = {struct=struct, list=list}
+constructor(Picker, function(ty, struct, data)
+  local p = {struct=struct, data=data, len=#data}
   return setmetatable(p, ty)
 end)
 method(Picker, '__index', function(self, k)
@@ -579,11 +617,14 @@ method(Picker, '__index', function(self, k)
 end)
 method(Picker, '__tostring', function(self)
   return string.format("Picker[%s len=%s]",
-    rawget(self, 'struct').__name, #rawget(self, 'list'))
+    rawget(self, 'struct').__name, #rawget(self, 'len'))
 end)
 
+local function queryStruct(q)
+  return rawget(q, '#struct') or q['#picker'].struct
+end
 local function queryCheckTy(query, ty_)
-  local st = query['#picker'].struct
+  local st = queryStruct(query)
   tyCheckPath(st, query['#path'], ty_)
 end
 
@@ -614,30 +655,57 @@ end
 for _, op in pairs({'filter', 'eq', 'lt', 'lte', 'gt', 'gte'}) do
   method(Query, op, _queryOp(op))
 end
--- method(Query, 'select', function(self, sel)
---   local picker = local self['#picker']
---   paths, tys = {}, {}
---   for key, p in pairs(sel) do
---     if 'string' == type(p) then p = dotSplit(p) end
---     paths[key] = p
---     tys[key] = pathTy(picker._struct)
---     table.insert(paths, p)
---   end
---   local newSt = 4
--- end)
+
+local function querySelect(iter, stTy, paths)
+  return function()
+    local i, st = iter(); if nil == i then return end
+    local keys = {}; for key, path in pairs(paths) do
+      keys[key] = pathVal(st, path)
+    end
+    local out = stTy(keys)
+    return i, out
+  end
+end
+-- select{'a.b', 'c.d'}}       -- accessible through .c, .d
+-- select{{x='a.b', y='c.d'}}, -- now .x, .y
+method(Query, 'select', function(self, sel)
+  local picker = self['#picker']
+  local st = queryStruct(self)
+  local paths, tys, namedTys = {}, {}, List{}
+  for key, p in pairs(sel) do
+    -- path: can 'a.b' instead of {'a', 'b'}
+    if 'string' == type(p) then p = dotSplit(p) end
+    -- by index uses the last field name
+    if 'number' == type(key) then key = p[#p] end
+    if 'string' ~= type(key) then error(
+      'must provide name for non-key path: ' .. fmt(key)
+    )end
+    if paths[key] then error(
+      'key used multiple times: ' .. key
+    )end
+    paths[key] = p; tys[key] = pathTy(st, p)
+    namedTys:extend{key, tys[key]}
+  end
+  self['#path'] = List{}
+  local st = genStruct('Q', namedTys)
+  return Query{
+    ['#iter']=querySelect(self:iter(), st, paths),
+    ['#struct']=st,
+    ['#path']=List{}, ['#ops']=List{},
+  }
+end)
 
 -- The __index function for Query.
 -- Mostly you do queries doing `q.structField.otherField.lt(3)`
 --
 -- If a struct field is (i.e) 'lt' you can use `path` like so:
 --   q.path.lt.eq(3) -- lt less equal to 3
-local PathBuilder = struct('PathBuilder', {'#query'})
 
 local function buildQuery(query, field)
-  local ty_ = query['#picker'].struct
-  ty_ = pathTy(ty_, query['#path'])
-  if not ty_['#tys'][field] then error(
-    string.format("%s does not have field %s", ty_, field)
+  local st = queryStruct(query)
+  st = pathTy(st, query['#path'])
+  if not st['#tys'][field] then error(
+    string.format("%s does not have field %s", st, field)
   )end
   query['#path']:add(field);
   return query
@@ -662,14 +730,17 @@ local opIml = {
 }
 
 method(Query, 'iter', function(self)
-  self['#i'] = 0; return self
+  if rawget(self, '#i') then self['#i'] = 0 end
+  return self
 end)
 method(Query, '__call', function(self)
+  local i = rawget(self, '#iter')
+  if i then return i() end
   ::top::
-  local i    = self['#i']
-  local list = self['#picker'].list
-  if i >= #list then return nil end
-  i = i+1; self['#i'] = i; local v = list[i]
+  i          = self['#i']
+  local data = self['#picker'].data
+  if i >= #data then return nil end
+  i = i+1; self['#i'] = i; local v = data[i]
   for _, op in ipairs(self['#ops']) do
     if not opIml[op.name](op, pathVal(v, op.path)) then
       goto top
@@ -684,7 +755,6 @@ method(Query, 'toList', function(self)
   return List.fromIter(callMethod(self, 'iter'))
 end)
 
-local PickerIter = newTy('PickerIter')
 constructor(PickerIter, function(ty_, query)
   local pi = {i=0, query=query}
   return setmetatable(pi, ty_)
@@ -731,6 +801,7 @@ return {
   -- struct
   struct = struct, pathVal = pathVal, pathTy = pathTy,
   dotSplit = dotSplit,
+  genStruct = genStruct,
 
   -- Picker
   Picker = Picker,
