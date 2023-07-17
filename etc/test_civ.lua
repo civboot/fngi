@@ -66,6 +66,8 @@ test("struct", nil, function()
   assertEq(Num, pathTy(B, {'b1'}))
   assertEq(Str, pathTy(B, {'a', 'a1'}))
   assertEq('hi', pathVal(b, {'a', 'a1'}))
+
+  assertEq({'a32', 'b', 'c1_32'}, dotSplit('a32.b.c1_32'))
 end)
 
 test("iter", nil, function()

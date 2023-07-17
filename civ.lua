@@ -83,6 +83,28 @@ end
 
 local Set = nil
 
+local ALL_TYS = {}
+
+-- Types are generated from other types.
+-- You can retreive or add them here.
+--
+-- Example:
+--   generated = genTyRep({A, B})
+--   if not generated then
+--     generated = genTyRepo({A, B}, generateType({A, B}))
+--   end
+local GEN_TYS = {}
+local function genTyRepo(tys, addTy)
+  local t = GEN_TYS
+  for _, ty_ in ipairs(tys) do
+    local e = t[ty_]
+    if not e then e = {}; t[ty_] = e end
+    t = e
+  end
+  if addTy then t[addTy] = {ty = addTy} end
+  return t.ty
+end
+
 -- A Ty has methods (which holds documentation)
 -- and field metadata. It also has a metatable
 -- so we can override __call (constructor)
@@ -94,6 +116,7 @@ local function newTy(name)
     ["#methods"]={},
     ["#defaults"]={},
   }
+  ALL_TYS[ty] = ty
   return setmetatable(ty, {
     __name=concat{'Ty[', name, ']'},
     __tostring=function(_) return name end,
@@ -103,6 +126,7 @@ end
 local Nil  = newTy('Nil');  local Fn   = newTy('Fn')
 local Bool = newTy('Bool'); local Num  = newTy('Num')
 local Str  = newTy('Str');  local Tbl  = newTy('Tbl')
+
 assert('Ty[Str]' == tyName(Str)); assert('table' == tyName({}))
 
 local _tyMap = {
@@ -471,6 +495,15 @@ local function pathTy(st, path)
   return st
 end
 
+local function matches(text, m)
+  local out = {}; for v in string.gmatch(text, m) do
+    table.insert(out, v) end
+  return out
+end
+local function dotSplit(pathStr)
+  return matches(pathStr, "[^%.]*")
+end
+
 local function tyCheckPath(st, path, given)
   local req = pathTy(st, path)
   if not tyCheck(req, given) then error(string.format(
@@ -520,17 +553,17 @@ end
 
 -- An operation to do in a Query
 local QueryOp = struct('Op',
-  {{'name', Str}, {'path', List}, {'value'}})
+  {{'name', Str}, {'path'}, {'value'}})
 
 -- A set of query operations to perform on a Picker
--- _path is built up by multiple field accesses.
+-- path is built up by multiple field accesses.
 local Query = struct('Query', {
-  {'picker', Picker}, {'ops', List}, {'_path', List},
-  {'i', Num}
+  {'#picker', Picker}, {'#ops', List}, {'#path', List},
+  {'#i', Num}
 })
 method(Query, 'new',  function(picker)
-  return Query{picker=picker, _path=List{}, ops=List{},
-               i=0}
+  return Query{['#picker']=picker, ['#path']=List{}, ['#ops']=List{},
+               ['#i']=0}
 end)
 
 -- A picker itself, which holds the struct type
@@ -550,15 +583,15 @@ method(Picker, '__tostring', function(self)
 end)
 
 local function queryCheckTy(query, ty_)
-  local st = rawget(query, 'picker').struct
-  tyCheckPath(st, rawget(query, '_path'), ty_)
+  local st = query['#picker'].struct
+  tyCheckPath(st, query['#path'], ty_)
 end
 
 local function _queryOpImpl(query, op, value, ty_)
   queryCheckTy(query, ty_)
-  rawget(query, 'ops'):add(QueryOp{
-    name=op, path=rawget(query, '_path'), value=value})
-  query._path = List{}
+  query['#ops']:add(QueryOp{
+    name=op, path=query['#path'], value=value})
+  query['#path'] = List{}
   return query
 
 end
@@ -572,15 +605,26 @@ end)
 local function _queryOp(op)
   return function(self, value)
     queryCheckTy(self, ty(value))
-    rawget(self, 'ops'):add(QueryOp{
-      name=op, path=rawget(self, '_path'), value=value})
-    self._path = List{}
+    self['#ops']:add(QueryOp{
+      name=op, path=self['#path'], value=value})
+    self['#path'] = List{}
     return self
   end
 end
 for _, op in pairs({'filter', 'eq', 'lt', 'lte', 'gt', 'gte'}) do
   method(Query, op, _queryOp(op))
 end
+-- method(Query, 'select', function(self, sel)
+--   local picker = local self['#picker']
+--   paths, tys = {}, {}
+--   for key, p in pairs(sel) do
+--     if 'string' == type(p) then p = dotSplit(p) end
+--     paths[key] = p
+--     tys[key] = pathTy(picker._struct)
+--     table.insert(paths, p)
+--   end
+--   local newSt = 4
+-- end)
 
 -- The __index function for Query.
 -- Mostly you do queries doing `q.structField.otherField.lt(3)`
@@ -590,12 +634,12 @@ end
 local PathBuilder = struct('PathBuilder', {'#query'})
 
 local function buildQuery(query, field)
-  local ty_ = rawget(query, 'picker').struct
-  ty_ = pathTy(ty_, query._path)
+  local ty_ = query['#picker'].struct
+  ty_ = pathTy(ty_, query['#path'])
   if not ty_['#tys'][field] then error(
     string.format("%s does not have field %s", ty_, field)
   )end
-  rawget(query, '_path'):add(field);
+  query['#path']:add(field);
   return query
 end
 method(Query, '__index', function(self, k)
@@ -618,21 +662,24 @@ local opIml = {
 }
 
 method(Query, 'iter', function(self)
-  self.i = 0; return self
+  self['#i'] = 0; return self
 end)
 method(Query, '__call', function(self)
   ::top::
-  local i    = rawget(self, 'i')
-  local list = rawget(self, 'picker').list
+  local i    = self['#i']
+  local list = self['#picker'].list
   if i >= #list then return nil end
-  i = i+1; self.i = i; local v = list[i]
-  for _, op in ipairs(rawget(self, 'ops')) do
+  i = i+1; self['#i'] = i; local v = list[i]
+  for _, op in ipairs(self['#ops']) do
     if not opIml[op.name](op, pathVal(v, op.path)) then
       goto top
     end
   end
   return i, v
 end)
+-- method(Join, 'join', function(self, qOther, using)
+-- 
+-- end)
 method(Query, 'toList', function(self)
   return List.fromIter(callMethod(self, 'iter'))
 end)
@@ -683,6 +730,7 @@ return {
 
   -- struct
   struct = struct, pathVal = pathVal, pathTy = pathTy,
+  dotSplit = dotSplit,
 
   -- Picker
   Picker = Picker,
