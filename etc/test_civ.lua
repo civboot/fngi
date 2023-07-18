@@ -181,7 +181,6 @@ test('picker', nil, function()
     B{b1=7,  b2=3},
   }
   local pB = Picker(B, lB)
-  print('## joining')
   local result = pA.q:joinEq('a2', pB, 'b1')
   assertEq(
     '[joinEq{j1=A{a2=3 a1=three} j2=B{b1=3 b2=1 a=false}}]',
@@ -190,10 +189,14 @@ test('picker', nil, function()
   assertEq('[Q{a1=three b2=1}]', tostring(sel))
 
   local result = Display(ty(sel[1]), sel:iterFn())
-  print('ty', ty(result))
-  print(result:display())
-  -- print(tostring(result))
-
+  local expected = trim[[
+======+===
+a1    | b2
+======+===
+three | 1 
+ -    +   
+]]
+  assertEq(expected, trim(result:display()))
 
 end)
 

@@ -675,9 +675,7 @@ constructor(Display, function(ty_, struct, iter)
     len = len + 1
     for _, cname in ipairs(struct['#ordered']) do
       local v = row[cname]
-      print('v', ty(v))
       local w, txt = 0, tostring(v)
-      print('   v=', v, txt)
       local cLines = List{}
       for line in lines(txt) do
         w = max(w, string.len(line))
@@ -696,15 +694,10 @@ end)
 local COL_SEP = ' | '
 -- method(Display, '__tostring', function(self)
 method(Display, 'display', function(self)
-  print("DISPLAY\n")
   for ri=1, self.len do
-    print("## ROW: ".. ri)
     for c, dCol in pairs(self.cols) do
-      print("#### COL: ".. c)
-      print(dCol.data[ri].lines)
     end
   end
-  print('in tostring')
   local availW = 100
   local b = List{}
   local widths, heights = Map{}, List{}
@@ -718,20 +711,14 @@ method(Display, 'display', function(self)
     end
     heights[ri] = r
   end
-  print('heights', heights)
 
   if self.width <= availW - (#COL_SEP * #colNames) then
     for _, c in ipairs(colNames) do
-      print('cell width', self.cols[c])
       widths[c] = max(#c, self.cols[c].width)
     end
-  else
-    error('auto-width not impl')
-  end
+  else error('auto-width not impl') end
 
-  print('widths', widths)
   local addCell = function(ci, ri, li, c, lines, sep, filler)
-    print("addCell", li, fmt(lines))
     if li > #lines then fillBuf(b, widths[c], filler);
     else
       local l = lines[li]
@@ -763,7 +750,6 @@ method(Display, 'display', function(self)
     end
     breaker(BufFillerRow, ' + ')
   end
-  print('display', b)
   return concat(b)
 end)
 
@@ -845,12 +831,10 @@ method(Picker, '__tostring', function(self)
 end)
 
 local function queryStruct(q)
-  print(q)
   return rawget(q, '#struct') or q['#picker'].struct
 end
 local function queryCheckTy(query, ty_, path)
   path = path or query['#path']
-  print('queryCheckTy', ty_, fmt(path))
   return tyCheckPath(queryStruct(query), path, ty_)
 end
 
@@ -881,9 +865,7 @@ local function queryCreateIndexes(query, filter)
 end
 
 local function queryIndexPath(query, op, vTy, path)
-  print('queryIndexPath', query, op, vTy, fmt(path))
   path = path or query['#path']
-  print('   path', fmt(path))
   local pty = queryCheckTy(query, vTy, path)
   local indexes = (query['#picker']or{}).indexes
   if not indexes or not KEY_TYS[pty] then return nil end
@@ -1052,7 +1034,6 @@ method(Query, 'joinEq', function(
     idxQuery = left
   end
   local st = queryStruct(idxQuery)
-  print('st', st, fmt(idxField), idxQuery, fmt(leftField), fmt(rightField))
   local pty = pathTy(st, idxField)
   local path, idxPicker, baseIdx = queryIndexPath(
     idxQuery, 'eq', pty, idxField)
@@ -1063,16 +1044,12 @@ method(Query, 'joinEq', function(
   end
   local idxData = idxPicker.data
   local indexes = baseIdx:getPath(path, Map.empty)
-  print('idxField', fmt(idxField))
   if indexes:isEmpty() then
     for i, st in ipairs(idxData) do
       local v = pathVal(st, idxField)
-      print('idx i, st', i, st, 'v', v)
       indexes:get(v, List.empty):add(i)
     end
   end
-  print('indexes', indexes:isEmpty(), indexes)
-  print('indexes[1]', indexes[1])
 
   local joined = List{}
   local genSt = genStruct(
