@@ -5,6 +5,8 @@ local CHECK = {field = false}
 -- # Utility Functions
 
 local function identity(v) return v end
+local function max(a, b) if a > b then return a end return b end
+local function min(a, b) if a < b then return a end return b end
 -- return keys array
 local function keysarr(t)
   local a = {}; for k in pairs(t) do table.insert(a, k) end
@@ -257,6 +259,10 @@ method(Map, '__index', _methIndex)
 -- get a value. If vFn is given it will be called to
 -- set the value (and return it)
 method(Map, 'empty', function() return Map{} end)
+method(Map, 'isEmpty', function(self)
+  for k, v in pairs(self) do return false end
+  return true
+end)
 method(Map, 'get', function(self, k, vFn)
   local v = self[k]; if v then return v end
   if vFn then v = vFn(self); self[k] = v end
@@ -393,14 +399,12 @@ local _bufFmtTy = {
   end,
 }
 
--- Map.__tostring
 method(Map, '__tostring', function(t)
   local b = {}; fmtTableRaw(b, t, orderedKeys(t))
   return concat(b)
 end)
 fmtBuf = function (b, obj) _bufFmtTy[type(obj)](b, obj) end
 
--- Set.__tostring
 method(Set, '__tostring', function(self)
   local b, endAdd = {'{'}, 1
   for _, k in orderedKeys(self) do
@@ -521,10 +525,10 @@ local function structInvalidField (st, f)
 end
 local function structTy (t) return getmetatable(t).__name end
 local function structIndex (t, k)
-  local m = (
-    getmetatable(t)["#defaults"][k]
-    or getmetatable(t)[k]);
-  if nil ~= m then return m end
+  local mt = getmetatable(t)
+  local v = mt["#defaults"][k]
+  if v ~= nil then return v end
+  v = mt[k]; if v ~= nil then return v end
   structInvalidField(getmetatable(t), k)
 end
 
@@ -570,6 +574,9 @@ local function pathTy(st, path)
   return st
 end
 
+local function lines(text)
+  return string.gmatch(text, '[^\n]*')
+end
 local function matches(text, m)
   local out = {}; for v in string.gmatch(text, m) do
     table.insert(out, v) end
@@ -631,6 +638,133 @@ end
 -- Picker is an ergonomic way to query over a list of structs
 -- while using struct indexes
 
+local BufFillerWs = {
+  [8] = '        ', [4] = '    ', [2] = '  ', [1] = ' ',
+}
+local BufFillerHeader = {
+  [8] = '========', [4] = '====', [2] = '==', [1] = '=',
+}
+local BufFillerRow = {
+  [8] = '  -  - ', [4] = '  - ', [2] = '  ', [1] = ' ',
+}
+
+local function fillBuf(b, num, filler)
+  filler = filler or BufFillerWs
+  print('here')
+  print('fillBuf', fmt(filler))
+  while num >= 8 do b:add(filler[8]);  num = num - 8 end
+  while num >= 4 do b:add(filler[4]);  num = num - 4 end
+  while num >= 2 do b:add(filler[2]);  num = num - 2 end
+  while num >= 1 do b:add(filler[1]);  num = num - 1 end
+end
+
+local DisplayCell = struct('DisplayCell',
+  {{'lines', List}, {'width', Int}})
+local DisplayCol = struct('DisplayCol',
+  {{'data', List}, {'width', Int}})
+
+local Display = newTy('Display')
+constructor(Display, function(ty_, struct, iter)
+  local totalW, cols = 0, Map{}
+  for _, name in ipairs(struct['#ordered']) do
+    cols[name] = DisplayCol{data=List{}, width=0}
+  end
+  local len, dWidth = 0, 0
+  for _, row in iter do
+    len = len + 1
+    for _, cname in ipairs(struct['#ordered']) do
+      local v = row[cname]
+      print('v', ty(v))
+      local w, txt = 0, tostring(v)
+      print('   v=', v, txt)
+      local cLines = List{}
+      for line in lines(txt) do
+        w = max(w, string.len(line))
+        cLines:add(line)
+      end
+      local dcol = cols[cname]
+      dWidth = max(dWidth, w)
+      dcol.width = max(dcol.width, w)
+      dcol.data:add(DisplayCell{lines=cLines, width=w})
+    end
+  end
+  return setmetatable({
+    struct=struct, cols=cols, len=len, width=dWidth,
+  }, ty_)
+end)
+local COL_SEP = ' | '
+-- method(Display, '__tostring', function(self)
+method(Display, 'display', function(self)
+  print("DISPLAY\n")
+  for ri=1, self.len do
+    print("## ROW: ".. ri)
+    for c, dCol in pairs(self.cols) do
+      print("#### COL: ".. c)
+      print(dCol.data[ri].lines)
+    end
+  end
+  print('in tostring')
+  local availW = 100
+  local b = List{}
+  local widths, heights = Map{}, List{}
+  local colNames = self.struct['#ordered']
+
+  for _, c in ipairs(colNames) do heights[0] = 1 end
+  for ri=1, self.len do
+    local r = 0
+    for _, c in ipairs(colNames) do
+      r = max(r, #self.cols[c].data[ri].lines)
+    end
+    heights[ri] = r
+  end
+  print('heights', heights)
+
+  if self.width <= availW - (#COL_SEP * #colNames) then
+    for _, c in ipairs(colNames) do
+      print('cell width', self.cols[c])
+      widths[c] = max(#c, self.cols[c].width)
+    end
+  else
+    error('auto-width not impl')
+  end
+
+  print('widths', widths)
+  local addCell = function(ci, ri, li, c, lines, sep, filler)
+    print("addCell", li, fmt(lines))
+    if li > #lines then fillBuf(b, widths[c], filler);
+    else
+      local l = lines[li]
+      b:add(l); fillBuf(b, widths[c] - string.len(l), filler)
+    end
+    if(ci < #colNames)  then b:add(sep or COL_SEP)
+    else b:add('\n') end
+  end
+
+  -- bob | george    | ringo = header
+  for ci, c in ipairs(colNames) do addCell(ci, 0, 1, c, {c}) end
+  -------+-----------+------ = header separator
+  local breaker = function(filler, sep)
+    for ci, c in ipairs(colNames) do
+      local b = List{}; fillBuf(b, widths[c], filler)
+      addCell(ci, 0, 1, c, {}, sep, filler)
+    end
+  end
+  breaker(BufFillerHeader, '=+=')
+
+  for ri = 1, self.len do
+    for li = 1, heights[ri] do
+      for ci, c in ipairs(colNames) do
+        local lines = self.cols[c].data[ri].lines
+          addCell(ci, ri, li, c, lines)
+      end
+    end
+    breaker(BufFillerRow, '-+-')
+  end
+  print('display', b)
+  return concat(b)
+end)
+
+
 local Picker = newTy('Picker')
 local Query = struct('Query', {
     -- data comes from one of
@@ -681,6 +815,7 @@ method(Query, 'new',  function(picker)
                ['#i']=Range(1, picker.len)}
 end)
 method(Query, 'iter', function(self)
+  assert(Query == ty(self))
   local r = rawget(self, '#iNew')
   if r then self['#i'] = r()
   else r = rawget(self, '#picker');
@@ -697,8 +832,9 @@ constructor(Picker, function(ty, struct, data)
   return setmetatable(p, ty)
 end)
 method(Picker, '__index', function(self, k)
+  if 'q' == k then return Query.new(self) end
   local mv = getmetatable(self)[k]; if mv then return mv end
-  return Query.new(self)[k]
+  error(k .. ' not on Picker. Use Picker.q to start query')
 end)
 method(Picker, '__tostring', function(self)
   return string.format("Picker[%s len=%s]",
@@ -706,11 +842,13 @@ method(Picker, '__tostring', function(self)
 end)
 
 local function queryStruct(q)
+  print(q)
   return rawget(q, '#struct') or q['#picker'].struct
 end
-local function queryCheckTy(query, ty_)
-  local st = queryStruct(query)
-  return tyCheckPath(st, query['#path'], ty_)
+local function queryCheckTy(query, ty_, path)
+  path = path or query['#path']
+  print('queryCheckTy', ty_, fmt(path))
+  return tyCheckPath(queryStruct(query), path, ty_)
 end
 
 local function _queryOpImpl(query, op, value, ty_)
@@ -723,6 +861,7 @@ local function _queryOpImpl(query, op, value, ty_)
 end
 local function _queryOp(op)
   return function(self, value)
+    assert(Query == ty(self))
     queryCheckTy(self, ty(value))
     self['#ops']:add(QueryOp{
       name=op, path=self['#path'], value=value})
@@ -739,12 +878,13 @@ local function queryCreateIndexes(query, filter)
 end
 
 local function queryIndexPath(query, op, vTy, path)
+  print('queryIndexPath', query, op, vTy, fmt(path))
   path = path or query['#path']
-  local pty = queryCheckTy(query, vTy)
-  local picker = query['#picker'] or {}
-  local indexes = picker.indexes
+  print('   path', fmt(path))
+  local pty = queryCheckTy(query, vTy, path)
+  local indexes = (query['#picker']or{}).indexes
   if not indexes or not KEY_TYS[pty] then return nil end
-  return List{op, concat(path)}, picker, indexes
+  return List{op, concat(path)}, query['#picker'], indexes
 end
 -- Get or create query indexes using filter.
 local function queryIndexes(query, op, v, vTy, filter, path)
@@ -774,11 +914,13 @@ end
 local normalEq = _queryOp('eq')
 
 method(Query, 'eq', function(self, value)
+  assert(Query == ty(self))
   local idx = queryIndexes(self, 'eq', value, ty(value), isEq(value))
   if idx then return queryUseIndexes(self, idx) end
   return normalEq(self, value)
 end)
 method(Query, 'in_', function(self, value)
+  assert(Query == ty(self))
   if 'table' == type(value) then value = Set(value) end
   if Set ~= ty(value) then error(
     "in_ must be on Set, got " .. tyName(value)
@@ -790,7 +932,6 @@ method(Query, 'in_', function(self, value)
     idx:update(add)
   end
   if idx then return queryUseIndexes(self, idx) end
-  return _queryOpImpl(self, 'in_', value, containerTy(value))
 end)
 
 local function querySelect(iter, stTy, paths)
@@ -805,7 +946,7 @@ end
 -- select{'a.b', 'c.d'}}       -- accessible through .c, .d
 -- select{{x='a.b', y='c.d'}}, -- now .x, .y
 method(Query, 'select', function(self, sel)
-  local picker = self['#picker']
+  assert(Query == ty(self))
   local st = queryStruct(self)
   local paths, tys, namedTys = {}, {}, List{}
   for key, p in pairs(sel) do
@@ -831,7 +972,7 @@ method(Query, 'select', function(self, sel)
 end)
 
 -- The __index function for Query.
--- Mostly you do queries doing `q.structField.otherField.lt(3)`
+-- Mostly you do queries doing `q.structField.rightField.lt(3)`
 --
 -- If a struct field is (i.e) 'lt' you can use `path` like so:
 --   q.path.lt.eq(3) -- lt less equal to 3
@@ -862,55 +1003,96 @@ local opIml = {
   gt =function(op, v) return op.value >  v      end,
   gte=function(op, v) return op.value >= v      end,
 }
+-- apply the query operations to the value
+local function queryKeep(self, v)
+  for _, op in ipairs(self['#ops']) do
+    if not opIml[op.name](op, pathVal(v, op.path)) then
+      return false
+    end
+  end
+  return true
+end
 method(Query, '__call', function(self)
   local iter = rawget(self, '#iter')
   if iter then return iter() end
-  ::top:: -- loop, goto is for double break/continue
-  iter = self['#i']; local i = iter()
-  local data = self['#picker'].data
-  local v = data[i]
-  if not i or i > #data then return nil end
-  for _, op in ipairs(self['#ops']) do
-    if not opIml[op.name](op, pathVal(v, op.path)) then
-      goto top
-    end
+  while true do
+    iter = self['#i']; local i = iter()
+    local data = self['#picker'].data
+    if not i or i > #data then return      end
+    local v = data[i]
+    if queryKeep(self, v) then return i, v end
   end
-  return i, v
 end)
 method(Query, 'toList', function(self)
+  assert(Query == ty(self))
   return List.fromIter(callMethod(self, 'iter'))
 end)
 
-method(Query, 'joinEq', function(self, selfField, otherQuery, otherField, index)
-  selfField = makePath(selfField); otherField = makePath(otherField)
-  if index == otherQuery then
-    local noIdxQuery, idxField = otherQuery, selfField
-  else index = self
-    local noIdxQuery, idxField = self,       otherField
-  end
-  local path, idxPicker, idx = queryIndexPath(
-    index, 'eq', pathTy(idxPicker.struct, idxField), idxField)
+local function asQuery(t)
+  if(ty(t) == Query)  then return t end
+  if(ty(t) == Picker) then return Query.new(t) end
+  error("Invalid query type: " .. tostring(ty(t)))
+end
 
-  for i, v in pairs(idxPicker.data) do
-    -- FIXME: need to filter by the query
-    index.get(v, List.empty):add(v)
+method(Query, 'joinEq', function(
+    left, leftField, right, rightField, idxQuery)
+  assert(Query == ty(left))
+  leftField = makePath(leftField); rightField = makePath(rightField)
+  local idxField, noIdxField, noIdxQuery
+  if idxQuery == right then
+    right = asQuery(right); idxQuery = right
+    idxField = rightField; noIdxField = leftField
+    right = idxQuery
+  else
+    right = asQuery(right); noIdxQuery = right
+    idxField = leftField;   noIdxField = rightField
+    idxQuery = left
   end
-  local joined = List{}
-  for i, v in pairs(noIdxQuery) do
-    for di in ipairs(index[v] or {}) do
-      if self == index then joined:add({idxPicker.data[di], self})
-      else                  joined:add({v,    idxPicker.data[di]}) end
+  local st = queryStruct(idxQuery)
+  print('st', st, fmt(idxField), idxQuery, fmt(leftField), fmt(rightField))
+  local pty = pathTy(st, idxField)
+  local path, idxPicker, baseIdx = queryIndexPath(
+    idxQuery, 'eq', pty, idxField)
+
+  if not idxPicker then
+    idxPicker = Picker(
+      assert(idxQuery['#struct']), List.fromIter(idxQuery))
+  end
+  local idxData = idxPicker.data
+  local indexes = baseIdx:getPath(path, Map.empty)
+  print('idxField', fmt(idxField))
+  if indexes:isEmpty() then
+    for i, st in ipairs(idxData) do
+      local v = pathVal(st, idxField)
+      print('idx i, st', i, st, 'v', v)
+      indexes:get(v, List.empty):add(i)
     end
   end
+  print('indexes', indexes:isEmpty(), indexes)
+  print('indexes[1]', indexes[1])
 
-  -- Basic design:
-  -- pA, pB = Picker(A, lA), Picker(B, lB)
-  -- pA.joinEq('a2', pB, 'b1', index=pB)
-  --   .select{myA='0.a1', '0.a2', myB='1.b2'}
-  --
-  --   * Update indexes pB with field values
-  --   * Walk pA and look up indexes in pB and grow the table.
+  local joined = List{}
+  local genSt = genStruct(
+    'joinEq',
+    {'j1', queryStruct(left), 'j2', queryStruct(right)})
+
+  for i, st in noIdxQuery do
+    local v = pathVal(st, noIdxField)
+    for _, di in ipairs(indexes[v] or {}) do
+      if left == idxQuery then joined:add(genSt{
+        j1=idxData[di], j2=st})
+      else                     joined:add(genSt{
+        j1=st,          j2=idxData[di]})
+      end
+    end
+  end
+  return Picker(genSt, joined)
 end)
+
+method(Display, '__tostring', function(self)
+
+end)
+
 
 -- ###################
 -- # Test Harness
@@ -944,21 +1126,24 @@ return {
   Iter = Iter, NoIndex = NoIndex,
   Range = Range,
 
-  -- Generic table operations
+  -- Generic operations
   eq = eq, update = update, extend = extend,
-  sort = sort,
+  sort = sort, lines = lines,
 
   -- Formatters
   concat = concat,
   fmt = fmt,
   fmtBuf = fmtBuf,
+  fillBuf = fillBuf,
   fmtTableRaw = fmtTableRaw,
 
   -- struct
+  ty = ty,
   struct = struct, pathVal = pathVal, pathTy = pathTy,
   dotSplit = dotSplit,
   genStruct = genStruct,
   orderedKeys = orderedKeys,
+  Display = Display,
 
   -- Picker
   Picker = Picker,

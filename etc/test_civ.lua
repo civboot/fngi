@@ -92,6 +92,36 @@ test("iter", nil, function()
   assertEq(List{1, 2, 3, 4, 5}, l)
 end)
 
+test('display', nil, function()
+  -- test lines function
+  local l = List{}
+  for line in lines("hi there\nbob\n") do
+    l:add(line)
+  end
+  assertEq(List{"hi there", "bob", ""}, l)
+
+  -- fillBuf
+  local b = List{}; fillBuf(b, 5)
+  assertEq(List{'    ', ' '}, b)
+
+  local J = struct('J', {
+    'date', 'title', 'text',
+  })
+  local j = List{
+    J{date='2023-04-03', title='Good day today',
+      text='This was a good day.\nThe sun was shining.'},
+    J{date=' 04-05 ', title='Bad day',
+      text='Terrible day\nJust terrible okay?.'},
+  }
+  local disp = Display(J, j:iterFn())
+  print(disp:display())
+  assert(false)
+  -- local result = Display(ty(sel[1]), sel:iterFn())
+  -- print('ty', ty(result))
+  -- print(result:display())
+
+end)
+
 test('picker', nil, function()
   local A, B = structs()
   local lA = List{
@@ -100,7 +130,7 @@ test('picker', nil, function()
     A{a1='three', a2=3},
   }
   local pA = Picker(A, lA)
-  local result = pA.a1:eq('one')
+  local result = pA.q.a1:eq('one')
   result = result:toList()
   assertEq(List{
     A{a1='one',   a2=1},
@@ -108,9 +138,9 @@ test('picker', nil, function()
 
   assertEq(List{
     A{a1='one',   a2=1},
-  }, pA.a1:eq('one'):toList())
+  }, pA.q.a1:eq('one'):toList())
 
-  result = pA.a2:in_{2, 3}:toList()
+  result = pA.q.a2:in_{2, 3}:toList()
   assertEq(List{
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
@@ -118,7 +148,7 @@ test('picker', nil, function()
   assertEq(List{
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
-  }, pA.a2:in_{2, 3}:toList())
+  }, pA.q.a2:in_{2, 3}:toList())
 
   local G1 = genStruct('G1', {'a', Num, 'b', Str})
   assertEq('G1{a:Num b:Str}', tostring(G1))
@@ -131,7 +161,7 @@ test('picker', nil, function()
   assert(not rawequal(G1, G2))
   assertEq('G2{a:Any b:Str}', tostring(G2))
 
-  result = pA.a2:in_{2, 3}:select{'a1'}
+  result = pA.q.a2:in_{2, 3}:select{'a1'}
   local b = {}; fmtTableRaw(b, result, orderedKeys(result))
   assertEq('[Q{a1=two} Q{a1=three}]', tostring(result:toList()))
 
@@ -141,8 +171,19 @@ test('picker', nil, function()
     B{b1=7,  b2=3},
   }
   local pB = Picker(B, lB)
-  -- pA.join(pB).eq{'a2', 'b1'}
-  --            .select{myA='0.a1', '0.a2', myB='1.b2'}
+  print('## joining')
+  local result = pA.q:joinEq('a2', pB, 'b1')
+  assertEq(
+    '[joinEq{j1=A{a2=3 a1=three} j2=B{b1=3 b2=1 a=false}}]',
+    tostring(result.data))
+  local sel = result.q:select{'j1.a1', 'j2.b2'}:toList()
+  assertEq('[Q{a1=three b2=1}]', tostring(sel))
+
+  local result = Display(ty(sel[1]), sel:iterFn())
+  print('ty', ty(result))
+  print(result:display())
+  -- print(tostring(result))
+
 
 end)
 
