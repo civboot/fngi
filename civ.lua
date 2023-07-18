@@ -330,9 +330,10 @@ local KEY_TYS = Set{Num, Str}
 --   l:extend{1, 2, 3}
 --   l[1] get first (aka very first) index.
 local List = newTy("List")
-getmetatable(List).__call = function(ty, t)
+constructor(List, function(ty, t)
   return setmetatable(t, ty)
-end
+end)
+method(List, 'empty', function() return List{} end)
 method(List, '__index', _methIndex)
 method(List, 'add', table.insert)
 method(List, 'extend', extend)
@@ -577,6 +578,10 @@ end
 local function dotSplit(pathStr)
   return matches(pathStr, "[^%.]*")
 end
+local function makePath(path)
+  if 'string' == type(path) then return dotSplit(path) end
+  return path
+end
 
 local function tyCheckPath(st, path, given)
   local req = pathTy(st, path)
@@ -733,13 +738,17 @@ local function queryCreateIndexes(query, filter)
   return idx
 end
 
--- Get or create query indexes using filter.
-local function queryIndexes(query, op, v, vTy, filter)
+local function queryIndexPath(query, op, vTy, path)
+  path = path or query['#path']
   local pty = queryCheckTy(query, vTy)
   local picker = query['#picker'] or {}
   local indexes = picker.indexes
   if not indexes or not KEY_TYS[pty] then return nil end
-  local path = List{op, concat(query['#path'], '.')}
+  return List{op, concat(path)}, picker, indexes
+end
+-- Get or create query indexes using filter.
+local function queryIndexes(query, op, v, vTy, filter, path)
+  local path, picker, indexes = queryIndexPath(query, op, vTy, path)
   if 'table' == type(v) then path:extend(v:asSorted())
   else                       path:add(v) end
   indexes = indexes:getPath(path, function(d, i)
@@ -800,8 +809,7 @@ method(Query, 'select', function(self, sel)
   local st = queryStruct(self)
   local paths, tys, namedTys = {}, {}, List{}
   for key, p in pairs(sel) do
-    -- path: can 'a.b' instead of {'a', 'b'}
-    if 'string' == type(p) then p = dotSplit(p) end
+    p = makePath(p)
     -- by index uses the last field name
     if 'number' == type(key) then key = p[#p] end
     if 'string' ~= type(key) then error(
@@ -873,8 +881,35 @@ method(Query, 'toList', function(self)
   return List.fromIter(callMethod(self, 'iter'))
 end)
 
-method(Picker, 'join', function(self)
+method(Query, 'joinEq', function(self, selfField, otherQuery, otherField, index)
+  selfField = makePath(selfField); otherField = makePath(otherField)
+  if index == otherQuery then
+    local noIdxQuery, idxField = otherQuery, selfField
+  else index = self
+    local noIdxQuery, idxField = self,       otherField
+  end
+  local path, idxPicker, idx = queryIndexPath(
+    index, 'eq', pathTy(idxPicker.struct, idxField), idxField)
 
+  for i, v in pairs(idxPicker.data) do
+    -- FIXME: need to filter by the query
+    index.get(v, List.empty):add(v)
+  end
+  local joined = List{}
+  for i, v in pairs(noIdxQuery) do
+    for di in ipairs(index[v] or {}) do
+      if self == index then joined:add({idxPicker.data[di], self})
+      else                  joined:add({v,    idxPicker.data[di]}) end
+    end
+  end
+
+  -- Basic design:
+  -- pA, pB = Picker(A, lA), Picker(B, lB)
+  -- pA.joinEq('a2', pB, 'b1', index=pB)
+  --   .select{myA='0.a1', '0.a2', myB='1.b2'}
+  --
+  --   * Update indexes pB with field values
+  --   * Walk pA and look up indexes in pB and grow the table.
 end)
 
 -- ###################
