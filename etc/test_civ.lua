@@ -31,6 +31,14 @@ test("eq", nil, function()
   assert(a == b); assert(b == a)
 end)
 
+test('set', nil, function()
+  local s = Set{'a', 'b', 'c'}
+  assertEq(Set{'a', 'c', 'b'}, s)
+
+  local l = sort(List.fromIter(s:iter()))
+  assertEq(List{'a', 'b', 'c'}, l)
+end)
+
 test("update-extend", nil, function()
   local a = {'a', 'b', 'c'}
   local t = {a=1, c=5}
@@ -71,7 +79,7 @@ test("struct", nil, function()
 end)
 
 test("iter", nil, function()
-  local i = List{1, 4, 6}:iter()
+  local i = List{1, 4, 6}:iterFn()
   assert(1 == select(2, i()))
   assert(4 == select(2, i()))
   assert(6 == select(2, i()))
@@ -91,8 +99,8 @@ test('picker', nil, function()
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
   }
-  local p = Picker(A, lA)
-  local result = p.a1:eq('one')
+  local pA = Picker(A, lA)
+  local result = pA.a1:eq('one')
   result = result:toList()
   assertEq(List{
     A{a1='one',   a2=1},
@@ -100,9 +108,9 @@ test('picker', nil, function()
 
   assertEq(List{
     A{a1='one',   a2=1},
-  }, p.a1:eq('one'):toList())
+  }, pA.a1:eq('one'):toList())
 
-  result = p.a2:in_{2, 3}:toList()
+  result = pA.a2:in_{2, 3}:toList()
   assertEq(List{
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
@@ -110,7 +118,7 @@ test('picker', nil, function()
   assertEq(List{
     A{a1='two',   a2=2},
     A{a1='three', a2=3},
-  }, p.a2:in_{2, 3}:toList())
+  }, pA.a2:in_{2, 3}:toList())
 
   local G1 = genStruct('G1', {'a', Num, 'b', Str})
   assertEq('G1{a:Num b:Str}', tostring(G1))
@@ -123,9 +131,19 @@ test('picker', nil, function()
   assert(not rawequal(G1, G2))
   assertEq('G2{a:Any b:Str}', tostring(G2))
 
-  result = p.a2:in_{2, 3}:select{'a1'}
+  result = pA.a2:in_{2, 3}:select{'a1'}
   local b = {}; fmtTableRaw(b, result, orderedKeys(result))
   assertEq('[Q{a1=two} Q{a1=three}]', tostring(result:toList()))
+
+  local lB = List{
+    B{b1=3,  b2=1},
+    B{b1=5,  b2=2},
+    B{b1=7,  b2=3},
+  }
+  local pB = Picker(B, lB)
+  -- pA.join(pB).eq{'a2', 'b1'}
+  --            .select{myA='0.a1', '0.a2', myB='1.b2'}
+
 end)
 
 assertGlobals(g)

@@ -10,12 +10,22 @@ local function keysarr(t)
   local a = {}; for k in pairs(t) do table.insert(a, k) end
   return a
 end
+local function iterpairs(t)
+  local p = {}; for k, v in pairs(t) do
+    table.insert(p, {k, v})
+  end
+  local i = 0; return function()
+    i = i + 1; if i <= #p then
+      return table.unpack(p[i])
+    end
+  end
+end
 
 -- convert array to an iterator
 local function iterarr(l)
-  local i, n = 0, #l
+  local i = 0
   return function()
-    i = i + 1; if i <= n then  return i, l[i]  end
+    i = i + 1; if i <= #l then return i, l[i] end
   end
 end
 
@@ -262,6 +272,8 @@ method(Map, 'getPath', function(self, path, vFn)
   end
   return d
 end)
+method(Map, 'iter',   pairs)
+method(Map, 'iterFn', iterpairs)
 
 local result = Map{a=2, b=3}
 assert(2 == result.a); assert(3 == result.b)
@@ -276,11 +288,11 @@ assert(Map == ty(result))
 --   s = Set{'a', 'b', 1, 2}
 --   s:add(3)
 Set = newTy('Set')
-getmetatable(Set).__call = function(ty, t)
+constructor(Set, function(ty, t)
   local s = {}
   for _, key in pairs(t) do s[key] = key end
   return setmetatable(s, ty)
-end
+end)
 method(Set, '__index',    _methIndex)
 method(Set, 'asSorted', function(self)
   local l = List{}
@@ -288,6 +300,9 @@ method(Set, 'asSorted', function(self)
   return sort(l)
 end)
 method(Set, 'add', function(self, k)  self[k] = true  end)
+method(Set, 'update', function(self, t)
+  for _, key in pairs(t) do self[key] = key end
+end)
 method(Set, 'union', function(self, r)
   local both = Set{}
   for k in pairs(self) do if r[k] then both[k] = k end end
@@ -298,6 +313,8 @@ method(Set, 'leftOnly', function(self, r)
   for k in pairs(self) do if not r[k] then left[k] = k end end
   return left
 end)
+method(Set, 'iter',   pairs)
+method(Set, 'iterFn', iterpairs)
 
 -- Note: Bool is intentionally not here.
 -- Technically it can be used, but it causes awkwardness
@@ -317,16 +334,16 @@ getmetatable(List).__call = function(ty, t)
   return setmetatable(t, ty)
 end
 method(List, '__index', _methIndex)
-method(List, 'iter', ipairs)
 method(List, 'add', table.insert)
 method(List, 'extend', extend)
 method(List, 'asSorted', sort)
-List.fromIter = function(iter)
+List.fromIter = function(...)
   local l = List{}
-  for i, v in iter do l:add(v) end
+  for i, v in ... do l:add(v) end
   return l
 end
-method(List, 'iter', iterarr)
+method(List, 'iter',   ipairs)
+method(List, 'iterFn', iterarr)
 
 result = List{5, 6}; assert(5 == result[1])
 result:extend{3, 4}; assert(4 == result[4])
@@ -717,12 +734,12 @@ local function queryCreateIndexes(query, filter)
 end
 
 -- Get or create query indexes using filter.
-local function queryIndexes(query, v, vTy, filter)
+local function queryIndexes(query, op, v, vTy, filter)
   local pty = queryCheckTy(query, vTy)
   local picker = query['#picker'] or {}
   local indexes = picker.indexes
   if not indexes or not KEY_TYS[pty] then return nil end
-  local path = List{concat(query['#path'], '.')}
+  local path = List{op, concat(query['#path'], '.')}
   if 'table' == type(v) then path:extend(v:asSorted())
   else                       path:add(v) end
   indexes = indexes:getPath(path, function(d, i)
@@ -740,20 +757,15 @@ end
 
 local function queryUseIndexes(query, idx)
   if not idx then return nil end
-  local iNew = function()
-    local i = 0;
-    return function()
-      if i < #idx then i = i + 1; return idx[i] end
-    end
-  end
-  query['#iNew'], query['#i'] = iNew, iNew()
+  local iNew = function() return idx:iterFn() end
+  query['#iNew'], query['#i'] = iNew, idx:iterFn()
   return query
 end
 
 local normalEq = _queryOp('eq')
 
 method(Query, 'eq', function(self, value)
-  local idx = queryIndexes(self, value, ty(value), isEq(value))
+  local idx = queryIndexes(self, 'eq', value, ty(value), isEq(value))
   if idx then return queryUseIndexes(self, idx) end
   return normalEq(self, value)
 end)
@@ -762,8 +774,12 @@ method(Query, 'in_', function(self, value)
   if Set ~= ty(value) then error(
     "in_ must be on Set, got " .. tyName(value)
   )end
-  local idx = queryIndexes(
-    self, value, containerTy(value), isIn(value))
+  local idx = Set{}; local cTy = containerTy(value)
+  for v in value:iter() do
+    local add = queryIndexes(self, 'in_', v, cTy, isEq(v))
+    if not add then idx = nil; break end
+    idx:update(add)
+  end
   if idx then return queryUseIndexes(self, idx) end
   return _queryOpImpl(self, 'in_', value, containerTy(value))
 end)
@@ -853,11 +869,12 @@ method(Query, '__call', function(self)
   end
   return i, v
 end)
--- method(Join, 'join', function(self, qOther, using)
--- 
--- end)
 method(Query, 'toList', function(self)
   return List.fromIter(callMethod(self, 'iter'))
+end)
+
+method(Picker, 'join', function(self)
+
 end)
 
 -- ###################
@@ -894,6 +911,7 @@ return {
 
   -- Generic table operations
   eq = eq, update = update, extend = extend,
+  sort = sort,
 
   -- Formatters
   concat = concat,
