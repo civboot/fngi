@@ -92,7 +92,21 @@ test("iter", nil, function()
   assertEq(List{1, 2, 3, 4, 5}, l)
 end)
 
+local expectDisplay = trim[[
+===========+================+=====================
+date       | title          | text                
+===========+================+=====================
+2023-04-03 | Good day today | This was a good day.
+           |                | The sun was shining.
+ -  -  -   +  -  -  -  -    +  -  -  -  -  -  -   
+ 04-05     | Bad day        | Terrible day        
+           |                | Just terrible okay?.
+ -  -  -   +  -  -  -  -    +  -  -  -  -  -  - 
+]]
 test('display', nil, function()
+  -- test trim
+  assertEq('foo bar', trim('\n  \nfoo bar \n'))
+
   -- test lines function
   local l = List{}
   for line in lines("hi there\nbob\n") do
@@ -102,7 +116,7 @@ test('display', nil, function()
 
   -- fillBuf
   local b = List{}; fillBuf(b, 5)
-  assertEq(List{'    ', ' '}, b)
+  assertEq(List{'   ', ' ', ' '}, b)
 
   local J = struct('J', {
     'date', 'title', 'text',
@@ -114,12 +128,8 @@ test('display', nil, function()
       text='Terrible day\nJust terrible okay?.'},
   }
   local disp = Display(J, j:iterFn())
-  print(disp:display())
-  assert(false)
-  -- local result = Display(ty(sel[1]), sel:iterFn())
-  -- print('ty', ty(result))
-  -- print(result:display())
-
+  local result = trim(disp:display())
+  assertEq(expectDisplay, result)
 end)
 
 test('picker', nil, function()

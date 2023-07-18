@@ -582,6 +582,10 @@ local function matches(text, m)
     table.insert(out, v) end
   return out
 end
+local function trim(text)
+  return string.match(text, '^%s*(.-)%s*$')
+end
+
 local function dotSplit(pathStr)
   return matches(pathStr, "[^%.]*")
 end
@@ -639,22 +643,19 @@ end
 -- while using struct indexes
 
 local BufFillerWs = {
-  [8] = '        ', [4] = '    ', [2] = '  ', [1] = ' ',
+  [6] = '      ', [3] = '   ', [1] = ' ',
 }
 local BufFillerHeader = {
-  [8] = '========', [4] = '====', [2] = '==', [1] = '=',
+  [6] = '======', [3] = '===', [1] = '=',
 }
 local BufFillerRow = {
-  [8] = '  -  - ', [4] = '  - ', [2] = '  ', [1] = ' ',
+  [6] = ' -  - ', [3] = ' - ',  [1] = ' ',
 }
 
 local function fillBuf(b, num, filler)
   filler = filler or BufFillerWs
-  print('here')
-  print('fillBuf', fmt(filler))
-  while num >= 8 do b:add(filler[8]);  num = num - 8 end
-  while num >= 4 do b:add(filler[4]);  num = num - 4 end
-  while num >= 2 do b:add(filler[2]);  num = num - 2 end
+  while num >= 6 do b:add(filler[6]);  num = num - 6 end
+  while num >= 3 do b:add(filler[3]);  num = num - 3 end
   while num >= 1 do b:add(filler[1]);  num = num - 1 end
 end
 
@@ -740,8 +741,6 @@ method(Display, 'display', function(self)
     else b:add('\n') end
   end
 
-  -- bob | george    | ringo = header
-  for ci, c in ipairs(colNames) do addCell(ci, 0, 1, c, {c}) end
   -------+-----------+------ = header separator
   local breaker = function(filler, sep)
     for ci, c in ipairs(colNames) do
@@ -749,6 +748,10 @@ method(Display, 'display', function(self)
       addCell(ci, 0, 1, c, {}, sep, filler)
     end
   end
+
+  breaker(BufFillerHeader, '=+=')
+  -- bob | george    | ringo = header
+  for ci, c in ipairs(colNames) do addCell(ci, 0, 1, c, {c}) end
   breaker(BufFillerHeader, '=+=')
 
   for ri = 1, self.len do
@@ -758,7 +761,7 @@ method(Display, 'display', function(self)
           addCell(ci, ri, li, c, lines)
       end
     end
-    breaker(BufFillerRow, '-+-')
+    breaker(BufFillerRow, ' + ')
   end
   print('display', b)
   return concat(b)
@@ -1128,7 +1131,7 @@ return {
 
   -- Generic operations
   eq = eq, update = update, extend = extend,
-  sort = sort, lines = lines,
+  sort = sort, lines = lines, trim = trim,
 
   -- Formatters
   concat = concat,
