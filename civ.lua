@@ -22,6 +22,12 @@ local function iterpairs(t)
     end
   end
 end
+-- Mutating map function.
+-- Modifies the table in-place using the function
+local function map(t, fn)
+  for i, v in pairs(t) do t[i] = fn(v) end
+  return t
+end
 
 -- convert array to an iterator
 local function iterarr(l)
@@ -48,12 +54,12 @@ end
 
 -- shallow copy and update with add
 local function copy(t, add)
+  local out = ty(t){}
+  for k, v in pairs(t) do out[k] = v end
   if add then
-    local out = {table.unpack(t)}
     for k, v in pairs(add) do out[k] = v end
-    return out
   end
-  return {table.unpack(t)}
+  return out
 end
 
 -- update is for dict/set, extend for list
@@ -259,6 +265,13 @@ method(Map, '__index', _methIndex)
 -- get a value. If vFn is given it will be called to
 -- set the value (and return it)
 method(Map, 'empty', function() return Map{} end)
+method(Map, 'from', function(t, keyFn)
+  local out = Map{}
+  for k, v in pairs(t) do
+    k, v = keyFn(k, v); out[k] = v
+  end
+  return out
+end)
 method(Map, 'isEmpty', function(self)
   for k, v in pairs(self) do return false end
   return true
@@ -277,6 +290,12 @@ method(Map, 'getPath', function(self, path, vFn)
     else error('path %s failed at i=%s', fmt(path), i) end
   end
   return d
+end)
+
+method(Map, 'diff', function(self, r)
+  local left = Map{}
+  for k in pairs(self) do if r[k] == nil then left[k] = k end end
+  return left
 end)
 method(Map, 'iter',   pairs)
 method(Map, 'iterFn', iterpairs)
@@ -314,7 +333,8 @@ method(Set, 'union', function(self, r)
   for k in pairs(self) do if r[k] then both[k] = k end end
   return both
 end)
-method(Set, 'leftOnly', function(self, r)
+-- difference: get items in self that are NOT in r
+method(Set, 'diff', function(self, r)
   local left = Set{}
   for k in pairs(self) do if not r[k] then left[k] = k end end
   return left
@@ -1131,7 +1151,7 @@ local function globals()
 end
 local function assertGlobals(prev, expect)
   expect = expect or Set{}
-  local new = globals():leftOnly(prev)
+  local new = globals():diff(prev)
   if not eq(expect, new) then
     error(string.format("New globals: %s", new))
   end
@@ -1155,6 +1175,7 @@ return {
   -- Generic operations
   eq = eq, update = update, extend = extend,
   sort = sort, lines = lines, trim = trim,
+  copy = copy,
 
   -- Formatters
   concat = concat,
