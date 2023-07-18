@@ -15,6 +15,9 @@ test("fmt", nil, function()
   assertEq("{1=1 2=2}", fmt({1, 2}))
   assertEq([[{baz=boo foo=bar}]], fmt({foo="bar", baz="boo"}))
   assertEq({foo=bar, baz=2}, {foo=bar, baz=2})
+  assertEq("{1=1 2=2 3=3}", tostring(Fmt{1, 2, 3}))
+  assertEq('\n+ 1=1\n+ 2=2\n+ 3=3\n',
+           tostring(Fmt.pretty{1, 2, 3}))
 end)
 
 test("eq", nil, function()
@@ -93,15 +96,15 @@ test("iter", nil, function()
 end)
 
 local expectDisplay = trim[[
-===========+================+=====================
-date       | title          | text                
-===========+================+=====================
-2023-04-03 | Good day today | This was a good day.
-           |                | The sun was shining.
- -  -  -   +  -  -  -  -    +  -  -  -  -  -  -   
- 04-05     | Bad day        | Terrible day        
-           |                | Just terrible okay?.
- -  -  -   +  -  -  -  -    +  -  -  -  -  -  - 
+===========+==================+=======================+========================
+date       | title            | text                  | todo
+===========+==================+=======================+========================
+2023-04-03 | "Good day today" | "This was a good day. | false
+           |                  | The sun was shining." | 
+ -  -  -   +  -  -  -  -  -   +  -  -  -  -  -  -  -  +  -  -  -  -  -  -  -   
+" 04-05 "  | "Bad day"        | "Terrible day         | + 1="I don't know"
+           |                  | Just terrible okay?." | + 2="have a better day"
+ -  -  -   +  -  -  -  -  -   +  -  -  -  -  -  -  -  +  -  -  -  -  -  -  -
 ]]
 test('display', nil, function()
   -- test trim
@@ -119,16 +122,18 @@ test('display', nil, function()
   assertEq(List{'   ', ' ', ' '}, b)
 
   local J = struct('J', {
-    'date', 'title', 'text',
+    'date', 'title', 'text', 'todo'
   })
   local j = List{
     J{date='2023-04-03', title='Good day today',
       text='This was a good day.\nThe sun was shining.'},
     J{date=' 04-05 ', title='Bad day',
-      text='Terrible day\nJust terrible okay?.'},
+      text='Terrible day\nJust terrible okay?.',
+      todo=List{"I don't know", 'have a better day'},
+    },
   }
   local disp = Display(J, j:iterFn())
-  local result = trim(disp:display())
+  local result = trim(tostring(disp))
   assertEq(expectDisplay, result)
 end)
 
@@ -193,10 +198,10 @@ test('picker', nil, function()
 ======+===
 a1    | b2
 ======+===
-three | 1 
- -    +   
+three | 1
+ -    +
 ]]
-  assertEq(expected, trim(result:display()))
+  assertEq(expected, trim(tostring(result)))
 
 end)
 

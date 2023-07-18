@@ -349,6 +349,7 @@ List.fromIter = function(...)
   for i, v in ... do l:add(v) end
   return l
 end
+method(List, '__pairs',  ipairs)
 method(List, 'iter',   ipairs)
 method(List, 'iterFn', iterarr)
 
@@ -360,10 +361,29 @@ result:extend{3, 4}; assert(4 == result[4])
 -- lua cannot format raw tables. We fix that, and also build up
 -- for formatting structs/etc
 local fmtBuf = nil
+
+local function fmtTableIndent(b, t, keys)
+  local indents = b.indents or 0; b.indents = indents + 1
+  local added = false
+  table.insert(b, '\n')
+  for _, key in keys do
+    added = true
+    for i=1, indents-1 do table.insert(b, indent) end
+    table.insert(b, '+ ')
+    fmtBuf(b, key);    table.insert(b, '=')
+    fmtBuf(b, t[key]); table.insert(b, '\n')
+  end
+  b.indents = indents - 1
+  if not added then  b[#b] = 'HERE IS MEj'
+  else               b[#b] = '\n' end
+end
+
 local function fmtTableRaw(b, t, keys)
+  if b.indent then return fmtTableIndent(b, t, keys) end
   table.insert(b, '{')
   local endAdd = 1
   for _, key in keys do
+    if pre then table.insert(b, pre) end
     fmtBuf(b, key);    table.insert(b, '=')
     fmtBuf(b, t[key]); table.insert(b, ' ')
     endAdd = 0 -- remove space for last
@@ -394,7 +414,10 @@ local _bufFmtTy = {
   end,
   table = function(b, t)
     local mt = getmetatable(t)
-    if mt and mt.__tostring then return table.insert(b, tostring(t)) end
+    if mt and mt.iter and b.indent then -- nothing
+    elseif mt and mt.__tostring then
+      return table.insert(b, tostring(t))
+    end
     fmtTableRaw(b, t, orderedKeys(t))
   end,
 }
@@ -404,6 +427,24 @@ method(Map, '__tostring', function(t)
   return concat(b)
 end)
 fmtBuf = function (b, obj) _bufFmtTy[type(obj)](b, obj) end
+
+-- Use as 'b' in the fmt.* functions to override options.
+local Fmt = newTy('Fmt')
+constructor(Fmt, function(ty_, obj, indent)
+  local b = {indent=indent}
+  fmtBuf(b, obj)
+  return setmetatable(b, ty_)
+end)
+method(Fmt, 'pretty', function(obj) return Fmt(obj, '  ') end)
+method(Fmt, 'write', function(self, f)
+  for _, v in ipairs(self) do f:write(tostring(v)) end
+end)
+method(Fmt, 'print', function(self)
+  self:write(io.stdout); io.stdout:write('\n')
+end)
+method(Fmt, '__tostring', function(self)
+  return table.concat(self)
+end)
 
 method(Set, '__tostring', function(self)
   local b, endAdd = {'{'}, 1
@@ -654,9 +695,9 @@ local BufFillerRow = {
 
 local function fillBuf(b, num, filler)
   filler = filler or BufFillerWs
-  while num >= 6 do b:add(filler[6]);  num = num - 6 end
-  while num >= 3 do b:add(filler[3]);  num = num - 3 end
-  while num >= 1 do b:add(filler[1]);  num = num - 1 end
+  while num >= 6 do table.insert(b, filler[6]);  num = num - 6 end
+  while num >= 3 do table.insert(b, filler[3]);  num = num - 3 end
+  while num >= 1 do table.insert(b, filler[1]);  num = num - 1 end
 end
 
 local DisplayCell = struct('DisplayCell',
@@ -675,12 +716,18 @@ constructor(Display, function(ty_, struct, iter)
     len = len + 1
     for _, cname in ipairs(struct['#ordered']) do
       local v = row[cname]
-      local w, txt = 0, tostring(v)
+      local w, txt = 0, tostring(Fmt.pretty(v))
       local cLines = List{}
+      local first = true
       for line in lines(txt) do
-        w = max(w, string.len(line))
-        cLines:add(line)
+        if first and trim(line) == '' then -- remove empty lines at front
+        else
+          first, w = false, max(w, string.len(line))
+          cLines:add(line)
+        end
       end
+      -- remove lines at the end
+      while '' == trim(cLines[#cLines]) do cLines[#cLines] = null end
       local dcol = cols[cname]
       dWidth = max(dWidth, w)
       dcol.width = max(dcol.width, w)
@@ -692,14 +739,13 @@ constructor(Display, function(ty_, struct, iter)
   }, ty_)
 end)
 local COL_SEP = ' | '
--- method(Display, '__tostring', function(self)
-method(Display, 'display', function(self)
+method(Display, '__tostring', function(self)
   for ri=1, self.len do
     for c, dCol in pairs(self.cols) do
     end
   end
   local availW = 100
-  local b = List{}
+  local b = setmetatable({indent='  '}, Fmt)
   local widths, heights = Map{}, List{}
   local colNames = self.struct['#ordered']
 
@@ -719,13 +765,18 @@ method(Display, 'display', function(self)
   else error('auto-width not impl') end
 
   local addCell = function(ci, ri, li, c, lines, sep, filler)
-    if li > #lines then fillBuf(b, widths[c], filler);
+    if li > #lines then if filler or ci < #colNames then
+        fillBuf(b, widths[c], filler)
+      end
     else
       local l = lines[li]
-      b:add(l); fillBuf(b, widths[c] - string.len(l), filler)
+      table.insert(b, l)
+      if filler or ci < #colNames then
+        fillBuf(b, widths[c] - string.len(l), filler)
+      end
     end
-    if(ci < #colNames)  then b:add(sep or COL_SEP)
-    else b:add('\n') end
+    if(ci < #colNames)  then table.insert(b, sep or COL_SEP)
+    else table.insert(b, '\n') end
   end
 
   -------+-----------+------ = header separator
@@ -1069,11 +1120,6 @@ method(Query, 'joinEq', function(
   return Picker(genSt, joined)
 end)
 
-method(Display, '__tostring', function(self)
-
-end)
-
-
 -- ###################
 -- # Test Harness
 
@@ -1112,7 +1158,7 @@ return {
 
   -- Formatters
   concat = concat,
-  fmt = fmt,
+  Fmt=Fmt, fmt = fmt,
   fmtBuf = fmtBuf,
   fillBuf = fillBuf,
   fmtTableRaw = fmtTableRaw,
