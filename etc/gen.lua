@@ -11,6 +11,8 @@ local FIELD_PAT = '(%w+)%s*:%s*' .. TY_PAT
 
 local NATIVE_TYS = Set{"U1", "U2", "U4", "S", "I1", "I2", "I4"}
 
+local UNSIZED = Set{'MMV', 'LCL', 'XL', 'XW', 'XLL', 'XRL', 'SLIT'}
+
 local RENAME = {
     Arena  = "SpArena",
     Reader = "SpReader",
@@ -168,18 +170,13 @@ local function writeC(f, mod)
   writeStructs(f, mod.structs)
 end
 
-local sz, instrs = Map{}, List{}
-for _, c in pairs(spor.consts) do
-  if string.match(c.name, '^SZ') then sz[c.name] = c.value
-  else instrs:add({instr=instr, name=name})
-end
-
 local function writeCase(f, name, ret)
+  print('writing case', name, ret)
   ret = ret or name
   f:write(concat{'    case ', name, ': return Slc_ntLit("', ret, '");\n'})
 end
 
-local function withSize(f, name, instr)
+local function withSize(f, name)
   for _, sz in ipairs({'1', '2', '4'}) do
     writeCase(f, string.format('%s + SZ%s', name, sz), name .. sz)
   end
@@ -191,16 +188,26 @@ local function slitCases(f)
   end
 end
 
+local sz, instrs = Map{}, List{}
+for _, c in pairs(spor.consts) do
+  if string.match(c.name, '^SZ') then sz[c.name] = c.value
+  else instrs:add({instr=tonumber(c.value), name=c.name}) end
+end
+print(instrs)
+
 if not TESTING then
-  local f = open('gen/name.c', 'w')
+  local f = io.open('gen/name.c', 'w')
   f:write(NAME_C)
   for _, i in ipairs(instrs) do
-    if i.name == 'SLIT'                    then slitCases(f)
-    elseif i.instr < 0x40 or unsized[name] then writeCase(f, i.name)
+    print('i', fmt(i))
+    if i.name == 'SLIT'                        then slitCases(f)
+    elseif (i.instr < 0x40) or UNSIZED[i.name] then writeCase(f, i.name)
     else                                withSize(f, i.name, i.instr)
     end
   end
-
+  f:write'  }\n'
+  f:write'  return (Slc) {.dat = unknownInstr, .len = 7};\n'
+  f:write'}\n'
 end
 
 

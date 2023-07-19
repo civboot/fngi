@@ -325,7 +325,7 @@ void slcImpl(Kern* k, U1 sz) {
 }
 
 inline static U1 executeInstr(Kern* k, U1 instr) {
-  // eprintf("&&& instr %0.u: %+10.*s: ", k->fb->ep, Instr_fmt(instr)); dbgWs(k); NL;
+  // eprintf("&&& instr %0.X: %+10.*s: ", k->fb->ep, Instr_fmt(instr)); dbgWs(k); NL;
   U4 l, r;
   switch ((U1)instr) {
     // Operation Cases
