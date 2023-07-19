@@ -6,7 +6,7 @@ FNGI_SRC=src/fngi.* gen/*.c gen/*.h
 TEST_SRC=tests/main.c
 OUT=bin/test
 ARGS=
-export LUA_PATH = ../civc/?.lua
+export LUA_PATH = ../civc/lua/?.lua
 
 all: test
 
