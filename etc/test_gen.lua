@@ -1,3 +1,4 @@
+TESTING = true
 require('gciv')
 local gen
 test('load', nil, function()
@@ -10,7 +11,10 @@ const BAR: U1 = 33
 ]]
 
 local STRUCT_EXAMPLE = [=[
-struct Foo [ a: U2;  b: &S ]
+struct Foo [
+  a:U2
+  b:&S
+]
 ]=]
 
 test('const', nil, function()
@@ -25,12 +29,19 @@ test('struct', nil, function()
   local _, _, stName, stBody = string.find(
     STRUCT_EXAMPLE, gen.STRUCT_PAT)
   assertEq("Foo", stName)
-  assertEq("[ a: U2;  b: &S ]", stBody)
+  assertEq("[\n  a:U2\n  b:&S\n]", stBody)
+
+  assertEq({'a', '', 'U1'},   {string.match('a:U1', gen.FIELD_PAT)})
+  assertEq({'b', '&&', 'S'}, {string.match('b:&&S', gen.FIELD_PAT)})
 
   local _, _, fName, fRefs, fTy = string.find(stBody, gen.FIELD_PAT)
   assertEq("a", fName);
   assertEq("", fRefs);
   assertEq("U2", fTy)
+
+  local matches = string.gmatch(stBody, gen.FIELD_PAT)
+  assertEq({'a', '', 'U2'},   {matches()})
+  assertEq({'b', '&', 'S'}, {matches()})
 end)
 
 

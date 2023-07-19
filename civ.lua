@@ -1173,9 +1173,11 @@ return {
   Range = Range,
 
   -- Generic operations
-  eq = eq, update = update, extend = extend,
-  sort = sort, lines = lines, trim = trim,
-  copy = copy,
+  copy = copy, eq = eq,
+  update = update, extend = extend,  -- table (map)
+  sort = sort,                       -- table (list)
+  lines = lines, trim = trim,        -- string
+  matches = matches,
 
   -- Formatters
   concat = concat,
