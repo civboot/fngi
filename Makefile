@@ -6,6 +6,7 @@ FNGI_SRC=src/fngi.* gen/*.c gen/*.h
 TEST_SRC=tests/main.c
 OUT=bin/test
 ARGS=
+export LUA_PATH = ../civc/?.lua
 
 all: test
 
@@ -18,7 +19,6 @@ build:
 	$(CC) $(FLAGS) -Wall $(DISABLE_WARNINGS) $(LIBS) $(FNGI_SRC) $(TEST_SRC) -o $(OUT)
 
 lua:
-	lua etc/test_civ.lua
 	lua etc/test_gen.lua
 
 dbg: build
