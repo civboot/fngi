@@ -1,3 +1,4 @@
+TESTING = true
 require('gciv')
 local gen
 test('load', nil, function()

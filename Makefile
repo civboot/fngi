@@ -15,6 +15,7 @@ test: lua build
 build:
 	mkdir -p bin/
 	python3 etc/gen.py
+	# lua etc/gen.lua
 	$(CC) $(FLAGS) -Wall $(DISABLE_WARNINGS) $(LIBS) $(FNGI_SRC) $(TEST_SRC) -o $(OUT)
 
 lua:
