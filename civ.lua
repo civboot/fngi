@@ -22,6 +22,12 @@ local function iterpairs(t)
     end
   end
 end
+-- Mutating map function.
+-- Modifies the table in-place using the function
+local function map(t, fn)
+  for i, v in pairs(t) do t[i] = fn(v) end
+  return t
+end
 
 -- convert array to an iterator
 local function iterarr(l)
@@ -50,7 +56,6 @@ end
 local function copy(t, add)
   local out = ty(t){}
   for k, v in pairs(t) do out[k] = v end
-
   if add then
     for k, v in pairs(add) do out[k] = v end
   end
@@ -260,6 +265,13 @@ method(Map, '__index', _methIndex)
 -- get a value. If vFn is given it will be called to
 -- set the value (and return it)
 method(Map, 'empty', function() return Map{} end)
+method(Map, 'from', function(t, keyFn)
+  local out = Map{}
+  for k, v in pairs(t) do
+    k, v = keyFn(k, v); out[k] = v
+  end
+  return out
+end)
 method(Map, 'isEmpty', function(self)
   for k, v in pairs(self) do return false end
   return true
