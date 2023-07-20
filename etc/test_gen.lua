@@ -1,7 +1,7 @@
+require('civ'):grequire()
 TESTING = true
-require('gciv')
-local gen
-test('load', nil, function()
+
+local gen; test('load', nil, function()
   gen = dofile('./etc/gen.lua')
 end)
 

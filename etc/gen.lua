@@ -1,4 +1,4 @@
-require('gciv')
+if not _G.CIV then require('civ'):grequire() end
 
 local CONST_PAT = (
   'const%s+([_%w]+)%s*:'
